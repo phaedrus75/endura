@@ -1,0 +1,817 @@
+import React, { useState, useCallback } from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  ScrollView,
+  TouchableOpacity,
+  RefreshControl,
+  Alert,
+  TextInput,
+  Modal,
+  Dimensions,
+} from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { useFocusEffect } from '@react-navigation/native';
+import Svg, { Circle, Rect, G, Text as SvgText, Path, Defs, LinearGradient, Stop } from 'react-native-svg';
+import { colors, shadows, spacing, borderRadius } from '../theme/colors';
+import { useAuth } from '../contexts/AuthContext';
+import {
+  statsAPI,
+  socialAPI,
+  UserStats,
+  LeaderboardEntry,
+  Friend,
+} from '../services/api';
+
+const { width } = Dimensions.get('window');
+const CHART_WIDTH = width - spacing.lg * 2;
+
+// Pie Chart Component
+const PieChart = ({ data, size = 120 }: { data: { label: string; value: number; color: string }[]; size?: number }) => {
+  const total = data.reduce((sum, item) => sum + item.value, 0);
+  if (total === 0) return null;
+  
+  const center = size / 2;
+  const radius = size / 2 - 10;
+  let currentAngle = -90;
+  
+  const paths = data.map((item, index) => {
+    const percentage = item.value / total;
+    const angle = percentage * 360;
+    const startAngle = currentAngle;
+    const endAngle = currentAngle + angle;
+    currentAngle = endAngle;
+    
+    const startRad = (startAngle * Math.PI) / 180;
+    const endRad = (endAngle * Math.PI) / 180;
+    
+    const x1 = center + radius * Math.cos(startRad);
+    const y1 = center + radius * Math.sin(startRad);
+    const x2 = center + radius * Math.cos(endRad);
+    const y2 = center + radius * Math.sin(endRad);
+    
+    const largeArc = angle > 180 ? 1 : 0;
+    
+    const d = `M ${center} ${center} L ${x1} ${y1} A ${radius} ${radius} 0 ${largeArc} 1 ${x2} ${y2} Z`;
+    
+    return <Path key={index} d={d} fill={item.color} />;
+  });
+  
+  return (
+    <Svg width={size} height={size}>
+      {paths}
+      <Circle cx={center} cy={center} r={radius * 0.5} fill={colors.surface} />
+    </Svg>
+  );
+};
+
+// Bar Chart Component  
+const BarChart = ({ data, height = 150 }: { data: { label: string; value: number; maxValue: number }[]; height?: number }) => {
+  const barWidth = (CHART_WIDTH - 60) / data.length - 10;
+  const maxVal = Math.max(...data.map(d => d.maxValue || d.value), 1);
+  
+  return (
+    <Svg width={CHART_WIDTH} height={height + 30}>
+      <Defs>
+        <LinearGradient id="barGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+          <Stop offset="0%" stopColor={colors.primary} />
+          <Stop offset="100%" stopColor={colors.primaryLight} />
+        </LinearGradient>
+      </Defs>
+      {data.map((item, index) => {
+        const barHeight = (item.value / maxVal) * height;
+        const x = 30 + index * (barWidth + 10);
+        const y = height - barHeight;
+        
+        return (
+          <G key={index}>
+            <Rect
+              x={x}
+              y={y}
+              width={barWidth}
+              height={barHeight}
+              fill="url(#barGrad)"
+              rx={4}
+            />
+            <SvgText
+              x={x + barWidth / 2}
+              y={height + 18}
+              fill={colors.textSecondary}
+              fontSize={10}
+              textAnchor="middle"
+            >
+              {item.label}
+            </SvgText>
+            <SvgText
+              x={x + barWidth / 2}
+              y={y - 5}
+              fill={colors.textPrimary}
+              fontSize={10}
+              fontWeight="bold"
+              textAnchor="middle"
+            >
+              {item.value}
+            </SvgText>
+          </G>
+        );
+      })}
+    </Svg>
+  );
+};
+
+// Progress Bar Component
+const ProgressBar = ({ value, maxValue, label, color }: { value: number; maxValue: number; label: string; color: string }) => {
+  const percentage = Math.min((value / maxValue) * 100, 100);
+  
+  return (
+    <View style={styles.progressBarContainer}>
+      <View style={styles.progressBarHeader}>
+        <Text style={styles.progressBarLabel}>{label}</Text>
+        <Text style={styles.progressBarValue}>{value} / {maxValue}</Text>
+      </View>
+      <View style={styles.progressBarTrack}>
+        <View style={[styles.progressBarFill, { width: `${percentage}%`, backgroundColor: color }]} />
+      </View>
+    </View>
+  );
+};
+
+export default function ProfileScreen() {
+  const { user, logout, refreshUser } = useAuth();
+  const [stats, setStats] = useState<UserStats | null>(null);
+  const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
+  const [friends, setFriends] = useState<Friend[]>([]);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [showFriendModal, setShowFriendModal] = useState(false);
+  const [friendEmail, setFriendEmail] = useState('');
+
+  const loadData = async () => {
+    try {
+      const [statsData, leaderboardData, friendsData] = await Promise.all([
+        statsAPI.getStats(),
+        socialAPI.getLeaderboard(),
+        socialAPI.getFriends(),
+      ]);
+      setStats(statsData);
+      setLeaderboard(leaderboardData);
+      setFriends(friendsData);
+    } catch (error) {
+      console.error('Failed to load profile data:', error);
+    }
+  };
+
+  useFocusEffect(
+    useCallback(() => {
+      loadData();
+      refreshUser();
+    }, [])
+  );
+
+  const onRefresh = async () => {
+    setIsRefreshing(true);
+    await loadData();
+    setIsRefreshing(false);
+  };
+
+  const handleAddFriend = async () => {
+    if (!friendEmail.trim()) return;
+
+    try {
+      await socialAPI.sendFriendRequest(friendEmail.trim());
+      Alert.alert('Success', 'Friend request sent!');
+      setFriendEmail('');
+      setShowFriendModal(false);
+      loadData();
+    } catch (error: any) {
+      Alert.alert('Error', error.message);
+    }
+  };
+
+  const handleLogout = () => {
+    Alert.alert('Logout', 'Are you sure you want to logout?', [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Logout', onPress: logout, style: 'destructive' },
+    ]);
+  };
+
+  const formatTime = (minutes: number) => {
+    const hours = Math.floor(minutes / 60);
+    const mins = minutes % 60;
+    if (hours > 0) {
+      return `${hours}h ${mins}m`;
+    }
+    return `${mins}m`;
+  };
+
+  return (
+    <SafeAreaView style={styles.container}>
+      <ScrollView
+        style={styles.scrollView}
+        contentContainerStyle={styles.scrollContent}
+        refreshControl={
+          <RefreshControl 
+            refreshing={isRefreshing} 
+            onRefresh={onRefresh}
+            tintColor={colors.primary}
+          />
+        }
+        showsVerticalScrollIndicator={false}
+      >
+        {/* Profile Header */}
+        <View style={styles.profileHeader}>
+          <View style={styles.avatarContainer}>
+            <Text style={styles.avatarEmoji}>👤</Text>
+          </View>
+          <Text style={styles.username}>{user?.username || 'Studier'}</Text>
+          <Text style={styles.email}>{user?.email}</Text>
+          <View style={styles.streakContainer}>
+            <Text style={styles.streakEmoji}>🔥</Text>
+            <Text style={styles.streakValue}>{user?.current_streak || 0}</Text>
+            <Text style={styles.streakLabel}>day streak</Text>
+          </View>
+        </View>
+
+        {/* Stats Grid */}
+        <View style={styles.statsGrid}>
+          <View style={styles.statBox}>
+            <Text style={styles.statValue}>{formatTime(stats?.total_study_minutes || 0)}</Text>
+            <Text style={styles.statLabel}>Total Study</Text>
+          </View>
+          <View style={styles.statBox}>
+            <Text style={styles.statValue}>{stats?.total_sessions || 0}</Text>
+            <Text style={styles.statLabel}>Sessions</Text>
+          </View>
+          <View style={styles.statBox}>
+            <Text style={styles.statValue}>{stats?.total_coins || 0}</Text>
+            <Text style={styles.statLabel}>Total Coins</Text>
+          </View>
+          <View style={styles.statBox}>
+            <Text style={styles.statValue}>{stats?.animals_hatched || 0}</Text>
+            <Text style={styles.statLabel}>Animals</Text>
+          </View>
+          <View style={styles.statBox}>
+            <Text style={styles.statValue}>{stats?.tasks_completed || 0}</Text>
+            <Text style={styles.statLabel}>Tasks Done</Text>
+          </View>
+          <View style={styles.statBox}>
+            <Text style={styles.statValue}>{stats?.longest_streak || 0}</Text>
+            <Text style={styles.statLabel}>Best Streak</Text>
+          </View>
+        </View>
+
+        {/* Visual Progress Section */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>📊 Progress Overview</Text>
+          
+          {/* Weekly Study Bar Chart */}
+          <View style={styles.chartCard}>
+            <Text style={styles.chartTitle}>This Week's Study</Text>
+            <BarChart 
+              data={[
+                { label: 'Mon', value: stats?.weekly_study_minutes?.[0] || 0, maxValue: 120 },
+                { label: 'Tue', value: stats?.weekly_study_minutes?.[1] || 0, maxValue: 120 },
+                { label: 'Wed', value: stats?.weekly_study_minutes?.[2] || 0, maxValue: 120 },
+                { label: 'Thu', value: stats?.weekly_study_minutes?.[3] || 0, maxValue: 120 },
+                { label: 'Fri', value: stats?.weekly_study_minutes?.[4] || 0, maxValue: 120 },
+                { label: 'Sat', value: stats?.weekly_study_minutes?.[5] || 0, maxValue: 120 },
+                { label: 'Sun', value: stats?.weekly_study_minutes?.[6] || 0, maxValue: 120 },
+              ]}
+            />
+            <Text style={styles.chartSubtext}>Minutes studied per day</Text>
+          </View>
+
+          {/* Achievements Pie Chart */}
+          <View style={styles.chartCard}>
+            <Text style={styles.chartTitle}>Achievements Breakdown</Text>
+            <View style={styles.pieChartRow}>
+              <PieChart 
+                data={[
+                  { label: 'Tasks', value: stats?.tasks_completed || 0, color: colors.primary },
+                  { label: 'Sessions', value: stats?.total_sessions || 0, color: colors.rare },
+                  { label: 'Animals', value: stats?.animals_hatched || 0, color: colors.epic },
+                ]}
+                size={100}
+              />
+              <View style={styles.pieLegend}>
+                <View style={styles.legendItem}>
+                  <View style={[styles.legendDot, { backgroundColor: colors.primary }]} />
+                  <Text style={styles.legendText}>Tasks ({stats?.tasks_completed || 0})</Text>
+                </View>
+                <View style={styles.legendItem}>
+                  <View style={[styles.legendDot, { backgroundColor: colors.rare }]} />
+                  <Text style={styles.legendText}>Sessions ({stats?.total_sessions || 0})</Text>
+                </View>
+                <View style={styles.legendItem}>
+                  <View style={[styles.legendDot, { backgroundColor: colors.epic }]} />
+                  <Text style={styles.legendText}>Animals ({stats?.animals_hatched || 0})</Text>
+                </View>
+              </View>
+            </View>
+          </View>
+
+          {/* Progress Bars */}
+          <View style={styles.chartCard}>
+            <Text style={styles.chartTitle}>Goals Progress</Text>
+            <ProgressBar 
+              value={stats?.current_streak || 0} 
+              maxValue={Math.max(stats?.longest_streak || 7, 7)} 
+              label="🔥 Streak Goal" 
+              color={colors.streakActive}
+            />
+            <ProgressBar 
+              value={stats?.animals_hatched || 0} 
+              maxValue={30} 
+              label="🦁 Animal Collection" 
+              color={colors.epic}
+            />
+            <ProgressBar 
+              value={Math.floor((stats?.total_study_minutes || 0) / 60)} 
+              maxValue={100} 
+              label="⏱️ Study Hours" 
+              color={colors.primary}
+            />
+            <ProgressBar 
+              value={stats?.total_coins || 0} 
+              maxValue={5000} 
+              label="💰 Coins Earned" 
+              color={colors.rare}
+            />
+          </View>
+        </View>
+
+        {/* Leaderboard */}
+        <View style={styles.section}>
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>🏆 Leaderboard</Text>
+            <TouchableOpacity
+              style={styles.addFriendButton}
+              onPress={() => setShowFriendModal(true)}
+            >
+              <Text style={styles.addFriendText}>+ Add Friend</Text>
+            </TouchableOpacity>
+          </View>
+
+          {leaderboard.length === 0 ? (
+            <View style={styles.emptyCard}>
+              <Text style={styles.emptyEmoji}>👥</Text>
+              <Text style={styles.emptyText}>Add friends to compete!</Text>
+            </View>
+          ) : (
+            leaderboard.map((entry, index) => (
+              <View
+                key={entry.user_id}
+                style={[
+                  styles.leaderboardRow,
+                  entry.user_id === user?.id && styles.leaderboardRowMe,
+                ]}
+              >
+                <Text style={styles.leaderboardRank}>
+                  {index === 0 ? '🥇' : index === 1 ? '🥈' : index === 2 ? '🥉' : `${entry.rank}`}
+                </Text>
+                <View style={styles.leaderboardInfo}>
+                  <Text style={styles.leaderboardName}>
+                    {entry.username || 'Anonymous'}
+                    {entry.user_id === user?.id && ' (You)'}
+                  </Text>
+                  <Text style={styles.leaderboardStats}>
+                    {formatTime(entry.total_study_minutes)} • 🔥 {entry.current_streak} • 🦁 {entry.animals_count}
+                  </Text>
+                </View>
+              </View>
+            ))
+          )}
+        </View>
+
+        {/* Friends List */}
+        {friends.length > 0 && (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>👥 Friends ({friends.length})</Text>
+            {friends.map((friend) => (
+              <View key={friend.id} style={styles.friendRow}>
+                <View style={styles.friendAvatar}>
+                  <Text style={styles.friendAvatarText}>👤</Text>
+                </View>
+                <View style={styles.friendInfo}>
+                  <Text style={styles.friendName}>
+                    {friend.username || friend.email.split('@')[0]}
+                  </Text>
+                  <Text style={styles.friendStats}>
+                    {formatTime(friend.total_study_minutes)} studied
+                  </Text>
+                </View>
+                <View style={styles.friendStreak}>
+                  <Text style={styles.friendStreakText}>🔥 {friend.current_streak}</Text>
+                </View>
+              </View>
+            ))}
+          </View>
+        )}
+
+        {/* Logout */}
+        <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
+          <Text style={styles.logoutText}>Logout</Text>
+        </TouchableOpacity>
+
+        {/* App Info */}
+        <Text style={styles.appVersion}>Endura v1.0.0</Text>
+      </ScrollView>
+
+      {/* Add Friend Modal */}
+      <Modal visible={showFriendModal} transparent animationType="slide">
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>Add a Friend 👥</Text>
+            <Text style={styles.modalSubtitle}>
+              Enter their email to send a friend request
+            </Text>
+
+            <TextInput
+              style={styles.emailInput}
+              placeholder="friend@email.com"
+              placeholderTextColor={colors.textMuted}
+              value={friendEmail}
+              onChangeText={setFriendEmail}
+              keyboardType="email-address"
+              autoCapitalize="none"
+            />
+
+            <TouchableOpacity style={styles.sendButton} onPress={handleAddFriend}>
+              <Text style={styles.sendButtonText}>Send Request</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.cancelButton}
+              onPress={() => setShowFriendModal(false)}
+            >
+              <Text style={styles.cancelButtonText}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+    </SafeAreaView>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: colors.background,
+  },
+  scrollView: {
+    flex: 1,
+  },
+  scrollContent: {
+    padding: spacing.lg,
+    paddingBottom: spacing.xxl,
+  },
+  profileHeader: {
+    alignItems: 'center',
+    marginBottom: spacing.xl,
+  },
+  avatarContainer: {
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    backgroundColor: colors.surface,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: spacing.md,
+    borderWidth: 3,
+    borderColor: colors.primary,
+    ...shadows.medium,
+  },
+  avatarEmoji: {
+    fontSize: 48,
+  },
+  username: {
+    fontSize: 28,
+    fontWeight: '700',
+    color: colors.textPrimary,
+    marginBottom: spacing.xs,
+  },
+  email: {
+    fontSize: 14,
+    color: colors.textMuted,
+    marginBottom: spacing.md,
+  },
+  streakContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.surface,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderRadius: borderRadius.full,
+    ...shadows.small,
+  },
+  streakEmoji: {
+    fontSize: 20,
+    marginRight: spacing.xs,
+  },
+  streakValue: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: colors.streakActive,
+    marginRight: spacing.xs,
+  },
+  streakLabel: {
+    fontSize: 14,
+    color: colors.textSecondary,
+  },
+  statsGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
+    marginBottom: spacing.xl,
+  },
+  statBox: {
+    width: '31%',
+    backgroundColor: colors.surface,
+    borderRadius: borderRadius.lg,
+    padding: spacing.md,
+    alignItems: 'center',
+    marginBottom: spacing.md,
+    borderWidth: 1,
+    borderColor: colors.cardBorder,
+    ...shadows.small,
+  },
+  statValue: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: colors.primary,
+    marginBottom: spacing.xs,
+  },
+  statLabel: {
+    fontSize: 11,
+    color: colors.textSecondary,
+    textAlign: 'center',
+    fontWeight: '500',
+  },
+  section: {
+    marginBottom: spacing.xl,
+  },
+  sectionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: spacing.md,
+  },
+  sectionTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: colors.textPrimary,
+    marginBottom: spacing.md,
+  },
+  chartCard: {
+    backgroundColor: colors.surface,
+    borderRadius: borderRadius.lg,
+    padding: spacing.lg,
+    marginBottom: spacing.md,
+    borderWidth: 1,
+    borderColor: colors.cardBorder,
+    ...shadows.small,
+  },
+  chartTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: colors.textPrimary,
+    marginBottom: spacing.md,
+  },
+  chartSubtext: {
+    fontSize: 11,
+    color: colors.textMuted,
+    textAlign: 'center',
+    marginTop: spacing.sm,
+  },
+  pieChartRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-around',
+  },
+  pieLegend: {
+    marginLeft: spacing.lg,
+  },
+  legendItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: spacing.sm,
+  },
+  legendDot: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    marginRight: spacing.sm,
+  },
+  legendText: {
+    fontSize: 13,
+    color: colors.textSecondary,
+    fontWeight: '500',
+  },
+  progressBarContainer: {
+    marginBottom: spacing.md,
+  },
+  progressBarHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: spacing.xs,
+  },
+  progressBarLabel: {
+    fontSize: 13,
+    color: colors.textPrimary,
+    fontWeight: '500',
+  },
+  progressBarValue: {
+    fontSize: 12,
+    color: colors.textSecondary,
+  },
+  progressBarTrack: {
+    height: 10,
+    backgroundColor: colors.surfaceAlt,
+    borderRadius: 5,
+    overflow: 'hidden',
+  },
+  progressBarFill: {
+    height: '100%',
+    borderRadius: 5,
+  },
+  addFriendButton: {
+    backgroundColor: colors.primary,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm - 2,
+    borderRadius: borderRadius.full,
+  },
+  addFriendText: {
+    color: colors.textOnPrimary,
+    fontWeight: '600',
+    fontSize: 12,
+  },
+  emptyCard: {
+    backgroundColor: colors.surface,
+    borderRadius: borderRadius.lg,
+    padding: spacing.xxl,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: colors.cardBorder,
+  },
+  emptyEmoji: {
+    fontSize: 48,
+    marginBottom: spacing.md,
+  },
+  emptyText: {
+    color: colors.textSecondary,
+    fontSize: 14,
+  },
+  leaderboardRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.surface,
+    borderRadius: borderRadius.md,
+    padding: spacing.md,
+    marginBottom: spacing.sm,
+    borderWidth: 1,
+    borderColor: colors.cardBorder,
+  },
+  leaderboardRowMe: {
+    borderWidth: 2,
+    borderColor: colors.primary,
+    backgroundColor: colors.primaryLight + '15',
+  },
+  leaderboardRank: {
+    fontSize: 24,
+    width: 40,
+    textAlign: 'center',
+  },
+  leaderboardInfo: {
+    flex: 1,
+    marginLeft: spacing.sm,
+  },
+  leaderboardName: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: colors.textPrimary,
+    marginBottom: 2,
+  },
+  leaderboardStats: {
+    fontSize: 12,
+    color: colors.textSecondary,
+  },
+  friendRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.surface,
+    borderRadius: borderRadius.md,
+    padding: spacing.md,
+    marginBottom: spacing.sm,
+    borderWidth: 1,
+    borderColor: colors.cardBorder,
+  },
+  friendAvatar: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: colors.surfaceAlt,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  friendAvatarText: {
+    fontSize: 20,
+  },
+  friendInfo: {
+    flex: 1,
+    marginLeft: spacing.md,
+  },
+  friendName: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: colors.textPrimary,
+  },
+  friendStats: {
+    fontSize: 12,
+    color: colors.textSecondary,
+  },
+  friendStreak: {
+    backgroundColor: colors.surfaceAlt,
+    paddingHorizontal: spacing.sm + 2,
+    paddingVertical: spacing.xs,
+    borderRadius: borderRadius.md,
+  },
+  friendStreakText: {
+    color: colors.streakActive,
+    fontWeight: '600',
+    fontSize: 12,
+  },
+  logoutButton: {
+    backgroundColor: colors.error + '15',
+    borderRadius: borderRadius.md,
+    padding: spacing.md,
+    alignItems: 'center',
+    marginBottom: spacing.md,
+    borderWidth: 1,
+    borderColor: colors.error,
+  },
+  logoutText: {
+    color: colors.error,
+    fontWeight: '600',
+    fontSize: 16,
+  },
+  appVersion: {
+    textAlign: 'center',
+    color: colors.textMuted,
+    fontSize: 12,
+    marginBottom: spacing.xl,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    padding: spacing.lg,
+  },
+  modalContent: {
+    backgroundColor: colors.surface,
+    borderRadius: borderRadius.xl,
+    padding: spacing.lg,
+  },
+  modalTitle: {
+    fontSize: 22,
+    fontWeight: '700',
+    color: colors.textPrimary,
+    textAlign: 'center',
+    marginBottom: spacing.sm,
+  },
+  modalSubtitle: {
+    fontSize: 14,
+    color: colors.textSecondary,
+    textAlign: 'center',
+    marginBottom: spacing.lg,
+  },
+  emailInput: {
+    backgroundColor: colors.surfaceAlt,
+    borderRadius: borderRadius.md,
+    padding: spacing.md,
+    color: colors.textPrimary,
+    fontSize: 16,
+    marginBottom: spacing.md,
+    borderWidth: 1,
+    borderColor: colors.cardBorder,
+  },
+  sendButton: {
+    backgroundColor: colors.primary,
+    borderRadius: borderRadius.md,
+    padding: spacing.md,
+    alignItems: 'center',
+    marginBottom: spacing.md,
+  },
+  sendButtonText: {
+    color: colors.textOnPrimary,
+    fontWeight: '700',
+    fontSize: 16,
+  },
+  cancelButton: {
+    padding: spacing.md,
+    alignItems: 'center',
+  },
+  cancelButtonText: {
+    color: colors.textMuted,
+    fontSize: 14,
+  },
+});

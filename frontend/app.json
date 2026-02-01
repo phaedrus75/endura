@@ -1,0 +1,29 @@
+{
+  "expo": {
+    "name": "Endura",
+    "slug": "endura",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "dark",
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#0D1B2A"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.endura.study"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#0D1B2A"
+      },
+      "package": "com.endura.study"
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    }
+  }
+}
