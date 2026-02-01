@@ -18,6 +18,7 @@ import TimerScreen from './screens/TimerScreen';
 import CollectionScreen from './screens/CollectionScreen';
 import TipsScreen from './screens/TipsScreen';
 import ProfileScreen from './screens/ProfileScreen';
+import AdminScreen from './screens/AdminScreen';
 
 const Stack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
@@ -30,6 +31,7 @@ const TabIcon = ({ name, focused }: { name: string; focused: boolean }) => {
     Collection: '🥚',
     Tips: '💡',
     Profile: '👤',
+    Admin: '⚙️',
   };
   
   return (
@@ -59,6 +61,7 @@ function MainTabs() {
       <Tab.Screen name="Collection" component={CollectionScreen} />
       <Tab.Screen name="Tips" component={TipsScreen} />
       <Tab.Screen name="Profile" component={ProfileScreen} />
+      <Tab.Screen name="Admin" component={AdminScreen} />
     </Tab.Navigator>
   );
 }

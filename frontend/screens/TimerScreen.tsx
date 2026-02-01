@@ -121,6 +121,8 @@ export default function TimerScreen() {
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
   const [showConfetti, setShowConfetti] = useState(false);
   const [showAnimalModal, setShowAnimalModal] = useState(false);
+  const [showCelebrationModal, setShowCelebrationModal] = useState(false);
+  const [hatchedAnimalInfo, setHatchedAnimalInfo] = useState<{emoji: string; name: string; coins: number} | null>(null);
   const [unlockedAnimals, setUnlockedAnimals] = useState<number[]>([]);
   const [selectedAnimalId, setSelectedAnimalId] = useState<number | null>(null);
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
@@ -251,7 +253,6 @@ export default function TimerScreen() {
 
   const handleTimerComplete = async () => {
     setIsRunning(false);
-    setShowConfetti(true);
     Vibration.vibrate([0, 500, 200, 500]);
 
     // Unlock the selected animal
@@ -270,23 +271,25 @@ export default function TimerScreen() {
       
       await refreshUser();
       
-      Alert.alert(
-        '🎉 Egg Hatched!',
-        `Congratulations! You hatched a ${hatchedAnimal?.emoji} ${hatchedAnimal?.name}!\n\nYou earned ${session.coins_earned} coins!`,
-        [
-          {
-            text: 'Amazing!',
-            onPress: () => {
-              setShowConfetti(false);
-              setSelectedAnimalId(null);
-              resetTimer();
-            },
-          },
-        ]
-      );
+      // Show celebration modal with confetti
+      setHatchedAnimalInfo({
+        emoji: hatchedAnimal?.emoji || '🐾',
+        name: hatchedAnimal?.name || 'Mystery Animal',
+        coins: session.coins_earned,
+      });
+      setShowConfetti(true);
+      setShowCelebrationModal(true);
     } catch (error: any) {
       Alert.alert('Error', error.message);
     }
+  };
+
+  const closeCelebrationModal = () => {
+    setShowCelebrationModal(false);
+    setShowConfetti(false);
+    setHatchedAnimalInfo(null);
+    setSelectedAnimalId(null);
+    resetTimer();
   };
 
   const handleStartPress = () => {
@@ -546,9 +549,9 @@ export default function TimerScreen() {
       <Modal visible={showAnimalModal} transparent animationType="slide">
         <View style={styles.animalModalOverlay}>
           <View style={styles.animalModalContent}>
-            <Text style={styles.animalModalTitle}>🥚 Select the Animal You Want to Hatch</Text>
+            <Text style={styles.animalModalTitle}>🥚 Choose Your Egg!</Text>
             <Text style={styles.animalModalSubtitle}>
-              Complete your study session to unlock this endangered animal!
+              It's a surprise! Complete your study session to discover which endangered animal hatches! 🎁✨
             </Text>
 
             <ScrollView style={styles.animalGrid} showsVerticalScrollIndicator={false}>
@@ -581,7 +584,7 @@ export default function TimerScreen() {
                         } else {
                           Alert.alert(
                             '🔒 Locked',
-                            'You need to unlock animals in order. Complete more study sessions!'
+                            'Complete more study sessions to unlock this egg!'
                           );
                         }
                       }}
@@ -600,13 +603,6 @@ export default function TimerScreen() {
                           </Text>
                         </View>
                       )}
-                      <Text style={[
-                        styles.animalNumber,
-                        isUnlocked && styles.animalNumberUnlocked,
-                        isNextAvailable && !isUnlocked && styles.animalNumberAvailable,
-                      ]}>
-                        {animal.id}
-                      </Text>
                     </TouchableOpacity>
                   );
                 })}
@@ -616,8 +612,7 @@ export default function TimerScreen() {
             {selectedAnimalId && (
               <View style={styles.selectedAnimalPreview}>
                 <Text style={styles.selectedAnimalText}>
-                  You'll hatch: {ENDANGERED_ANIMALS.find(a => a.id === selectedAnimalId)?.emoji}{' '}
-                  {ENDANGERED_ANIMALS.find(a => a.id === selectedAnimalId)?.name}
+                  🎁 Egg selected! What will hatch? Study to find out!
                 </Text>
               </View>
             )}
@@ -643,6 +638,45 @@ export default function TimerScreen() {
                 <Text style={styles.animalModalStartText}>Start Hatching! 🚀</Text>
               </TouchableOpacity>
             </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Celebration Modal */}
+      <Modal visible={showCelebrationModal} transparent animationType="fade">
+        <View style={styles.celebrationOverlay}>
+          <View style={styles.celebrationContent}>
+            <Text style={styles.celebrationTitle}>🎉 Congratulations! 🎉</Text>
+            <Text style={styles.celebrationSubtitle}>You hatched a new friend!</Text>
+            
+            <View style={styles.celebrationAnimalContainer}>
+              <View style={styles.celebrationEggCrack}>
+                <Text style={styles.celebrationAnimalEmoji}>
+                  {hatchedAnimalInfo?.emoji || '🐾'}
+                </Text>
+              </View>
+            </View>
+            
+            <Text style={styles.celebrationAnimalName}>
+              {hatchedAnimalInfo?.name}
+            </Text>
+            
+            <View style={styles.celebrationCoins}>
+              <Text style={styles.celebrationCoinsText}>
+                +{hatchedAnimalInfo?.coins || 0} coins earned! 💰
+              </Text>
+            </View>
+            
+            <Text style={styles.celebrationMessage}>
+              This endangered animal has been added to your collection!
+            </Text>
+            
+            <TouchableOpacity
+              style={styles.celebrationButton}
+              onPress={closeCelebrationModal}
+            >
+              <Text style={styles.celebrationButtonText}>Amazing! 🥳</Text>
+            </TouchableOpacity>
           </View>
         </View>
       </Modal>
@@ -942,24 +976,25 @@ const styles = StyleSheet.create({
     marginBottom: spacing.lg,
   },
   animalGrid: {
-    maxHeight: 320,
+    maxHeight: 420,
   },
   animalGridInner: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    justifyContent: 'center',
-    gap: spacing.sm,
+    justifyContent: 'space-between',
+    paddingHorizontal: spacing.sm,
     paddingBottom: spacing.md,
   },
   animalSlot: {
-    width: 60,
-    height: 70,
-    borderRadius: borderRadius.md,
+    width: '30%',
+    aspectRatio: 1,
+    borderRadius: borderRadius.lg,
     backgroundColor: colors.surfaceAlt,
     justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 2,
     borderColor: colors.cardBorder,
+    marginBottom: spacing.sm,
   },
   animalSlotUnlocked: {
     backgroundColor: colors.primaryLight + '20',
@@ -980,34 +1015,21 @@ const styles = StyleSheet.create({
     opacity: 0.5,
   },
   animalEmoji: {
-    fontSize: 28,
+    fontSize: 40,
   },
   lockedContainer: {
     alignItems: 'center',
     justifyContent: 'center',
   },
   eggEmoji: {
-    fontSize: 24,
+    fontSize: 36,
   },
   lockEmoji: {
-    fontSize: 12,
-    marginTop: -4,
+    fontSize: 14,
+    marginTop: -8,
   },
   lockEmojiAvailable: {
-    fontSize: 14,
-  },
-  animalNumber: {
-    fontSize: 10,
-    color: colors.textMuted,
-    marginTop: 2,
-    fontWeight: '600',
-  },
-  animalNumberUnlocked: {
-    color: colors.primary,
-  },
-  animalNumberAvailable: {
-    color: colors.warning,
-    fontWeight: '700',
+    fontSize: 18,
   },
   selectedAnimalPreview: {
     backgroundColor: colors.primary + '15',
@@ -1053,6 +1075,90 @@ const styles = StyleSheet.create({
   },
   animalModalStartText: {
     fontSize: 16,
+    fontWeight: '700',
+    color: colors.textOnPrimary,
+  },
+  // Celebration Modal Styles
+  celebrationOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.7)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: spacing.lg,
+  },
+  celebrationContent: {
+    backgroundColor: colors.surface,
+    borderRadius: borderRadius.xl,
+    padding: spacing.xl,
+    alignItems: 'center',
+    width: '100%',
+    maxWidth: 340,
+    ...shadows.large,
+  },
+  celebrationTitle: {
+    fontSize: 28,
+    fontWeight: '800',
+    color: colors.textPrimary,
+    textAlign: 'center',
+    marginBottom: spacing.sm,
+  },
+  celebrationSubtitle: {
+    fontSize: 16,
+    color: colors.textSecondary,
+    textAlign: 'center',
+    marginBottom: spacing.xl,
+  },
+  celebrationAnimalContainer: {
+    marginBottom: spacing.lg,
+  },
+  celebrationEggCrack: {
+    width: 140,
+    height: 140,
+    borderRadius: 70,
+    backgroundColor: colors.primaryLight + '30',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 4,
+    borderColor: colors.primary,
+  },
+  celebrationAnimalEmoji: {
+    fontSize: 72,
+  },
+  celebrationAnimalName: {
+    fontSize: 24,
+    fontWeight: '700',
+    color: colors.primary,
+    textAlign: 'center',
+    marginBottom: spacing.md,
+  },
+  celebrationCoins: {
+    backgroundColor: colors.tertiary + '20',
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.sm,
+    borderRadius: borderRadius.full,
+    marginBottom: spacing.lg,
+  },
+  celebrationCoinsText: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: colors.tertiary,
+  },
+  celebrationMessage: {
+    fontSize: 14,
+    color: colors.textSecondary,
+    textAlign: 'center',
+    marginBottom: spacing.xl,
+    lineHeight: 20,
+  },
+  celebrationButton: {
+    backgroundColor: colors.primary,
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.xxl,
+    borderRadius: borderRadius.full,
+    ...shadows.small,
+  },
+  celebrationButtonText: {
+    fontSize: 18,
     fontWeight: '700',
     color: colors.textOnPrimary,
   },
