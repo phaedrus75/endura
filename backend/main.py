@@ -37,13 +37,18 @@ def health_check():
     db_url = os.getenv("DATABASE_URL", "")
     db_type = "postgresql" if "postgres" in db_url.lower() else "sqlite"
     has_db_url = bool(db_url)
+    
+    # Debug: find any env vars with DATABASE or POSTGRES in name
+    db_related_vars = [k for k in os.environ.keys() if "DATABASE" in k.upper() or "POSTGRES" in k.upper()]
+    
     return {
         "status": "healthy", 
         "app": "Endura API", 
-        "version": "1.0.1",
+        "version": "1.0.2",
         "database": db_type,
         "database_configured": has_db_url,
         "db_url_preview": db_url[:30] + "..." if len(db_url) > 30 else db_url if db_url else "not set",
+        "db_env_vars_found": db_related_vars,
     }
 
 @app.get("/health")
