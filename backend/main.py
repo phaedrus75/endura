@@ -33,14 +33,17 @@ app.add_middleware(
 # Health check endpoint (no database required)
 @app.get("/")
 def health_check():
-    db_type = "postgresql" if "postgresql" in SQLALCHEMY_DATABASE_URL else "sqlite"
-    has_db_url = bool(os.getenv("DATABASE_URL"))
+    # Check the actual DATABASE_URL at runtime
+    db_url = os.getenv("DATABASE_URL", "")
+    db_type = "postgresql" if "postgres" in db_url.lower() else "sqlite"
+    has_db_url = bool(db_url)
     return {
         "status": "healthy", 
         "app": "Endura API", 
         "version": "1.0.0",
         "database": db_type,
         "database_configured": has_db_url,
+        "db_url_preview": db_url[:30] + "..." if len(db_url) > 30 else db_url if db_url else "not set",
     }
 
 @app.get("/health")
