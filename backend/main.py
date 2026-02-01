@@ -26,6 +26,15 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Health check endpoint (no database required)
+@app.get("/")
+def health_check():
+    return {"status": "healthy", "app": "Endura API", "version": "1.0.0"}
+
+@app.get("/health")
+def health():
+    return {"status": "ok"}
+
 
 # ============ Startup: Seed Animals ============
 
