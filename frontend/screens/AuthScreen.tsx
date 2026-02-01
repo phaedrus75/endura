@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import * as SecureStore from 'expo-secure-store';
 import {
   View,
   Text,
@@ -79,6 +80,19 @@ export default function AuthScreen() {
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const { login, register } = useAuth();
+
+  // Clear any stored auth data on mount (debug)
+  useEffect(() => {
+    const clearOldData = async () => {
+      try {
+        await SecureStore.deleteItemAsync('authToken');
+        console.log('🗑️ Cleared old auth token');
+      } catch (e) {
+        console.log('No old token to clear');
+      }
+    };
+    clearOldData();
+  }, []);
 
   const handleSubmit = async () => {
     if (!email || !password) {

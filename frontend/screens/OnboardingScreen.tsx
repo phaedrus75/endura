@@ -79,7 +79,7 @@ export default function OnboardingScreen() {
     try {
       const token = await SecureStore.getItemAsync('authToken');
       const response = await fetch(
-        `http://192.168.86.136:8000/user/username?username=${encodeURIComponent(username.trim())}`,
+        `https://endura-production.up.railway.app/user/username?username=${encodeURIComponent(username.trim())}`,
         {
           method: 'POST',
           headers: {
