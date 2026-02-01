@@ -140,6 +140,13 @@ async function apiFetch<T>(
     
     if (!response.ok) {
       const error = await response.json().catch(() => ({ detail: 'An error occurred' }));
+      
+      // If unauthorized, clear the token so user can re-login
+      if (response.status === 401) {
+        console.log('🔒 Unauthorized - clearing token');
+        await SecureStore.deleteItemAsync('authToken');
+      }
+      
       throw new Error(error.detail || 'An error occurred');
     }
     
