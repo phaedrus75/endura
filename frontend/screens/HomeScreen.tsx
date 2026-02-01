@@ -56,7 +56,7 @@ const EggVisual = ({ progress }: { progress: number }) => (
       source={require('../assets/egg-animation.json')}
       autoPlay
       loop
-      style={{ width: 200, height: 200 }}
+      style={{ width: 240, height: 240 }}
     />
     {/* Progress overlay */}
     <View style={styles.progressCircleContainer}>

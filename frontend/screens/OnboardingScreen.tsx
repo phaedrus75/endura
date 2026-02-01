@@ -171,7 +171,7 @@ export default function OnboardingScreen() {
               source={require('../assets/egg-animation.json')}
               autoPlay
               loop
-              style={{ width: 140, height: 140 }}
+              style={{ width: 180, height: 180 }}
             />
           ) : (
             <Text style={styles.stepEmoji}>{step.emoji}</Text>

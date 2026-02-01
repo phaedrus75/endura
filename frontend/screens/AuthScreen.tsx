@@ -27,7 +27,7 @@ const AnimatedEggLogo = () => (
       source={require('../assets/egg-animation.json')}
       autoPlay
       loop
-      style={{ width: 200, height: 200 }}
+      style={{ width: 240, height: 240 }}
     />
   </View>
 );
