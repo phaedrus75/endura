@@ -6,11 +6,12 @@ from typing import List, Optional
 import models
 import schemas
 import crud
-from database import engine, get_db, Base
+from database import engine, get_db, Base, SQLALCHEMY_DATABASE_URL
 from auth import (
     get_password_hash, verify_password, create_access_token,
     get_current_user, ACCESS_TOKEN_EXPIRE_MINUTES
 )
+import os
 
 # Create tables (with error handling for Railway)
 try:
@@ -32,7 +33,15 @@ app.add_middleware(
 # Health check endpoint (no database required)
 @app.get("/")
 def health_check():
-    return {"status": "healthy", "app": "Endura API", "version": "1.0.0"}
+    db_type = "postgresql" if "postgresql" in SQLALCHEMY_DATABASE_URL else "sqlite"
+    has_db_url = bool(os.getenv("DATABASE_URL"))
+    return {
+        "status": "healthy", 
+        "app": "Endura API", 
+        "version": "1.0.0",
+        "database": db_type,
+        "database_configured": has_db_url,
+    }
 
 @app.get("/health")
 def health():
