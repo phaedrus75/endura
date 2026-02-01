@@ -12,8 +12,11 @@ from auth import (
     get_current_user, ACCESS_TOKEN_EXPIRE_MINUTES
 )
 
-# Create tables
-Base.metadata.create_all(bind=engine)
+# Create tables (with error handling for Railway)
+try:
+    Base.metadata.create_all(bind=engine)
+except Exception as e:
+    print(f"Warning: Could not create tables on startup: {e}")
 
 app = FastAPI(title="Endura API", description="Gamified Study App Backend")
 
@@ -40,71 +43,63 @@ def health():
 
 @app.on_event("startup")
 def seed_animals():
-    db = next(get_db())
-    
-    # Check if animals already exist
-    if db.query(models.Animal).count() > 0:
-        return
-    
-    # Endangered animals to seed
-    animals = [
-        # Common (100 coins)
-        {"name": "Red Panda", "species": "Ailurus fulgens", "rarity": "common", "conservation_status": "Endangered", "coins_to_hatch": 100, "description": "A fluffy forest dweller from the Himalayas"},
-        {"name": "Sea Turtle", "species": "Chelonia mydas", "rarity": "common", "conservation_status": "Endangered", "coins_to_hatch": 100, "description": "Ancient ocean navigator"},
-        {"name": "Penguin", "species": "Spheniscus demersus", "rarity": "common", "conservation_status": "Endangered", "coins_to_hatch": 100, "description": "Tuxedo-wearing swimmer"},
-        {"name": "Koala", "species": "Phascolarctos cinereus", "rarity": "common", "conservation_status": "Vulnerable", "coins_to_hatch": 100, "description": "Eucalyptus-loving tree hugger"},
-        {"name": "Flamingo", "species": "Phoenicopterus roseus", "rarity": "common", "conservation_status": "Least Concern", "coins_to_hatch": 100, "description": "Pink and fabulous"},
+    try:
+        db = next(get_db())
         
-        # Rare (150 coins)
-        {"name": "Giant Panda", "species": "Ailuropoda melanoleuca", "rarity": "rare", "conservation_status": "Vulnerable", "coins_to_hatch": 150, "description": "Bamboo-munching gentle giant"},
-        {"name": "Snow Leopard", "species": "Panthera uncia", "rarity": "rare", "conservation_status": "Vulnerable", "coins_to_hatch": 150, "description": "Ghost of the mountains"},
-        {"name": "Orangutan", "species": "Pongo pygmaeus", "rarity": "rare", "conservation_status": "Critically Endangered", "coins_to_hatch": 150, "description": "Wise forest dweller"},
-        {"name": "Elephant", "species": "Loxodonta africana", "rarity": "rare", "conservation_status": "Endangered", "coins_to_hatch": 150, "description": "Gentle giant with perfect memory"},
-        {"name": "Polar Bear", "species": "Ursus maritimus", "rarity": "rare", "conservation_status": "Vulnerable", "coins_to_hatch": 150, "description": "Arctic ice explorer"},
+        # Check if animals already exist
+        if db.query(models.Animal).count() > 0:
+            return
         
-        # Epic (200 coins)
-        {"name": "Tiger", "species": "Panthera tigris", "rarity": "epic", "conservation_status": "Endangered", "coins_to_hatch": 200, "description": "Majestic striped hunter"},
-        {"name": "Gorilla", "species": "Gorilla beringei", "rarity": "epic", "conservation_status": "Critically Endangered", "coins_to_hatch": 200, "description": "Powerful and gentle"},
-        {"name": "Blue Whale", "species": "Balaenoptera musculus", "rarity": "epic", "conservation_status": "Endangered", "coins_to_hatch": 200, "description": "Largest creature on Earth"},
-        {"name": "Cheetah", "species": "Acinonyx jubatus", "rarity": "epic", "conservation_status": "Vulnerable", "coins_to_hatch": 200, "description": "Fastest land animal"},
-        {"name": "Rhinoceros", "species": "Diceros bicornis", "rarity": "epic", "conservation_status": "Critically Endangered", "coins_to_hatch": 200, "description": "Armored unicorn of Africa"},
+        # Endangered animals to seed
+        animals = [
+            {"name": "Red Panda", "species": "Ailurus fulgens", "rarity": "common", "conservation_status": "Endangered", "coins_to_hatch": 100, "description": "A fluffy forest dweller from the Himalayas"},
+            {"name": "Sea Turtle", "species": "Chelonia mydas", "rarity": "common", "conservation_status": "Endangered", "coins_to_hatch": 100, "description": "Ancient ocean navigator"},
+            {"name": "Penguin", "species": "Spheniscus demersus", "rarity": "common", "conservation_status": "Endangered", "coins_to_hatch": 100, "description": "Tuxedo-wearing swimmer"},
+            {"name": "Koala", "species": "Phascolarctos cinereus", "rarity": "common", "conservation_status": "Vulnerable", "coins_to_hatch": 100, "description": "Eucalyptus-loving tree hugger"},
+            {"name": "Flamingo", "species": "Phoenicopterus roseus", "rarity": "common", "conservation_status": "Least Concern", "coins_to_hatch": 100, "description": "Pink and fabulous"},
+            {"name": "Giant Panda", "species": "Ailuropoda melanoleuca", "rarity": "rare", "conservation_status": "Vulnerable", "coins_to_hatch": 150, "description": "Bamboo-munching gentle giant"},
+            {"name": "Snow Leopard", "species": "Panthera uncia", "rarity": "rare", "conservation_status": "Vulnerable", "coins_to_hatch": 150, "description": "Ghost of the mountains"},
+            {"name": "Orangutan", "species": "Pongo pygmaeus", "rarity": "rare", "conservation_status": "Critically Endangered", "coins_to_hatch": 150, "description": "Wise forest dweller"},
+            {"name": "Elephant", "species": "Loxodonta africana", "rarity": "rare", "conservation_status": "Endangered", "coins_to_hatch": 150, "description": "Gentle giant with perfect memory"},
+            {"name": "Polar Bear", "species": "Ursus maritimus", "rarity": "rare", "conservation_status": "Vulnerable", "coins_to_hatch": 150, "description": "Arctic ice explorer"},
+            {"name": "Tiger", "species": "Panthera tigris", "rarity": "epic", "conservation_status": "Endangered", "coins_to_hatch": 200, "description": "Majestic striped hunter"},
+            {"name": "Gorilla", "species": "Gorilla beringei", "rarity": "epic", "conservation_status": "Critically Endangered", "coins_to_hatch": 200, "description": "Powerful and gentle"},
+            {"name": "Blue Whale", "species": "Balaenoptera musculus", "rarity": "epic", "conservation_status": "Endangered", "coins_to_hatch": 200, "description": "Largest creature on Earth"},
+            {"name": "Cheetah", "species": "Acinonyx jubatus", "rarity": "epic", "conservation_status": "Vulnerable", "coins_to_hatch": 200, "description": "Fastest land animal"},
+            {"name": "Rhinoceros", "species": "Diceros bicornis", "rarity": "epic", "conservation_status": "Critically Endangered", "coins_to_hatch": 200, "description": "Armored unicorn of Africa"},
+            {"name": "Amur Leopard", "species": "Panthera pardus orientalis", "rarity": "legendary", "conservation_status": "Critically Endangered", "coins_to_hatch": 300, "description": "Rarest big cat on Earth"},
+            {"name": "Vaquita", "species": "Phocoena sinus", "rarity": "legendary", "conservation_status": "Critically Endangered", "coins_to_hatch": 300, "description": "World's rarest marine mammal"},
+            {"name": "Sumatran Rhino", "species": "Dicerorhinus sumatrensis", "rarity": "legendary", "conservation_status": "Critically Endangered", "coins_to_hatch": 300, "description": "Ancient hairy rhinoceros"},
+            {"name": "Kakapo", "species": "Strigops habroptilus", "rarity": "legendary", "conservation_status": "Critically Endangered", "coins_to_hatch": 300, "description": "World's only flightless parrot"},
+            {"name": "Axolotl", "species": "Ambystoma mexicanum", "rarity": "legendary", "conservation_status": "Critically Endangered", "coins_to_hatch": 300, "description": "Smiling water monster"},
+        ]
         
-        # Legendary (300 coins)
-        {"name": "Amur Leopard", "species": "Panthera pardus orientalis", "rarity": "legendary", "conservation_status": "Critically Endangered", "coins_to_hatch": 300, "description": "Rarest big cat on Earth"},
-        {"name": "Vaquita", "species": "Phocoena sinus", "rarity": "legendary", "conservation_status": "Critically Endangered", "coins_to_hatch": 300, "description": "World's rarest marine mammal"},
-        {"name": "Sumatran Rhino", "species": "Dicerorhinus sumatrensis", "rarity": "legendary", "conservation_status": "Critically Endangered", "coins_to_hatch": 300, "description": "Ancient hairy rhinoceros"},
-        {"name": "Kakapo", "species": "Strigops habroptilus", "rarity": "legendary", "conservation_status": "Critically Endangered", "coins_to_hatch": 300, "description": "World's only flightless parrot"},
-        {"name": "Axolotl", "species": "Ambystoma mexicanum", "rarity": "legendary", "conservation_status": "Critically Endangered", "coins_to_hatch": 300, "description": "Smiling water monster"},
-    ]
-    
-    for animal_data in animals:
-        animal = models.Animal(**animal_data)
-        db.add(animal)
-    
-    # Seed some study tips
-    tips = [
-        {"content": "Use the Pomodoro Technique: 25 minutes of focus, 5 minute break. Your brain needs rest to consolidate learning!", "category": "focus"},
-        {"content": "Teach what you learn to someone else. If you can explain it simply, you truly understand it.", "category": "memorization"},
-        {"content": "Study in different locations. Your brain creates stronger memories when associated with varied environments.", "category": "memorization"},
-        {"content": "Take handwritten notes. Writing activates different brain regions than typing, improving retention.", "category": "focus"},
-        {"content": "Exercise before studying. Just 20 minutes of movement boosts brain function and memory.", "category": "motivation"},
-        {"content": "Use spaced repetition. Review material at increasing intervals: 1 day, 3 days, 1 week, 2 weeks.", "category": "memorization"},
-        {"content": "Sleep is when your brain consolidates memories. Never sacrifice sleep for extra study time.", "category": "general"},
-        {"content": "Start with the hardest task when your energy is highest. Save easier tasks for when you're tired.", "category": "focus"},
-        {"content": "Create a dedicated study space. Your brain will associate it with focus and learning.", "category": "focus"},
-        {"content": "Use active recall instead of re-reading. Quiz yourself to strengthen memory pathways.", "category": "memorization"},
-        {"content": "Stay hydrated! Even mild dehydration can impair concentration and memory.", "category": "general"},
-        {"content": "Break large tasks into smaller, manageable chunks. Progress feels more achievable.", "category": "motivation"},
-        {"content": "Use music without lyrics for studying. Classical or lo-fi beats work great for focus.", "category": "focus"},
-        {"content": "Review your notes within 24 hours of taking them. This dramatically improves retention.", "category": "memorization"},
-        {"content": "Celebrate small wins! Acknowledging progress keeps you motivated for the long haul.", "category": "motivation"},
-    ]
-    
-    for tip_data in tips:
-        tip = models.StudyTip(**tip_data)
-        db.add(tip)
-    
-    db.commit()
+        for animal_data in animals:
+            animal = models.Animal(**animal_data)
+            db.add(animal)
+        
+        # Seed some study tips
+        tips = [
+            {"content": "Use the Pomodoro Technique: 25 minutes of focus, 5 minute break.", "category": "focus"},
+            {"content": "Teach what you learn to someone else.", "category": "memorization"},
+            {"content": "Study in different locations for stronger memories.", "category": "memorization"},
+            {"content": "Take handwritten notes for better retention.", "category": "focus"},
+            {"content": "Exercise before studying boosts brain function.", "category": "motivation"},
+            {"content": "Use spaced repetition: 1 day, 3 days, 1 week, 2 weeks.", "category": "memorization"},
+            {"content": "Sleep is when your brain consolidates memories.", "category": "general"},
+            {"content": "Start with the hardest task when energy is highest.", "category": "focus"},
+            {"content": "Create a dedicated study space.", "category": "focus"},
+            {"content": "Use active recall instead of re-reading.", "category": "memorization"},
+        ]
+        
+        for tip_data in tips:
+            tip = models.StudyTip(**tip_data)
+            db.add(tip)
+        
+        db.commit()
+        print("Successfully seeded animals and tips!")
+    except Exception as e:
+        print(f"Warning: Could not seed database on startup: {e}")
 
 
 # ============ Auth Endpoints ============
