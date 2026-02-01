@@ -133,6 +133,7 @@ async function apiFetch<T>(
     const response = await fetch(url, {
       ...options,
       headers,
+      redirect: 'follow',
     });
     
     console.log('✅ Response status:', response.status);
