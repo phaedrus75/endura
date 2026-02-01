@@ -1,6 +1,7 @@
 import * as SecureStore from 'expo-secure-store';
 
-const API_URL = 'https://endura-production.up.railway.app';
+// Use local development server
+const API_URL = 'http://192.168.86.136:8000';
 
 // Debug: Log API URL on startup
 console.log('🔗 API URL:', API_URL);
