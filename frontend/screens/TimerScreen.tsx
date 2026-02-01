@@ -16,6 +16,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import ConfettiCannon from 'react-native-confetti-cannon';
 import Svg, { Circle, Defs, LinearGradient, Stop } from 'react-native-svg';
+import LottieView from 'lottie-react-native';
 import Slider from '@react-native-community/slider';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { colors, shadows, spacing, borderRadius } from '../theme/colors';
@@ -360,10 +361,22 @@ export default function TimerScreen() {
         {/* Timer Display */}
         <View style={styles.timerContainer}>
           <CircularProgress progress={progress}>
-            <Text style={styles.timerText}>{formatTime(timeLeft)}</Text>
-            <Text style={styles.timerStatus}>
-              {isRunning ? (isPaused ? 'Paused' : 'Studying...') : 'Ready'}
-            </Text>
+            {isRunning ? (
+              <View style={styles.timerEggContainer}>
+                <LottieView
+                  source={require('../assets/egg-animation.json')}
+                  autoPlay
+                  loop
+                  style={{ width: 100, height: 100 }}
+                />
+                <Text style={styles.timerTextSmall}>{formatTime(timeLeft)}</Text>
+              </View>
+            ) : (
+              <>
+                <Text style={styles.timerText}>{formatTime(timeLeft)}</Text>
+                <Text style={styles.timerStatus}>Ready</Text>
+              </>
+            )}
           </CircularProgress>
         </View>
 
@@ -685,6 +698,17 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: colors.textPrimary,
     fontVariant: ['tabular-nums'],
+  },
+  timerTextSmall: {
+    fontSize: 28,
+    fontWeight: '700',
+    color: colors.textPrimary,
+    fontVariant: ['tabular-nums'],
+    marginTop: -8,
+  },
+  timerEggContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   timerStatus: {
     fontSize: 14,

@@ -11,6 +11,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Svg, { Path, Ellipse, Circle, Defs, LinearGradient, Stop } from 'react-native-svg';
+import LottieView from 'lottie-react-native';
 import { colors, shadows, spacing, borderRadius } from '../theme/colors';
 import { useAuth } from '../contexts/AuthContext';
 import * as SecureStore from 'expo-secure-store';
@@ -19,7 +20,7 @@ const { width } = Dimensions.get('window');
 
 const onboardingSteps = [
   {
-    emoji: '🥚',
+    useLottie: true, // Use Lottie animation for the egg
     title: 'Welcome to Endura',
     description: 'Turn your study sessions into a game. Earn coins, hatch eggs, and build a collection of endangered animals!',
   },
@@ -165,7 +166,16 @@ export default function OnboardingScreen() {
         </View>
 
         <View style={styles.iconContainer}>
-          <Text style={styles.stepEmoji}>{step.emoji}</Text>
+          {step.useLottie ? (
+            <LottieView
+              source={require('../assets/egg-animation.json')}
+              autoPlay
+              loop
+              style={{ width: 140, height: 140 }}
+            />
+          ) : (
+            <Text style={styles.stepEmoji}>{step.emoji}</Text>
+          )}
         </View>
         
         <Text style={styles.stepTitle}>{step.title}</Text>

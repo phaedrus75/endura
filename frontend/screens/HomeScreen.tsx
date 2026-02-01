@@ -19,6 +19,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import ConfettiCannon from 'react-native-confetti-cannon';
 import Svg, { Path, Ellipse, Circle, Defs, LinearGradient, Stop } from 'react-native-svg';
+import LottieView from 'lottie-react-native';
 import { colors, shadows, spacing, borderRadius } from '../theme/colors';
 import { useAuth } from '../contexts/AuthContext';
 import { animalsAPI, tasksAPI, statsAPI, Egg, Task, UserStats, UserAnimal } from '../services/api';
@@ -48,30 +49,16 @@ const GrassBackground = () => (
   </View>
 );
 
-// Egg Visual Component
+// Egg Visual Component with Lottie Animation
 const EggVisual = ({ progress }: { progress: number }) => (
   <View style={styles.eggWrapper}>
-    <Svg width={140} height={180} viewBox="0 0 140 180">
-      <Defs>
-        <LinearGradient id="eggGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-          <Stop offset="0%" stopColor="#FEFEFE" />
-          <Stop offset="50%" stopColor="#F8FAF8" />
-          <Stop offset="100%" stopColor="#EDF2ED" />
-        </LinearGradient>
-      </Defs>
-      {/* Egg shadow */}
-      <Ellipse cx={70} cy={170} rx={50} ry={12} fill="rgba(0,0,0,0.08)" />
-      {/* Main egg shape */}
-      <Path
-        d="M70 10 C25 10 10 70 10 110 C10 155 35 175 70 175 C105 175 130 155 130 110 C130 70 115 10 70 10 Z"
-        fill="url(#eggGrad)"
-        stroke={colors.cardBorder}
-        strokeWidth={2}
-      />
-      {/* Shine highlight */}
-      <Ellipse cx={50} cy={60} rx={15} ry={25} fill="rgba(255,255,255,0.6)" />
-    </Svg>
-    {/* Progress ring overlay */}
+    <LottieView
+      source={require('../assets/egg-animation.json')}
+      autoPlay
+      loop
+      style={{ width: 200, height: 200 }}
+    />
+    {/* Progress overlay */}
     <View style={styles.progressCircleContainer}>
       <View style={[styles.progressCircle, { borderColor: colors.primary }]}>
         <Text style={styles.progressPercent}>{Math.round(progress)}%</Text>

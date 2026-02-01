@@ -14,62 +14,21 @@ import {
   ScrollView,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import Svg, { Path, Ellipse, Defs, LinearGradient, Stop, G } from 'react-native-svg';
+import LottieView from 'lottie-react-native';
 import { colors, shadows, spacing, borderRadius } from '../theme/colors';
 import { useAuth } from '../contexts/AuthContext';
 
 const { width } = Dimensions.get('window');
 
-// Cracked Egg Logo Component
-const CrackedEggLogo = () => (
+// Animated Egg Logo Component using Lottie
+const AnimatedEggLogo = () => (
   <View style={styles.logoWrapper}>
-    <Svg width={160} height={180} viewBox="0 0 180 200">
-      <Defs>
-        <LinearGradient id="eggShellGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-          <Stop offset="0%" stopColor="#FEFEFE" />
-          <Stop offset="50%" stopColor="#F5F8F5" />
-          <Stop offset="100%" stopColor="#E8EDE9" />
-        </LinearGradient>
-        <LinearGradient id="innerGrad" x1="0%" y1="0%" x2="0%" y2="100%">
-          <Stop offset="0%" stopColor={colors.primaryLight} />
-          <Stop offset="100%" stopColor={colors.primary} />
-        </LinearGradient>
-      </Defs>
-      
-      {/* Shadow */}
-      <Ellipse cx={90} cy={190} rx={60} ry={12} fill="rgba(0,0,0,0.08)" />
-      
-      {/* Bottom shell piece */}
-      <Path
-        d="M40 120 C40 120 30 150 35 170 C40 185 60 195 90 195 C120 195 140 185 145 170 C150 150 140 120 140 120 L120 110 L100 125 L80 105 L60 120 Z"
-        fill="url(#eggShellGrad)"
-        stroke={colors.cardBorder}
-        strokeWidth={2}
-      />
-      
-      {/* Inner egg content */}
-      <Ellipse cx={90} cy={140} rx={40} ry={35} fill="url(#innerGrad)" opacity={0.3} />
-      
-      {/* Letter 'e' in the center */}
-      <G transform="translate(65, 115)">
-        <Path
-          d="M25 0 C10 0 0 12 0 25 C0 38 10 50 25 50 C35 50 43 45 48 38 L38 32 C35 36 30 40 25 40 C18 40 12 35 11 28 L50 28 C50 26 50 25 50 25 C50 12 40 0 25 0 M25 10 C32 10 38 14 40 20 L11 20 C13 14 18 10 25 10"
-          fill={colors.primary}
-        />
-      </G>
-      
-      {/* Top shell piece (cracked off) */}
-      <G transform="translate(-15, -25) rotate(-15, 90, 80)">
-        <Path
-          d="M55 95 C45 60 50 30 90 15 C130 30 135 60 125 95 L110 90 L95 100 L80 88 L65 98 Z"
-          fill="url(#eggShellGrad)"
-          stroke={colors.cardBorder}
-          strokeWidth={2}
-        />
-        {/* Shine on top piece */}
-        <Ellipse cx={75} cy={50} rx={12} ry={18} fill="rgba(255,255,255,0.7)" />
-      </G>
-    </Svg>
+    <LottieView
+      source={require('../assets/egg-animation.json')}
+      autoPlay
+      loop
+      style={{ width: 200, height: 200 }}
+    />
   </View>
 );
 
@@ -132,7 +91,7 @@ export default function AuthScreen() {
           {/* Brand Area */}
           <View style={styles.brandContainer}>
             <Text style={styles.brandName}>endura</Text>
-            <CrackedEggLogo />
+            <AnimatedEggLogo />
           </View>
 
           {/* Buttons */}
