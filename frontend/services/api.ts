@@ -1,6 +1,6 @@
 import * as SecureStore from 'expo-secure-store';
 
-const API_URL = 'http://192.168.86.136:8000';
+const API_URL = 'https://endura-production.up.railway.app';
 
 // Types
 export interface User {
