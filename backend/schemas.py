@@ -90,11 +90,6 @@ class StudySessionResponse(BaseModel):
         from_attributes = True
 
 
-class StudySessionWithHatchResponse(BaseModel):
-    session: StudySessionResponse
-    hatched_animal: Optional[AnimalResponse] = None
-
-
 # ============ Animal Schemas ============
 
 class AnimalResponse(BaseModel):
@@ -108,6 +103,11 @@ class AnimalResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class StudySessionWithHatchResponse(BaseModel):
+    session: StudySessionResponse
+    hatched_animal: Optional[AnimalResponse] = None
 
 
 class UserAnimalResponse(BaseModel):
