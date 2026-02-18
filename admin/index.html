@@ -1,0 +1,724 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Endura Admin Dashboard</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: linear-gradient(135deg, #f5f7fa 0%, #e4e9f2 100%);
+            min-height: 100vh;
+            color: #1a1a2e;
+        }
+
+        /* Login Screen */
+        .login-container {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .login-card {
+            background: white;
+            border-radius: 20px;
+            padding: 48px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.1);
+            max-width: 400px;
+            width: 100%;
+            text-align: center;
+        }
+
+        .login-logo {
+            font-size: 64px;
+            margin-bottom: 16px;
+        }
+
+        .login-title {
+            font-size: 28px;
+            font-weight: 700;
+            margin-bottom: 8px;
+            color: #1a1a2e;
+        }
+
+        .login-subtitle {
+            color: #666;
+            margin-bottom: 32px;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        .form-input {
+            width: 100%;
+            padding: 14px 18px;
+            border: 2px solid #e0e0e0;
+            border-radius: 12px;
+            font-size: 16px;
+            transition: border-color 0.2s;
+        }
+
+        .form-input:focus {
+            outline: none;
+            border-color: #6B9B7A;
+        }
+
+        .btn-primary {
+            width: 100%;
+            padding: 14px 24px;
+            background: linear-gradient(135deg, #6B9B7A 0%, #4A7C59 100%);
+            color: white;
+            border: none;
+            border-radius: 12px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 20px rgba(107, 155, 122, 0.4);
+        }
+
+        .error-message {
+            color: #dc3545;
+            margin-top: 16px;
+            display: none;
+        }
+
+        /* Dashboard */
+        .dashboard {
+            display: none;
+        }
+
+        .dashboard.active {
+            display: block;
+        }
+
+        .header {
+            background: white;
+            padding: 20px 40px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .header-left {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+
+        .header-logo {
+            font-size: 32px;
+        }
+
+        .header-title {
+            font-size: 24px;
+            font-weight: 700;
+        }
+
+        .header-subtitle {
+            color: #666;
+            font-size: 14px;
+        }
+
+        .btn-logout {
+            padding: 10px 20px;
+            background: #f8f9fa;
+            border: 2px solid #e0e0e0;
+            border-radius: 10px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            color: #666;
+            transition: all 0.2s;
+        }
+
+        .btn-logout:hover {
+            background: #dc3545;
+            border-color: #dc3545;
+            color: white;
+        }
+
+        .main-content {
+            padding: 40px;
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        /* Stats Grid */
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+            margin-bottom: 40px;
+        }
+
+        .stat-card {
+            background: white;
+            border-radius: 16px;
+            padding: 24px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05);
+        }
+
+        .stat-icon {
+            font-size: 32px;
+            margin-bottom: 12px;
+        }
+
+        .stat-value {
+            font-size: 36px;
+            font-weight: 700;
+            color: #6B9B7A;
+        }
+
+        .stat-label {
+            color: #666;
+            font-size: 14px;
+            margin-top: 4px;
+        }
+
+        /* Sections */
+        .section {
+            background: white;
+            border-radius: 16px;
+            padding: 28px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05);
+            margin-bottom: 24px;
+        }
+
+        .section-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+
+        .section-title {
+            font-size: 20px;
+            font-weight: 700;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .section-title span {
+            font-size: 24px;
+        }
+
+        /* Animal Grid */
+        .animal-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+            gap: 16px;
+        }
+
+        .animal-card {
+            background: #f8f9fa;
+            border-radius: 12px;
+            padding: 20px;
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            cursor: pointer;
+            transition: all 0.2s;
+            border: 2px solid transparent;
+        }
+
+        .animal-card:hover {
+            border-color: #6B9B7A;
+            transform: translateY(-2px);
+            box-shadow: 0 8px 20px rgba(0, 0, 0, 0.1);
+        }
+
+        .animal-emoji {
+            font-size: 48px;
+        }
+
+        .animal-info {
+            flex: 1;
+        }
+
+        .animal-name {
+            font-weight: 600;
+            font-size: 16px;
+            margin-bottom: 4px;
+        }
+
+        .animal-status {
+            color: #666;
+            font-size: 13px;
+        }
+
+        .animal-edit {
+            font-size: 20px;
+            opacity: 0.5;
+        }
+
+        /* Modal */
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.5);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+            opacity: 0;
+            visibility: hidden;
+            transition: all 0.3s;
+        }
+
+        .modal-overlay.active {
+            opacity: 1;
+            visibility: visible;
+        }
+
+        .modal {
+            background: white;
+            border-radius: 20px;
+            padding: 32px;
+            max-width: 500px;
+            width: 90%;
+            max-height: 90vh;
+            overflow-y: auto;
+            transform: scale(0.9);
+            transition: transform 0.3s;
+        }
+
+        .modal-overlay.active .modal {
+            transform: scale(1);
+        }
+
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 24px;
+        }
+
+        .modal-title {
+            font-size: 24px;
+            font-weight: 700;
+        }
+
+        .modal-close {
+            background: none;
+            border: none;
+            font-size: 28px;
+            cursor: pointer;
+            color: #666;
+        }
+
+        .form-label {
+            display: block;
+            font-weight: 600;
+            margin-bottom: 8px;
+            color: #333;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        textarea.form-input {
+            min-height: 100px;
+            resize: vertical;
+        }
+
+        .modal-buttons {
+            display: flex;
+            gap: 12px;
+            margin-top: 24px;
+        }
+
+        .btn-secondary {
+            flex: 1;
+            padding: 14px 24px;
+            background: #f8f9fa;
+            border: 2px solid #e0e0e0;
+            border-radius: 12px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            color: #666;
+        }
+
+        .btn-save {
+            flex: 2;
+            padding: 14px 24px;
+            background: linear-gradient(135deg, #6B9B7A 0%, #4A7C59 100%);
+            color: white;
+            border: none;
+            border-radius: 12px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+        }
+
+        /* API Config */
+        .api-config {
+            background: #f8f9fa;
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 24px;
+        }
+
+        .api-config label {
+            font-weight: 600;
+            display: block;
+            margin-bottom: 8px;
+        }
+
+        .api-config input {
+            flex: 1;
+            padding: 12px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 14px;
+            font-family: monospace;
+        }
+
+        .api-status {
+            padding: 8px 16px;
+            border-radius: 8px;
+            font-weight: 600;
+            font-size: 14px;
+        }
+
+        .api-status.connected {
+            background: #d4edda;
+            color: #155724;
+        }
+
+        .api-status.disconnected {
+            background: #f8d7da;
+            color: #721c24;
+        }
+
+        .inline-form {
+            display: flex;
+            gap: 12px;
+            align-items: center;
+        }
+    </style>
+</head>
+<body>
+    <!-- Login Screen -->
+    <div class="login-container" id="loginScreen">
+        <div class="login-card">
+            <div class="login-logo">🥚</div>
+            <h1 class="login-title">Endura Admin</h1>
+            <p class="login-subtitle">Enter admin password to continue</p>
+            
+            <form id="loginForm">
+                <div class="form-group">
+                    <input type="password" class="form-input" id="password" placeholder="Admin Password" required>
+                </div>
+                <button type="submit" class="btn-primary">Access Dashboard</button>
+            </form>
+            
+            <p class="error-message" id="loginError">Invalid password. Please try again.</p>
+        </div>
+    </div>
+
+    <!-- Dashboard -->
+    <div class="dashboard" id="dashboard">
+        <header class="header">
+            <div class="header-left">
+                <span class="header-logo">🥚</span>
+                <div>
+                    <h1 class="header-title">Endura Admin</h1>
+                    <p class="header-subtitle">Content Management Dashboard</p>
+                </div>
+            </div>
+            <button class="btn-logout" onclick="logout()">Logout</button>
+        </header>
+
+        <main class="main-content">
+            <!-- API Configuration -->
+            <div class="api-config">
+                <label>API Server URL</label>
+                <div class="inline-form">
+                    <input type="text" id="apiUrl" value="http://localhost:8000" placeholder="http://localhost:8000">
+                    <button class="btn-primary" onclick="testConnection()" style="width: auto;">Test Connection</button>
+                    <span class="api-status disconnected" id="apiStatus">Not Connected</span>
+                </div>
+            </div>
+
+            <!-- Stats Grid -->
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <div class="stat-icon">🦁</div>
+                    <div class="stat-value" id="statAnimals">21</div>
+                    <div class="stat-label">Animals</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-icon">👥</div>
+                    <div class="stat-value" id="statUsers">-</div>
+                    <div class="stat-label">Users</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-icon">⏱️</div>
+                    <div class="stat-value" id="statSessions">-</div>
+                    <div class="stat-label">Study Sessions</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-icon">💡</div>
+                    <div class="stat-value" id="statTips">-</div>
+                    <div class="stat-label">Study Tips</div>
+                </div>
+            </div>
+
+            <!-- Animals Section -->
+            <div class="section">
+                <div class="section-header">
+                    <h2 class="section-title"><span>🦁</span> Manage Animals</h2>
+                </div>
+                <div class="animal-grid" id="animalGrid">
+                    <!-- Animals will be populated here -->
+                </div>
+            </div>
+
+            <!-- Coming Soon -->
+            <div class="section">
+                <div class="section-header">
+                    <h2 class="section-title"><span>🚀</span> Coming Soon</h2>
+                </div>
+                <ul style="color: #666; line-height: 2;">
+                    <li>Upload custom animal images</li>
+                    <li>Manage Lottie animations</li>
+                    <li>Edit study tips</li>
+                    <li>User analytics dashboard</li>
+                    <li>Push notification management</li>
+                </ul>
+            </div>
+        </main>
+    </div>
+
+    <!-- Edit Modal -->
+    <div class="modal-overlay" id="editModal">
+        <div class="modal">
+            <div class="modal-header">
+                <h2 class="modal-title" id="modalTitle">Edit Animal</h2>
+                <button class="modal-close" onclick="closeModal()">&times;</button>
+            </div>
+            <form id="editForm">
+                <input type="hidden" id="editId">
+                
+                <div class="form-group">
+                    <label class="form-label">Name</label>
+                    <input type="text" class="form-input" id="editName" required>
+                </div>
+                
+                <div class="form-group">
+                    <label class="form-label">Emoji</label>
+                    <input type="text" class="form-input" id="editEmoji" required>
+                </div>
+                
+                <div class="form-group">
+                    <label class="form-label">Conservation Status</label>
+                    <input type="text" class="form-input" id="editStatus">
+                </div>
+                
+                <div class="form-group">
+                    <label class="form-label">Habitat</label>
+                    <input type="text" class="form-input" id="editHabitat">
+                </div>
+                
+                <div class="form-group">
+                    <label class="form-label">Fun Fact</label>
+                    <textarea class="form-input" id="editFunFact"></textarea>
+                </div>
+                
+                <div class="modal-buttons">
+                    <button type="button" class="btn-secondary" onclick="closeModal()">Cancel</button>
+                    <button type="submit" class="btn-save">Save Changes</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script>
+        const ADMIN_PASSWORD = 'endura2024';
+        let animals = [];
+
+        // Default animals data
+        const DEFAULT_ANIMALS = [
+            { id: 1, name: 'Red Panda', emoji: '🐼', status: 'Endangered', habitat: 'Himalayan forests', funFact: 'Red pandas spend most of their lives in trees.' },
+            { id: 2, name: 'Sea Turtle', emoji: '🐢', status: 'Endangered', habitat: 'Tropical oceans', funFact: 'Sea turtles can hold their breath for 5 hours.' },
+            { id: 3, name: 'Penguin', emoji: '🐧', status: 'Vulnerable', habitat: 'Antarctic coasts', funFact: 'Emperor penguins can dive 1,800 feet deep.' },
+            { id: 4, name: 'Koala', emoji: '🐨', status: 'Vulnerable', habitat: 'Australian eucalyptus forests', funFact: 'Koalas sleep up to 22 hours a day.' },
+            { id: 5, name: 'Flamingo', emoji: '🦩', status: 'Least Concern', habitat: 'Wetlands and lagoons', funFact: 'Flamingos are born grey and turn pink from their diet.' },
+            { id: 6, name: 'Giant Panda', emoji: '🐼', status: 'Vulnerable', habitat: 'Chinese bamboo forests', funFact: 'Pandas eat up to 38kg of bamboo daily.' },
+            { id: 7, name: 'Snow Leopard', emoji: '🐆', status: 'Vulnerable', habitat: 'Central Asian mountains', funFact: 'Snow leopards can leap 50 feet in a single bound.' },
+            { id: 8, name: 'Orangutan', emoji: '🦧', status: 'Critically Endangered', habitat: 'Borneo rainforests', funFact: 'Orangutans share 97% of their DNA with humans.' },
+            { id: 9, name: 'Elephant', emoji: '🐘', status: 'Endangered', habitat: 'African savannas', funFact: 'Elephants can recognize themselves in mirrors.' },
+            { id: 10, name: 'Polar Bear', emoji: '🐻‍❄️', status: 'Vulnerable', habitat: 'Arctic sea ice', funFact: 'Polar bear fur is actually transparent, not white.' },
+            { id: 11, name: 'Tiger', emoji: '🐅', status: 'Endangered', habitat: 'Asian forests', funFact: 'No two tigers have the same stripe pattern.' },
+            { id: 12, name: 'Gorilla', emoji: '🦍', status: 'Critically Endangered', habitat: 'African rainforests', funFact: 'Gorillas can learn sign language.' },
+            { id: 13, name: 'Blue Whale', emoji: '🐋', status: 'Endangered', habitat: 'All oceans', funFact: 'Blue whale hearts weigh as much as a car.' },
+            { id: 14, name: 'Cheetah', emoji: '🐆', status: 'Vulnerable', habitat: 'African grasslands', funFact: 'Cheetahs can accelerate faster than most sports cars.' },
+            { id: 15, name: 'Rhinoceros', emoji: '🦏', status: 'Critically Endangered', habitat: 'African and Asian grasslands', funFact: 'Rhino horns are made of keratin, like fingernails.' },
+            { id: 16, name: 'Amur Leopard', emoji: '🐆', status: 'Critically Endangered', habitat: 'Russian Far East', funFact: 'Fewer than 100 Amur leopards remain in the wild.' },
+            { id: 17, name: 'Vaquita', emoji: '🐬', status: 'Critically Endangered', habitat: 'Gulf of California', funFact: 'Vaquitas are the world\'s smallest porpoise.' },
+            { id: 18, name: 'Sumatran Rhino', emoji: '🦏', status: 'Critically Endangered', habitat: 'Indonesian rainforests', funFact: 'Sumatran rhinos are the smallest rhino species.' },
+            { id: 19, name: 'Kakapo', emoji: '🦜', status: 'Critically Endangered', habitat: 'New Zealand islands', funFact: 'Kakapos are the only flightless parrots.' },
+            { id: 20, name: 'Axolotl', emoji: '🦎', status: 'Critically Endangered', habitat: 'Mexican lakes', funFact: 'Axolotls can regenerate entire limbs.' },
+            { id: 21, name: 'Saola', emoji: '🦌', status: 'Critically Endangered', habitat: 'Vietnamese forests', funFact: 'Saolas are so rare they\'re called Asian unicorns.' },
+        ];
+
+        // Initialize
+        document.addEventListener('DOMContentLoaded', () => {
+            // Check if already logged in
+            if (localStorage.getItem('adminLoggedIn') === 'true') {
+                showDashboard();
+            }
+
+            // Load saved animals or use defaults
+            const savedAnimals = localStorage.getItem('adminAnimals');
+            animals = savedAnimals ? JSON.parse(savedAnimals) : DEFAULT_ANIMALS;
+            renderAnimals();
+        });
+
+        // Login
+        document.getElementById('loginForm').addEventListener('submit', (e) => {
+            e.preventDefault();
+            const password = document.getElementById('password').value;
+            
+            if (password === ADMIN_PASSWORD) {
+                localStorage.setItem('adminLoggedIn', 'true');
+                showDashboard();
+            } else {
+                document.getElementById('loginError').style.display = 'block';
+            }
+        });
+
+        function showDashboard() {
+            document.getElementById('loginScreen').style.display = 'none';
+            document.getElementById('dashboard').classList.add('active');
+            testConnection();
+        }
+
+        function logout() {
+            localStorage.removeItem('adminLoggedIn');
+            location.reload();
+        }
+
+        // API Connection
+        async function testConnection() {
+            const apiUrl = document.getElementById('apiUrl').value;
+            const statusEl = document.getElementById('apiStatus');
+            
+            try {
+                const response = await fetch(apiUrl + '/');
+                const data = await response.json();
+                
+                if (data.status === 'healthy') {
+                    statusEl.textContent = 'Connected ✓';
+                    statusEl.className = 'api-status connected';
+                    loadStats(apiUrl);
+                } else {
+                    throw new Error('Unhealthy');
+                }
+            } catch (e) {
+                statusEl.textContent = 'Not Connected';
+                statusEl.className = 'api-status disconnected';
+            }
+        }
+
+        async function loadStats(apiUrl) {
+            try {
+                const response = await fetch(apiUrl + '/animals');
+                const animals = await response.json();
+                document.getElementById('statAnimals').textContent = animals.length;
+            } catch (e) {
+                console.log('Could not load stats');
+            }
+        }
+
+        // Render Animals
+        function renderAnimals() {
+            const grid = document.getElementById('animalGrid');
+            grid.innerHTML = animals.map(animal => `
+                <div class="animal-card" onclick="editAnimal(${animal.id})">
+                    <span class="animal-emoji">${animal.emoji}</span>
+                    <div class="animal-info">
+                        <div class="animal-name">${animal.name}</div>
+                        <div class="animal-status">${animal.status || 'No status'}</div>
+                    </div>
+                    <span class="animal-edit">✏️</span>
+                </div>
+            `).join('');
+        }
+
+        // Edit Animal
+        function editAnimal(id) {
+            const animal = animals.find(a => a.id === id);
+            if (!animal) return;
+
+            document.getElementById('editId').value = id;
+            document.getElementById('editName').value = animal.name;
+            document.getElementById('editEmoji').value = animal.emoji;
+            document.getElementById('editStatus').value = animal.status || '';
+            document.getElementById('editHabitat').value = animal.habitat || '';
+            document.getElementById('editFunFact').value = animal.funFact || '';
+            document.getElementById('modalTitle').textContent = `Edit ${animal.emoji} ${animal.name}`;
+
+            document.getElementById('editModal').classList.add('active');
+        }
+
+        function closeModal() {
+            document.getElementById('editModal').classList.remove('active');
+        }
+
+        // Save Animal
+        document.getElementById('editForm').addEventListener('submit', (e) => {
+            e.preventDefault();
+            
+            const id = parseInt(document.getElementById('editId').value);
+            const index = animals.findIndex(a => a.id === id);
+            
+            if (index !== -1) {
+                animals[index] = {
+                    ...animals[index],
+                    name: document.getElementById('editName').value,
+                    emoji: document.getElementById('editEmoji').value,
+                    status: document.getElementById('editStatus').value,
+                    habitat: document.getElementById('editHabitat').value,
+                    funFact: document.getElementById('editFunFact').value,
+                };
+                
+                localStorage.setItem('adminAnimals', JSON.stringify(animals));
+                renderAnimals();
+                closeModal();
+                
+                alert('Animal updated successfully!');
+            }
+        });
+
+        // Close modal on outside click
+        document.getElementById('editModal').addEventListener('click', (e) => {
+            if (e.target.id === 'editModal') {
+                closeModal();
+            }
+        });
+    </script>
+</body>
+</html>

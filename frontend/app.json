@@ -5,25 +5,36 @@
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
-    "userInterfaceStyle": "dark",
+    "userInterfaceStyle": "light",
     "splash": {
       "image": "./assets/splash.png",
       "resizeMode": "contain",
-      "backgroundColor": "#0D1B2A"
+      "backgroundColor": "#F0F4F1"
     },
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.endura.study"
+      "bundleIdentifier": "com.endura.study",
+      "buildNumber": "1",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
     },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#0D1B2A"
+        "backgroundColor": "#F0F4F1"
       },
-      "package": "com.endura.study"
+      "package": "com.endura.study",
+      "versionCode": 1
     },
     "web": {
       "favicon": "./assets/favicon.png"
+    },
+    "owner": "phaedrus75",
+    "extra": {
+      "eas": {
+        "projectId": "5fd638be-4053-4859-b3f4-b4b333d42c66"
+      }
     }
   }
 }
