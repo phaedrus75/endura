@@ -130,10 +130,26 @@ def create_study_session(db: Session, user_id: int, duration_minutes: int, task_
     if user.current_streak > user.longest_streak:
         user.longest_streak = user.current_streak
     
-    # Add coins to current egg
-    egg = db.query(models.Egg).filter(models.Egg.user_id == user_id).first()
-    if egg:
-        egg.coins_deposited += coins
+    # AUTO-HATCH: Every completed session hatches a random animal!
+    # Get animals the user doesn't have yet
+    user_animal_ids = db.query(models.UserAnimal.animal_id).filter(
+        models.UserAnimal.user_id == user_id
+    ).all()
+    user_animal_ids = [a[0] for a in user_animal_ids]
+    
+    # Find available animals
+    available_animals = db.query(models.Animal).filter(
+        ~models.Animal.id.in_(user_animal_ids) if user_animal_ids else True
+    ).all()
+    
+    if available_animals:
+        import random
+        chosen_animal = random.choice(available_animals)
+        user_animal = models.UserAnimal(
+            user_id=user_id,
+            animal_id=chosen_animal.id
+        )
+        db.add(user_animal)
     
     db.commit()
     db.refresh(session)

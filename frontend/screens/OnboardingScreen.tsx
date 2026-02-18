@@ -15,6 +15,7 @@ import LottieView from 'lottie-react-native';
 import { colors, shadows, spacing, borderRadius } from '../theme/colors';
 import { useAuth } from '../contexts/AuthContext';
 import * as SecureStore from 'expo-secure-store';
+import { API_URL } from '../services/api';
 
 const { width } = Dimensions.get('window');
 
@@ -80,7 +81,7 @@ export default function OnboardingScreen() {
     try {
       const token = await SecureStore.getItemAsync('authToken');
       const response = await fetch(
-        `https://endura-production.up.railway.app/user/username?username=${encodeURIComponent(username.trim())}`,
+        `${API_URL}/user/username?username=${encodeURIComponent(username.trim())}`,
         {
           method: 'POST',
           headers: {

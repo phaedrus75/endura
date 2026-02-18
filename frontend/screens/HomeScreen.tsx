@@ -26,44 +26,103 @@ import { animalsAPI, tasksAPI, statsAPI, Egg, Task, UserStats, UserAnimal } from
 
 const { width, height } = Dimensions.get('window');
 
-// Grass Background Component
+// Beautiful Grass Meadow with flowers
 const GrassBackground = () => (
   <View style={styles.grassContainer}>
-    <Svg width={width} height={180} viewBox={`0 0 ${width} 180`} style={styles.grassSvg}>
+    <Svg width={width} height={130} viewBox={`0 0 ${width} 130`} style={styles.grassSvg}>
       <Defs>
-        <LinearGradient id="hillGrad1" x1="0%" y1="0%" x2="0%" y2="100%">
-          <Stop offset="0%" stopColor={colors.hills} />
-          <Stop offset="100%" stopColor={colors.grassLight} />
+        <LinearGradient id="hillBack" x1="0%" y1="0%" x2="0%" y2="100%">
+          <Stop offset="0%" stopColor="#8FD4A0" />
+          <Stop offset="100%" stopColor="#7DC98E" />
         </LinearGradient>
-        <LinearGradient id="hillGrad2" x1="0%" y1="0%" x2="0%" y2="100%">
-          <Stop offset="0%" stopColor={colors.grass} />
-          <Stop offset="100%" stopColor={colors.grassDark} />
+        <LinearGradient id="hillMid" x1="0%" y1="0%" x2="0%" y2="100%">
+          <Stop offset="0%" stopColor="#6BBF7B" />
+          <Stop offset="100%" stopColor="#5AB56C" />
+        </LinearGradient>
+        <LinearGradient id="hillFront" x1="0%" y1="0%" x2="0%" y2="100%">
+          <Stop offset="0%" stopColor="#4DAA5F" />
+          <Stop offset="100%" stopColor="#3E9B50" />
         </LinearGradient>
       </Defs>
-      {/* Back hills */}
-      <Ellipse cx={width * 0.2} cy={200} rx={width * 0.5} ry={120} fill="url(#hillGrad1)" />
-      <Ellipse cx={width * 0.8} cy={210} rx={width * 0.5} ry={130} fill="url(#hillGrad1)" />
-      {/* Front grass */}
-      <Ellipse cx={width * 0.5} cy={220} rx={width * 0.9} ry={140} fill="url(#hillGrad2)" />
+      {/* Soft rolling hills */}
+      <Ellipse cx={width * 0.15} cy={150} rx={width * 0.5} ry={95} fill="url(#hillBack)" />
+      <Ellipse cx={width * 0.85} cy={145} rx={width * 0.55} ry={90} fill="url(#hillBack)" />
+      <Ellipse cx={width * 0.5} cy={155} rx={width * 0.8} ry={100} fill="url(#hillMid)" />
+      <Ellipse cx={width * 0.5} cy={165} rx={width * 1.1} ry={110} fill="url(#hillFront)" />
+      
+      {/* Daisy flower - left */}
+      <Circle cx={width * 0.08} cy={68} r={5} fill="#FFF" />
+      <Circle cx={width * 0.08 - 4} cy={68} r={4} fill="#FFF" />
+      <Circle cx={width * 0.08 + 4} cy={68} r={4} fill="#FFF" />
+      <Circle cx={width * 0.08} cy={64} r={4} fill="#FFF" />
+      <Circle cx={width * 0.08} cy={72} r={4} fill="#FFF" />
+      <Circle cx={width * 0.08 - 3} cy={65} r={3} fill="#FFF" />
+      <Circle cx={width * 0.08 + 3} cy={65} r={3} fill="#FFF" />
+      <Circle cx={width * 0.08} cy={68} r={3} fill="#FFD93D" />
+      <Path d={`M${width * 0.08},75 Q${width * 0.08 + 2},85 ${width * 0.08},95`} stroke="#2D6A4F" strokeWidth={2} fill="none" />
+      <Ellipse cx={width * 0.08 + 4} cy={83} rx={5} ry={2} fill="#40916C" />
+      
+      {/* Sunflower - right */}
+      <Circle cx={width * 0.92} cy={62} r={8} fill="#FFD93D" />
+      <Circle cx={width * 0.92 - 7} cy={62} r={5} fill="#FFC300" />
+      <Circle cx={width * 0.92 + 7} cy={62} r={5} fill="#FFC300" />
+      <Circle cx={width * 0.92} cy={55} r={5} fill="#FFC300" />
+      <Circle cx={width * 0.92} cy={69} r={5} fill="#FFC300" />
+      <Circle cx={width * 0.92 - 5} cy={57} r={4} fill="#FFB347" />
+      <Circle cx={width * 0.92 + 5} cy={57} r={4} fill="#FFB347" />
+      <Circle cx={width * 0.92 - 5} cy={67} r={4} fill="#FFB347" />
+      <Circle cx={width * 0.92 + 5} cy={67} r={4} fill="#FFB347" />
+      <Circle cx={width * 0.92} cy={62} r={5} fill="#6B4423" />
+      <Path d={`M${width * 0.92},70 Q${width * 0.92 - 3},85 ${width * 0.92},100`} stroke="#1B4332" strokeWidth={3} fill="none" />
+      <Ellipse cx={width * 0.92 - 7} cy={82} rx={6} ry={2.5} fill="#52B788" />
+      <Ellipse cx={width * 0.92 + 5} cy={90} rx={5} ry={2} fill="#52B788" />
+      
+      {/* Tulip - purple left */}
+      <Ellipse cx={width * 0.18} cy={75} rx={5} ry={9} fill="#9D4EDD" />
+      <Ellipse cx={width * 0.18 - 4} cy={78} rx={4} ry={7} fill="#C77DFF" />
+      <Ellipse cx={width * 0.18 + 4} cy={78} rx={4} ry={7} fill="#C77DFF" />
+      <Ellipse cx={width * 0.18} cy={72} rx={3} ry={5} fill="#E0AAFF" />
+      <Path d={`M${width * 0.18},84 L${width * 0.18},100`} stroke="#1B4332" strokeWidth={2.5} />
+      <Ellipse cx={width * 0.18 + 5} cy={92} rx={4} ry={1.5} fill="#40916C" />
+      
+      {/* Rose - pink right */}
+      <Circle cx={width * 0.82} cy={72} r={6} fill="#FF6B9D" />
+      <Circle cx={width * 0.82 - 4} cy={74} r={4} fill="#FF8FAB" />
+      <Circle cx={width * 0.82 + 4} cy={74} r={4} fill="#FF8FAB" />
+      <Circle cx={width * 0.82} cy={69} r={4} fill="#FFB3C6" />
+      <Circle cx={width * 0.82} cy={72} r={2.5} fill="#FFCCD5" />
+      <Path d={`M${width * 0.82},78 Q${width * 0.82 + 3},88 ${width * 0.82},98`} stroke="#2D6A4F" strokeWidth={2.5} fill="none" />
+      <Ellipse cx={width * 0.82 - 5} cy={88} rx={5} ry={2} fill="#52B788" />
+      
+      {/* Small wildflowers */}
+      <Circle cx={width * 0.32} cy={88} r={4} fill="#A8DADC" />
+      <Circle cx={width * 0.32} cy={88} r={2} fill="#FFE66D" />
+      <Path d={`M${width * 0.32},92 L${width * 0.32},102`} stroke="#40916C" strokeWidth={1.5} />
+      
+      <Circle cx={width * 0.68} cy={85} r={4} fill="#F4ACB7" />
+      <Circle cx={width * 0.68} cy={85} r={2} fill="#FFE5D9" />
+      <Path d={`M${width * 0.68},89 L${width * 0.68},100`} stroke="#52B788" strokeWidth={1.5} />
+      
+      <Circle cx={width * 0.45} cy={92} r={3} fill="#B8E0D2" />
+      <Circle cx={width * 0.45} cy={92} r={1.5} fill="#FFFACD" />
+      <Path d={`M${width * 0.45},95 L${width * 0.45},104`} stroke="#2D6A4F" strokeWidth={1.5} />
+      
+      <Circle cx={width * 0.55} cy={90} r={3} fill="#D8B4FE" />
+      <Circle cx={width * 0.55} cy={90} r={1.5} fill="#FEF9C3" />
+      <Path d={`M${width * 0.55},93 L${width * 0.55},103`} stroke="#40916C" strokeWidth={1.5} />
     </Svg>
   </View>
 );
 
-// Egg Visual Component with Lottie Animation
-const EggVisual = ({ progress }: { progress: number }) => (
+// Egg Visual Component with Lottie Animation (white egg)
+const EggVisual = () => (
   <View style={styles.eggWrapper}>
     <LottieView
       source={require('../assets/egg-animation.json')}
       autoPlay
       loop
-      style={{ width: 240, height: 240 }}
+      style={{ width: 280, height: 280 }}
     />
-    {/* Progress overlay */}
-    <View style={styles.progressCircleContainer}>
-      <View style={[styles.progressCircle, { borderColor: colors.primary }]}>
-        <Text style={styles.progressPercent}>{Math.round(progress)}%</Text>
-      </View>
-    </View>
   </View>
 );
 
@@ -254,13 +313,9 @@ export default function HomeScreen() {
         showsVerticalScrollIndicator={false}
       >
         {/* Header */}
-        <View style={styles.header}>
-          <TouchableOpacity style={styles.menuButton}>
-            <Text style={styles.menuIcon}>☰</Text>
-          </TouchableOpacity>
-          <View style={styles.logoContainer}>
-            <Text style={styles.logoText}>ℯ</Text>
-          </View>
+        <View style={styles.headerSection}>
+          <Text style={styles.greeting}>Hello, {user?.username || 'Friend'}! 👋</Text>
+          <Text style={styles.title}>Home</Text>
         </View>
 
         {/* User Stats Pills */}
@@ -285,24 +340,20 @@ export default function HomeScreen() {
         <View style={styles.eggSection}>
           <GrassBackground />
           <View style={styles.eggContent}>
-            <EggVisual progress={egg?.progress_percent || 0} />
-            
-            <TouchableOpacity
-              style={[
-                styles.hatchButton,
-                egg?.progress_percent && egg.progress_percent >= 100 && styles.hatchButtonReady,
-              ]}
-              onPress={egg?.progress_percent && egg.progress_percent >= 100 ? handleHatch : undefined}
-              activeOpacity={egg?.progress_percent && egg.progress_percent >= 100 ? 0.8 : 1}
-            >
-              <Text style={styles.hatchButtonIcon}>🕐</Text>
-              <Text style={styles.hatchButtonText}>
-                {egg?.progress_percent && egg.progress_percent >= 100
-                  ? 'TAP TO HATCH!'
-                  : 'STUDY TO HATCH ME'}
-              </Text>
-            </TouchableOpacity>
+            <EggVisual />
           </View>
+        </View>
+        
+        {/* Study Button - Below the egg section */}
+        <View style={styles.buttonContainer}>
+          <TouchableOpacity
+            style={styles.hatchButton}
+            onPress={() => navigation.navigate('Timer')}
+            activeOpacity={0.8}
+          >
+            <Text style={styles.hatchButtonIcon}>🕐</Text>
+            <Text style={styles.hatchButtonText}>STUDY TO HATCH ME</Text>
+          </TouchableOpacity>
         </View>
 
         {/* Recent Hatches Section */}
@@ -583,7 +634,7 @@ export default function HomeScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: colors.background,
+    backgroundColor: '#F5FBF7',
   },
   scrollView: {
     flex: 1,
@@ -591,38 +642,27 @@ const styles = StyleSheet.create({
   scrollContent: {
     paddingBottom: 32,
   },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+  headerSection: {
     paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.md,
+    paddingTop: spacing.md,
+    paddingBottom: spacing.sm,
   },
-  menuButton: {
-    padding: spacing.sm,
+  greeting: {
+    fontSize: 14,
+    color: colors.textSecondary,
+    marginBottom: 4,
   },
-  menuIcon: {
-    fontSize: 24,
+  title: {
+    fontSize: 28,
+    fontWeight: '700',
     color: colors.textPrimary,
-  },
-  logoContainer: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: colors.primaryLight,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  logoText: {
-    fontSize: 20,
-    color: colors.primary,
-    fontWeight: '600',
   },
   statsPills: {
     flexDirection: 'row',
     paddingHorizontal: spacing.lg,
     gap: spacing.sm,
-    marginBottom: spacing.md,
+    marginTop: spacing.sm,
+    marginBottom: spacing.sm,
   },
   statPill: {
     flexDirection: 'row',
@@ -652,15 +692,16 @@ const styles = StyleSheet.create({
     color: colors.primary,
   },
   eggSection: {
-    height: 340,
+    height: 260,
     position: 'relative',
-    overflow: 'hidden',
+    overflow: 'visible',
   },
   grassContainer: {
     position: 'absolute',
     bottom: 0,
     left: 0,
     right: 0,
+    height: 130,
   },
   grassSvg: {
     position: 'absolute',
@@ -669,42 +710,32 @@ const styles = StyleSheet.create({
   eggContent: {
     flex: 1,
     alignItems: 'center',
-    justifyContent: 'center',
-    paddingTop: 20,
+    justifyContent: 'flex-end',
   },
   eggWrapper: {
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: spacing.lg,
+    marginBottom: -20,
+    zIndex: 10,
   },
-  progressCircleContainer: {
-    position: 'absolute',
-    bottom: 30,
+  buttonContainer: {
     alignItems: 'center',
-  },
-  progressCircle: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    borderWidth: 3,
-    backgroundColor: 'rgba(255,255,255,0.9)',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  progressPercent: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: colors.primary,
+    paddingVertical: spacing.md,
+    backgroundColor: '#F5FBF7',
   },
   hatchButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: colors.primary,
-    paddingHorizontal: spacing.xl,
-    paddingVertical: spacing.md,
-    borderRadius: borderRadius.full,
+    backgroundColor: '#4A9660',
+    paddingHorizontal: 28,
+    paddingVertical: 14,
+    borderRadius: 30,
     gap: spacing.sm,
-    ...shadows.medium,
+    shadowColor: '#2D5A3D',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 8,
   },
   hatchButtonReady: {
     backgroundColor: colors.success,

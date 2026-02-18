@@ -20,7 +20,7 @@ import LottieView from 'lottie-react-native';
 import Slider from '@react-native-community/slider';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { colors, shadows, spacing, borderRadius } from '../theme/colors';
-import { sessionsAPI, tasksAPI, Task } from '../services/api';
+import { sessionsAPI, tasksAPI, animalsAPI, Task } from '../services/api';
 import { useAuth } from '../contexts/AuthContext';
 
 // 21 Endangered Animals - unlocked in order
@@ -261,20 +261,44 @@ export default function TimerScreen() {
       await saveUnlockedAnimals(newUnlocked);
     }
 
-    const hatchedAnimal = ENDANGERED_ANIMALS.find(a => a.id === selectedAnimalId);
+    const localAnimal = ENDANGERED_ANIMALS.find(a => a.id === selectedAnimalId);
 
     try {
+      // Complete the session first (awards coins)
       const session = await sessionsAPI.completeSession(
         selectedMinutes,
         selectedTask?.id
       );
       
+      // Try to hatch an animal from the backend
+      let hatchedName = localAnimal?.name || 'Mystery Animal';
+      let hatchedEmoji = localAnimal?.emoji || '🐾';
+      
+      try {
+        const hatchResult = await animalsAPI.hatchEgg();
+        if (hatchResult.success && hatchResult.animal) {
+          hatchedName = hatchResult.animal.name;
+          // Map animal names to emojis
+          const emojiMap: Record<string, string> = {
+            'Red Panda': '🐼', 'Sea Turtle': '🐢', 'Penguin': '🐧', 'Koala': '🐨',
+            'Flamingo': '🦩', 'Giant Panda': '🐼', 'Snow Leopard': '🐆', 'Orangutan': '🦧',
+            'Elephant': '🐘', 'Polar Bear': '🐻‍❄️', 'Tiger': '🐅', 'Gorilla': '🦍',
+            'Blue Whale': '🐋', 'Cheetah': '🐆', 'Rhinoceros': '🦏', 'Amur Leopard': '🐆',
+            'Vaquita': '🐬', 'Sumatran Rhino': '🦏', 'Kakapo': '🦜', 'Axolotl': '🦎',
+          };
+          hatchedEmoji = emojiMap[hatchResult.animal.name] || '🐾';
+        }
+      } catch (hatchError) {
+        // If hatch fails (not enough coins), just show the local animal
+        console.log('Hatch not ready yet, showing local animal');
+      }
+      
       await refreshUser();
       
       // Show celebration modal with confetti
       setHatchedAnimalInfo({
-        emoji: hatchedAnimal?.emoji || '🐾',
-        name: hatchedAnimal?.name || 'Mystery Animal',
+        emoji: hatchedEmoji,
+        name: hatchedName,
         coins: session.coins_earned,
       });
       setShowConfetti(true);
