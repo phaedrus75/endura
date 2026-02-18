@@ -44,7 +44,7 @@ def health_check():
     return {
         "status": "healthy", 
         "app": "Endura API", 
-        "version": "1.0.4",
+        "version": "1.0.5",
         "database": db_type,
         "database_configured": has_db_url,
         "db_url_preview": db_url[:30] + "..." if len(db_url) > 30 else db_url if db_url else "not set",
@@ -63,16 +63,32 @@ def seed_animals():
     try:
         db = next(get_db())
         
-        # Only seed if no animals exist (first run or after manual reset)
-        existing_count = db.query(models.Animal).count()
-        if existing_count >= 21:
-            return  # Already have all animals
+        # Check existing animals
+        try:
+            existing_count = db.query(models.Animal).count()
+        except Exception as e:
+            print(f"[STARTUP] Database error checking animals: {e}")
+            # Tables might not exist yet - create them
+            models.Base.metadata.create_all(bind=engine)
+            existing_count = 0
         
-        # Clear and reseed if we have fewer than 21 (migration to new list)
-        if existing_count > 0 and existing_count < 21:
-            db.query(models.UserAnimal).delete()
-            db.query(models.Animal).delete()
-            db.commit()
+        # Skip if we already have 21 animals
+        if existing_count >= 21:
+            print(f"[STARTUP] Already have {existing_count} animals, skipping seed")
+            return
+        
+        print(f"[STARTUP] Found {existing_count} animals, seeding new list")
+        
+        # Clear and reseed (migration to new list)
+        if existing_count > 0:
+            try:
+                db.query(models.UserAnimal).delete()
+                db.query(models.Animal).delete()
+                db.commit()
+                print("[STARTUP] Cleared old animals")
+            except Exception as e:
+                print(f"[STARTUP] Error clearing: {e}")
+                db.rollback()
         
         # 21 Endangered animals to seed (in unlock order)
         animals = [
