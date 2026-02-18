@@ -41,6 +41,11 @@ export interface StudySession {
   completed_at: string | null;
 }
 
+export interface StudySessionWithHatch {
+  session: StudySession;
+  hatched_animal: Animal | null;
+}
+
 export interface Animal {
   id: number;
   name: string;
@@ -221,10 +226,10 @@ export const tasksAPI = {
 
 // Study Sessions API
 export const sessionsAPI = {
-  completeSession: (duration_minutes: number, task_id?: number) =>
-    apiFetch<StudySession>('/sessions', {
+  completeSession: (duration_minutes: number, task_id?: number, animal_name?: string) =>
+    apiFetch<StudySessionWithHatch>('/sessions', {
       method: 'POST',
-      body: JSON.stringify({ duration_minutes, task_id }),
+      body: JSON.stringify({ duration_minutes, task_id, animal_name }),
     }),
   
   getSessions: (limit = 50) =>

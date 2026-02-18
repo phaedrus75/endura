@@ -91,7 +91,7 @@ def delete_task(db: Session, task_id: int, user_id: int) -> bool:
 
 # ============ Study Session CRUD ============
 
-def create_study_session(db: Session, user_id: int, duration_minutes: int, task_id: int = None) -> models.StudySession:
+def create_study_session(db: Session, user_id: int, duration_minutes: int, task_id: int = None, animal_name: str = None) -> tuple[models.StudySession, Optional[models.Animal]]:
     # Calculate coins earned (1 coin per minute, bonus for longer sessions)
     coins = duration_minutes
     if duration_minutes >= 25:
@@ -130,30 +130,41 @@ def create_study_session(db: Session, user_id: int, duration_minutes: int, task_
     if user.current_streak > user.longest_streak:
         user.longest_streak = user.current_streak
     
-    # AUTO-HATCH: Every completed session hatches a random animal!
-    # Get animals the user doesn't have yet
-    user_animal_ids = db.query(models.UserAnimal.animal_id).filter(
-        models.UserAnimal.user_id == user_id
-    ).all()
-    user_animal_ids = [a[0] for a in user_animal_ids]
-    
-    # Find available animals
-    available_animals = db.query(models.Animal).filter(
-        ~models.Animal.id.in_(user_animal_ids) if user_animal_ids else True
-    ).all()
-    
-    if available_animals:
-        import random
-        chosen_animal = random.choice(available_animals)
-        user_animal = models.UserAnimal(
-            user_id=user_id,
-            animal_id=chosen_animal.id
-        )
-        db.add(user_animal)
+    # AUTO-HATCH: Hatch the specific animal selected by the user
+    hatched_animal = None
+    if animal_name:
+        # Find or create the animal in the database
+        animal = db.query(models.Animal).filter(models.Animal.name == animal_name).first()
+        if not animal:
+            # Create the animal if it doesn't exist
+            animal = models.Animal(
+                name=animal_name,
+                species=f"{animal_name} species",
+                rarity="common",
+                conservation_status="Endangered",
+                coins_to_hatch=100,
+                description=f"A beautiful {animal_name}"
+            )
+            db.add(animal)
+            db.flush()  # Get the ID
+        
+        # Check if user already has this animal
+        existing = db.query(models.UserAnimal).filter(
+            models.UserAnimal.user_id == user_id,
+            models.UserAnimal.animal_id == animal.id
+        ).first()
+        
+        if not existing:
+            user_animal = models.UserAnimal(
+                user_id=user_id,
+                animal_id=animal.id
+            )
+            db.add(user_animal)
+            hatched_animal = animal
     
     db.commit()
     db.refresh(session)
-    return session
+    return session, hatched_animal
 
 
 def get_user_sessions(db: Session, user_id: int, limit: int = 50) -> List[models.StudySession]:

@@ -75,6 +75,7 @@ class TaskResponse(BaseModel):
 class StudySessionCreate(BaseModel):
     task_id: Optional[int] = None
     duration_minutes: int
+    animal_name: Optional[str] = None  # Name of the animal to hatch
 
 
 class StudySessionResponse(BaseModel):
@@ -87,6 +88,11 @@ class StudySessionResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class StudySessionWithHatchResponse(BaseModel):
+    session: StudySessionResponse
+    hatched_animal: Optional[AnimalResponse] = None
 
 
 # ============ Animal Schemas ============

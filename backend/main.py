@@ -222,13 +222,23 @@ def delete_task(
 
 # ============ Study Session Endpoints ============
 
-@app.post("/sessions", response_model=schemas.StudySessionResponse)
+@app.post("/sessions", response_model=schemas.StudySessionWithHatchResponse)
 def complete_study_session(
     session: schemas.StudySessionCreate,
     current_user: models.User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    return crud.create_study_session(db, current_user.id, session.duration_minutes, session.task_id)
+    study_session, hatched_animal = crud.create_study_session(
+        db, 
+        current_user.id, 
+        session.duration_minutes, 
+        session.task_id,
+        session.animal_name
+    )
+    return {
+        "session": study_session,
+        "hatched_animal": hatched_animal
+    }
 
 
 @app.get("/sessions", response_model=List[schemas.StudySessionResponse])

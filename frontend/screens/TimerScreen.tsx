@@ -255,7 +255,7 @@ export default function TimerScreen() {
     setIsRunning(false);
     Vibration.vibrate([0, 500, 200, 500]);
 
-    // Unlock the selected animal
+    // Unlock the selected animal locally
     if (selectedAnimalId && !unlockedAnimals.includes(selectedAnimalId)) {
       const newUnlocked = [...unlockedAnimals, selectedAnimalId];
       await saveUnlockedAnimals(newUnlocked);
@@ -264,34 +264,16 @@ export default function TimerScreen() {
     const localAnimal = ENDANGERED_ANIMALS.find(a => a.id === selectedAnimalId);
 
     try {
-      // Complete the session first (awards coins)
-      const session = await sessionsAPI.completeSession(
+      // Complete the session AND hatch the selected animal in one call
+      const result = await sessionsAPI.completeSession(
         selectedMinutes,
-        selectedTask?.id
+        selectedTask?.id,
+        localAnimal?.name  // Send the animal name to hatch
       );
       
-      // Try to hatch an animal from the backend
-      let hatchedName = localAnimal?.name || 'Mystery Animal';
+      // Use the hatched animal from the response, or fall back to local
+      let hatchedName = result.hatched_animal?.name || localAnimal?.name || 'Mystery Animal';
       let hatchedEmoji = localAnimal?.emoji || '🐾';
-      
-      try {
-        const hatchResult = await animalsAPI.hatchEgg();
-        if (hatchResult.success && hatchResult.animal) {
-          hatchedName = hatchResult.animal.name;
-          // Map animal names to emojis
-          const emojiMap: Record<string, string> = {
-            'Red Panda': '🐼', 'Sea Turtle': '🐢', 'Penguin': '🐧', 'Koala': '🐨',
-            'Flamingo': '🦩', 'Giant Panda': '🐼', 'Snow Leopard': '🐆', 'Orangutan': '🦧',
-            'Elephant': '🐘', 'Polar Bear': '🐻‍❄️', 'Tiger': '🐅', 'Gorilla': '🦍',
-            'Blue Whale': '🐋', 'Cheetah': '🐆', 'Rhinoceros': '🦏', 'Amur Leopard': '🐆',
-            'Vaquita': '🐬', 'Sumatran Rhino': '🦏', 'Kakapo': '🦜', 'Axolotl': '🦎',
-          };
-          hatchedEmoji = emojiMap[hatchResult.animal.name] || '🐾';
-        }
-      } catch (hatchError) {
-        // If hatch fails (not enough coins), just show the local animal
-        console.log('Hatch not ready yet, showing local animal');
-      }
       
       await refreshUser();
       
@@ -299,7 +281,7 @@ export default function TimerScreen() {
       setHatchedAnimalInfo({
         emoji: hatchedEmoji,
         name: hatchedName,
-        coins: session.coins_earned,
+        coins: result.session.coins_earned,
       });
       setShowConfetti(true);
       setShowCelebrationModal(true);
