@@ -584,10 +584,9 @@ export default function TimerScreen() {
               <View style={styles.animalGridInner}>
                 {ENDANGERED_ANIMALS.map((animal, index) => {
                   const isUnlocked = unlockedAnimals.includes(animal.id);
-                  const nextToUnlock = unlockedAnimals.length + 1;
-                  const isNextAvailable = animal.id === nextToUnlock;
                   const isSelected = selectedAnimalId === animal.id;
-                  const canSelect = isNextAvailable && !isUnlocked;
+                  // Allow selecting ANY animal (no sequential restriction)
+                  const canSelect = true;
 
                   return (
                     <TouchableOpacity
@@ -595,38 +594,24 @@ export default function TimerScreen() {
                       style={[
                         styles.animalSlot,
                         isUnlocked && styles.animalSlotUnlocked,
-                        isNextAvailable && !isUnlocked && styles.animalSlotAvailable,
                         isSelected && styles.animalSlotSelected,
-                        !isUnlocked && !isNextAvailable && styles.animalSlotLocked,
                       ]}
                       onPress={() => {
-                        if (canSelect) {
-                          setSelectedAnimalId(animal.id);
-                        } else if (isUnlocked) {
-                          Alert.alert(
-                            `${animal.emoji} ${animal.name}`,
-                            `Status: ${animal.status}\n\nYou've already hatched this animal!`
-                          );
-                        } else {
-                          Alert.alert(
-                            '🔒 Locked',
-                            'Complete more study sessions to unlock this egg!'
-                          );
-                        }
+                        setSelectedAnimalId(animal.id);
                       }}
                       disabled={false}
                     >
                       {isUnlocked ? (
-                        <Text style={styles.animalEmoji}>{animal.emoji}</Text>
+                        // Show the animal emoji if already hatched
+                        <View style={styles.unlockedContainer}>
+                          <Text style={styles.animalEmoji}>{animal.emoji}</Text>
+                          <Text style={styles.checkMark}>✓</Text>
+                        </View>
                       ) : (
+                        // Show egg with sparkle for unhatched
                         <View style={styles.lockedContainer}>
                           <Text style={styles.eggEmoji}>🥚</Text>
-                          <Text style={[
-                            styles.lockEmoji,
-                            isNextAvailable && styles.lockEmojiAvailable,
-                          ]}>
-                            {isNextAvailable ? '✨' : '🔒'}
-                          </Text>
+                          <Text style={styles.lockEmojiAvailable}>✨</Text>
                         </View>
                       )}
                     </TouchableOpacity>
@@ -1046,6 +1031,17 @@ const styles = StyleSheet.create({
   lockedContainer: {
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  unlockedContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  checkMark: {
+    fontSize: 12,
+    color: '#4CAF50',
+    position: 'absolute',
+    bottom: 2,
+    right: 2,
   },
   eggEmoji: {
     fontSize: 36,

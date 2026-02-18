@@ -195,6 +195,16 @@ export default function CollectionScreen() {
       >
         <Text style={styles.title}>My Collection</Text>
 
+        {/* Endangered Animals Counter */}
+        <View style={styles.counterCard}>
+          <Text style={styles.counterEmoji}>🦁</Text>
+          <View style={styles.counterContent}>
+            <Text style={styles.counterNumber}>{collectedIds.size}</Text>
+            <Text style={styles.counterLabel}>Endangered Animals Collected</Text>
+          </View>
+          <Text style={styles.counterTotal}>/ {allAnimals.length}</Text>
+        </View>
+
         {/* Progress Card */}
         <View style={styles.progressCard}>
           <View style={styles.progressLeft}>
@@ -208,10 +218,10 @@ export default function CollectionScreen() {
           <View style={styles.progressRight}>
             <Text style={styles.progressLabel}>Collection Progress</Text>
             <Text style={styles.progressValue}>
-              {collectedIds.size} of {allAnimals.length}
+              {collectedIds.size} of {allAnimals.length} species
             </Text>
             <Text style={styles.progressHint}>
-              Keep studying to hatch more animals!
+              Keep studying to protect endangered species!
             </Text>
           </View>
         </View>
@@ -443,6 +453,37 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: colors.textPrimary,
     marginBottom: spacing.lg,
+  },
+  counterCard: {
+    backgroundColor: colors.primary,
+    borderRadius: borderRadius.xl,
+    padding: spacing.lg,
+    marginBottom: spacing.md,
+    flexDirection: 'row',
+    alignItems: 'center',
+    ...shadows.medium,
+  },
+  counterEmoji: {
+    fontSize: 40,
+    marginRight: spacing.md,
+  },
+  counterContent: {
+    flex: 1,
+  },
+  counterNumber: {
+    fontSize: 36,
+    fontWeight: '800',
+    color: '#FFFFFF',
+  },
+  counterLabel: {
+    fontSize: 14,
+    color: 'rgba(255,255,255,0.9)',
+    fontWeight: '500',
+  },
+  counterTotal: {
+    fontSize: 24,
+    fontWeight: '600',
+    color: 'rgba(255,255,255,0.7)',
   },
   progressCard: {
     backgroundColor: colors.surface,
