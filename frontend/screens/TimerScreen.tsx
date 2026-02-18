@@ -265,7 +265,7 @@ export default function TimerScreen() {
 
     try {
       // Complete the session AND hatch the selected animal in one call
-      const result = await sessionsAPI.completeSession(
+      const result: any = await sessionsAPI.completeSession(
         selectedMinutes,
         selectedTask?.id,
         localAnimal?.name  // Send the animal name to hatch
@@ -274,11 +274,20 @@ export default function TimerScreen() {
       console.log('Session result:', JSON.stringify(result, null, 2));
       
       // Use the hatched animal from the response, or fall back to local
-      let hatchedName = result.hatched_animal?.name || localAnimal?.name || 'Mystery Animal';
-      let hatchedEmoji = localAnimal?.emoji || '🐾';
+      const hatchedName = result.hatched_animal?.name || localAnimal?.name || 'Mystery Animal';
+      const hatchedEmoji = localAnimal?.emoji || '🐾';
       
       // Handle both new format (nested session) and old format (flat)
-      const coinsEarned = result.session?.coins_earned ?? (result as any).coins_earned ?? selectedMinutes;
+      // New format: { session: { coins_earned }, hatched_animal }
+      // Old format: { coins_earned, ... }
+      let coinsEarned = selectedMinutes; // Default fallback
+      if (result.session && result.session.coins_earned !== undefined) {
+        coinsEarned = result.session.coins_earned;
+      } else if (result.coins_earned !== undefined) {
+        coinsEarned = result.coins_earned;
+      }
+      
+      console.log('Coins earned:', coinsEarned);
       
       await refreshUser();
       
