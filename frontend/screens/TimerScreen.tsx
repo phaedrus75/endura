@@ -275,7 +275,12 @@ export default function TimerScreen() {
       
       // Use the hatched animal from the response, or fall back to local
       const hatchedName = result.hatched_animal?.name || localAnimal?.name || 'Mystery Animal';
-      const hatchedEmoji = localAnimal?.emoji || '🐾';
+      
+      // Look up emoji by the RETURNED name to ensure consistency with Collection/Home
+      const animalFromList = ENDANGERED_ANIMALS.find(a => a.name === hatchedName);
+      const hatchedEmoji = animalFromList?.emoji || localAnimal?.emoji || '🐾';
+      
+      console.log('Hatched animal:', hatchedName, hatchedEmoji);
       
       // Handle both new format (nested session) and old format (flat)
       // New format: { session: { coins_earned }, hatched_animal }

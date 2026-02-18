@@ -63,11 +63,16 @@ def seed_animals():
     try:
         db = next(get_db())
         
-        # Clear and reseed animals (new animal list v2)
-        # Delete old animals and user_animals to start fresh
-        db.query(models.UserAnimal).delete()
-        db.query(models.Animal).delete()
-        db.commit()
+        # Only seed if no animals exist (first run or after manual reset)
+        existing_count = db.query(models.Animal).count()
+        if existing_count >= 21:
+            return  # Already have all animals
+        
+        # Clear and reseed if we have fewer than 21 (migration to new list)
+        if existing_count > 0 and existing_count < 21:
+            db.query(models.UserAnimal).delete()
+            db.query(models.Animal).delete()
+            db.commit()
         
         # 21 Endangered animals to seed (in unlock order)
         animals = [

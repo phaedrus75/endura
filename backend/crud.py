@@ -159,7 +159,9 @@ def create_study_session(db: Session, user_id: int, duration_minutes: int, task_
                 animal_id=animal.id
             )
             db.add(user_animal)
-            hatched_animal = animal
+        
+        # Always return the animal so frontend can display it
+        hatched_animal = animal
     
     db.commit()
     db.refresh(session)
