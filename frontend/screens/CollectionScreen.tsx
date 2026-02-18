@@ -20,28 +20,29 @@ import { animalsAPI, UserAnimal, Animal } from '../services/api';
 const { width } = Dimensions.get('window');
 const CARD_WIDTH = (width - spacing.lg * 2 - spacing.md) / 2;
 
-// Emoji representations for animals
+// Emoji representations for animals (synced with backend - 21 animals)
 const animalEmojis: Record<string, string> = {
-  'Red Panda': '🦊',
-  'Sea Turtle': '🐢',
-  'Penguin': '🐧',
-  'Koala': '🐨',
-  'Flamingo': '🦩',
-  'Giant Panda': '🐼',
-  'Snow Leopard': '🐆',
-  'Orangutan': '🦧',
-  'Elephant': '🐘',
-  'Polar Bear': '🐻‍❄️',
-  'Tiger': '🐅',
-  'Gorilla': '🦍',
-  'Blue Whale': '🐋',
-  'Cheetah': '🐆',
-  'Rhinoceros': '🦏',
+  'Sunda Island Tiger': '🐅',
+  'Javan Rhino': '🦏',
   'Amur Leopard': '🐆',
-  'Vaquita': '🐬',
-  'Sumatran Rhino': '🦏',
-  'Kakapo': '🦜',
+  'Mountain Gorilla': '🦍',
+  'Tapanuli Orangutan': '🦧',
+  'Polar Bear': '🐻‍❄️',
+  'African Forest Elephant': '🐘',
+  'Hawksbill Turtle': '🐢',
+  'Calamian Deer': '🦌',
   'Axolotl': '🦎',
+  'Red Wolf': '🐺',
+  'Monarch Butterfly': '🦋',
+  'Red Panda': '🐼',
+  'Panda': '🐼',
+  'Mexican Bobcat': '🐱',
+  'Chinchilla': '🐭',
+  'Otter': '🦦',
+  'Koala': '🐨',
+  'Langur Monkey': '🐒',
+  'Pacific Pocket Mouse': '🐁',
+  'Wallaby': '🦘',
 };
 
 const rarityColors: Record<string, string> = {

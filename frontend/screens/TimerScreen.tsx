@@ -23,29 +23,29 @@ import { colors, shadows, spacing, borderRadius } from '../theme/colors';
 import { sessionsAPI, tasksAPI, animalsAPI, Task } from '../services/api';
 import { useAuth } from '../contexts/AuthContext';
 
-// 21 Endangered Animals - unlocked in order
+// 21 Endangered Animals - unlocked in order (synced with backend)
 const ENDANGERED_ANIMALS = [
-  { id: 1, name: 'African Elephant', emoji: '🐘', status: 'Vulnerable' },
-  { id: 2, name: 'Snow Leopard', emoji: '🐆', status: 'Vulnerable' },
-  { id: 3, name: 'Giant Panda', emoji: '🐼', status: 'Vulnerable' },
-  { id: 4, name: 'Bengal Tiger', emoji: '🐅', status: 'Endangered' },
-  { id: 5, name: 'Blue Whale', emoji: '🐋', status: 'Endangered' },
-  { id: 6, name: 'Gorilla', emoji: '🦍', status: 'Critically Endangered' },
-  { id: 7, name: 'Orangutan', emoji: '🦧', status: 'Critically Endangered' },
-  { id: 8, name: 'Sea Turtle', emoji: '🐢', status: 'Endangered' },
-  { id: 9, name: 'Polar Bear', emoji: '🐻‍❄️', status: 'Vulnerable' },
-  { id: 10, name: 'Koala', emoji: '🐨', status: 'Vulnerable' },
-  { id: 11, name: 'Red Panda', emoji: '🦊', status: 'Endangered' },
-  { id: 12, name: 'Rhino', emoji: '🦏', status: 'Critically Endangered' },
-  { id: 13, name: 'Hippopotamus', emoji: '🦛', status: 'Vulnerable' },
-  { id: 14, name: 'Cheetah', emoji: '🐆', status: 'Vulnerable' },
-  { id: 15, name: 'Penguin', emoji: '🐧', status: 'Endangered' },
-  { id: 16, name: 'Dolphin', emoji: '🐬', status: 'Vulnerable' },
-  { id: 17, name: 'Wolf', emoji: '🐺', status: 'Endangered' },
-  { id: 18, name: 'Eagle', emoji: '🦅', status: 'Vulnerable' },
-  { id: 19, name: 'Flamingo', emoji: '🦩', status: 'Vulnerable' },
-  { id: 20, name: 'Owl', emoji: '🦉', status: 'Vulnerable' },
-  { id: 21, name: 'Parrot', emoji: '🦜', status: 'Endangered' },
+  { id: 1, name: 'Sunda Island Tiger', emoji: '🐅', status: 'Critically Endangered' },
+  { id: 2, name: 'Javan Rhino', emoji: '🦏', status: 'Critically Endangered' },
+  { id: 3, name: 'Amur Leopard', emoji: '🐆', status: 'Critically Endangered' },
+  { id: 4, name: 'Mountain Gorilla', emoji: '🦍', status: 'Endangered' },
+  { id: 5, name: 'Tapanuli Orangutan', emoji: '🦧', status: 'Critically Endangered' },
+  { id: 6, name: 'Polar Bear', emoji: '🐻‍❄️', status: 'Vulnerable' },
+  { id: 7, name: 'African Forest Elephant', emoji: '🐘', status: 'Critically Endangered' },
+  { id: 8, name: 'Hawksbill Turtle', emoji: '🐢', status: 'Critically Endangered' },
+  { id: 9, name: 'Calamian Deer', emoji: '🦌', status: 'Endangered' },
+  { id: 10, name: 'Axolotl', emoji: '🦎', status: 'Critically Endangered' },
+  { id: 11, name: 'Red Wolf', emoji: '🐺', status: 'Critically Endangered' },
+  { id: 12, name: 'Monarch Butterfly', emoji: '🦋', status: 'Endangered' },
+  { id: 13, name: 'Red Panda', emoji: '🐼', status: 'Endangered' },
+  { id: 14, name: 'Panda', emoji: '🐼', status: 'Vulnerable' },
+  { id: 15, name: 'Mexican Bobcat', emoji: '🐱', status: 'Endangered' },
+  { id: 16, name: 'Chinchilla', emoji: '🐭', status: 'Endangered' },
+  { id: 17, name: 'Otter', emoji: '🦦', status: 'Endangered' },
+  { id: 18, name: 'Koala', emoji: '🐨', status: 'Vulnerable' },
+  { id: 19, name: 'Langur Monkey', emoji: '🐒', status: 'Critically Endangered' },
+  { id: 20, name: 'Pacific Pocket Mouse', emoji: '🐁', status: 'Endangered' },
+  { id: 21, name: 'Wallaby', emoji: '🦘', status: 'Near Threatened' },
 ];
 
 const { width } = Dimensions.get('window');

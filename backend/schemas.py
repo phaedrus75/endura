@@ -105,7 +105,6 @@ class AnimalResponse(BaseModel):
     conservation_status: Optional[str]
     description: Optional[str]
     image_url: Optional[str]
-    coins_to_hatch: int
 
     class Config:
         from_attributes = True

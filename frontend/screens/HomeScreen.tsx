@@ -126,15 +126,15 @@ const EggVisual = () => (
   </View>
 );
 
-// Emoji map for animals
+// Emoji map for animals (synced with backend)
 const animalEmojiMap: Record<string, string> = {
-  'Red Panda': '🐼', 'Sea Turtle': '🐢', 'Penguin': '🐧', 'Koala': '🐨',
-  'Flamingo': '🦩', 'Giant Panda': '🐼', 'Snow Leopard': '🐆', 'Orangutan': '🦧',
-  'Elephant': '🐘', 'Polar Bear': '🐻‍❄️', 'Tiger': '🐅', 'Gorilla': '🦍',
-  'Blue Whale': '🐋', 'Cheetah': '🐆', 'Rhinoceros': '🦏', 'Amur Leopard': '🐆',
-  'Vaquita': '🐬', 'Sumatran Rhino': '🦏', 'Kakapo': '🦜', 'Axolotl': '🦎',
-  'Lion': '🦁', 'Dolphin': '🐬', 'Owl': '🦉', 'Fox': '🦊', 'Wolf': '🐺',
-  'Rabbit': '🐰', 'Deer': '🦌', 'Butterfly': '🦋', 'Bee': '🐝', 'Frog': '🐸',
+  'Sunda Island Tiger': '🐅', 'Javan Rhino': '🦏', 'Amur Leopard': '🐆',
+  'Mountain Gorilla': '🦍', 'Tapanuli Orangutan': '🦧', 'Polar Bear': '🐻‍❄️',
+  'African Forest Elephant': '🐘', 'Hawksbill Turtle': '🐢', 'Calamian Deer': '🦌',
+  'Axolotl': '🦎', 'Red Wolf': '🐺', 'Monarch Butterfly': '🦋',
+  'Red Panda': '🐼', 'Panda': '🐼', 'Mexican Bobcat': '🐱',
+  'Chinchilla': '🐭', 'Otter': '🦦', 'Koala': '🐨',
+  'Langur Monkey': '🐒', 'Pacific Pocket Mouse': '🐁', 'Wallaby': '🦘',
 };
 
 // Recent Hatch Card

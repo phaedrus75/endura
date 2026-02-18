@@ -54,7 +54,6 @@ export interface Animal {
   conservation_status: string | null;
   description: string | null;
   image_url: string | null;
-  coins_to_hatch: number;
 }
 
 export interface UserAnimal {

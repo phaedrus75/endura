@@ -63,32 +63,35 @@ def seed_animals():
     try:
         db = next(get_db())
         
-        # Check if animals already exist
-        if db.query(models.Animal).count() > 0:
-            return
+        # Clear and reseed animals (new animal list v2)
+        # Delete old animals and user_animals to start fresh
+        db.query(models.UserAnimal).delete()
+        db.query(models.Animal).delete()
+        db.commit()
         
-        # Endangered animals to seed
+        # 21 Endangered animals to seed (in unlock order)
         animals = [
-            {"name": "Red Panda", "species": "Ailurus fulgens", "rarity": "common", "conservation_status": "Endangered", "coins_to_hatch": 100, "description": "A fluffy forest dweller from the Himalayas"},
-            {"name": "Sea Turtle", "species": "Chelonia mydas", "rarity": "common", "conservation_status": "Endangered", "coins_to_hatch": 100, "description": "Ancient ocean navigator"},
-            {"name": "Penguin", "species": "Spheniscus demersus", "rarity": "common", "conservation_status": "Endangered", "coins_to_hatch": 100, "description": "Tuxedo-wearing swimmer"},
-            {"name": "Koala", "species": "Phascolarctos cinereus", "rarity": "common", "conservation_status": "Vulnerable", "coins_to_hatch": 100, "description": "Eucalyptus-loving tree hugger"},
-            {"name": "Flamingo", "species": "Phoenicopterus roseus", "rarity": "common", "conservation_status": "Least Concern", "coins_to_hatch": 100, "description": "Pink and fabulous"},
-            {"name": "Giant Panda", "species": "Ailuropoda melanoleuca", "rarity": "rare", "conservation_status": "Vulnerable", "coins_to_hatch": 150, "description": "Bamboo-munching gentle giant"},
-            {"name": "Snow Leopard", "species": "Panthera uncia", "rarity": "rare", "conservation_status": "Vulnerable", "coins_to_hatch": 150, "description": "Ghost of the mountains"},
-            {"name": "Orangutan", "species": "Pongo pygmaeus", "rarity": "rare", "conservation_status": "Critically Endangered", "coins_to_hatch": 150, "description": "Wise forest dweller"},
-            {"name": "Elephant", "species": "Loxodonta africana", "rarity": "rare", "conservation_status": "Endangered", "coins_to_hatch": 150, "description": "Gentle giant with perfect memory"},
-            {"name": "Polar Bear", "species": "Ursus maritimus", "rarity": "rare", "conservation_status": "Vulnerable", "coins_to_hatch": 150, "description": "Arctic ice explorer"},
-            {"name": "Tiger", "species": "Panthera tigris", "rarity": "epic", "conservation_status": "Endangered", "coins_to_hatch": 200, "description": "Majestic striped hunter"},
-            {"name": "Gorilla", "species": "Gorilla beringei", "rarity": "epic", "conservation_status": "Critically Endangered", "coins_to_hatch": 200, "description": "Powerful and gentle"},
-            {"name": "Blue Whale", "species": "Balaenoptera musculus", "rarity": "epic", "conservation_status": "Endangered", "coins_to_hatch": 200, "description": "Largest creature on Earth"},
-            {"name": "Cheetah", "species": "Acinonyx jubatus", "rarity": "epic", "conservation_status": "Vulnerable", "coins_to_hatch": 200, "description": "Fastest land animal"},
-            {"name": "Rhinoceros", "species": "Diceros bicornis", "rarity": "epic", "conservation_status": "Critically Endangered", "coins_to_hatch": 200, "description": "Armored unicorn of Africa"},
-            {"name": "Amur Leopard", "species": "Panthera pardus orientalis", "rarity": "legendary", "conservation_status": "Critically Endangered", "coins_to_hatch": 300, "description": "Rarest big cat on Earth"},
-            {"name": "Vaquita", "species": "Phocoena sinus", "rarity": "legendary", "conservation_status": "Critically Endangered", "coins_to_hatch": 300, "description": "World's rarest marine mammal"},
-            {"name": "Sumatran Rhino", "species": "Dicerorhinus sumatrensis", "rarity": "legendary", "conservation_status": "Critically Endangered", "coins_to_hatch": 300, "description": "Ancient hairy rhinoceros"},
-            {"name": "Kakapo", "species": "Strigops habroptilus", "rarity": "legendary", "conservation_status": "Critically Endangered", "coins_to_hatch": 300, "description": "World's only flightless parrot"},
-            {"name": "Axolotl", "species": "Ambystoma mexicanum", "rarity": "legendary", "conservation_status": "Critically Endangered", "coins_to_hatch": 300, "description": "Smiling water monster"},
+            {"name": "Sunda Island Tiger", "species": "Panthera tigris sondaica", "rarity": "legendary", "conservation_status": "Critically Endangered", "description": "The smallest tiger subspecies, found only in Sumatra"},
+            {"name": "Javan Rhino", "species": "Rhinoceros sondaicus", "rarity": "legendary", "conservation_status": "Critically Endangered", "description": "One of the rarest large mammals on Earth"},
+            {"name": "Amur Leopard", "species": "Panthera pardus orientalis", "rarity": "legendary", "conservation_status": "Critically Endangered", "description": "Rarest big cat on Earth with fewer than 100 left"},
+            {"name": "Mountain Gorilla", "species": "Gorilla beringei beringei", "rarity": "legendary", "conservation_status": "Endangered", "description": "Gentle giant of the African mountains"},
+            {"name": "Tapanuli Orangutan", "species": "Pongo tapanuliensis", "rarity": "legendary", "conservation_status": "Critically Endangered", "description": "The rarest great ape species discovered in 2017"},
+            {"name": "Polar Bear", "species": "Ursus maritimus", "rarity": "epic", "conservation_status": "Vulnerable", "description": "Arctic ice explorer threatened by climate change"},
+            {"name": "African Forest Elephant", "species": "Loxodonta cyclotis", "rarity": "epic", "conservation_status": "Critically Endangered", "description": "Smaller forest-dwelling elephant of Central Africa"},
+            {"name": "Hawksbill Turtle", "species": "Eretmochelys imbricata", "rarity": "epic", "conservation_status": "Critically Endangered", "description": "Beautiful sea turtle with a distinctive beak"},
+            {"name": "Calamian Deer", "species": "Axis calamianensis", "rarity": "epic", "conservation_status": "Endangered", "description": "Endemic deer of the Calamian Islands in the Philippines"},
+            {"name": "Axolotl", "species": "Ambystoma mexicanum", "rarity": "epic", "conservation_status": "Critically Endangered", "description": "Smiling water monster that never grows up"},
+            {"name": "Red Wolf", "species": "Canis rufus", "rarity": "rare", "conservation_status": "Critically Endangered", "description": "America's most endangered wolf species"},
+            {"name": "Monarch Butterfly", "species": "Danaus plexippus", "rarity": "rare", "conservation_status": "Endangered", "description": "Famous for its incredible migration journey"},
+            {"name": "Red Panda", "species": "Ailurus fulgens", "rarity": "rare", "conservation_status": "Endangered", "description": "Fluffy forest dweller from the Himalayas"},
+            {"name": "Panda", "species": "Ailuropoda melanoleuca", "rarity": "rare", "conservation_status": "Vulnerable", "description": "Bamboo-munching gentle giant of China"},
+            {"name": "Mexican Bobcat", "species": "Lynx rufus escuinapae", "rarity": "rare", "conservation_status": "Endangered", "description": "Elusive wild cat of Mexican forests"},
+            {"name": "Chinchilla", "species": "Chinchilla lanigera", "rarity": "common", "conservation_status": "Endangered", "description": "Soft-furred rodent from the Andes mountains"},
+            {"name": "Otter", "species": "Lontra felina", "rarity": "common", "conservation_status": "Endangered", "description": "Playful marine otter of South America"},
+            {"name": "Koala", "species": "Phascolarctos cinereus", "rarity": "common", "conservation_status": "Vulnerable", "description": "Eucalyptus-loving tree hugger of Australia"},
+            {"name": "Langur Monkey", "species": "Trachypithecus poliocephalus", "rarity": "common", "conservation_status": "Critically Endangered", "description": "Golden-headed langur of Vietnam"},
+            {"name": "Pacific Pocket Mouse", "species": "Chaetodipus fallax fallax", "rarity": "common", "conservation_status": "Endangered", "description": "Tiny mouse once thought extinct"},
+            {"name": "Wallaby", "species": "Petrogale lateralis", "rarity": "common", "conservation_status": "Near Threatened", "description": "Small kangaroo relative from Australia"},
         ]
         
         for animal_data in animals:

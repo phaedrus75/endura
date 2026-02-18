@@ -74,7 +74,6 @@ class Animal(Base):
     conservation_status = Column(String, nullable=True)  # e.g., "Vulnerable"
     description = Column(Text, nullable=True)
     image_url = Column(String, nullable=True)
-    coins_to_hatch = Column(Integer, default=100)  # Base cost for this animal
 
 
 class UserAnimal(Base):

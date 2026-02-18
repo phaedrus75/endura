@@ -142,7 +142,6 @@ def create_study_session(db: Session, user_id: int, duration_minutes: int, task_
                 species=f"{animal_name} species",
                 rarity="common",
                 conservation_status="Endangered",
-                coins_to_hatch=100,
                 description=f"A beautiful {animal_name}"
             )
             db.add(animal)
