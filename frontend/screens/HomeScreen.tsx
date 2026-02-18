@@ -126,26 +126,47 @@ const EggVisual = () => (
   </View>
 );
 
+// Emoji map for animals
+const animalEmojiMap: Record<string, string> = {
+  'Red Panda': '🐼', 'Sea Turtle': '🐢', 'Penguin': '🐧', 'Koala': '🐨',
+  'Flamingo': '🦩', 'Giant Panda': '🐼', 'Snow Leopard': '🐆', 'Orangutan': '🦧',
+  'Elephant': '🐘', 'Polar Bear': '🐻‍❄️', 'Tiger': '🐅', 'Gorilla': '🦍',
+  'Blue Whale': '🐋', 'Cheetah': '🐆', 'Rhinoceros': '🦏', 'Amur Leopard': '🐆',
+  'Vaquita': '🐬', 'Sumatran Rhino': '🦏', 'Kakapo': '🦜', 'Axolotl': '🦎',
+  'Lion': '🦁', 'Dolphin': '🐬', 'Owl': '🦉', 'Fox': '🦊', 'Wolf': '🐺',
+  'Rabbit': '🐰', 'Deer': '🦌', 'Butterfly': '🦋', 'Bee': '🐝', 'Frog': '🐸',
+};
+
 // Recent Hatch Card
-const RecentHatchCard = ({ animal }: { animal?: UserAnimal }) => (
-  <View style={styles.recentHatchCard}>
-    {animal ? (
-      <Text style={styles.recentHatchEmoji}>🦁</Text>
-    ) : (
-      <View style={styles.recentHatchPlaceholder}>
-        <Svg width={32} height={32} viewBox="0 0 24 24">
-          <Path
-            d="M4 16L4 8L8 4L16 4L20 8L20 16L16 20L8 20L4 16Z"
-            stroke={colors.textMuted}
-            strokeWidth={1.5}
-            fill="none"
-          />
-          <Path d="M9 9L15 15M15 9L9 15" stroke={colors.textMuted} strokeWidth={1.5} />
-        </Svg>
-      </View>
-    )}
-  </View>
-);
+const RecentHatchCard = ({ animal }: { animal?: UserAnimal }) => {
+  const getAnimalEmoji = () => {
+    if (!animal?.animal?.name) return '🐾';
+    return animalEmojiMap[animal.animal.name] || '🐾';
+  };
+
+  const getAnimalName = () => {
+    if (!animal) return '';
+    return animal.nickname || animal.animal?.name || 'Animal';
+  };
+
+  return (
+    <View style={styles.recentHatchCard}>
+      {animal ? (
+        <View style={styles.recentHatchContent}>
+          <Text style={styles.recentHatchEmoji}>{getAnimalEmoji()}</Text>
+          <Text style={styles.recentHatchName} numberOfLines={1}>
+            {getAnimalName()}
+          </Text>
+        </View>
+      ) : (
+        <View style={styles.recentHatchPlaceholder}>
+          <Text style={styles.placeholderEmoji}>🥚</Text>
+          <Text style={styles.placeholderText}>Empty</Text>
+        </View>
+      )}
+    </View>
+  );
+};
 
 export default function HomeScreen() {
   const { user, refreshUser } = useAuth();
@@ -764,8 +785,8 @@ const styles = StyleSheet.create({
     gap: spacing.md,
   },
   recentHatchCard: {
-    width: 80,
-    height: 80,
+    width: 100,
+    height: 90,
     backgroundColor: colors.surface,
     borderRadius: borderRadius.lg,
     justifyContent: 'center',
@@ -773,12 +794,34 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.cardBorder,
     ...shadows.small,
+    paddingVertical: 8,
+  },
+  recentHatchContent: {
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   recentHatchEmoji: {
-    fontSize: 36,
+    fontSize: 32,
+    marginBottom: 4,
+  },
+  recentHatchName: {
+    fontSize: 11,
+    color: colors.textSecondary,
+    fontWeight: '500',
+    textAlign: 'center',
+    maxWidth: 80,
   },
   recentHatchPlaceholder: {
-    opacity: 0.4,
+    alignItems: 'center',
+    opacity: 0.5,
+  },
+  placeholderEmoji: {
+    fontSize: 28,
+    marginBottom: 4,
+  },
+  placeholderText: {
+    fontSize: 10,
+    color: colors.textMuted,
   },
   todoSection: {
     marginTop: spacing.xl,
