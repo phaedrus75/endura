@@ -271,9 +271,14 @@ export default function TimerScreen() {
         localAnimal?.name  // Send the animal name to hatch
       );
       
+      console.log('Session result:', JSON.stringify(result, null, 2));
+      
       // Use the hatched animal from the response, or fall back to local
       let hatchedName = result.hatched_animal?.name || localAnimal?.name || 'Mystery Animal';
       let hatchedEmoji = localAnimal?.emoji || '🐾';
+      
+      // Handle both new format (nested session) and old format (flat)
+      const coinsEarned = result.session?.coins_earned ?? (result as any).coins_earned ?? selectedMinutes;
       
       await refreshUser();
       
@@ -281,12 +286,13 @@ export default function TimerScreen() {
       setHatchedAnimalInfo({
         emoji: hatchedEmoji,
         name: hatchedName,
-        coins: result.session.coins_earned,
+        coins: coinsEarned,
       });
       setShowConfetti(true);
       setShowCelebrationModal(true);
     } catch (error: any) {
-      Alert.alert('Error', error.message);
+      console.error('Timer complete error:', error);
+      Alert.alert('Error', error.message || 'Something went wrong');
     }
   };
 
