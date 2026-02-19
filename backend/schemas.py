@@ -205,6 +205,86 @@ class LeaderboardEntry(BaseModel):
     animals_count: int
 
 
+# ============ Study Pact Schemas ============
+
+class PactCreate(BaseModel):
+    buddy_email: str
+    daily_minutes: int = 30
+    duration_days: int = 7
+    wager_amount: int = 0
+
+class PactDayResponse(BaseModel):
+    date: str
+    minutes_studied: int
+    completed: bool
+
+class PactResponse(BaseModel):
+    id: int
+    creator_username: Optional[str]
+    buddy_username: Optional[str]
+    creator_id: int
+    buddy_id: int
+    daily_minutes: int
+    duration_days: int
+    wager_amount: int
+    status: str
+    start_date: Optional[datetime]
+    end_date: Optional[datetime]
+    created_at: datetime
+    creator_progress: List[PactDayResponse] = []
+    buddy_progress: List[PactDayResponse] = []
+
+
+# ============ Study Group Schemas ============
+
+class GroupCreate(BaseModel):
+    name: str
+    goal_minutes: int = 500
+    goal_deadline: Optional[datetime] = None
+
+class GroupMemberResponse(BaseModel):
+    user_id: int
+    username: Optional[str]
+    role: str
+    minutes_contributed: int = 0
+
+class GroupMessageResponse(BaseModel):
+    id: int
+    user_id: int
+    username: Optional[str]
+    content: str
+    created_at: datetime
+
+class GroupResponse(BaseModel):
+    id: int
+    name: str
+    creator_id: int
+    goal_minutes: int
+    goal_deadline: Optional[datetime]
+    created_at: datetime
+    members: List[GroupMemberResponse] = []
+    total_minutes: int = 0
+    goal_met: bool = False
+
+class GroupMessageCreate(BaseModel):
+    content: str
+
+
+# ============ Activity Feed Schemas ============
+
+class ActivityEventResponse(BaseModel):
+    id: int
+    user_id: int
+    username: Optional[str]
+    event_type: str
+    description: str
+    created_at: datetime
+    reactions: List[dict] = []
+
+class ReactionCreate(BaseModel):
+    reaction: str
+
+
 # ============ Stats Schemas ============
 
 class UserStats(BaseModel):

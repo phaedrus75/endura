@@ -151,3 +151,109 @@ class Friendship(Base):
     
     user = relationship("User", foreign_keys=[user_id], back_populates="friendships")
     friend = relationship("User", foreign_keys=[friend_id])
+
+
+class StudyPact(Base):
+    """Study buddy pact between two users"""
+    __tablename__ = "study_pacts"
+
+    id = Column(Integer, primary_key=True, index=True)
+    creator_id = Column(Integer, ForeignKey("users.id"))
+    buddy_id = Column(Integer, ForeignKey("users.id"))
+    daily_minutes = Column(Integer, nullable=False)
+    duration_days = Column(Integer, nullable=False)
+    wager_amount = Column(Integer, default=0)
+    status = Column(String, default="pending")  # pending, active, completed, failed
+    start_date = Column(DateTime, nullable=True)
+    end_date = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    creator = relationship("User", foreign_keys=[creator_id])
+    buddy = relationship("User", foreign_keys=[buddy_id])
+
+
+class PactDay(Base):
+    """Daily progress for a study pact"""
+    __tablename__ = "pact_days"
+
+    id = Column(Integer, primary_key=True, index=True)
+    pact_id = Column(Integer, ForeignKey("study_pacts.id"))
+    user_id = Column(Integer, ForeignKey("users.id"))
+    date = Column(DateTime, nullable=False)
+    minutes_studied = Column(Integer, default=0)
+    completed = Column(Boolean, default=False)
+
+    pact = relationship("StudyPact")
+
+
+class StudyGroup(Base):
+    """Study group with shared goals"""
+    __tablename__ = "study_groups"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String, nullable=False)
+    creator_id = Column(Integer, ForeignKey("users.id"))
+    goal_minutes = Column(Integer, default=500)
+    goal_deadline = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    creator = relationship("User", foreign_keys=[creator_id])
+    members = relationship("GroupMember", back_populates="group")
+    messages = relationship("GroupMessage", back_populates="group", order_by="GroupMessage.created_at.desc()")
+
+
+class GroupMember(Base):
+    """Membership in a study group"""
+    __tablename__ = "group_members"
+
+    id = Column(Integer, primary_key=True, index=True)
+    group_id = Column(Integer, ForeignKey("study_groups.id"))
+    user_id = Column(Integer, ForeignKey("users.id"))
+    role = Column(String, default="member")  # admin, member
+    joined_at = Column(DateTime, default=datetime.utcnow)
+
+    group = relationship("StudyGroup", back_populates="members")
+    user = relationship("User")
+
+
+class GroupMessage(Base):
+    """Chat message in a study group"""
+    __tablename__ = "group_messages"
+
+    id = Column(Integer, primary_key=True, index=True)
+    group_id = Column(Integer, ForeignKey("study_groups.id"))
+    user_id = Column(Integer, ForeignKey("users.id"))
+    content = Column(Text, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    group = relationship("StudyGroup", back_populates="messages")
+    user = relationship("User")
+
+
+class ActivityEvent(Base):
+    """Activity feed events visible to friends"""
+    __tablename__ = "activity_events"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"))
+    event_type = Column(String, nullable=False)  # session_complete, animal_hatched, streak_milestone, badge_earned, pact_created, group_goal_met
+    description = Column(Text, nullable=False)
+    extra_data = Column(String, nullable=True)  # JSON string for metadata
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    user = relationship("User")
+    reactions = relationship("FeedReaction", back_populates="event")
+
+
+class FeedReaction(Base):
+    """Quick reaction on an activity feed event"""
+    __tablename__ = "feed_reactions"
+
+    id = Column(Integer, primary_key=True, index=True)
+    event_id = Column(Integer, ForeignKey("activity_events.id"))
+    user_id = Column(Integer, ForeignKey("users.id"))
+    reaction = Column(String, nullable=False)  # "nice", "keep_going", "fire", "wow"
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    event = relationship("ActivityEvent", back_populates="reactions")
+    user = relationship("User")

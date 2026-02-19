@@ -66,7 +66,7 @@ def health_check():
     return {
         "status": "healthy", 
         "app": "Endura API", 
-        "version": "1.0.14",
+        "version": "1.0.15",
         "database": db_type,
         "database_configured": has_db_url,
         "db_url_preview": db_url[:30] + "..." if len(db_url) > 30 else db_url if db_url else "not set",
@@ -286,6 +286,12 @@ def complete_study_session(
             session_hour=session_hour,
             session_minutes=session.duration_minutes
         )
+        try:
+            crud.create_session_event(db, current_user.id, session.duration_minutes,
+                                      hatched_animal.name if hatched_animal else None)
+            crud.record_pact_progress(db, current_user.id, session.duration_minutes)
+        except Exception:
+            pass
         return {
             "session": study_session,
             "hatched_animal": hatched_animal,
@@ -523,6 +529,120 @@ def check_badges(
     return {
         "new_badges": [crud.BADGE_MAP[bid] for bid in new_badges if bid in crud.BADGE_MAP]
     }
+
+
+# ============ Study Pact Endpoints ============
+
+@app.post("/pacts")
+def create_pact(
+    data: schemas.PactCreate,
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    pact, error = crud.create_pact(db, current_user.id, data.buddy_email,
+                                    data.daily_minutes, data.duration_days, data.wager_amount)
+    if error:
+        raise HTTPException(status_code=400, detail=error)
+    return {"id": pact.id, "status": pact.status}
+
+@app.post("/pacts/{pact_id}/accept")
+def accept_pact(
+    pact_id: int,
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    pact, error = crud.accept_pact(db, current_user.id, pact_id)
+    if error:
+        raise HTTPException(status_code=400, detail=error)
+    return {"id": pact.id, "status": pact.status}
+
+@app.get("/pacts", response_model=List[schemas.PactResponse])
+def get_pacts(
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    return crud.get_user_pacts(db, current_user.id)
+
+
+# ============ Study Group Endpoints ============
+
+@app.post("/groups")
+def create_group(
+    data: schemas.GroupCreate,
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    group = crud.create_group(db, current_user.id, data.name, data.goal_minutes, data.goal_deadline)
+    return {"id": group.id, "name": group.name}
+
+@app.post("/groups/{group_id}/join")
+def join_group(
+    group_id: int,
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    group, error = crud.join_group(db, current_user.id, group_id)
+    if error:
+        raise HTTPException(status_code=400, detail=error)
+    return {"message": "Joined group"}
+
+@app.post("/groups/{group_id}/leave")
+def leave_group(
+    group_id: int,
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    if not crud.leave_group(db, current_user.id, group_id):
+        raise HTTPException(status_code=404, detail="Not a member")
+    return {"message": "Left group"}
+
+@app.get("/groups", response_model=List[schemas.GroupResponse])
+def get_groups(
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    return crud.get_user_groups(db, current_user.id)
+
+@app.post("/groups/{group_id}/messages", response_model=schemas.GroupMessageResponse)
+def send_group_message(
+    group_id: int,
+    data: schemas.GroupMessageCreate,
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    result = crud.send_group_message(db, current_user.id, group_id, data.content)
+    if not result:
+        raise HTTPException(status_code=403, detail="Not a member of this group")
+    return result
+
+@app.get("/groups/{group_id}/messages", response_model=List[schemas.GroupMessageResponse])
+def get_group_messages(
+    group_id: int,
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    return crud.get_group_messages(db, group_id)
+
+
+# ============ Activity Feed Endpoints ============
+
+@app.get("/feed", response_model=List[schemas.ActivityEventResponse])
+def get_feed(
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    return crud.get_friend_feed(db, current_user.id)
+
+@app.post("/feed/{event_id}/react")
+def react_to_event(
+    event_id: int,
+    data: schemas.ReactionCreate,
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    if not crud.add_reaction(db, current_user.id, event_id, data.reaction):
+        raise HTTPException(status_code=404, detail="Event not found")
+    return {"message": "Reaction added"}
 
 
 # ============ Health Check ============

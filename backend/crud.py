@@ -446,6 +446,335 @@ def get_user_stats(db: Session, user_id: int) -> dict:
     }
 
 
+# ============ Study Pact CRUD ============
+
+def create_pact(db: Session, creator_id: int, buddy_email: str, daily_minutes: int, duration_days: int, wager_amount: int) -> tuple:
+    buddy = db.query(models.User).filter(models.User.email == buddy_email).first()
+    if not buddy:
+        return None, "User not found"
+    if buddy.id == creator_id:
+        return None, "Cannot create a pact with yourself"
+    friendship = db.query(models.Friendship).filter(
+        models.Friendship.status == "accepted",
+        ((models.Friendship.user_id == creator_id) & (models.Friendship.friend_id == buddy.id)) |
+        ((models.Friendship.user_id == buddy.id) & (models.Friendship.friend_id == creator_id))
+    ).first()
+    if not friendship:
+        return None, "You must be friends first"
+    if wager_amount > 0:
+        creator = db.query(models.User).filter(models.User.id == creator_id).first()
+        if creator.current_coins < wager_amount:
+            return None, "Not enough eco-credits for wager"
+
+    pact = models.StudyPact(
+        creator_id=creator_id, buddy_id=buddy.id,
+        daily_minutes=daily_minutes, duration_days=duration_days,
+        wager_amount=wager_amount, status="pending"
+    )
+    db.add(pact)
+    db.commit()
+    db.refresh(pact)
+    _create_event(db, creator_id, "pact_created",
+                  f"started a study pact with {buddy.username or buddy.email.split('@')[0]}")
+    return pact, None
+
+
+def accept_pact(db: Session, user_id: int, pact_id: int) -> tuple:
+    pact = db.query(models.StudyPact).filter(
+        models.StudyPact.id == pact_id,
+        models.StudyPact.buddy_id == user_id,
+        models.StudyPact.status == "pending"
+    ).first()
+    if not pact:
+        return None, "Pact not found or already accepted"
+    if pact.wager_amount > 0:
+        buddy = db.query(models.User).filter(models.User.id == user_id).first()
+        creator = db.query(models.User).filter(models.User.id == pact.creator_id).first()
+        if buddy.current_coins < pact.wager_amount:
+            return None, "Not enough eco-credits for wager"
+        buddy.current_coins -= pact.wager_amount
+        creator.current_coins -= pact.wager_amount
+
+    pact.status = "active"
+    pact.start_date = datetime.utcnow()
+    pact.end_date = datetime.utcnow() + timedelta(days=pact.duration_days)
+    db.commit()
+    return pact, None
+
+
+def get_user_pacts(db: Session, user_id: int) -> List[dict]:
+    pacts = db.query(models.StudyPact).filter(
+        (models.StudyPact.creator_id == user_id) | (models.StudyPact.buddy_id == user_id)
+    ).order_by(models.StudyPact.created_at.desc()).all()
+
+    results = []
+    for p in pacts:
+        creator = db.query(models.User).filter(models.User.id == p.creator_id).first()
+        buddy = db.query(models.User).filter(models.User.id == p.buddy_id).first()
+        creator_days = db.query(models.PactDay).filter(
+            models.PactDay.pact_id == p.id, models.PactDay.user_id == p.creator_id
+        ).all()
+        buddy_days = db.query(models.PactDay).filter(
+            models.PactDay.pact_id == p.id, models.PactDay.user_id == p.buddy_id
+        ).all()
+        results.append({
+            "id": p.id,
+            "creator_username": creator.username if creator else None,
+            "buddy_username": buddy.username if buddy else None,
+            "creator_id": p.creator_id, "buddy_id": p.buddy_id,
+            "daily_minutes": p.daily_minutes, "duration_days": p.duration_days,
+            "wager_amount": p.wager_amount, "status": p.status,
+            "start_date": p.start_date, "end_date": p.end_date,
+            "created_at": p.created_at,
+            "creator_progress": [{"date": d.date.isoformat(), "minutes_studied": d.minutes_studied, "completed": d.completed} for d in creator_days],
+            "buddy_progress": [{"date": d.date.isoformat(), "minutes_studied": d.minutes_studied, "completed": d.completed} for d in buddy_days],
+        })
+    return results
+
+
+def record_pact_progress(db: Session, user_id: int, session_minutes: int):
+    """Called after a study session to update any active pacts."""
+    today = datetime.utcnow().date()
+    active_pacts = db.query(models.StudyPact).filter(
+        models.StudyPact.status == "active",
+        (models.StudyPact.creator_id == user_id) | (models.StudyPact.buddy_id == user_id)
+    ).all()
+    for pact in active_pacts:
+        existing = db.query(models.PactDay).filter(
+            models.PactDay.pact_id == pact.id,
+            models.PactDay.user_id == user_id,
+            func.date(models.PactDay.date) == today
+        ).first()
+        if existing:
+            existing.minutes_studied += session_minutes
+            if existing.minutes_studied >= pact.daily_minutes:
+                existing.completed = True
+        else:
+            completed = session_minutes >= pact.daily_minutes
+            db.add(models.PactDay(
+                pact_id=pact.id, user_id=user_id,
+                date=datetime.utcnow(), minutes_studied=session_minutes,
+                completed=completed
+            ))
+        if pact.end_date and datetime.utcnow() >= pact.end_date:
+            _finalize_pact(db, pact)
+    db.commit()
+
+
+def _finalize_pact(db: Session, pact):
+    creator_completed = db.query(models.PactDay).filter(
+        models.PactDay.pact_id == pact.id, models.PactDay.user_id == pact.creator_id,
+        models.PactDay.completed == True
+    ).count()
+    buddy_completed = db.query(models.PactDay).filter(
+        models.PactDay.pact_id == pact.id, models.PactDay.user_id == pact.buddy_id,
+        models.PactDay.completed == True
+    ).count()
+    total_pot = pact.wager_amount * 2
+    bonus = max(pact.wager_amount // 2, 10)
+    creator = db.query(models.User).filter(models.User.id == pact.creator_id).first()
+    buddy = db.query(models.User).filter(models.User.id == pact.buddy_id).first()
+
+    c_done = creator_completed >= pact.duration_days
+    b_done = buddy_completed >= pact.duration_days
+
+    if c_done and b_done:
+        creator.current_coins += pact.wager_amount + bonus
+        creator.total_coins += bonus
+        buddy.current_coins += pact.wager_amount + bonus
+        buddy.total_coins += bonus
+        pact.status = "completed"
+    elif c_done and not b_done:
+        creator.current_coins += total_pot + bonus
+        creator.total_coins += pact.wager_amount + bonus
+        pact.status = "completed"
+    elif b_done and not c_done:
+        buddy.current_coins += total_pot + bonus
+        buddy.total_coins += pact.wager_amount + bonus
+        pact.status = "completed"
+    else:
+        pact.status = "failed"
+
+
+# ============ Study Group CRUD ============
+
+def create_group(db: Session, creator_id: int, name: str, goal_minutes: int, goal_deadline) -> models.StudyGroup:
+    group = models.StudyGroup(
+        name=name, creator_id=creator_id,
+        goal_minutes=goal_minutes, goal_deadline=goal_deadline
+    )
+    db.add(group)
+    db.commit()
+    db.refresh(group)
+    db.add(models.GroupMember(group_id=group.id, user_id=creator_id, role="admin"))
+    db.commit()
+    creator = db.query(models.User).filter(models.User.id == creator_id).first()
+    _create_event(db, creator_id, "group_created", f"created study group \"{name}\"")
+    return group
+
+
+def join_group(db: Session, user_id: int, group_id: int) -> tuple:
+    group = db.query(models.StudyGroup).filter(models.StudyGroup.id == group_id).first()
+    if not group:
+        return None, "Group not found"
+    existing = db.query(models.GroupMember).filter(
+        models.GroupMember.group_id == group_id,
+        models.GroupMember.user_id == user_id
+    ).first()
+    if existing:
+        return None, "Already a member"
+    member_count = db.query(models.GroupMember).filter(models.GroupMember.group_id == group_id).count()
+    if member_count >= 10:
+        return None, "Group is full (max 10)"
+    db.add(models.GroupMember(group_id=group_id, user_id=user_id))
+    db.commit()
+    return group, None
+
+
+def leave_group(db: Session, user_id: int, group_id: int) -> bool:
+    member = db.query(models.GroupMember).filter(
+        models.GroupMember.group_id == group_id,
+        models.GroupMember.user_id == user_id
+    ).first()
+    if not member:
+        return False
+    db.delete(member)
+    db.commit()
+    return True
+
+
+def get_user_groups(db: Session, user_id: int) -> List[dict]:
+    memberships = db.query(models.GroupMember).filter(models.GroupMember.user_id == user_id).all()
+    results = []
+    for m in memberships:
+        group = db.query(models.StudyGroup).filter(models.StudyGroup.id == m.group_id).first()
+        if not group:
+            continue
+        members_raw = db.query(models.GroupMember).filter(models.GroupMember.group_id == group.id).all()
+        member_ids = [mb.user_id for mb in members_raw]
+
+        total = 0
+        member_list = []
+        for mb in members_raw:
+            u = db.query(models.User).filter(models.User.id == mb.user_id).first()
+            mins = _group_member_minutes(db, mb.user_id, group)
+            total += mins
+            member_list.append({
+                "user_id": mb.user_id,
+                "username": u.username if u else None,
+                "role": mb.role,
+                "minutes_contributed": mins
+            })
+
+        results.append({
+            "id": group.id, "name": group.name, "creator_id": group.creator_id,
+            "goal_minutes": group.goal_minutes, "goal_deadline": group.goal_deadline,
+            "created_at": group.created_at, "members": member_list,
+            "total_minutes": total, "goal_met": total >= group.goal_minutes
+        })
+    return results
+
+
+def _group_member_minutes(db: Session, user_id: int, group) -> int:
+    since = group.created_at
+    mins = db.query(func.sum(models.StudySession.duration_minutes)).filter(
+        models.StudySession.user_id == user_id,
+        models.StudySession.completed_at >= since
+    ).scalar()
+    return mins or 0
+
+
+def send_group_message(db: Session, user_id: int, group_id: int, content: str) -> Optional[dict]:
+    member = db.query(models.GroupMember).filter(
+        models.GroupMember.group_id == group_id,
+        models.GroupMember.user_id == user_id
+    ).first()
+    if not member:
+        return None
+    msg = models.GroupMessage(group_id=group_id, user_id=user_id, content=content)
+    db.add(msg)
+    db.commit()
+    db.refresh(msg)
+    u = db.query(models.User).filter(models.User.id == user_id).first()
+    return {"id": msg.id, "user_id": user_id, "username": u.username if u else None,
+            "content": msg.content, "created_at": msg.created_at}
+
+
+def get_group_messages(db: Session, group_id: int, limit: int = 50) -> List[dict]:
+    msgs = db.query(models.GroupMessage).filter(
+        models.GroupMessage.group_id == group_id
+    ).order_by(models.GroupMessage.created_at.desc()).limit(limit).all()
+    results = []
+    for m in msgs:
+        u = db.query(models.User).filter(models.User.id == m.user_id).first()
+        results.append({
+            "id": m.id, "user_id": m.user_id,
+            "username": u.username if u else None,
+            "content": m.content, "created_at": m.created_at
+        })
+    return list(reversed(results))
+
+
+# ============ Activity Feed CRUD ============
+
+def _create_event(db: Session, user_id: int, event_type: str, description: str, extra_data: str = None):
+    db.add(models.ActivityEvent(
+        user_id=user_id, event_type=event_type,
+        description=description, extra_data=extra_data
+    ))
+    db.commit()
+
+
+def create_session_event(db: Session, user_id: int, minutes: int, animal_name: str = None):
+    user = db.query(models.User).filter(models.User.id == user_id).first()
+    name = user.username if user else "Someone"
+    _create_event(db, user_id, "session_complete", f"completed a {minutes}-minute study session")
+    if animal_name:
+        _create_event(db, user_id, "animal_hatched", f"just hatched a {animal_name}!")
+    if user and user.current_streak and user.current_streak % 7 == 0 and user.current_streak > 0:
+        _create_event(db, user_id, "streak_milestone", f"is on a {user.current_streak}-day streak!")
+
+
+def get_friend_feed(db: Session, user_id: int, limit: int = 30) -> List[dict]:
+    friends = get_friends(db, user_id)
+    friend_ids = [f.id for f in friends]
+    if not friend_ids:
+        return []
+
+    events = db.query(models.ActivityEvent).filter(
+        models.ActivityEvent.user_id.in_(friend_ids)
+    ).order_by(models.ActivityEvent.created_at.desc()).limit(limit).all()
+
+    results = []
+    for e in events:
+        u = db.query(models.User).filter(models.User.id == e.user_id).first()
+        reactions = db.query(models.FeedReaction).filter(models.FeedReaction.event_id == e.id).all()
+        reaction_list = [{"user_id": r.user_id, "reaction": r.reaction} for r in reactions]
+        results.append({
+            "id": e.id, "user_id": e.user_id,
+            "username": u.username if u else None,
+            "event_type": e.event_type, "description": e.description,
+            "created_at": e.created_at, "reactions": reaction_list
+        })
+    return results
+
+
+def add_reaction(db: Session, user_id: int, event_id: int, reaction: str) -> bool:
+    event = db.query(models.ActivityEvent).filter(models.ActivityEvent.id == event_id).first()
+    if not event:
+        return False
+    existing = db.query(models.FeedReaction).filter(
+        models.FeedReaction.event_id == event_id,
+        models.FeedReaction.user_id == user_id
+    ).first()
+    if existing:
+        existing.reaction = reaction
+    else:
+        db.add(models.FeedReaction(event_id=event_id, user_id=user_id, reaction=reaction))
+    db.commit()
+    return True
+
+
 # ============ Badge System ============
 
 BADGE_DEFINITIONS = [

@@ -121,6 +121,68 @@ export interface StudySessionWithHatchAndBadges extends StudySessionWithHatch {
   new_badges?: BadgeInfo[];
 }
 
+// ============ Social Types ============
+
+export interface PactDayProgress {
+  date: string;
+  minutes_studied: number;
+  completed: boolean;
+}
+
+export interface StudyPact {
+  id: number;
+  creator_username: string | null;
+  buddy_username: string | null;
+  creator_id: number;
+  buddy_id: number;
+  daily_minutes: number;
+  duration_days: number;
+  wager_amount: number;
+  status: string;
+  start_date: string | null;
+  end_date: string | null;
+  created_at: string;
+  creator_progress: PactDayProgress[];
+  buddy_progress: PactDayProgress[];
+}
+
+export interface StudyGroupMember {
+  user_id: number;
+  username: string | null;
+  role: string;
+  minutes_contributed: number;
+}
+
+export interface StudyGroup {
+  id: number;
+  name: string;
+  creator_id: number;
+  goal_minutes: number;
+  goal_deadline: string | null;
+  created_at: string;
+  members: StudyGroupMember[];
+  total_minutes: number;
+  goal_met: boolean;
+}
+
+export interface GroupMessage {
+  id: number;
+  user_id: number;
+  username: string | null;
+  content: string;
+  created_at: string;
+}
+
+export interface FeedEvent {
+  id: number;
+  user_id: number;
+  username: string | null;
+  event_type: string;
+  description: string;
+  created_at: string;
+  reactions: { user_id: number; reaction: string }[];
+}
+
 export interface UserStats {
   total_coins: number;
   current_coins: number;
@@ -312,6 +374,49 @@ export const shopAPI = {
     apiFetch<{ current_coins: number; spent: number }>('/shop/spend', {
       method: 'POST',
       body: JSON.stringify({ amount }),
+    }),
+};
+
+// Study Pact API
+export const pactsAPI = {
+  create: (buddyEmail: string, dailyMinutes: number, durationDays: number, wagerAmount: number) =>
+    apiFetch<{ id: number; status: string }>('/pacts', {
+      method: 'POST',
+      body: JSON.stringify({ buddy_email: buddyEmail, daily_minutes: dailyMinutes, duration_days: durationDays, wager_amount: wagerAmount }),
+    }),
+  accept: (pactId: number) =>
+    apiFetch<{ id: number; status: string }>(`/pacts/${pactId}/accept`, { method: 'POST' }),
+  getAll: () => apiFetch<StudyPact[]>('/pacts'),
+};
+
+// Study Group API
+export const groupsAPI = {
+  create: (name: string, goalMinutes: number, goalDeadline?: string) =>
+    apiFetch<{ id: number; name: string }>('/groups', {
+      method: 'POST',
+      body: JSON.stringify({ name, goal_minutes: goalMinutes, goal_deadline: goalDeadline }),
+    }),
+  join: (groupId: number) =>
+    apiFetch('/groups/' + groupId + '/join', { method: 'POST' }),
+  leave: (groupId: number) =>
+    apiFetch('/groups/' + groupId + '/leave', { method: 'POST' }),
+  getAll: () => apiFetch<StudyGroup[]>('/groups'),
+  sendMessage: (groupId: number, content: string) =>
+    apiFetch<GroupMessage>(`/groups/${groupId}/messages`, {
+      method: 'POST',
+      body: JSON.stringify({ content }),
+    }),
+  getMessages: (groupId: number) =>
+    apiFetch<GroupMessage[]>(`/groups/${groupId}/messages`),
+};
+
+// Activity Feed API
+export const feedAPI = {
+  getFeed: () => apiFetch<FeedEvent[]>('/feed'),
+  react: (eventId: number, reaction: string) =>
+    apiFetch(`/feed/${eventId}/react`, {
+      method: 'POST',
+      body: JSON.stringify({ reaction }),
     }),
 };
 
