@@ -2,6 +2,7 @@ from fastapi import FastAPI, Depends, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
+from sqlalchemy import text
 from datetime import timedelta
 from typing import List, Optional
 import models
@@ -19,6 +20,26 @@ try:
     Base.metadata.create_all(bind=engine)
 except Exception as e:
     print(f"Warning: Could not create tables on startup: {e}")
+
+# Migrate: add columns that create_all won't add to existing tables
+_migrations = [
+    ("study_sessions", "subject", "ALTER TABLE study_sessions ADD COLUMN subject VARCHAR"),
+]
+try:
+    with engine.connect() as conn:
+        for table, col, sql in _migrations:
+            result = conn.execute(text(
+                f"SELECT column_name FROM information_schema.columns "
+                f"WHERE table_name='{table}' AND column_name='{col}'"
+            ))
+            if result.fetchone() is None:
+                conn.execute(text(sql))
+                conn.commit()
+                print(f"Migration: added {table}.{col}")
+            else:
+                print(f"Migration: {table}.{col} already exists")
+except Exception as e:
+    print(f"Warning: migration check failed: {e}")
 
 app = FastAPI(title="Endura API", description="Gamified Study App Backend")
 
@@ -45,7 +66,7 @@ def health_check():
     return {
         "status": "healthy", 
         "app": "Endura API", 
-        "version": "1.0.8",
+        "version": "1.0.9",
         "database": db_type,
         "database_configured": has_db_url,
         "db_url_preview": db_url[:30] + "..." if len(db_url) > 30 else db_url if db_url else "not set",
