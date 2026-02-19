@@ -12,7 +12,7 @@ import {
   Dimensions,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useFocusEffect } from '@react-navigation/native';
+import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import Svg, { Circle, Rect, G, Text as SvgText, Path, Defs, LinearGradient, Stop } from 'react-native-svg';
 import { colors, shadows, spacing, borderRadius } from '../theme/colors';
 import { useAuth } from '../contexts/AuthContext';
@@ -138,6 +138,7 @@ const ProgressBar = ({ value, maxValue, label, color }: { value: number; maxValu
 };
 
 export default function ProfileScreen() {
+  const navigation = useNavigation<any>();
   const { user, logout, refreshUser } = useAuth();
   const [stats, setStats] = useState<UserStats | null>(null);
   const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
@@ -218,6 +219,21 @@ export default function ProfileScreen() {
         }
         showsVerticalScrollIndicator={false}
       >
+        {/* Swipe Indicator */}
+        <View style={styles.swipeIndicator} />
+        
+        {/* Header with Close Button */}
+        <View style={styles.backHeader}>
+          <Text style={styles.headerTitle}>Profile</Text>
+          <TouchableOpacity 
+            style={styles.closeButton}
+            onPress={() => navigation.goBack()}
+            hitSlop={{ top: 15, bottom: 15, left: 15, right: 15 }}
+          >
+            <Text style={styles.closeButtonText}>✕</Text>
+          </TouchableOpacity>
+        </View>
+
         {/* Profile Header */}
         <View style={styles.profileHeader}>
           <View style={styles.avatarContainer}>
@@ -244,7 +260,7 @@ export default function ProfileScreen() {
           </View>
           <View style={styles.statBox}>
             <Text style={styles.statValue}>{stats?.total_coins || 0}</Text>
-            <Text style={styles.statLabel}>Total Coins</Text>
+            <Text style={styles.statLabel}>Total Eco-Credits</Text>
           </View>
           <View style={styles.statBox}>
             <Text style={styles.statValue}>{stats?.animals_hatched || 0}</Text>
@@ -257,86 +273,6 @@ export default function ProfileScreen() {
           <View style={styles.statBox}>
             <Text style={styles.statValue}>{stats?.longest_streak || 0}</Text>
             <Text style={styles.statLabel}>Best Streak</Text>
-          </View>
-        </View>
-
-        {/* Visual Progress Section */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>📊 Progress Overview</Text>
-          
-          {/* Weekly Study Bar Chart */}
-          <View style={styles.chartCard}>
-            <Text style={styles.chartTitle}>This Week's Study</Text>
-            <BarChart 
-              data={[
-                { label: 'Mon', value: stats?.weekly_study_minutes?.[0] || 0, maxValue: 120 },
-                { label: 'Tue', value: stats?.weekly_study_minutes?.[1] || 0, maxValue: 120 },
-                { label: 'Wed', value: stats?.weekly_study_minutes?.[2] || 0, maxValue: 120 },
-                { label: 'Thu', value: stats?.weekly_study_minutes?.[3] || 0, maxValue: 120 },
-                { label: 'Fri', value: stats?.weekly_study_minutes?.[4] || 0, maxValue: 120 },
-                { label: 'Sat', value: stats?.weekly_study_minutes?.[5] || 0, maxValue: 120 },
-                { label: 'Sun', value: stats?.weekly_study_minutes?.[6] || 0, maxValue: 120 },
-              ]}
-            />
-            <Text style={styles.chartSubtext}>Minutes studied per day</Text>
-          </View>
-
-          {/* Achievements Pie Chart */}
-          <View style={styles.chartCard}>
-            <Text style={styles.chartTitle}>Achievements Breakdown</Text>
-            <View style={styles.pieChartRow}>
-              <PieChart 
-                data={[
-                  { label: 'Tasks', value: stats?.tasks_completed || 0, color: colors.primary },
-                  { label: 'Sessions', value: stats?.total_sessions || 0, color: colors.rare },
-                  { label: 'Animals', value: stats?.animals_hatched || 0, color: colors.epic },
-                ]}
-                size={100}
-              />
-              <View style={styles.pieLegend}>
-                <View style={styles.legendItem}>
-                  <View style={[styles.legendDot, { backgroundColor: colors.primary }]} />
-                  <Text style={styles.legendText}>Tasks ({stats?.tasks_completed || 0})</Text>
-                </View>
-                <View style={styles.legendItem}>
-                  <View style={[styles.legendDot, { backgroundColor: colors.rare }]} />
-                  <Text style={styles.legendText}>Sessions ({stats?.total_sessions || 0})</Text>
-                </View>
-                <View style={styles.legendItem}>
-                  <View style={[styles.legendDot, { backgroundColor: colors.epic }]} />
-                  <Text style={styles.legendText}>Animals ({stats?.animals_hatched || 0})</Text>
-                </View>
-              </View>
-            </View>
-          </View>
-
-          {/* Progress Bars */}
-          <View style={styles.chartCard}>
-            <Text style={styles.chartTitle}>Goals Progress</Text>
-            <ProgressBar 
-              value={stats?.current_streak || 0} 
-              maxValue={Math.max(stats?.longest_streak || 7, 7)} 
-              label="🔥 Streak Goal" 
-              color={colors.streakActive}
-            />
-            <ProgressBar 
-              value={stats?.animals_hatched || 0} 
-              maxValue={30} 
-              label="🦁 Animal Collection" 
-              color={colors.epic}
-            />
-            <ProgressBar 
-              value={Math.floor((stats?.total_study_minutes || 0) / 60)} 
-              maxValue={100} 
-              label="⏱️ Study Hours" 
-              color={colors.primary}
-            />
-            <ProgressBar 
-              value={stats?.total_coins || 0} 
-              maxValue={5000} 
-              label="💰 Coins Earned" 
-              color={colors.rare}
-            />
           </View>
         </View>
 
@@ -464,6 +400,41 @@ const styles = StyleSheet.create({
   scrollContent: {
     padding: spacing.lg,
     paddingBottom: spacing.xxl,
+  },
+  swipeIndicator: {
+    width: 40,
+    height: 5,
+    backgroundColor: colors.textMuted,
+    borderRadius: 3,
+    alignSelf: 'center',
+    marginTop: spacing.sm,
+    marginBottom: spacing.md,
+    opacity: 0.4,
+  },
+  backHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: spacing.lg,
+    paddingRight: spacing.xs,
+  },
+  headerTitle: {
+    fontSize: 22,
+    fontWeight: '700',
+    color: colors.textPrimary,
+  },
+  closeButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: colors.surfaceAlt,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  closeButtonText: {
+    fontSize: 20,
+    color: colors.textSecondary,
+    fontWeight: '600',
   },
   profileHeader: {
     alignItems: 'center',

@@ -233,7 +233,10 @@ async function apiFetch<T>(
         await SecureStore.deleteItemAsync('authToken');
       }
       
-      throw new Error(error.detail || `HTTP ${response.status}`);
+      const detail = Array.isArray(error.detail)
+        ? error.detail.map((e: any) => e.msg || JSON.stringify(e)).join('; ')
+        : error.detail || `HTTP ${response.status}`;
+      throw new Error(detail);
     }
     
     return response.json();

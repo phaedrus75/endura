@@ -22,7 +22,7 @@ import DateTimePicker from '@react-native-community/datetimepicker';
 import LottieView from 'lottie-react-native';
 import { colors, shadows, spacing, borderRadius } from '../theme/colors';
 import { useAuth } from '../contexts/AuthContext';
-import { animalsAPI, tasksAPI, statsAPI, Egg, Task, UserStats, UserAnimal } from '../services/api';
+import { animalsAPI, tasksAPI, statsAPI, badgesAPI, Egg, Task, UserStats, UserAnimal, BadgeResponse } from '../services/api';
 import { animalImages, getAnimalImage } from '../assets/animals';
 
 const { width, height } = Dimensions.get('window');
@@ -107,6 +107,8 @@ export default function HomeScreen() {
   const [showCompleted, setShowCompleted] = useState(false);
   const [showStreakModal, setShowStreakModal] = useState(false);
   const [showEcoModal, setShowEcoModal] = useState(false);
+  const [showBadgesModal, setShowBadgesModal] = useState(false);
+  const [badges, setBadges] = useState<BadgeResponse[]>([]);
   const [subjects, setSubjects] = useState<string[]>(['Math', 'Science', 'English', 'History']);
   const [showAddSubject, setShowAddSubject] = useState(false);
   const [newTaskDueDate, setNewTaskDueDate] = useState<Date | null>(null);
@@ -154,17 +156,19 @@ export default function HomeScreen() {
 
   const loadData = async () => {
     try {
-      const [eggData, tasksData, statsData, animalsData] = await Promise.all([
+      const [eggData, tasksData, statsData, animalsData, badgesData] = await Promise.all([
         animalsAPI.getEgg(),
         tasksAPI.getTasks(true),
         statsAPI.getStats(),
         animalsAPI.getMyAnimals().catch(() => []),
+        badgesAPI.getBadges().catch(() => []),
       ]);
       
       setEgg(eggData);
       setTasks(tasksData);
       setStats(statsData);
       setRecentAnimals(animalsData.slice(0, 3));
+      setBadges(badgesData);
     } catch (error) {
       console.error('Failed to load data:', error);
     }
@@ -298,6 +302,15 @@ export default function HomeScreen() {
             >
               <Text style={styles.statPillIcon}>🍀</Text>
               <Text style={styles.statPillTextLight}>{stats?.current_coins || 0}</Text>
+            </TouchableOpacity>
+            <TouchableOpacity 
+              style={[styles.statPill, styles.statPillBadges]}
+              onPress={() => setShowBadgesModal(true)}
+            >
+              <Text style={styles.statPillIcon}>🏅</Text>
+              <Text style={styles.statPillTextLight}>
+                {badges.filter(b => b.earned).length}/{badges.length}
+              </Text>
             </TouchableOpacity>
           </View>
 
@@ -633,6 +646,74 @@ export default function HomeScreen() {
         </View>
       </Modal>
 
+      {/* Badges Modal */}
+      <Modal visible={showBadgesModal} transparent animationType="fade">
+        <TouchableOpacity
+          style={styles.badgesModalOverlay}
+          activeOpacity={1}
+          onPress={() => setShowBadgesModal(false)}
+        >
+          <TouchableOpacity activeOpacity={1} style={styles.badgesModalContent}>
+            <TouchableOpacity
+              style={styles.streakModalClose}
+              onPress={() => setShowBadgesModal(false)}
+            >
+              <Text style={styles.streakModalCloseText}>✕</Text>
+            </TouchableOpacity>
+
+            <View style={styles.streakHeader}>
+              <Text style={styles.streakFireEmoji}>🏅</Text>
+              <Text style={styles.streakBigNumber}>
+                {badges.filter(b => b.earned).length}
+              </Text>
+              <Text style={styles.streakDaysLabel}>
+                of {badges.length} badges earned
+              </Text>
+            </View>
+
+            <View style={styles.badgesProgressBar}>
+              <View style={styles.badgesProgressTrack}>
+                <View
+                  style={[
+                    styles.badgesProgressFill,
+                    {
+                      width: badges.length > 0
+                        ? `${(badges.filter(b => b.earned).length / badges.length) * 100}%`
+                        : '0%',
+                    },
+                  ]}
+                />
+              </View>
+            </View>
+
+            <ScrollView
+              style={styles.badgesScrollView}
+              showsVerticalScrollIndicator={false}
+            >
+              {badges.filter(b => b.earned).length === 0 ? (
+                <View style={styles.badgesEmptyState}>
+                  <Text style={styles.badgesEmptyIcon}>🔒</Text>
+                  <Text style={styles.badgesEmptyText}>
+                    Complete study sessions to start earning badges!
+                  </Text>
+                </View>
+              ) : (
+                <View style={styles.badgesGrid}>
+                  {badges.filter(b => b.earned).map(b => (
+                    <View key={b.id} style={styles.badgeItem}>
+                      <Text style={styles.badgeItemIcon}>{b.icon}</Text>
+                      <Text style={styles.badgeItemName}>
+                        {b.name}
+                      </Text>
+                    </View>
+                  ))}
+                </View>
+              )}
+            </ScrollView>
+          </TouchableOpacity>
+        </TouchableOpacity>
+      </Modal>
+
       {/* Streak Details Modal */}
       <Modal visible={showStreakModal} transparent animationType="slide">
         <View style={styles.modalOverlay}>
@@ -782,6 +863,9 @@ const styles = StyleSheet.create({
   },
   statPillCredits: {
     backgroundColor: '#E0E8F0',
+  },
+  statPillBadges: {
+    backgroundColor: '#FFF3E0',
   },
   statPillIcon: {
     fontSize: 16,
@@ -1419,5 +1503,80 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '700',
     color: colors.primary,
+  },
+  badgesModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  badgesModalContent: {
+    backgroundColor: colors.surface,
+    borderRadius: 28,
+    padding: spacing.xl,
+    paddingBottom: spacing.lg,
+    width: '90%',
+    maxHeight: '80%',
+    alignItems: 'center',
+    ...shadows.large,
+  },
+  badgesProgressBar: {
+    width: '100%',
+    marginBottom: spacing.md,
+  },
+  badgesProgressTrack: {
+    height: 8,
+    backgroundColor: colors.cardBorder,
+    borderRadius: 4,
+    overflow: 'hidden' as const,
+  },
+  badgesProgressFill: {
+    height: '100%',
+    backgroundColor: '#E8B86D',
+    borderRadius: 4,
+  },
+  badgesScrollView: {
+    width: '100%',
+    maxHeight: 340,
+    marginBottom: spacing.md,
+  },
+  badgesGrid: {
+    flexDirection: 'row' as const,
+    flexWrap: 'wrap' as const,
+    gap: spacing.sm,
+    justifyContent: 'center' as const,
+  },
+  badgeItem: {
+    width: 96,
+    alignItems: 'center' as const,
+    paddingVertical: 10,
+    paddingHorizontal: 6,
+    backgroundColor: '#FFF8E7',
+    borderRadius: borderRadius.lg,
+    borderWidth: 1,
+    borderColor: '#E8B86D40',
+  },
+  badgeItemIcon: {
+    fontSize: 28,
+    marginBottom: 4,
+  },
+  badgeItemName: {
+    fontSize: 10,
+    fontWeight: '700' as const,
+    color: colors.textPrimary,
+    textAlign: 'center' as const,
+  },
+  badgesEmptyState: {
+    alignItems: 'center' as const,
+    paddingVertical: spacing.xl,
+  },
+  badgesEmptyIcon: {
+    fontSize: 40,
+    marginBottom: spacing.sm,
+  },
+  badgesEmptyText: {
+    fontSize: 14,
+    color: colors.textMuted,
+    textAlign: 'center' as const,
   },
 });

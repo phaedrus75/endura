@@ -10,7 +10,7 @@ export const colors = {
   primaryDark: '#5A8585',       // Darker sage for pressed states
   primaryLight: '#8FB5B5',      // Lighter sage for backgrounds
   secondary: '#7BA3A3',         // Secondary teal
-  tertiary: '#D4A84B',          // Golden amber for coins
+  tertiary: '#4CAF50',          // Green for eco-credits 🍀
   
   // Accent colors
   accent: '#E8B86D',            // Warm gold accent

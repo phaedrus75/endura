@@ -23,17 +23,17 @@ const onboardingSteps = [
   {
     useLottie: true, // Use Lottie animation for the egg
     title: 'Welcome to Endura',
-    description: 'Turn your study sessions into a game. Earn coins, hatch eggs, and build a collection of endangered animals!',
+    description: 'Turn your study sessions into a game. Earn eco-credits, hatch eggs, and build a collection of endangered animals!',
   },
   {
     emoji: '⏱️',
     title: 'Study Timer',
-    description: 'Set a timer for your study sessions. Complete the timer to earn coins. Longer sessions = more coins!',
+    description: 'Set a timer for your study sessions. Complete the timer to earn eco-credits. Longer sessions = more eco-credits!',
   },
   {
     emoji: '🦁',
     title: 'Hatch Animals',
-    description: 'Your coins automatically contribute to hatching eggs. Each egg reveals an endangered animal for your collection.',
+    description: 'Your eco-credits automatically contribute to hatching eggs. Each egg reveals an endangered animal for your collection.',
   },
   {
     emoji: '🏆',
