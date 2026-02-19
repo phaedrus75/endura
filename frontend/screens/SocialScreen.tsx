@@ -84,24 +84,27 @@ export default function SocialScreen() {
 
   // Friends
   const [friends, setFriends] = useState<Friend[]>([]);
+  const [allUsers, setAllUsers] = useState<Friend[]>([]);
   const [pendingRequests, setPendingRequests] = useState<{ id: number; user_id: number; username: string | null; email: string }[]>([]);
   const [showAddFriend, setShowAddFriend] = useState(false);
   const [addFriendHandle, setAddFriendHandle] = useState('');
 
   const loadData = useCallback(async () => {
     try {
-      const [p, g, f, fr, pr] = await Promise.all([
+      const [p, g, f, fr, pr, au] = await Promise.all([
         pactsAPI.getAll().catch(() => []),
         groupsAPI.getAll().catch(() => []),
         feedAPI.getFeed().catch(() => []),
         socialAPI.getFriends().catch(() => []),
         socialAPI.getPendingRequests().catch(() => []),
+        socialAPI.getAllUsers().catch(() => []),
       ]);
       setPacts(p);
       setGroups(g);
       setFeed(f);
       setFriends(fr);
       setPendingRequests(pr);
+      setAllUsers(au);
     } catch {}
   }, []);
 
@@ -111,6 +114,17 @@ export default function SocialScreen() {
     setRefreshing(true);
     await loadData();
     setRefreshing(false);
+  };
+
+  const handleQuickAdd = async (username: string) => {
+    try {
+      await socialAPI.sendFriendRequest(username);
+      Alert.alert('Request Sent!', `Friend request sent to @${username}`);
+      loadData();
+    } catch (e: any) {
+      const msg = typeof e?.message === 'string' ? e.message : String(e || 'Could not send request');
+      Alert.alert('Error', msg);
+    }
   };
 
   const handleAddFriend = async () => {
@@ -399,6 +413,42 @@ export default function SocialScreen() {
         </View>
       )}
 
+      {/* All Users - Quick Add */}
+      {allUsers.length > 0 && (
+        <View style={styles.allUsersSection}>
+          <Text style={styles.allUsersTitle}>👥 All Users ({allUsers.length})</Text>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.allUsersRow}>
+            {allUsers.map(u => {
+              const isFriend = friends.some(f => f.id === u.id);
+              const isPending = pendingRequests.some(r => r.user_id === u.id);
+              return (
+                <View key={u.id} style={styles.allUserChip}>
+                  <Text style={styles.allUserAvatar}>🧑‍🎓</Text>
+                  <Text style={styles.allUserName} numberOfLines={1}>@{u.username || u.email?.split('@')[0]}</Text>
+                  <Text style={styles.allUserStats}>{u.total_study_minutes}m · 🔥{u.current_streak}</Text>
+                  {isFriend ? (
+                    <View style={[styles.allUserActionBtn, styles.allUserFriendBtn]}>
+                      <Text style={styles.allUserFriendText}>✓ Friends</Text>
+                    </View>
+                  ) : isPending ? (
+                    <View style={[styles.allUserActionBtn, styles.allUserPendingBtn]}>
+                      <Text style={styles.allUserPendingText}>Pending</Text>
+                    </View>
+                  ) : (
+                    <TouchableOpacity
+                      style={[styles.allUserActionBtn, styles.allUserAddBtn]}
+                      onPress={() => handleQuickAdd(u.username || u.email)}
+                    >
+                      <Text style={styles.allUserAddText}>+ Add</Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
+              );
+            })}
+          </ScrollView>
+        </View>
+      )}
+
       {/* Tab Bar */}
       <View style={styles.tabBar}>
         {TABS.map(t => (
@@ -591,6 +641,73 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16, paddingVertical: 6,
   },
   pendingAcceptText: { fontSize: 13, fontWeight: '700', color: '#fff' },
+
+  allUsersSection: {
+    paddingHorizontal: spacing.lg,
+    marginBottom: spacing.sm,
+  },
+  allUsersTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: colors.textPrimary,
+    marginBottom: 8,
+  },
+  allUsersRow: {
+    gap: 10,
+    paddingRight: spacing.lg,
+  },
+  allUserChip: {
+    backgroundColor: colors.surface,
+    borderRadius: 16,
+    padding: 12,
+    alignItems: 'center',
+    width: 120,
+    ...shadows.small,
+  },
+  allUserAvatar: {
+    fontSize: 28,
+    marginBottom: 4,
+  },
+  allUserName: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: colors.textPrimary,
+    marginBottom: 2,
+  },
+  allUserStats: {
+    fontSize: 10,
+    color: colors.textSecondary,
+    marginBottom: 8,
+  },
+  allUserActionBtn: {
+    paddingHorizontal: 14,
+    paddingVertical: 5,
+    borderRadius: 20,
+  },
+  allUserAddBtn: {
+    backgroundColor: colors.tertiary,
+  },
+  allUserAddText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#fff',
+  },
+  allUserFriendBtn: {
+    backgroundColor: '#E8F5E9',
+  },
+  allUserFriendText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#4CAF50',
+  },
+  allUserPendingBtn: {
+    backgroundColor: '#FFF3E0',
+  },
+  allUserPendingText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#FF9800',
+  },
 
   tabBar: {
     flexDirection: 'row', marginHorizontal: spacing.lg,

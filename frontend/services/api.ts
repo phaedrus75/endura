@@ -363,7 +363,8 @@ export const socialAPI = {
   
   getFriends: () => apiFetch<Friend[]>('/friends'),
   getPendingRequests: () => apiFetch<{ id: number; user_id: number; username: string | null; email: string }[]>('/friends/pending'),
-  
+  getAllUsers: () => apiFetch<Friend[]>('/users/all'),
+
   getLeaderboard: () => apiFetch<LeaderboardEntry[]>('/leaderboard'),
 };
 

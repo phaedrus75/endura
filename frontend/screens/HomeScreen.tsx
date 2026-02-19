@@ -309,7 +309,7 @@ export default function HomeScreen() {
             >
               <Text style={styles.statPillIcon}>🏅</Text>
               <Text style={styles.statPillTextLight}>
-                {badges.filter(b => b.earned).length}/{badges.length}
+                {badges.filter(b => b.earned).length}
               </Text>
             </TouchableOpacity>
           </View>
@@ -937,7 +937,7 @@ const styles = StyleSheet.create({
     marginTop: spacing.lg,
   },
   recentHatchesSection: {
-    marginTop: spacing.md,
+    marginTop: spacing.lg,
     paddingHorizontal: 0,
   },
   sectionTitle: {
@@ -1099,17 +1099,22 @@ const styles = StyleSheet.create({
   createButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
+    alignSelf: 'center',
     backgroundColor: colors.primaryDark,
-    paddingVertical: spacing.md,
-    borderRadius: borderRadius.md,
+    paddingHorizontal: 28,
+    paddingVertical: 14,
+    borderRadius: 30,
     marginTop: spacing.lg,
     gap: spacing.sm,
+    shadowColor: '#2D4A32',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.25,
+    shadowRadius: 6,
+    elevation: 6,
   },
   createButtonIcon: {
     fontSize: 18,
     color: colors.textOnPrimary,
-    fontWeight: '600',
   },
   createButtonText: {
     fontSize: 14,
@@ -1120,14 +1125,18 @@ const styles = StyleSheet.create({
   completedButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: 'transparent',
-    paddingVertical: spacing.md,
-    borderRadius: borderRadius.md,
-    borderWidth: 2,
-    borderColor: 'rgba(255,255,255,0.3)',
+    alignSelf: 'center',
+    backgroundColor: 'rgba(255,255,255,0.15)',
+    paddingHorizontal: 28,
+    paddingVertical: 14,
+    borderRadius: 30,
     marginTop: spacing.sm,
     gap: spacing.sm,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
   },
   completedButtonIcon: {
     fontSize: 16,
@@ -1135,7 +1144,7 @@ const styles = StyleSheet.create({
   },
   completedButtonText: {
     fontSize: 14,
-    fontWeight: '600',
+    fontWeight: '700',
     color: colors.textOnPrimary,
     letterSpacing: 0.5,
   },

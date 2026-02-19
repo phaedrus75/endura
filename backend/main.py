@@ -481,6 +481,27 @@ def get_friends(
     return result
 
 
+@app.get("/users/all")
+def get_all_users(
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Dev/test helper: list every user except the caller."""
+    users = db.query(models.User).filter(models.User.id != current_user.id).all()
+    results = []
+    for u in users:
+        animals_count = db.query(models.UserAnimal).filter(models.UserAnimal.user_id == u.id).count()
+        results.append({
+            "id": u.id,
+            "username": u.username,
+            "email": u.email,
+            "total_study_minutes": u.total_study_minutes,
+            "current_streak": u.current_streak,
+            "animals_count": animals_count,
+        })
+    return results
+
+
 @app.get("/leaderboard", response_model=List[schemas.LeaderboardEntry])
 def get_leaderboard(
     current_user: models.User = Depends(get_current_user),
