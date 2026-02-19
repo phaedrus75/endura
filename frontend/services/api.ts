@@ -349,16 +349,17 @@ export const tipsAPI = {
 
 // Social API
 export const socialAPI = {
-  sendFriendRequest: (email: string) =>
+  sendFriendRequest: (username: string) =>
     apiFetch('/friends/request', {
       method: 'POST',
-      body: JSON.stringify({ friend_email: email }),
+      body: JSON.stringify({ friend_username: username }),
     }),
   
   acceptFriendRequest: (requestId: number) =>
     apiFetch(`/friends/accept/${requestId}`, { method: 'POST' }),
   
   getFriends: () => apiFetch<Friend[]>('/friends'),
+  getPendingRequests: () => apiFetch<{ id: number; user_id: number; username: string | null; email: string }[]>('/friends/pending'),
   
   getLeaderboard: () => apiFetch<LeaderboardEntry[]>('/leaderboard'),
 };
@@ -379,10 +380,10 @@ export const shopAPI = {
 
 // Study Pact API
 export const pactsAPI = {
-  create: (buddyEmail: string, dailyMinutes: number, durationDays: number, wagerAmount: number) =>
+  create: (buddyUsername: string, dailyMinutes: number, durationDays: number, wagerAmount: number) =>
     apiFetch<{ id: number; status: string }>('/pacts', {
       method: 'POST',
-      body: JSON.stringify({ buddy_email: buddyEmail, daily_minutes: dailyMinutes, duration_days: durationDays, wager_amount: wagerAmount }),
+      body: JSON.stringify({ buddy_username: buddyUsername, daily_minutes: dailyMinutes, duration_days: durationDays, wager_amount: wagerAmount }),
     }),
   accept: (pactId: number) =>
     apiFetch<{ id: number; status: string }>(`/pacts/${pactId}/accept`, { method: 'POST' }),

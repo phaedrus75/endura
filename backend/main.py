@@ -434,7 +434,7 @@ def send_friend_request(
     current_user: models.User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    success, message = crud.send_friend_request(db, current_user.id, request.friend_email)
+    success, message = crud.send_friend_request(db, current_user.id, request.friend_username)
     if not success:
         raise HTTPException(status_code=400, detail=message)
     return {"message": message}
@@ -449,6 +449,14 @@ def accept_friend(
     if not crud.accept_friend_request(db, current_user.id, request_id):
         raise HTTPException(status_code=404, detail="Friend request not found")
     return {"message": "Friend request accepted"}
+
+
+@app.get("/friends/pending")
+def get_pending_requests(
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    return crud.get_pending_requests(db, current_user.id)
 
 
 @app.get("/friends", response_model=List[schemas.FriendResponse])
@@ -539,7 +547,7 @@ def create_pact(
     current_user: models.User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    pact, error = crud.create_pact(db, current_user.id, data.buddy_email,
+    pact, error = crud.create_pact(db, current_user.id, data.buddy_username,
                                     data.daily_minutes, data.duration_days, data.wager_amount)
     if error:
         raise HTTPException(status_code=400, detail=error)

@@ -65,7 +65,7 @@ export default function SocialScreen() {
   // Pacts
   const [pacts, setPacts] = useState<StudyPact[]>([]);
   const [showCreatePact, setShowCreatePact] = useState(false);
-  const [pactEmail, setPactEmail] = useState('');
+  const [pactBuddy, setPactBuddy] = useState<Friend | null>(null);
   const [pactMinutes, setPactMinutes] = useState('30');
   const [pactDays, setPactDays] = useState('7');
   const [pactWager, setPactWager] = useState('0');
@@ -84,19 +84,24 @@ export default function SocialScreen() {
 
   // Friends
   const [friends, setFriends] = useState<Friend[]>([]);
+  const [pendingRequests, setPendingRequests] = useState<{ id: number; user_id: number; username: string | null; email: string }[]>([]);
+  const [showAddFriend, setShowAddFriend] = useState(false);
+  const [addFriendHandle, setAddFriendHandle] = useState('');
 
   const loadData = useCallback(async () => {
     try {
-      const [p, g, f, fr] = await Promise.all([
+      const [p, g, f, fr, pr] = await Promise.all([
         pactsAPI.getAll().catch(() => []),
         groupsAPI.getAll().catch(() => []),
         feedAPI.getFeed().catch(() => []),
         socialAPI.getFriends().catch(() => []),
+        socialAPI.getPendingRequests().catch(() => []),
       ]);
       setPacts(p);
       setGroups(g);
       setFeed(f);
       setFriends(fr);
+      setPendingRequests(pr);
     } catch {}
   }, []);
 
@@ -108,13 +113,37 @@ export default function SocialScreen() {
     setRefreshing(false);
   };
 
+  const handleAddFriend = async () => {
+    if (!addFriendHandle.trim()) return;
+    try {
+      await socialAPI.sendFriendRequest(addFriendHandle.trim());
+      setShowAddFriend(false);
+      setAddFriendHandle('');
+      Alert.alert('Request Sent!', 'Your friend will see the request when they open the app.');
+      loadData();
+    } catch (e: any) {
+      const msg = typeof e?.message === 'string' ? e.message : String(e || 'Could not send request');
+      Alert.alert('Error', msg);
+    }
+  };
+
+  const handleAcceptFriend = async (requestId: number) => {
+    try {
+      await socialAPI.acceptFriendRequest(requestId);
+      Alert.alert('Accepted!', 'You are now friends.');
+      loadData();
+    } catch (e: any) {
+      Alert.alert('Error', e.message || 'Could not accept request');
+    }
+  };
+
   // ---- Pact Actions ----
   const handleCreatePact = async () => {
-    if (!pactEmail.trim()) return;
+    if (!pactBuddy) { Alert.alert('Select a friend', 'Tap a friend to select them.'); return; }
     try {
-      await pactsAPI.create(pactEmail.trim(), parseInt(pactMinutes) || 30, parseInt(pactDays) || 7, parseInt(pactWager) || 0);
+      await pactsAPI.create(pactBuddy.username || '', parseInt(pactMinutes) || 30, parseInt(pactDays) || 7, parseInt(pactWager) || 0);
       setShowCreatePact(false);
-      setPactEmail(''); setPactMinutes('30'); setPactDays('7'); setPactWager('0');
+      setPactBuddy(null); setPactMinutes('30'); setPactDays('7'); setPactWager('0');
       Alert.alert('Pact Sent!', 'Waiting for your buddy to accept.');
       loadData();
     } catch (e: any) {
@@ -346,9 +375,29 @@ export default function SocialScreen() {
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
       <View style={styles.header}>
-        <Text style={styles.headerTitle}>Social</Text>
-        <Text style={styles.headerSubtitle}>{friends.length} friends</Text>
+        <View>
+          <Text style={styles.headerTitle}>Social</Text>
+          <Text style={styles.headerSubtitle}>{friends.length} friends</Text>
+        </View>
+        <TouchableOpacity style={styles.addFriendButton} onPress={() => setShowAddFriend(true)}>
+          <Text style={styles.addFriendButtonText}>+ Add Friend</Text>
+        </TouchableOpacity>
       </View>
+
+      {/* Pending Requests */}
+      {pendingRequests.length > 0 && (
+        <View style={styles.pendingSection}>
+          <Text style={styles.pendingTitle}>Friend Requests ({pendingRequests.length})</Text>
+          {pendingRequests.map(req => (
+            <View key={req.id} style={styles.pendingRow}>
+              <Text style={styles.pendingName}>{req.username || req.email.split('@')[0]}</Text>
+              <TouchableOpacity style={styles.pendingAcceptBtn} onPress={() => handleAcceptFriend(req.id)}>
+                <Text style={styles.pendingAcceptText}>Accept</Text>
+              </TouchableOpacity>
+            </View>
+          ))}
+        </View>
+      )}
 
       {/* Tab Bar */}
       <View style={styles.tabBar}>
@@ -376,9 +425,23 @@ export default function SocialScreen() {
           <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
             <View style={styles.modalContent}>
               <Text style={styles.modalTitle}>🤝 New Study Pact</Text>
-              <Text style={styles.inputLabel}>Friend's email</Text>
-              <TextInput style={styles.input} placeholder="friend@email.com" placeholderTextColor={colors.textMuted}
-                value={pactEmail} onChangeText={setPactEmail} autoCapitalize="none" keyboardType="email-address" />
+              <Text style={styles.inputLabel}>Choose a friend</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.friendPickerRow}>
+                {friends.map(f => (
+                  <TouchableOpacity
+                    key={f.id}
+                    style={[styles.friendPickerChip, pactBuddy?.id === f.id && styles.friendPickerChipActive]}
+                    onPress={() => setPactBuddy(pactBuddy?.id === f.id ? null : f)}
+                  >
+                    <Text style={[styles.friendPickerText, pactBuddy?.id === f.id && styles.friendPickerTextActive]}>
+                      {f.username || f.email.split('@')[0]}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+                {friends.length === 0 && (
+                  <Text style={styles.noFriendsText}>Add friends first!</Text>
+                )}
+              </ScrollView>
               <View style={styles.inputRow}>
                 <View style={{ flex: 1 }}>
                   <Text style={styles.inputLabel}>Min/day</Text>
@@ -467,15 +530,67 @@ export default function SocialScreen() {
           </KeyboardAvoidingView>
         </SafeAreaView>
       </Modal>
+
+      {/* Add Friend Modal */}
+      <Modal visible={showAddFriend} transparent animationType="fade">
+        <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => setShowAddFriend(false)}>
+          <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+            <TouchableOpacity activeOpacity={1}>
+              <View style={styles.modalContent}>
+                <Text style={styles.modalTitle}>👋 Add a Friend</Text>
+                <Text style={styles.inputLabel}>Friend's username</Text>
+                <TextInput
+                  style={styles.input}
+                  placeholder="e.g. popsie"
+                  placeholderTextColor={colors.textMuted}
+                  value={addFriendHandle}
+                  onChangeText={setAddFriendHandle}
+                  autoCapitalize="none"
+                />
+                <TouchableOpacity style={styles.modalPrimary} onPress={handleAddFriend}>
+                  <Text style={styles.modalPrimaryText}>Send Request</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.modalCancel} onPress={() => setShowAddFriend(false)}>
+                  <Text style={styles.modalCancelText}>Cancel</Text>
+                </TouchableOpacity>
+              </View>
+            </TouchableOpacity>
+          </KeyboardAvoidingView>
+        </TouchableOpacity>
+      </Modal>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
-  header: { paddingHorizontal: spacing.lg, paddingTop: spacing.sm, paddingBottom: spacing.xs },
+  header: {
+    paddingHorizontal: spacing.lg, paddingTop: spacing.sm, paddingBottom: spacing.xs,
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+  },
   headerTitle: { fontSize: 28, fontWeight: '800', color: colors.textPrimary },
   headerSubtitle: { fontSize: 13, color: colors.textSecondary, marginTop: 2 },
+  addFriendButton: {
+    backgroundColor: colors.primary, borderRadius: borderRadius.full,
+    paddingHorizontal: 16, paddingVertical: 8,
+  },
+  addFriendButtonText: { fontSize: 13, fontWeight: '700', color: '#fff' },
+  pendingSection: {
+    marginHorizontal: spacing.lg, backgroundColor: '#FFF8E7',
+    borderRadius: borderRadius.lg, padding: spacing.md, marginBottom: spacing.sm,
+    borderWidth: 1, borderColor: '#E8B86D40',
+  },
+  pendingTitle: { fontSize: 13, fontWeight: '700', color: '#D4A84B', marginBottom: 8 },
+  pendingRow: {
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+    paddingVertical: 6,
+  },
+  pendingName: { fontSize: 14, fontWeight: '600', color: colors.textPrimary },
+  pendingAcceptBtn: {
+    backgroundColor: colors.tertiary, borderRadius: borderRadius.full,
+    paddingHorizontal: 16, paddingVertical: 6,
+  },
+  pendingAcceptText: { fontSize: 13, fontWeight: '700', color: '#fff' },
 
   tabBar: {
     flexDirection: 'row', marginHorizontal: spacing.lg,
@@ -613,6 +728,15 @@ const styles = StyleSheet.create({
   modalPrimaryText: { fontSize: 16, fontWeight: '700', color: '#fff' },
   modalCancel: { paddingVertical: 12, alignItems: 'center', marginTop: 4 },
   modalCancelText: { fontSize: 14, fontWeight: '600', color: colors.textMuted },
+  friendPickerRow: { maxHeight: 44, marginBottom: 4 },
+  friendPickerChip: {
+    paddingHorizontal: 16, paddingVertical: 10, borderRadius: 20,
+    backgroundColor: colors.surfaceAlt, marginRight: 8, borderWidth: 1.5, borderColor: colors.cardBorder,
+  },
+  friendPickerChipActive: { backgroundColor: colors.primary, borderColor: colors.primary },
+  friendPickerText: { fontSize: 14, fontWeight: '600', color: colors.textSecondary },
+  friendPickerTextActive: { color: '#fff' },
+  noFriendsText: { fontSize: 13, color: colors.textMuted, paddingVertical: 10 },
 
   // Chat
   chatContainer: { flex: 1, backgroundColor: colors.background },

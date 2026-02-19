@@ -308,8 +308,8 @@ def create_study_tip(db: Session, user_id: int, content: str, category: str = "g
 
 # ============ Social CRUD ============
 
-def send_friend_request(db: Session, user_id: int, friend_email: str) -> tuple[bool, str]:
-    friend = db.query(models.User).filter(models.User.email == friend_email).first()
+def send_friend_request(db: Session, user_id: int, friend_username: str) -> tuple[bool, str]:
+    friend = db.query(models.User).filter(models.User.username == friend_username).first()
     if not friend:
         return False, "User not found"
     
@@ -343,6 +343,24 @@ def accept_friend_request(db: Session, user_id: int, request_id: int) -> bool:
         db.commit()
         return True
     return False
+
+
+def get_pending_requests(db: Session, user_id: int) -> List[dict]:
+    pending = db.query(models.Friendship).filter(
+        models.Friendship.friend_id == user_id,
+        models.Friendship.status == "pending"
+    ).all()
+    results = []
+    for f in pending:
+        sender = db.query(models.User).filter(models.User.id == f.user_id).first()
+        if sender:
+            results.append({
+                "id": f.id,
+                "user_id": sender.id,
+                "username": sender.username,
+                "email": sender.email,
+            })
+    return results
 
 
 def get_friends(db: Session, user_id: int) -> List[models.User]:
@@ -448,8 +466,8 @@ def get_user_stats(db: Session, user_id: int) -> dict:
 
 # ============ Study Pact CRUD ============
 
-def create_pact(db: Session, creator_id: int, buddy_email: str, daily_minutes: int, duration_days: int, wager_amount: int) -> tuple:
-    buddy = db.query(models.User).filter(models.User.email == buddy_email).first()
+def create_pact(db: Session, creator_id: int, buddy_username: str, daily_minutes: int, duration_days: int, wager_amount: int) -> tuple:
+    buddy = db.query(models.User).filter(models.User.username == buddy_username).first()
     if not buddy:
         return None, "User not found"
     if buddy.id == creator_id:

@@ -181,7 +181,7 @@ class StudyTipResponse(BaseModel):
 # ============ Social Schemas ============
 
 class FriendRequest(BaseModel):
-    friend_email: str
+    friend_username: str
 
 
 class FriendResponse(BaseModel):
@@ -208,7 +208,7 @@ class LeaderboardEntry(BaseModel):
 # ============ Study Pact Schemas ============
 
 class PactCreate(BaseModel):
-    buddy_email: str
+    buddy_username: str
     daily_minutes: int = 30
     duration_days: int = 7
     wager_amount: int = 0
