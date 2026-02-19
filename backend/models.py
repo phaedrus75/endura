@@ -56,6 +56,7 @@ class StudySession(Base):
     task_id = Column(Integer, ForeignKey("tasks.id"), nullable=True)
     duration_minutes = Column(Integer, nullable=False)
     coins_earned = Column(Integer, nullable=False)
+    subject = Column(String, nullable=True)  # Subject/category for tracking
     started_at = Column(DateTime, default=datetime.utcnow)
     completed_at = Column(DateTime, nullable=True)
     

@@ -91,7 +91,7 @@ def delete_task(db: Session, task_id: int, user_id: int) -> bool:
 
 # ============ Study Session CRUD ============
 
-def create_study_session(db: Session, user_id: int, duration_minutes: int, task_id: int = None, animal_name: str = None) -> tuple[models.StudySession, Optional[models.Animal]]:
+def create_study_session(db: Session, user_id: int, duration_minutes: int, task_id: int = None, animal_name: str = None, subject: str = None) -> tuple[models.StudySession, Optional[models.Animal]]:
     # Calculate coins earned (1 coin per minute, bonus for longer sessions)
     coins = duration_minutes
     if duration_minutes >= 25:
@@ -104,6 +104,7 @@ def create_study_session(db: Session, user_id: int, duration_minutes: int, task_
         task_id=task_id,
         duration_minutes=duration_minutes,
         coins_earned=coins,
+        subject=subject,
         completed_at=datetime.utcnow()
     )
     db.add(session)
@@ -410,12 +411,34 @@ def get_user_stats(db: Session, user_id: int) -> dict:
         models.Task.is_completed == True
     ).count()
     
-    # Weekly study minutes
-    week_ago = datetime.utcnow() - timedelta(days=7)
-    weekly_minutes = db.query(func.sum(models.StudySession.duration_minutes)).filter(
+    # Weekly study minutes - daily breakdown [Mon, Tue, Wed, Thu, Fri, Sat, Sun]
+    today = datetime.utcnow().date()
+    current_weekday = today.weekday()  # 0=Monday
+    monday = today - timedelta(days=current_weekday)
+    
+    weekly_daily = [0] * 7
+    week_sessions = db.query(models.StudySession).filter(
         models.StudySession.user_id == user_id,
-        models.StudySession.completed_at >= week_ago
-    ).scalar() or 0
+        models.StudySession.completed_at >= datetime.combine(monday, datetime.min.time())
+    ).all()
+    for session in week_sessions:
+        if session.completed_at:
+            day_idx = session.completed_at.weekday()
+            if 0 <= day_idx < 7:
+                weekly_daily[day_idx] += session.duration_minutes
+    
+    weekly_minutes = sum(weekly_daily)
+    
+    # Study minutes by subject
+    subject_query = db.query(
+        models.StudySession.subject,
+        func.sum(models.StudySession.duration_minutes)
+    ).filter(
+        models.StudySession.user_id == user_id,
+        models.StudySession.subject != None
+    ).group_by(models.StudySession.subject).all()
+    
+    study_minutes_by_subject = {row[0]: row[1] for row in subject_query if row[0]}
     
     return {
         "total_coins": user.total_coins,
@@ -426,5 +449,6 @@ def get_user_stats(db: Session, user_id: int) -> dict:
         "longest_streak": user.longest_streak,
         "animals_hatched": animals_count,
         "tasks_completed": tasks_completed,
-        "weekly_study_minutes": weekly_minutes
+        "weekly_study_minutes": weekly_daily,
+        "study_minutes_by_subject": study_minutes_by_subject
     }

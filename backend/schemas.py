@@ -76,6 +76,7 @@ class StudySessionCreate(BaseModel):
     task_id: Optional[int] = None
     duration_minutes: int
     animal_name: Optional[str] = None  # Name of the animal to hatch
+    subject: Optional[str] = None  # Subject/category for tracking
 
 
 class StudySessionResponse(BaseModel):
@@ -83,6 +84,7 @@ class StudySessionResponse(BaseModel):
     task_id: Optional[int]
     duration_minutes: int
     coins_earned: int
+    subject: Optional[str]
     started_at: datetime
     completed_at: Optional[datetime]
 
@@ -195,4 +197,5 @@ class UserStats(BaseModel):
     longest_streak: int
     animals_hatched: int
     tasks_completed: int
-    weekly_study_minutes: int
+    weekly_study_minutes: list
+    study_minutes_by_subject: dict  # {subject: minutes}
