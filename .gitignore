@@ -19,3 +19,5 @@ frontend/*.log
 # OS
 .DS_Store
 Thumbs.db
+website/node_modules
+website/.next
