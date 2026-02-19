@@ -66,7 +66,7 @@ def health_check():
     return {
         "status": "healthy", 
         "app": "Endura API", 
-        "version": "1.0.10",
+        "version": "1.0.11",
         "database": db_type,
         "database_configured": has_db_url,
         "db_url_preview": db_url[:30] + "..." if len(db_url) > 30 else db_url if db_url else "not set",
@@ -259,20 +259,34 @@ def complete_study_session(
     current_user: models.User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    print(f"[DEBUG] Session create: duration={session.duration_minutes}, animal_name={session.animal_name}, subject={session.subject}")
-    study_session, hatched_animal = crud.create_study_session(
-        db, 
-        current_user.id, 
-        session.duration_minutes, 
-        session.task_id,
-        session.animal_name,
-        session.subject
-    )
-    print(f"[DEBUG] Hatched animal: {hatched_animal.name if hatched_animal else 'None'}")
-    return {
-        "session": study_session,
-        "hatched_animal": hatched_animal
-    }
+    import traceback
+    try:
+        task_id = session.task_id
+        if task_id is not None:
+            task_exists = db.query(models.Task).filter(
+                models.Task.id == task_id,
+                models.Task.user_id == current_user.id
+            ).first()
+            if not task_exists:
+                task_id = None
+
+        study_session, hatched_animal = crud.create_study_session(
+            db,
+            current_user.id,
+            session.duration_minutes,
+            task_id,
+            session.animal_name,
+            session.subject
+        )
+        return {
+            "session": study_session,
+            "hatched_animal": hatched_animal
+        }
+    except Exception as e:
+        db.rollback()
+        print(f"[ERROR] Session create failed: {e}")
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.get("/sessions", response_model=List[schemas.StudySessionResponse])
