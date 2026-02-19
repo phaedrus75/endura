@@ -16,8 +16,10 @@ import OnboardingScreen from './screens/OnboardingScreen';
 import HomeScreen from './screens/HomeScreen';
 import TimerScreen from './screens/TimerScreen';
 import CollectionScreen from './screens/CollectionScreen';
+import ProgressScreen from './screens/ProgressScreen';
 import TipsScreen from './screens/TipsScreen';
 import ProfileScreen from './screens/ProfileScreen';
+import ShopScreen from './screens/ShopScreen';
 
 const Stack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
@@ -26,10 +28,10 @@ const Tab = createBottomTabNavigator();
 const TabIcon = ({ name, focused }: { name: string; focused: boolean }) => {
   const icons: Record<string, string> = {
     Home: '🏠',
-    Timer: '⏱️',
+    Timer: '⌛️',
     Collection: '🥚',
+    Progress: '🏆',
     Tips: '💡',
-    Profile: '👤',
   };
   
   return (
@@ -57,9 +59,40 @@ function MainTabs() {
       <Tab.Screen name="Home" component={HomeScreen} />
       <Tab.Screen name="Timer" component={TimerScreen} />
       <Tab.Screen name="Collection" component={CollectionScreen} />
+      <Tab.Screen name="Progress" component={ProgressScreen} />
       <Tab.Screen name="Tips" component={TipsScreen} />
-      <Tab.Screen name="Profile" component={ProfileScreen} />
     </Tab.Navigator>
+  );
+}
+
+// Main stack includes tabs + Profile screen
+const MainStack = createNativeStackNavigator();
+
+function MainStackNavigator() {
+  return (
+    <MainStack.Navigator screenOptions={{ headerShown: false }}>
+      <MainStack.Screen name="Tabs" component={MainTabs} />
+      <MainStack.Screen 
+        name="Profile" 
+        component={ProfileScreen}
+        options={{
+          presentation: 'modal',
+          animation: 'slide_from_bottom',
+          gestureEnabled: true,
+          gestureDirection: 'vertical',
+        }}
+      />
+      <MainStack.Screen 
+        name="Shop" 
+        component={ShopScreen}
+        options={{
+          presentation: 'modal',
+          animation: 'slide_from_bottom',
+          gestureEnabled: true,
+          gestureDirection: 'vertical',
+        }}
+      />
+    </MainStack.Navigator>
   );
 }
 
@@ -85,7 +118,7 @@ function AppNavigator() {
       ) : !user?.username ? (
         <Stack.Screen name="Onboarding" component={OnboardingScreen} />
       ) : (
-        <Stack.Screen name="Main" component={MainTabs} />
+        <Stack.Screen name="Main" component={MainStackNavigator} />
       )}
     </Stack.Navigator>
   );

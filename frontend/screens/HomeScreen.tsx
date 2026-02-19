@@ -18,111 +18,40 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import ConfettiCannon from 'react-native-confetti-cannon';
-import Svg, { Path, Ellipse, Circle, Defs, LinearGradient, Stop } from 'react-native-svg';
+import DateTimePicker from '@react-native-community/datetimepicker';
 import LottieView from 'lottie-react-native';
 import { colors, shadows, spacing, borderRadius } from '../theme/colors';
 import { useAuth } from '../contexts/AuthContext';
 import { animalsAPI, tasksAPI, statsAPI, Egg, Task, UserStats, UserAnimal } from '../services/api';
+import { animalImages, getAnimalImage } from '../assets/animals';
 
 const { width, height } = Dimensions.get('window');
 
-// Beautiful Grass Meadow with flowers
-const GrassBackground = () => (
-  <View style={styles.grassContainer}>
-    <Svg width={width} height={130} viewBox={`0 0 ${width} 130`} style={styles.grassSvg}>
-      <Defs>
-        <LinearGradient id="hillBack" x1="0%" y1="0%" x2="0%" y2="100%">
-          <Stop offset="0%" stopColor="#8FD4A0" />
-          <Stop offset="100%" stopColor="#7DC98E" />
-        </LinearGradient>
-        <LinearGradient id="hillMid" x1="0%" y1="0%" x2="0%" y2="100%">
-          <Stop offset="0%" stopColor="#6BBF7B" />
-          <Stop offset="100%" stopColor="#5AB56C" />
-        </LinearGradient>
-        <LinearGradient id="hillFront" x1="0%" y1="0%" x2="0%" y2="100%">
-          <Stop offset="0%" stopColor="#4DAA5F" />
-          <Stop offset="100%" stopColor="#3E9B50" />
-        </LinearGradient>
-      </Defs>
-      {/* Soft rolling hills */}
-      <Ellipse cx={width * 0.15} cy={150} rx={width * 0.5} ry={95} fill="url(#hillBack)" />
-      <Ellipse cx={width * 0.85} cy={145} rx={width * 0.55} ry={90} fill="url(#hillBack)" />
-      <Ellipse cx={width * 0.5} cy={155} rx={width * 0.8} ry={100} fill="url(#hillMid)" />
-      <Ellipse cx={width * 0.5} cy={165} rx={width * 1.1} ry={110} fill="url(#hillFront)" />
-      
-      {/* Daisy flower - left */}
-      <Circle cx={width * 0.08} cy={68} r={5} fill="#FFF" />
-      <Circle cx={width * 0.08 - 4} cy={68} r={4} fill="#FFF" />
-      <Circle cx={width * 0.08 + 4} cy={68} r={4} fill="#FFF" />
-      <Circle cx={width * 0.08} cy={64} r={4} fill="#FFF" />
-      <Circle cx={width * 0.08} cy={72} r={4} fill="#FFF" />
-      <Circle cx={width * 0.08 - 3} cy={65} r={3} fill="#FFF" />
-      <Circle cx={width * 0.08 + 3} cy={65} r={3} fill="#FFF" />
-      <Circle cx={width * 0.08} cy={68} r={3} fill="#FFD93D" />
-      <Path d={`M${width * 0.08},75 Q${width * 0.08 + 2},85 ${width * 0.08},95`} stroke="#2D6A4F" strokeWidth={2} fill="none" />
-      <Ellipse cx={width * 0.08 + 4} cy={83} rx={5} ry={2} fill="#40916C" />
-      
-      {/* Sunflower - right */}
-      <Circle cx={width * 0.92} cy={62} r={8} fill="#FFD93D" />
-      <Circle cx={width * 0.92 - 7} cy={62} r={5} fill="#FFC300" />
-      <Circle cx={width * 0.92 + 7} cy={62} r={5} fill="#FFC300" />
-      <Circle cx={width * 0.92} cy={55} r={5} fill="#FFC300" />
-      <Circle cx={width * 0.92} cy={69} r={5} fill="#FFC300" />
-      <Circle cx={width * 0.92 - 5} cy={57} r={4} fill="#FFB347" />
-      <Circle cx={width * 0.92 + 5} cy={57} r={4} fill="#FFB347" />
-      <Circle cx={width * 0.92 - 5} cy={67} r={4} fill="#FFB347" />
-      <Circle cx={width * 0.92 + 5} cy={67} r={4} fill="#FFB347" />
-      <Circle cx={width * 0.92} cy={62} r={5} fill="#6B4423" />
-      <Path d={`M${width * 0.92},70 Q${width * 0.92 - 3},85 ${width * 0.92},100`} stroke="#1B4332" strokeWidth={3} fill="none" />
-      <Ellipse cx={width * 0.92 - 7} cy={82} rx={6} ry={2.5} fill="#52B788" />
-      <Ellipse cx={width * 0.92 + 5} cy={90} rx={5} ry={2} fill="#52B788" />
-      
-      {/* Tulip - purple left */}
-      <Ellipse cx={width * 0.18} cy={75} rx={5} ry={9} fill="#9D4EDD" />
-      <Ellipse cx={width * 0.18 - 4} cy={78} rx={4} ry={7} fill="#C77DFF" />
-      <Ellipse cx={width * 0.18 + 4} cy={78} rx={4} ry={7} fill="#C77DFF" />
-      <Ellipse cx={width * 0.18} cy={72} rx={3} ry={5} fill="#E0AAFF" />
-      <Path d={`M${width * 0.18},84 L${width * 0.18},100`} stroke="#1B4332" strokeWidth={2.5} />
-      <Ellipse cx={width * 0.18 + 5} cy={92} rx={4} ry={1.5} fill="#40916C" />
-      
-      {/* Rose - pink right */}
-      <Circle cx={width * 0.82} cy={72} r={6} fill="#FF6B9D" />
-      <Circle cx={width * 0.82 - 4} cy={74} r={4} fill="#FF8FAB" />
-      <Circle cx={width * 0.82 + 4} cy={74} r={4} fill="#FF8FAB" />
-      <Circle cx={width * 0.82} cy={69} r={4} fill="#FFB3C6" />
-      <Circle cx={width * 0.82} cy={72} r={2.5} fill="#FFCCD5" />
-      <Path d={`M${width * 0.82},78 Q${width * 0.82 + 3},88 ${width * 0.82},98`} stroke="#2D6A4F" strokeWidth={2.5} fill="none" />
-      <Ellipse cx={width * 0.82 - 5} cy={88} rx={5} ry={2} fill="#52B788" />
-      
-      {/* Small wildflowers */}
-      <Circle cx={width * 0.32} cy={88} r={4} fill="#A8DADC" />
-      <Circle cx={width * 0.32} cy={88} r={2} fill="#FFE66D" />
-      <Path d={`M${width * 0.32},92 L${width * 0.32},102`} stroke="#40916C" strokeWidth={1.5} />
-      
-      <Circle cx={width * 0.68} cy={85} r={4} fill="#F4ACB7" />
-      <Circle cx={width * 0.68} cy={85} r={2} fill="#FFE5D9" />
-      <Path d={`M${width * 0.68},89 L${width * 0.68},100`} stroke="#52B788" strokeWidth={1.5} />
-      
-      <Circle cx={width * 0.45} cy={92} r={3} fill="#B8E0D2" />
-      <Circle cx={width * 0.45} cy={92} r={1.5} fill="#FFFACD" />
-      <Path d={`M${width * 0.45},95 L${width * 0.45},104`} stroke="#2D6A4F" strokeWidth={1.5} />
-      
-      <Circle cx={width * 0.55} cy={90} r={3} fill="#D8B4FE" />
-      <Circle cx={width * 0.55} cy={90} r={1.5} fill="#FEF9C3" />
-      <Path d={`M${width * 0.55},93 L${width * 0.55},103`} stroke="#40916C" strokeWidth={1.5} />
-    </Svg>
+// Beautiful Nature Landscape with Lottie Animation
+const NatureLandscape = () => (
+  <View style={styles.landscapeContainer}>
+    <LottieView
+      source={require('../assets/nature-landscape.json')}
+      autoPlay
+      loop
+      style={styles.landscapeLottie}
+      resizeMode="cover"
+    />
   </View>
 );
 
-// Egg Visual Component with Lottie Animation (white egg)
-const EggVisual = () => (
-  <View style={styles.eggWrapper}>
-    <LottieView
-      source={require('../assets/egg-animation.json')}
-      autoPlay
-      loop
-      style={{ width: 280, height: 280 }}
-    />
+// Egg nestled in a large 🪹 emoji nest
+const EggInNest = () => (
+  <View style={styles.eggNestContainer}>
+    <View style={styles.eggWrapper}>
+      <LottieView
+        source={require('../assets/egg-animation.json')}
+        autoPlay
+        loop
+        style={{ width: 270, height: 270 }}
+      />
+    </View>
+    <Text style={styles.nestEmoji}>🪹</Text>
   </View>
 );
 
@@ -137,31 +66,24 @@ const animalEmojiMap: Record<string, string> = {
   'Langur Monkey': '🐒', 'Pacific Pocket Mouse': '🐁', 'Wallaby': '🦘',
 };
 
-// Recent Hatch Card
+// Recent Hatch Card - Animal displayed cleanly without nest
 const RecentHatchCard = ({ animal }: { animal?: UserAnimal }) => {
-  const getAnimalEmoji = () => {
-    if (!animal?.animal?.name) return '🐾';
-    return animalEmojiMap[animal.animal.name] || '🐾';
-  };
-
-  const getAnimalName = () => {
-    if (!animal) return '';
-    return animal.nickname || animal.animal?.name || 'Animal';
-  };
+  const animalName = animal?.animal?.name;
+  const imageSource = animalName ? getAnimalImage(animalName) : null;
 
   return (
     <View style={styles.recentHatchCard}>
       {animal ? (
         <View style={styles.recentHatchContent}>
-          <Text style={styles.recentHatchEmoji}>{getAnimalEmoji()}</Text>
-          <Text style={styles.recentHatchName} numberOfLines={1}>
-            {getAnimalName()}
-          </Text>
+          {imageSource ? (
+            <Image source={imageSource} style={styles.recentHatchImage} />
+          ) : (
+            <Text style={styles.recentHatchEmoji}>🐾</Text>
+          )}
         </View>
       ) : (
         <View style={styles.recentHatchPlaceholder}>
           <Text style={styles.placeholderEmoji}>🥚</Text>
-          <Text style={styles.placeholderText}>Empty</Text>
         </View>
       )}
     </View>
@@ -184,8 +106,11 @@ export default function HomeScreen() {
   const [showAddTask, setShowAddTask] = useState(false);
   const [showCompleted, setShowCompleted] = useState(false);
   const [showStreakModal, setShowStreakModal] = useState(false);
+  const [showEcoModal, setShowEcoModal] = useState(false);
   const [subjects, setSubjects] = useState<string[]>(['Math', 'Science', 'English', 'History']);
   const [showAddSubject, setShowAddSubject] = useState(false);
+  const [newTaskDueDate, setNewTaskDueDate] = useState<Date | null>(null);
+  const [showDatePicker, setShowDatePicker] = useState(false);
   const [newSubjectName, setNewSubjectName] = useState('');
   const confettiRef = useRef<any>(null);
 
@@ -231,7 +156,7 @@ export default function HomeScreen() {
     try {
       const [eggData, tasksData, statsData, animalsData] = await Promise.all([
         animalsAPI.getEgg(),
-        tasksAPI.getTasks(),
+        tasksAPI.getTasks(true),
         statsAPI.getStats(),
         animalsAPI.getMyAnimals().catch(() => []),
       ]);
@@ -265,9 +190,11 @@ export default function HomeScreen() {
       await tasksAPI.createTask({ 
         title: newTaskTitle.trim(),
         description: newTaskSubject.trim() || undefined,
+        due_date: newTaskDueDate ? newTaskDueDate.toISOString().split('T')[0] : undefined,
       });
       setNewTaskTitle('');
       setNewTaskSubject('');
+      setNewTaskDueDate(null);
       setShowAddTask(false);
       loadData();
     } catch (error: any) {
@@ -333,57 +260,75 @@ export default function HomeScreen() {
         }
         showsVerticalScrollIndicator={false}
       >
-        {/* Header */}
-        <View style={styles.headerSection}>
-          <Text style={styles.greeting}>Hello, {user?.username || 'Friend'}! 👋</Text>
-          <Text style={styles.title}>Home</Text>
-        </View>
+        {/* Hero Card — header, chips, egg & CTA */}
+        <View style={styles.heroCard}>
+          {/* Header */}
+          <View style={styles.headerSection}>
+            <View>
+              <Text style={styles.greeting}>Hello, {user?.username || 'Friend'}!</Text>
+              <Text style={styles.title}>Home</Text>
+            </View>
+            <TouchableOpacity 
+              style={styles.profileButton}
+              onPress={() => navigation.navigate('Profile')}
+            >
+              <Text style={styles.profileButtonEmoji}>👤</Text>
+            </TouchableOpacity>
+          </View>
 
-        {/* User Stats Pills */}
-        <View style={styles.statsPills}>
-          <TouchableOpacity 
-            style={[styles.statPill, styles.statPillPrimary]}
-            onPress={() => setShowStreakModal(true)}
-          >
-            <Text style={styles.statPillIcon}>🔥</Text>
-            <Text style={styles.statPillText}>{stats?.current_streak || 0} day streak</Text>
-          </TouchableOpacity>
-          <TouchableOpacity 
-            style={[styles.statPill, styles.statPillSecondary]}
-            onPress={() => navigation.navigate('Collection')}
-          >
-            <Text style={styles.statPillIcon}>🐾</Text>
-            <Text style={styles.statPillTextDark}>{stats?.animals_hatched || 0} animals</Text>
-          </TouchableOpacity>
-        </View>
+          {/* User Stats Pills */}
+          <View style={styles.statsPills}>
+            <TouchableOpacity 
+              style={[styles.statPill, styles.statPillStreak]}
+              onPress={() => setShowStreakModal(true)}
+            >
+              <Text style={styles.statPillIcon}>🔥</Text>
+              <Text style={styles.statPillTextLight}>{stats?.current_streak || 0}</Text>
+            </TouchableOpacity>
+            <TouchableOpacity 
+              style={[styles.statPill, styles.statPillAnimals]}
+              onPress={() => navigation.navigate('Collection')}
+            >
+              <Text style={styles.statPillIcon}>🐾</Text>
+              <Text style={styles.statPillTextLight}>{stats?.animals_hatched || 0}</Text>
+            </TouchableOpacity>
+            <TouchableOpacity 
+              style={[styles.statPill, styles.statPillCredits]}
+              onPress={() => setShowEcoModal(true)}
+            >
+              <Text style={styles.statPillIcon}>🍀</Text>
+              <Text style={styles.statPillTextLight}>{stats?.current_coins || 0}</Text>
+            </TouchableOpacity>
+          </View>
 
-        {/* Egg Section with Grass Background */}
-        <View style={styles.eggSection}>
-          <GrassBackground />
-          <View style={styles.eggContent}>
-            <EggVisual />
+          {/* Egg Section nestled in Cozy Nest */}
+          <View style={styles.eggSection}>
+            <EggInNest />
+          </View>
+          
+          {/* Study Button - Below the egg */}
+          <View style={styles.buttonContainer}>
+            <TouchableOpacity
+              style={styles.hatchButton}
+              onPress={() => navigation.navigate('Timer')}
+              activeOpacity={0.8}
+            >
+              <Text style={styles.hatchButtonIcon}>🕐</Text>
+              <Text style={styles.hatchButtonText}>STUDY TO HATCH ME</Text>
+            </TouchableOpacity>
           </View>
         </View>
-        
-        {/* Study Button - Below the egg section */}
-        <View style={styles.buttonContainer}>
-          <TouchableOpacity
-            style={styles.hatchButton}
-            onPress={() => navigation.navigate('Timer')}
-            activeOpacity={0.8}
-          >
-            <Text style={styles.hatchButtonIcon}>🕐</Text>
-            <Text style={styles.hatchButtonText}>STUDY TO HATCH ME</Text>
-          </TouchableOpacity>
-        </View>
 
-        {/* Recent Hatches Section */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>My recent hatches</Text>
-          <View style={styles.recentHatches}>
-            {[0, 1, 2].map((i) => (
-              <RecentHatchCard key={i} animal={recentAnimals[i]} />
-            ))}
+        {/* Recent Hatches Section - Nestled in Nature Landscape */}
+        <View style={styles.recentHatchesSection}>
+          <Text style={[styles.sectionTitle, { paddingHorizontal: spacing.lg }]}>My recent hatches</Text>
+          <View style={styles.landscapeWrapper}>
+            <NatureLandscape />
+            <View style={styles.recentHatchesOverlay}>
+              {[0, 1, 2].map((i) => (
+                <RecentHatchCard key={i} animal={recentAnimals[i]} />
+              ))}
+            </View>
           </View>
         </View>
 
@@ -398,22 +343,24 @@ export default function HomeScreen() {
             </View>
           ) : (
             pendingTasks.map((task) => (
-              <TouchableOpacity
-                key={task.id}
-                style={styles.taskItem}
-                onPress={() => toggleTask(task)}
-              >
+              <View key={task.id} style={styles.taskItem}>
                 <View style={styles.taskInfo}>
                   <Text style={styles.taskTitle}>{task.title}</Text>
-                  <Text style={styles.taskSubtitle}>
-                    {task.description || 'Subject name'}
-                  </Text>
-                  <Text style={styles.taskDue}>due {task.due_date || 'To do due date'}</Text>
+                  {task.description ? (
+                    <Text style={styles.taskSubtitle}>{task.description}</Text>
+                  ) : null}
+                  {task.due_date ? (
+                    <Text style={styles.taskDue}>📅 Due {new Date(task.due_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</Text>
+                  ) : null}
                 </View>
-                <View style={styles.taskCheckbox}>
+                <TouchableOpacity
+                  style={styles.taskCheckbox}
+                  onPress={() => toggleTask(task)}
+                  hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+                >
                   {task.is_completed && <Text style={styles.checkmark}>✓</Text>}
-                </View>
-              </TouchableOpacity>
+                </TouchableOpacity>
+              </View>
             ))
           )}
 
@@ -432,28 +379,33 @@ export default function HomeScreen() {
             onPress={() => setShowCompleted(!showCompleted)}
           >
             <Text style={styles.completedButtonIcon}>✓</Text>
-            <Text style={styles.completedButtonText}>SEE COMPLETED TO-DOS</Text>
+            <Text style={styles.completedButtonText}>
+              {showCompleted ? 'HIDE COMPLETED TO-DOS' : 'SEE COMPLETED TO-DOS'}
+            </Text>
           </TouchableOpacity>
 
           {/* Completed Tasks */}
-          {showCompleted && completedTasks.length > 0 && (
+          {showCompleted && (
             <View style={styles.completedSection}>
-              {completedTasks.map((task) => (
-                <TouchableOpacity
-                  key={task.id}
-                  style={[styles.taskItem, styles.taskItemCompleted]}
-                  onPress={() => toggleTask(task)}
-                >
-                  <View style={styles.taskInfo}>
-                    <Text style={[styles.taskTitle, styles.taskTitleCompleted]}>
-                      {task.title}
-                    </Text>
+              {completedTasks.length === 0 ? (
+                <Text style={styles.emptyText}>No completed tasks yet.</Text>
+              ) : (
+                completedTasks.map((task) => (
+                  <View key={task.id} style={[styles.taskItem, styles.taskItemCompleted]}>
+                    <View style={styles.taskInfo}>
+                      <Text style={[styles.taskTitle, styles.taskTitleCompleted]}>
+                        {task.title}
+                      </Text>
+                      {task.description ? (
+                        <Text style={[styles.taskSubtitle, { opacity: 0.6 }]}>{task.description}</Text>
+                      ) : null}
+                    </View>
+                    <View style={[styles.taskCheckbox, styles.taskCheckboxCompleted]}>
+                      <Text style={styles.checkmarkCompleted}>✓</Text>
+                    </View>
                   </View>
-                  <View style={[styles.taskCheckbox, styles.taskCheckboxCompleted]}>
-                    <Text style={styles.checkmarkCompleted}>✓</Text>
-                  </View>
-                </TouchableOpacity>
-              ))}
+                ))
+              )}
             </View>
           )}
         </View>
@@ -536,12 +488,47 @@ export default function HomeScreen() {
 
               <Text style={styles.subjectHint}>Long press a subject to remove it</Text>
 
+              <Text style={styles.inputLabel}>Due Date (optional)</Text>
+              <View style={styles.dueDateRow}>
+                <TouchableOpacity
+                  style={styles.dueDateButton}
+                  onPress={() => setShowDatePicker(true)}
+                >
+                  <Text style={styles.dueDateButtonIcon}>📅</Text>
+                  <Text style={styles.dueDateButtonText}>
+                    {newTaskDueDate
+                      ? newTaskDueDate.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })
+                      : 'Select a due date'}
+                  </Text>
+                </TouchableOpacity>
+                {newTaskDueDate && (
+                  <TouchableOpacity onPress={() => setNewTaskDueDate(null)}>
+                    <Text style={styles.dueDateClear}>✕</Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+              {showDatePicker && (
+                <DateTimePicker
+                  value={newTaskDueDate || new Date()}
+                  mode="date"
+                  display={Platform.OS === 'ios' ? 'inline' : 'default'}
+                  minimumDate={new Date()}
+                  onChange={(event, selectedDate) => {
+                    setShowDatePicker(Platform.OS === 'ios');
+                    if (selectedDate) setNewTaskDueDate(selectedDate);
+                  }}
+                  accentColor={colors.primary}
+                />
+              )}
+
               <View style={styles.modalButtons}>
                 <TouchableOpacity 
                   style={styles.modalButtonCancel}
                   onPress={() => {
                     setShowAddTask(false);
                     setShowAddSubject(false);
+                    setShowDatePicker(false);
+                    setNewTaskDueDate(null);
                   }}
                 >
                   <Text style={styles.modalButtonCancelText}>Cancel</Text>
@@ -583,6 +570,69 @@ export default function HomeScreen() {
         </View>
       </Modal>
 
+      {/* Eco-Credits Info Modal */}
+      <Modal visible={showEcoModal} transparent animationType="slide">
+        <View style={styles.modalOverlay}>
+          <View style={styles.streakModalContent}>
+            <TouchableOpacity 
+              style={styles.streakModalClose}
+              onPress={() => setShowEcoModal(false)}
+            >
+              <Text style={styles.streakModalCloseText}>✕</Text>
+            </TouchableOpacity>
+
+            <View style={styles.streakHeader}>
+              <Text style={styles.streakFireEmoji}>🍀</Text>
+              <Text style={styles.streakBigNumber}>{stats?.current_coins || 0}</Text>
+              <Text style={styles.streakDaysLabel}>eco-credits</Text>
+            </View>
+
+            <View style={styles.streakStatsGrid}>
+              <View style={styles.streakStatItem}>
+                <Text style={styles.streakStatValue}>{stats?.total_coins || 0}</Text>
+                <Text style={styles.streakStatLabel}>Total Earned</Text>
+              </View>
+              <View style={styles.streakStatItem}>
+                <Text style={styles.streakStatValue}>{stats?.total_sessions || 0}</Text>
+                <Text style={styles.streakStatLabel}>Study Sessions</Text>
+              </View>
+              <View style={styles.streakStatItem}>
+                <Text style={styles.streakStatValue}>{stats?.animals_hatched || 0}</Text>
+                <Text style={styles.streakStatLabel}>Animals Hatched</Text>
+              </View>
+              <View style={styles.streakStatItem}>
+                <Text style={styles.streakStatValue}>
+                  {stats?.total_study_minutes ? Math.floor(stats.total_study_minutes / 60) : 0}h {(stats?.total_study_minutes || 0) % 60}m
+                </Text>
+                <Text style={styles.streakStatLabel}>Total Study Time</Text>
+              </View>
+            </View>
+
+            <View style={styles.ecoInfoCard}>
+              <Text style={styles.ecoInfoTitle}>What are eco-credits?</Text>
+              <Text style={styles.ecoInfoText}>
+                Eco-credits are earned every time you complete a study session. The longer you study, the more you earn! Spend them in the Sanctuary Shop on habitats, paths, and accessories for your animals.
+              </Text>
+            </View>
+
+            <TouchableOpacity 
+              style={styles.shopLinkButton}
+              onPress={() => { setShowEcoModal(false); navigation.navigate('Shop'); }}
+            >
+              <Text style={styles.shopLinkEmoji}>🛍️</Text>
+              <Text style={styles.shopLinkText}>Visit Sanctuary Shop</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity 
+              style={styles.streakCloseButton}
+              onPress={() => setShowEcoModal(false)}
+            >
+              <Text style={styles.streakCloseButtonText}>Got it!</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
       {/* Streak Details Modal */}
       <Modal visible={showStreakModal} transparent animationType="slide">
         <View style={styles.modalOverlay}>
@@ -617,7 +667,7 @@ export default function HomeScreen() {
               </View>
               <View style={styles.streakStatItem}>
                 <Text style={styles.streakStatValue}>{stats?.total_coins || 0}</Text>
-                <Text style={styles.streakStatLabel}>Total Coins Earned</Text>
+                <Text style={styles.streakStatLabel}>Total Eco-Credits</Text>
               </View>
               <View style={styles.streakStatItem}>
                 <Text style={styles.streakStatValue}>{stats?.tasks_completed || 0}</Text>
@@ -625,7 +675,7 @@ export default function HomeScreen() {
               </View>
               <View style={styles.streakStatItem}>
                 <Text style={styles.streakStatValue}>
-                  {stats?.weekly_study_minutes ? Math.floor(stats.weekly_study_minutes / 60) : 0}h
+                  {stats?.weekly_study_minutes ? Math.floor((Array.isArray(stats.weekly_study_minutes) ? stats.weekly_study_minutes.reduce((a: number, b: number) => a + b, 0) : 0) / 60) : 0}h
                 </Text>
                 <Text style={styles.streakStatLabel}>This Week</Text>
               </View>
@@ -655,7 +705,7 @@ export default function HomeScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F5FBF7',
+    backgroundColor: '#E8F5E9',
   },
   scrollView: {
     flex: 1,
@@ -663,100 +713,128 @@ const styles = StyleSheet.create({
   scrollContent: {
     paddingBottom: 32,
   },
+  heroCard: {
+    backgroundColor: '#C5DEC9',
+    marginHorizontal: spacing.md,
+    marginTop: spacing.sm,
+    borderRadius: 24,
+    paddingBottom: spacing.lg,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.06,
+    shadowRadius: 12,
+    elevation: 3,
+  },
   headerSection: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
     paddingHorizontal: spacing.lg,
-    paddingTop: spacing.md,
-    paddingBottom: spacing.sm,
+    paddingTop: spacing.lg,
+    paddingBottom: spacing.xs,
+  },
+  profileButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: colors.surface,
+    justifyContent: 'center',
+    alignItems: 'center',
+    ...shadows.small,
+  },
+  profileButtonEmoji: {
+    fontSize: 22,
   },
   greeting: {
-    fontSize: 14,
-    color: colors.textSecondary,
-    marginBottom: 4,
-  },
-  title: {
-    fontSize: 28,
+    fontSize: 22,
     fontWeight: '700',
     color: colors.textPrimary,
+    marginBottom: 2,
+  },
+  title: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: colors.textSecondary,
   },
   statsPills: {
     flexDirection: 'row',
     paddingHorizontal: spacing.lg,
-    gap: spacing.sm,
+    justifyContent: 'space-between',
     marginTop: spacing.sm,
-    marginBottom: spacing.sm,
+    marginBottom: spacing.xs,
+    zIndex: 20,
   },
   statPill: {
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
+    justifyContent: 'center',
+    paddingVertical: 10,
     borderRadius: borderRadius.full,
-    gap: spacing.xs,
+    gap: 6,
+    marginHorizontal: 4,
   },
-  statPillPrimary: {
-    backgroundColor: colors.primary,
+  statPillStreak: {
+    backgroundColor: '#F4E8D1',
   },
-  statPillSecondary: {
-    backgroundColor: colors.primaryLight,
+  statPillAnimals: {
+    backgroundColor: '#D9EEDC',
+  },
+  statPillCredits: {
+    backgroundColor: '#E0E8F0',
   },
   statPillIcon: {
-    fontSize: 14,
+    fontSize: 16,
   },
-  statPillText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: colors.textOnPrimary,
-  },
-  statPillTextDark: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: colors.primary,
+  statPillTextLight: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#4A5568',
   },
   eggSection: {
-    height: 260,
-    position: 'relative',
-    overflow: 'visible',
-  },
-  grassContainer: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    height: 130,
-  },
-  grassSvg: {
-    position: 'absolute',
-    bottom: 0,
-  },
-  eggContent: {
-    flex: 1,
     alignItems: 'center',
-    justifyContent: 'flex-end',
+    marginTop: -28,
+    paddingBottom: 0,
   },
-  eggWrapper: {
+  eggNestContainer: {
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: -20,
+    position: 'relative',
+    height: 270,
+    width: 310,
+  },
+  eggWrapper: {
+    position: 'absolute',
+    top: 0,
+    alignItems: 'center',
+    justifyContent: 'center',
     zIndex: 10,
+  },
+  nestEmoji: {
+    fontSize: 170,
+    position: 'absolute',
+    bottom: -36,
+    textAlign: 'center',
+    opacity: 0.92,
   },
   buttonContainer: {
     alignItems: 'center',
-    paddingVertical: spacing.md,
-    backgroundColor: '#F5FBF7',
+    paddingTop: spacing.lg,
+    paddingBottom: spacing.sm,
   },
   hatchButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#4A9660',
+    backgroundColor: '#6B8F71',
     paddingHorizontal: 28,
     paddingVertical: 14,
     borderRadius: 30,
     gap: spacing.sm,
-    shadowColor: '#2D5A3D',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 8,
+    shadowColor: '#4A6B50',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.25,
+    shadowRadius: 6,
+    elevation: 6,
   },
   hatchButtonReady: {
     backgroundColor: colors.success,
@@ -774,63 +852,95 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.lg,
     marginTop: spacing.lg,
   },
+  recentHatchesSection: {
+    marginTop: spacing.md,
+    paddingHorizontal: 0,
+  },
   sectionTitle: {
     fontSize: 20,
     fontWeight: '700',
     color: colors.textPrimary,
-    marginBottom: spacing.md,
+    marginBottom: spacing.sm,
+  },
+  landscapeContainer: {
+    width: '100%',
+    height: '100%',
+    overflow: 'hidden',
+  },
+  landscapeLottie: {
+    width: '100%',
+    height: 240,
+    position: 'absolute',
+    top: -15,
+    left: 0,
+  },
+  landscapeWrapper: {
+    position: 'relative',
+    height: 220,
+    overflow: 'hidden',
+    backgroundColor: '#E8F5E9',
+  },
+  recentHatchesOverlay: {
+    position: 'absolute',
+    bottom: 8,
+    left: 0,
+    right: 0,
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: spacing.md,
+    paddingHorizontal: spacing.sm,
   },
   recentHatches: {
     flexDirection: 'row',
     gap: spacing.md,
   },
   recentHatchCard: {
-    width: 100,
-    height: 90,
-    backgroundColor: colors.surface,
-    borderRadius: borderRadius.lg,
-    justifyContent: 'center',
+    width: 110,
+    height: 130,
     alignItems: 'center',
-    borderWidth: 1,
-    borderColor: colors.cardBorder,
-    ...shadows.small,
-    paddingVertical: 8,
+    justifyContent: 'flex-end',
   },
   recentHatchContent: {
     alignItems: 'center',
-    justifyContent: 'center',
+    justifyContent: 'flex-end',
+    position: 'relative',
+    height: 125,
   },
   recentHatchEmoji: {
-    fontSize: 32,
-    marginBottom: 4,
+    fontSize: 50,
+    marginBottom: 10,
+    zIndex: 2,
   },
-  recentHatchName: {
-    fontSize: 11,
-    color: colors.textSecondary,
-    fontWeight: '500',
-    textAlign: 'center',
-    maxWidth: 80,
+  recentHatchImage: {
+    width: 90,
+    height: 90,
+    zIndex: 2,
+    marginBottom: 8,
   },
   recentHatchPlaceholder: {
     alignItems: 'center',
-    opacity: 0.5,
+    justifyContent: 'flex-end',
+    position: 'relative',
+    height: 110,
+    opacity: 0.8,
   },
   placeholderEmoji: {
-    fontSize: 28,
-    marginBottom: 4,
+    fontSize: 42,
+    marginBottom: 10,
+    zIndex: 2,
   },
   placeholderText: {
     fontSize: 10,
     color: colors.textMuted,
   },
   todoSection: {
-    marginTop: spacing.xl,
+    marginTop: spacing.lg,
+    marginHorizontal: spacing.md,
     paddingHorizontal: spacing.lg,
     paddingTop: spacing.lg,
     paddingBottom: spacing.xl,
     backgroundColor: colors.primary,
-    borderTopLeftRadius: borderRadius.xl,
-    borderTopRightRadius: borderRadius.xl,
+    borderRadius: 24,
     minHeight: 400,
   },
   todoTitle: {
@@ -1056,8 +1166,39 @@ const styles = StyleSheet.create({
   subjectHint: {
     fontSize: 11,
     color: colors.textMuted,
-    marginBottom: spacing.lg,
+    marginBottom: spacing.md,
     fontStyle: 'italic',
+  },
+  dueDateRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    marginBottom: spacing.sm,
+  },
+  dueDateButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    paddingVertical: 12,
+    paddingHorizontal: spacing.md,
+    backgroundColor: colors.background,
+    borderRadius: borderRadius.md,
+    borderWidth: 1,
+    borderColor: colors.divider,
+  },
+  dueDateButtonIcon: {
+    fontSize: 16,
+  },
+  dueDateButtonText: {
+    fontSize: 14,
+    color: colors.textSecondary,
+  },
+  dueDateClear: {
+    fontSize: 18,
+    color: colors.textMuted,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 4,
   },
   modalButtons: {
     flexDirection: 'row',
@@ -1242,5 +1383,41 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '700',
     color: colors.textOnPrimary,
+  },
+  ecoInfoCard: {
+    backgroundColor: colors.surfaceAlt,
+    borderRadius: borderRadius.lg,
+    padding: spacing.md,
+    marginBottom: spacing.lg,
+    width: '100%',
+  },
+  ecoInfoTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: colors.textPrimary,
+    marginBottom: spacing.xs,
+  },
+  ecoInfoText: {
+    fontSize: 14,
+    color: colors.textSecondary,
+    lineHeight: 20,
+  },
+  shopLinkButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.primary + '12',
+    paddingVertical: 12,
+    borderRadius: 14,
+    marginBottom: spacing.sm,
+    gap: 8,
+  },
+  shopLinkEmoji: {
+    fontSize: 18,
+  },
+  shopLinkText: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: colors.primary,
   },
 });

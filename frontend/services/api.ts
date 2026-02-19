@@ -112,7 +112,8 @@ export interface UserStats {
   longest_streak: number;
   animals_hatched: number;
   tasks_completed: number;
-  weekly_study_minutes: number;
+  weekly_study_minutes: number[];
+  study_minutes_by_subject: { [key: string]: number };
 }
 
 // Helper function for API calls
@@ -225,10 +226,10 @@ export const tasksAPI = {
 
 // Study Sessions API
 export const sessionsAPI = {
-  completeSession: (duration_minutes: number, task_id?: number, animal_name?: string) =>
+  completeSession: (duration_minutes: number, task_id?: number, animal_name?: string, subject?: string) =>
     apiFetch<StudySessionWithHatch>('/sessions', {
       method: 'POST',
-      body: JSON.stringify({ duration_minutes, task_id, animal_name }),
+      body: JSON.stringify({ duration_minutes, task_id, animal_name, subject }),
     }),
   
   getSessions: (limit = 50) =>
@@ -285,6 +286,15 @@ export const socialAPI = {
 // Stats API
 export const statsAPI = {
   getStats: () => apiFetch<UserStats>('/stats'),
+};
+
+// Shop API
+export const shopAPI = {
+  spendCoins: (amount: number) =>
+    apiFetch<{ current_coins: number; spent: number }>('/shop/spend', {
+      method: 'POST',
+      body: JSON.stringify({ amount }),
+    }),
 };
 
 export const setApiUrl = (url: string) => {
