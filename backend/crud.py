@@ -148,20 +148,12 @@ def create_study_session(db: Session, user_id: int, duration_minutes: int, task_
             db.add(animal)
             db.flush()  # Get the ID
         
-        # Check if user already has this animal
-        existing = db.query(models.UserAnimal).filter(
-            models.UserAnimal.user_id == user_id,
-            models.UserAnimal.animal_id == animal.id
-        ).first()
+        user_animal = models.UserAnimal(
+            user_id=user_id,
+            animal_id=animal.id
+        )
+        db.add(user_animal)
         
-        if not existing:
-            user_animal = models.UserAnimal(
-                user_id=user_id,
-                animal_id=animal.id
-            )
-            db.add(user_animal)
-        
-        # Always return the animal so frontend can display it
         hatched_animal = animal
     
     db.commit()
