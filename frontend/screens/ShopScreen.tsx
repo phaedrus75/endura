@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback } from 'react';
 import {
   View,
   Text,
@@ -9,64 +9,57 @@ import {
   Modal,
   Dimensions,
   Image,
+  ImageSourcePropType,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { colors, shadows, spacing, borderRadius } from '../theme/colors';
-import { shopAPI, statsAPI, UserStats } from '../services/api';
+import { shopAPI, statsAPI, badgesAPI, UserStats } from '../services/api';
 import { useAuth } from '../contexts/AuthContext';
+import { shopAccessories, shopDecorations } from '../assets/shop';
 
 const { width } = Dimensions.get('window');
 
-type ShopCategory = 'habitats' | 'paths' | 'accessories' | 'decorations';
+type ShopCategory = 'accessories' | 'decorations';
 
 interface ShopItem {
   id: string;
   name: string;
-  emoji: string;
+  imageKey: string;
   description: string;
   price: number;
   category: ShopCategory;
   rarity: 'common' | 'rare' | 'epic' | 'legendary';
-  sanctuaryKey: string;
 }
 
 const SHOP_ITEMS: ShopItem[] = [
-  // Habitats
-  { id: 'hab_pond', name: 'Peaceful Pond', emoji: '🏊', description: 'A serene pond for your water-loving friends', price: 50, category: 'habitats', rarity: 'common', sanctuaryKey: 'pond' },
-  { id: 'hab_cave', name: 'Cozy Cave', emoji: '🕳️', description: 'A warm shelter for shy animals', price: 75, category: 'habitats', rarity: 'common', sanctuaryKey: 'cave' },
-  { id: 'hab_treehouse', name: 'Treehouse', emoji: '🌳', description: 'An elevated home among the canopy', price: 120, category: 'habitats', rarity: 'rare', sanctuaryKey: 'treehouse' },
-  { id: 'hab_bamboo', name: 'Bamboo Grove', emoji: '🎋', description: 'A peaceful bamboo forest corner', price: 100, category: 'habitats', rarity: 'rare', sanctuaryKey: 'bamboo' },
-  { id: 'hab_waterfall', name: 'Waterfall', emoji: '🏞️', description: 'A majestic cascading waterfall', price: 200, category: 'habitats', rarity: 'epic', sanctuaryKey: 'waterfall' },
-  { id: 'hab_volcano', name: 'Warm Springs', emoji: '♨️', description: 'Naturally heated hot springs', price: 300, category: 'habitats', rarity: 'legendary', sanctuaryKey: 'springs' },
-
-  // Paths
-  { id: 'path_stone', name: 'Stone Path', emoji: '🪨', description: 'A charming cobblestone walkway', price: 30, category: 'paths', rarity: 'common', sanctuaryKey: 'stone_path' },
-  { id: 'path_flower', name: 'Flower Trail', emoji: '🌺', description: 'A path lined with wildflowers', price: 60, category: 'paths', rarity: 'rare', sanctuaryKey: 'flower_path' },
-  { id: 'path_bridge', name: 'Wooden Bridge', emoji: '🌉', description: 'A cute bridge over your pond', price: 80, category: 'paths', rarity: 'rare', sanctuaryKey: 'bridge' },
-  { id: 'path_lanterns', name: 'Lantern Lane', emoji: '🏮', description: 'Softly glowing paper lanterns', price: 150, category: 'paths', rarity: 'epic', sanctuaryKey: 'lanterns' },
-
   // Accessories
-  { id: 'acc_hat', name: 'Tiny Top Hat', emoji: '🎩', description: 'A dapper hat for your favourite animal', price: 40, category: 'accessories', rarity: 'common', sanctuaryKey: 'hat' },
-  { id: 'acc_scarf', name: 'Cozy Scarf', emoji: '🧣', description: 'A warm knitted scarf', price: 35, category: 'accessories', rarity: 'common', sanctuaryKey: 'scarf' },
-  { id: 'acc_bow', name: 'Flower Crown', emoji: '💐', description: 'A beautiful crown of wildflowers', price: 55, category: 'accessories', rarity: 'rare', sanctuaryKey: 'crown' },
-  { id: 'acc_glasses', name: 'Reading Glasses', emoji: '👓', description: 'Studious specs for smart animals', price: 45, category: 'accessories', rarity: 'common', sanctuaryKey: 'glasses' },
-  { id: 'acc_cape', name: 'Hero Cape', emoji: '🦸', description: 'A tiny cape for brave creatures', price: 100, category: 'accessories', rarity: 'epic', sanctuaryKey: 'cape' },
-  { id: 'acc_wings', name: 'Fairy Wings', emoji: '🧚', description: 'Sparkly gossamer wings', price: 200, category: 'accessories', rarity: 'legendary', sanctuaryKey: 'wings' },
+  { id: 'acc_tophat', name: 'Top Hat', imageKey: 'tophat', description: 'A dapper top hat for your most distinguished animal', price: 40, category: 'accessories', rarity: 'common' },
+  { id: 'acc_sunnies', name: 'Sunnies', imageKey: 'sunnies', description: 'Cool shades for the coolest creatures', price: 35, category: 'accessories', rarity: 'common' },
+  { id: 'acc_crown', name: 'Crown', imageKey: 'crown', description: 'A royal crown fit for the king of the sanctuary', price: 80, category: 'accessories', rarity: 'epic' },
+  { id: 'acc_gradcap', name: 'Graduation Cap', imageKey: 'gradcap', description: 'Celebrate your study achievements in style', price: 60, category: 'accessories', rarity: 'rare' },
+  { id: 'acc_eyemask', name: 'Eye Mask', imageKey: 'eyemask', description: 'For animals that deserve a cozy rest after your study session', price: 45, category: 'accessories', rarity: 'common' },
+  { id: 'acc_partyhat', name: 'Party Hat', imageKey: 'partyhat', description: 'A festive party hat for celebration time', price: 50, category: 'accessories', rarity: 'rare' },
+  { id: 'acc_halo', name: 'Halo', imageKey: 'halo', description: 'A golden halo for your most angelic animal', price: 90, category: 'accessories', rarity: 'epic' },
+  { id: 'acc_bow', name: 'Bow Tie', imageKey: 'bow', description: 'A classy white bow tie for formal occasions', price: 55, category: 'accessories', rarity: 'rare' },
 
   // Decorations
-  { id: 'dec_flowers', name: 'Flower Bed', emoji: '🌷', description: 'A colourful patch of flowers', price: 25, category: 'decorations', rarity: 'common', sanctuaryKey: 'flowers' },
-  { id: 'dec_mushrooms', name: 'Mushroom Ring', emoji: '🍄', description: 'A fairy ring of mushrooms', price: 40, category: 'decorations', rarity: 'common', sanctuaryKey: 'mushrooms' },
-  { id: 'dec_rainbow', name: 'Rainbow Arch', emoji: '🌈', description: 'A beautiful rainbow over your sanctuary', price: 150, category: 'decorations', rarity: 'epic', sanctuaryKey: 'rainbow' },
-  { id: 'dec_fireflies', name: 'Firefly Jar', emoji: '✨', description: 'Twinkling lights at dusk', price: 80, category: 'decorations', rarity: 'rare', sanctuaryKey: 'fireflies' },
-  { id: 'dec_swing', name: 'Tree Swing', emoji: '🪢', description: 'A gentle rope swing on a branch', price: 60, category: 'decorations', rarity: 'rare', sanctuaryKey: 'swing' },
-  { id: 'dec_stars', name: 'Starry Sky', emoji: '🌙', description: 'A permanent twilight with twinkling stars', price: 250, category: 'decorations', rarity: 'legendary', sanctuaryKey: 'stars' },
+  { id: 'dec_daisy', name: 'Daisy Patch', imageKey: 'daisy', description: 'A cheerful bunch of daisies to brighten your sanctuary', price: 30, category: 'decorations', rarity: 'common' },
+  { id: 'dec_mushroom', name: 'Mushroom', imageKey: 'mushroom', description: 'A whimsical fairy-tale mushroom', price: 40, category: 'decorations', rarity: 'common' },
+  { id: 'dec_tree', name: 'Tree', imageKey: 'tree', description: 'A shady tree for animals to rest under', price: 55, category: 'decorations', rarity: 'rare' },
+  { id: 'dec_tulips', name: 'Tulips', imageKey: 'tulips', description: 'A vibrant cluster of colourful tulips', price: 50, category: 'decorations', rarity: 'rare' },
+  { id: 'dec_stones', name: 'Zen Stones', imageKey: 'stones', description: 'A calming stack of smooth zen stones', price: 45, category: 'decorations', rarity: 'common' },
+  { id: 'dec_bamboo', name: 'Bamboo', imageKey: 'bamboo', description: 'Tall green bamboo stalks swaying gently', price: 65, category: 'decorations', rarity: 'rare' },
 ];
 
+function getItemImage(item: ShopItem): ImageSourcePropType | null {
+  if (item.category === 'accessories') return shopAccessories[item.imageKey] || null;
+  if (item.category === 'decorations') return shopDecorations[item.imageKey] || null;
+  return null;
+}
+
 const CATEGORY_INFO: Record<ShopCategory, { label: string; emoji: string; color: string }> = {
-  habitats: { label: 'Habitats', emoji: '🏡', color: '#7CB87F' },
-  paths: { label: 'Paths', emoji: '🛤️', color: '#E8B86D' },
   accessories: { label: 'Accessories', emoji: '🎀', color: '#B794D4' },
   decorations: { label: 'Decorations', emoji: '✨', color: '#7EC8E3' },
 };
@@ -82,9 +75,9 @@ const STORAGE_KEY = 'endura_purchased_items';
 
 export default function ShopScreen() {
   const navigation = useNavigation<any>();
-  const { refreshUser, user } = useAuth();
+  const { refreshUser } = useAuth();
   const [stats, setStats] = useState<UserStats | null>(null);
-  const [activeCategory, setActiveCategory] = useState<ShopCategory>('habitats');
+  const [activeCategory, setActiveCategory] = useState<ShopCategory>('accessories');
   const [purchasedIds, setPurchasedIds] = useState<Record<string, boolean>>({});
   const [selectedItem, setSelectedItem] = useState<ShopItem | null>(null);
   const [showPreview, setShowPreview] = useState(false);
@@ -129,10 +122,11 @@ export default function ShopScreen() {
       await refreshUser();
       const newStats = await statsAPI.getStats();
       setStats(newStats);
+      try { await badgesAPI.checkBadges(); } catch {}
       setShowPreview(false);
       setSelectedItem(null);
       Alert.alert(
-        `${item.emoji} Purchased!`,
+        'Purchased!',
         `${item.name} has been added to your sanctuary! Visit your Collection to see it.`
       );
     } catch (e: any) {
@@ -141,12 +135,12 @@ export default function ShopScreen() {
       await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
       setShowPreview(false);
       setSelectedItem(null);
-      Alert.alert(`${item.emoji} Purchased!`, `${item.name} has been added to your sanctuary!`);
+      Alert.alert('Purchased!', `${item.name} has been added to your sanctuary!`);
     }
   };
 
   const categoryItems = SHOP_ITEMS.filter((i) => i.category === activeCategory);
-  const purchasedCount = Object.keys(purchasedIds).length;
+  const purchasedCount = Object.values(purchasedIds).filter(Boolean).length;
 
   return (
     <SafeAreaView style={styles.container}>
@@ -178,11 +172,7 @@ export default function ShopScreen() {
         </View>
 
         {/* Category Tabs */}
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.categoryRow}
-        >
+        <View style={styles.categoryRow}>
           {(Object.keys(CATEGORY_INFO) as ShopCategory[]).map((cat) => {
             const info = CATEGORY_INFO[cat];
             const isActive = activeCategory === cat;
@@ -197,13 +187,14 @@ export default function ShopScreen() {
               </TouchableOpacity>
             );
           })}
-        </ScrollView>
+        </View>
 
         {/* Item Grid */}
         <View style={styles.itemGrid}>
           {categoryItems.map((item) => {
             const owned = !!purchasedIds[item.id];
             const canAfford = (stats?.current_coins || 0) >= item.price;
+            const img = getItemImage(item);
             return (
               <TouchableOpacity
                 key={item.id}
@@ -217,7 +208,13 @@ export default function ShopScreen() {
                   </View>
                 )}
                 <View style={[styles.itemRarityDot, { backgroundColor: RARITY_COLORS[item.rarity] }]} />
-                <Text style={styles.itemEmoji}>{item.emoji}</Text>
+                <View style={styles.itemImageWrap}>
+                  {img ? (
+                    <Image source={img} style={styles.itemImage} resizeMode="contain" />
+                  ) : (
+                    <Text style={styles.itemFallbackEmoji}>🎁</Text>
+                  )}
+                </View>
                 <Text style={styles.itemName} numberOfLines={1}>{item.name}</Text>
                 <View style={[styles.itemPrice, !canAfford && !owned && styles.itemPriceCantAfford]}>
                   <Text style={styles.itemPriceEmoji}>🍀</Text>
@@ -240,10 +237,15 @@ export default function ShopScreen() {
               const owned = !!purchasedIds[selectedItem.id];
               const canAfford = (stats?.current_coins || 0) >= selectedItem.price;
               const catInfo = CATEGORY_INFO[selectedItem.category];
+              const img = getItemImage(selectedItem);
               return (
                 <>
-                  <View style={[styles.previewEmojiCircle, { backgroundColor: catInfo.color + '15' }]}>
-                    <Text style={styles.previewEmoji}>{selectedItem.emoji}</Text>
+                  <View style={[styles.previewImageCircle, { backgroundColor: catInfo.color + '15' }]}>
+                    {img ? (
+                      <Image source={img} style={styles.previewImage} resizeMode="contain" />
+                    ) : (
+                      <Text style={styles.previewFallbackEmoji}>🎁</Text>
+                    )}
                   </View>
                   <Text style={styles.previewName}>{selectedItem.name}</Text>
                   <View style={[styles.previewRarity, { backgroundColor: RARITY_COLORS[selectedItem.rarity] }]}>
@@ -390,25 +392,27 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   categoryRow: {
+    flexDirection: 'row',
     gap: spacing.sm,
-    paddingBottom: spacing.md,
+    marginBottom: spacing.md,
   },
   categoryTab: {
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 14,
-    paddingVertical: 9,
+    justifyContent: 'center',
+    paddingVertical: 10,
     borderRadius: 16,
     borderWidth: 1.5,
     borderColor: colors.cardBorder,
     backgroundColor: colors.surface,
-    gap: 5,
+    gap: 6,
   },
   categoryTabEmoji: {
     fontSize: 16,
   },
   categoryTabText: {
-    fontSize: 13,
+    fontSize: 14,
     fontWeight: '600',
     color: colors.textSecondary,
   },
@@ -456,10 +460,20 @@ const styles = StyleSheet.create({
     height: 10,
     borderRadius: 5,
   },
-  itemEmoji: {
-    fontSize: 40,
+  itemImageWrap: {
+    width: 96,
+    height: 96,
+    justifyContent: 'center',
+    alignItems: 'center',
     marginBottom: spacing.sm,
     marginTop: spacing.xs,
+  },
+  itemImage: {
+    width: 90,
+    height: 90,
+  },
+  itemFallbackEmoji: {
+    fontSize: 40,
   },
   itemName: {
     fontSize: 13,
@@ -491,7 +505,6 @@ const styles = StyleSheet.create({
   itemPriceTextCantAfford: {
     color: colors.error,
   },
-  // Preview Modal
   previewOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.4)',
@@ -512,15 +525,19 @@ const styles = StyleSheet.create({
     backgroundColor: colors.divider,
     marginBottom: spacing.lg,
   },
-  previewEmojiCircle: {
-    width: 90,
-    height: 90,
-    borderRadius: 45,
+  previewImageCircle: {
+    width: 140,
+    height: 140,
+    borderRadius: 70,
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: spacing.md,
   },
-  previewEmoji: {
+  previewImage: {
+    width: 110,
+    height: 110,
+  },
+  previewFallbackEmoji: {
     fontSize: 48,
   },
   previewName: {

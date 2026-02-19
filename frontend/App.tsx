@@ -18,6 +18,7 @@ import TimerScreen from './screens/TimerScreen';
 import CollectionScreen from './screens/CollectionScreen';
 import ProgressScreen from './screens/ProgressScreen';
 import TipsScreen from './screens/TipsScreen';
+import BadgesScreen from './screens/BadgesScreen';
 import ProfileScreen from './screens/ProfileScreen';
 import ShopScreen from './screens/ShopScreen';
 
@@ -31,6 +32,7 @@ const TabIcon = ({ name, focused }: { name: string; focused: boolean }) => {
     Timer: '⌛️',
     Collection: '🥚',
     Progress: '🏆',
+    Badges: '🏅',
     Tips: '💡',
   };
   
@@ -60,6 +62,7 @@ function MainTabs() {
       <Tab.Screen name="Timer" component={TimerScreen} />
       <Tab.Screen name="Collection" component={CollectionScreen} />
       <Tab.Screen name="Progress" component={ProgressScreen} />
+      <Tab.Screen name="Badges" component={BadgesScreen} />
       <Tab.Screen name="Tips" component={TipsScreen} />
     </Tab.Navigator>
   );

@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useRef } from 'react';
 import {
   View,
   Text,
@@ -11,6 +11,10 @@ import {
   Modal,
   Dimensions,
   Image,
+  Animated,
+  PanResponder,
+  ImageSourcePropType,
+  LayoutChangeEvent,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
@@ -18,7 +22,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import Svg, { Circle, Defs, LinearGradient, Stop } from 'react-native-svg';
 import LottieView from 'lottie-react-native';
 import { colors, shadows, spacing, borderRadius } from '../theme/colors';
-import { animalsAPI, UserAnimal, Animal } from '../services/api';
+import { animalsAPI, badgesAPI, UserAnimal, Animal } from '../services/api';
 import { getAnimalImage } from '../assets/animals';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
@@ -129,11 +133,11 @@ const ProgressRing = ({ progress, size = 80 }: { progress: number; size?: number
 
 const generatePositions = (count: number, containerW: number, containerH: number) => {
   const positions: { left: number; bottom: number; scale: number }[] = [];
-  const animalSize = 64;
+  const animalSize = 62;
   const minGap = 10;
   const padding = 10;
   const usableW = containerW - padding * 2;
-  const maxBottom = containerH * 0.38;
+  const maxBottom = containerH * 0.75;
 
   const cols = Math.max(2, Math.min(5, Math.floor(usableW / (animalSize + minGap))));
   const rows = Math.ceil(count / cols);
@@ -159,11 +163,106 @@ const generatePositions = (count: number, containerW: number, containerH: number
 };
 
 const PURCHASED_ITEMS_KEY = 'endura_purchased_items';
+const ASSIGNMENTS_KEY = 'endura_item_assignments';
 
-const DECORATION_EMOJIS: Record<string, string> = {
-  pond: '🏊', cave: '🕳️', treehouse: '🌳', bamboo: '🎋', waterfall: '🏞️', springs: '♨️',
-  stone_path: '🪨', flower_path: '🌺', bridge: '🌉', lanterns: '🏮',
-  flowers: '🌷', mushrooms: '🍄', rainbow: '🌈', fireflies: '✨', swing: '🪢', stars: '🌙',
+interface ItemAssignment {
+  itemId: string;
+  x: number;
+  y: number;
+}
+
+interface DraggableItemProps {
+  itemId: string;
+  image: ImageSourcePropType;
+  startX: number;
+  startY: number;
+  size?: number;
+  onDrop: (itemId: string, x: number, y: number) => void;
+  onDragStart?: () => void;
+  onDragEnd?: () => void;
+}
+
+const DraggableItem = React.memo(({ itemId, image, startX, startY, size, onDrop, onDragStart, onDragEnd }: DraggableItemProps) => {
+  const currentPos = useRef({ x: startX, y: startY });
+  const panX = useRef(new Animated.Value(startX)).current;
+  const panY = useRef(new Animated.Value(startY)).current;
+  const scale = useRef(new Animated.Value(1)).current;
+  const lastGesture = useRef({ dx: 0, dy: 0 });
+
+  const onDropRef = useRef(onDrop);
+  const onDragStartRef = useRef(onDragStart);
+  const onDragEndRef = useRef(onDragEnd);
+  onDropRef.current = onDrop;
+  onDragStartRef.current = onDragStart;
+  onDragEndRef.current = onDragEnd;
+
+  const panResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponder: (_, g) => Math.abs(g.dx) > 2 || Math.abs(g.dy) > 2,
+      onPanResponderGrant: () => {
+        lastGesture.current = { dx: 0, dy: 0 };
+        onDragStartRef.current?.();
+        Animated.timing(scale, { toValue: 1.2, duration: 100, useNativeDriver: false }).start();
+      },
+      onPanResponderMove: (_, gesture) => {
+        lastGesture.current = { dx: gesture.dx, dy: gesture.dy };
+        panX.setValue(currentPos.current.x + gesture.dx);
+        panY.setValue(currentPos.current.y + gesture.dy);
+      },
+      onPanResponderRelease: () => {
+        const finalX = currentPos.current.x + lastGesture.current.dx;
+        const finalY = currentPos.current.y + lastGesture.current.dy;
+        currentPos.current = { x: finalX, y: finalY };
+        Animated.timing(scale, { toValue: 1, duration: 100, useNativeDriver: false }).start();
+        onDragEndRef.current?.();
+        onDropRef.current(itemId, finalX, finalY);
+      },
+      onPanResponderTerminate: () => {
+        onDragEndRef.current?.();
+        Animated.timing(scale, { toValue: 1, duration: 100, useNativeDriver: false }).start();
+      },
+    })
+  ).current;
+
+  const s = size || 24;
+
+  return (
+    <Animated.View
+      {...panResponder.panHandlers}
+      style={[
+        styles.draggableItem,
+        {
+          width: s + 4,
+          height: s + 4,
+          transform: [
+            { translateX: panX },
+            { translateY: panY },
+            { scale },
+          ],
+        },
+      ]}
+    >
+      <Image source={image} style={{ width: s, height: s }} resizeMode="contain" />
+    </Animated.View>
+  );
+});
+
+const SHOP_IMAGES: Record<string, any> = {
+  acc_tophat: require('../assets/shop/accessories/tophat.png'),
+  acc_sunnies: require('../assets/shop/accessories/sunnies.png'),
+  acc_crown: require('../assets/shop/accessories/crown.png'),
+  acc_gradcap: require('../assets/shop/accessories/gradcap.png'),
+  acc_eyemask: require('../assets/shop/accessories/eyemask.png'),
+  acc_partyhat: require('../assets/shop/accessories/partyhat.png'),
+  acc_halo: require('../assets/shop/accessories/halo.png'),
+  acc_bow: require('../assets/shop/accessories/bow.png'),
+  dec_daisy: require('../assets/shop/decorations/daisy.png'),
+  dec_mushroom: require('../assets/shop/decorations/mushroom.png'),
+  dec_tree: require('../assets/shop/decorations/tree.png'),
+  dec_tulips: require('../assets/shop/decorations/tulips.png'),
+  dec_stones: require('../assets/shop/decorations/stones.png'),
+  dec_bamboo: require('../assets/shop/decorations/bamboo.png'),
 };
 
 export default function CollectionScreen() {
@@ -176,6 +275,10 @@ export default function CollectionScreen() {
   const [showModal, setShowModal] = useState(false);
   const [showSanctuaryModal, setShowSanctuaryModal] = useState(false);
   const [purchasedItems, setPurchasedItems] = useState<Record<string, boolean>>({});
+  const [itemAssignments, setItemAssignments] = useState<ItemAssignment[]>([]);
+  const itemAssignmentsRef = useRef<ItemAssignment[]>([]);
+  const [sanctuaryContentH, setSanctuaryContentH] = useState(0);
+  const [isDragging, setIsDragging] = useState(false);
 
   const loadPurchases = async () => {
     try {
@@ -184,17 +287,48 @@ export default function CollectionScreen() {
     } catch (e) {}
   };
 
-  const ownedDecorations = Object.keys(purchasedItems)
-    .filter(id => purchasedItems[id])
-    .map(id => {
-      const key = id.replace(/^(hab_|path_|dec_|acc_)/, '');
-      return DECORATION_EMOJIS[key];
-    })
-    .filter(Boolean);
+  const loadAssignments = async () => {
+    try {
+      const raw = await AsyncStorage.getItem(ASSIGNMENTS_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        const valid = Array.isArray(parsed)
+          ? parsed.filter((a: any) => a.itemId && typeof a.x === 'number' && typeof a.y === 'number')
+          : [];
+        itemAssignmentsRef.current = valid;
+        setItemAssignments(valid);
+        if (valid.length !== parsed.length) {
+          await AsyncStorage.setItem(ASSIGNMENTS_KEY, JSON.stringify(valid));
+        }
+      }
+    } catch (e) {
+      await AsyncStorage.removeItem(ASSIGNMENTS_KEY);
+    }
+  };
+
+  const handleItemDrop = useCallback(async (itemId: string, x: number, y: number) => {
+    const filtered = itemAssignmentsRef.current.filter(a => a.itemId !== itemId);
+    const updated = [...filtered, { itemId, x, y }];
+    itemAssignmentsRef.current = updated;
+    setItemAssignments(updated);
+    await AsyncStorage.setItem(ASSIGNMENTS_KEY, JSON.stringify(updated));
+  }, []);
+
+  const removeAssignment = async (itemId: string) => {
+    const updated = itemAssignmentsRef.current.filter(a => a.itemId !== itemId);
+    itemAssignmentsRef.current = updated;
+    setItemAssignments(updated);
+    await AsyncStorage.setItem(ASSIGNMENTS_KEY, JSON.stringify(updated));
+  };
+
+  const ownedDecorationItems = Object.keys(purchasedItems)
+    .filter(id => purchasedItems[id] && SHOP_IMAGES[id])
+    .map(id => ({ id, image: SHOP_IMAGES[id] }));
 
   const loadData = async () => {
     try {
       loadPurchases();
+      loadAssignments();
       const [myData, allData] = await Promise.all([
         animalsAPI.getMyAnimals(),
         animalsAPI.getAllAnimals(),
@@ -230,6 +364,7 @@ export default function CollectionScreen() {
     try {
       await animalsAPI.nameAnimal(selectedAnimal.id, nicknameInput.trim());
       await loadData();
+      try { await badgesAPI.checkBadges(); } catch {}
       setShowModal(false);
       Alert.alert('Success', `${selectedAnimal.animal.name} is now named "${nicknameInput.trim()}"!`);
     } catch (error: any) {
@@ -240,6 +375,21 @@ export default function CollectionScreen() {
   // Count collected animals by id
   const collectedIds = new Set(myAnimals.map((a) => a.animal.id));
   const collectionProgress = collectedIds.size / Math.max(allAnimals.length, 1);
+
+  // Group animals: one card per species, with count
+  const animalCountMap = new Map<number, { userAnimal: UserAnimal; count: number }>();
+  for (const ua of myAnimals) {
+    const existing = animalCountMap.get(ua.animal.id);
+    if (existing) {
+      existing.count += 1;
+      if (new Date(ua.hatched_at) > new Date(existing.userAnimal.hatched_at)) {
+        existing.userAnimal = ua;
+      }
+    } else {
+      animalCountMap.set(ua.animal.id, { userAnimal: ua, count: 1 });
+    }
+  }
+  const groupedAnimals = Array.from(animalCountMap.values());
 
   return (
     <SafeAreaView style={styles.container}>
@@ -308,15 +458,6 @@ export default function CollectionScreen() {
                       resizeMode="cover"
                     />
                   </View>
-                  {ownedDecorations.length > 0 && (
-                    <View style={styles.decorationRowPreview}>
-                      {ownedDecorations.slice(0, 6).map((emoji, i) => (
-                        <Text key={i} style={[styles.decorationEmojiPreview, { left: `${8 + (i * 16) % 75}%`, bottom: 10 + (i % 3) * 8 } as any]}>
-                          {emoji}
-                        </Text>
-                      ))}
-                    </View>
-                  )}
                   <View style={styles.sanctuaryAnimals}>
                     {myAnimals.slice(0, 8).map((userAnimal, index) => {
                       const imageSource = getAnimalImage(userAnimal.animal.name);
@@ -339,6 +480,38 @@ export default function CollectionScreen() {
                         </View>
                       );
                     })}
+                    {/* Placed items scaled from full sanctuary */}
+                    {(() => {
+                      const modalSceneW = SCREEN_WIDTH - 20 - spacing.sm * 2;
+                      const mCols = Math.max(2, Math.min(5, Math.floor((modalSceneW - 20) / (62 + 10))));
+                      const mRows = Math.ceil(myAnimals.length / mCols);
+                      const modalSceneH = Math.max(SCREEN_HEIGHT * 0.65, mRows * 72 + 80);
+                      const scaleX = previewW / modalSceneW;
+                      const scaleY = previewH / modalSceneH;
+                      const ratio = Math.min(scaleX, scaleY);
+                      return itemAssignments.map((a) => {
+                        const img = SHOP_IMAGES[a.itemId];
+                        if (!img || typeof a.x !== 'number' || typeof a.y !== 'number') return null;
+                        const isDec = a.itemId.startsWith('dec_');
+                        const baseSize = isDec ? 40 : 24;
+                        const sz = Math.round(baseSize * ratio);
+                        return (
+                          <Image
+                            key={a.itemId}
+                            source={img}
+                            style={{
+                              position: 'absolute',
+                              zIndex: 10,
+                              width: sz,
+                              height: sz,
+                              left: (a.x - spacing.sm) * scaleX,
+                              top: a.y * scaleY,
+                            }}
+                            resizeMode="contain"
+                          />
+                        );
+                      });
+                    })()}
                   </View>
                   <View style={styles.sanctuaryGround} />
                   {myAnimals.length > 8 && (
@@ -383,7 +556,9 @@ export default function CollectionScreen() {
         <View style={styles.sectionHeader}>
           <Text style={styles.sectionTitle}>My Animals</Text>
           <View style={styles.countBadge}>
-            <Text style={styles.countText}>{myAnimals.length}</Text>
+            <Text style={styles.countText}>
+              {collectedIds.size} species{myAnimals.length > collectedIds.size ? ` · ${myAnimals.length} total` : ''}
+            </Text>
           </View>
         </View>
 
@@ -397,24 +572,31 @@ export default function CollectionScreen() {
           </View>
         ) : (
           <View style={styles.grid}>
-            {myAnimals.map((userAnimal) => {
+            {groupedAnimals.map(({ userAnimal, count }) => {
               const imageSource = getAnimalImage(userAnimal.animal.name);
               return (
                 <TouchableOpacity
-                  key={userAnimal.id}
+                  key={userAnimal.animal.id}
                   style={[
                     styles.animalCard,
                     { borderLeftColor: rarityColors[userAnimal.animal.rarity] },
                   ]}
                   onPress={() => openAnimalDetail(userAnimal)}
                 >
-                  {imageSource ? (
-                    <Image source={imageSource} style={styles.animalImage} />
-                  ) : (
-                    <Text style={styles.animalEmoji}>
-                      {animalEmojis[userAnimal.animal.name] || '🦁'}
-                    </Text>
-                  )}
+                  <View>
+                    {imageSource ? (
+                      <Image source={imageSource} style={styles.animalImage} />
+                    ) : (
+                      <Text style={styles.animalEmoji}>
+                        {animalEmojis[userAnimal.animal.name] || '🦁'}
+                      </Text>
+                    )}
+                    {count > 1 && (
+                      <View style={styles.animalCountBadge}>
+                        <Text style={styles.animalCountText}>x{count}</Text>
+                      </View>
+                    )}
+                  </View>
                   <Text style={styles.animalName} numberOfLines={2}>
                     {userAnimal.nickname || userAnimal.animal.name}
                   </Text>
@@ -629,86 +811,124 @@ export default function CollectionScreen() {
               </TouchableOpacity>
             </View>
 
-            {/* Landscape Scene */}
-            <View style={styles.sanctuaryModalScene}>
-              <View style={styles.sanctuaryModalLandscapeBg}>
-                <LottieView
-                  source={require('../assets/nature-landscape.json')}
-                  autoPlay
-                  loop
-                  style={styles.sanctuaryModalLottie}
-                  resizeMode="cover"
-                />
-              </View>
-
-              {/* Decorative elements */}
-              <Text style={styles.sanctuaryModalCloud1}>☁️</Text>
-              <Text style={styles.sanctuaryModalCloud2}>☁️</Text>
-              <Text style={styles.sanctuaryModalSun}>🌤️</Text>
-
-              {/* Purchased decorations */}
-              {ownedDecorations.length > 0 && (
-                <View style={styles.decorationRow}>
-                  {ownedDecorations.map((emoji, i) => (
-                    <Text key={i} style={[styles.decorationEmoji, { left: `${10 + (i * 18) % 80}%`, bottom: 18 + (i % 3) * 12 } as any]}>
-                      {emoji}
-                    </Text>
-                  ))}
-                </View>
-              )}
-
-              {/* All animals */}
-              <View style={styles.sanctuaryModalAnimals}>
+            {/* Scrollable scene + tray wrapper */}
+            <ScrollView
+              style={styles.sanctuaryScroll}
+              contentContainerStyle={styles.sanctuaryScrollContent}
+              scrollEnabled={!isDragging}
+              showsVerticalScrollIndicator={true}
+              bounces={false}
+            >
+              <View
+                style={styles.sanctuaryDragWrapper}
+                onLayout={(e: LayoutChangeEvent) => {
+                  setSanctuaryContentH(e.nativeEvent.layout.height);
+                }}
+              >
+                {/* Landscape Scene */}
                 {(() => {
-                  const modalW = SCREEN_WIDTH - spacing.sm * 4;
-                  const modalH = SCREEN_HEIGHT * 0.62;
-                  const positions = generatePositions(myAnimals.length, modalW, modalH);
-                  return myAnimals.map((userAnimal, index) => {
-                    const imageSource = getAnimalImage(userAnimal.animal.name);
-                    const pos = positions[index];
-                    return (
-                      <TouchableOpacity
-                        key={userAnimal.id}
-                        style={[
-                          styles.sanctuaryModalAnimal,
-                          { bottom: pos.bottom, left: pos.left, transform: [{ scale: pos.scale }] },
-                        ]}
-                        activeOpacity={0.8}
-                        onPress={() => {
-                          setShowSanctuaryModal(false);
-                          setTimeout(() => {
-                            setSelectedAnimal(userAnimal);
-                            setNicknameInput(userAnimal.nickname || '');
-                            setShowModal(true);
-                          }, 300);
-                        }}
-                      >
-                        {imageSource ? (
-                          <Image source={imageSource} style={styles.sanctuaryModalAnimalImg} />
-                        ) : (
-                          <Text style={styles.sanctuaryModalAnimalEmoji}>
-                            {animalEmojis[userAnimal.animal.name] || '🦁'}
-                          </Text>
-                        )}
-                        <View style={styles.sanctuaryModalNameTag}>
-                          <Text style={styles.sanctuaryModalNameText} numberOfLines={1}>
-                            {userAnimal.nickname || userAnimal.animal.name.split(' ').pop()}
-                          </Text>
-                        </View>
-                      </TouchableOpacity>
-                    );
-                  });
-                })()}
-              </View>
+                  const modalW = SCREEN_WIDTH - 20 - spacing.sm * 2;
+                  const cols = Math.max(2, Math.min(5, Math.floor((modalW - 20) / (62 + 10))));
+                  const rows = Math.ceil(myAnimals.length / cols);
+                  const sceneH = Math.max(SCREEN_HEIGHT * 0.65, rows * 72 + 80);
+                  return (
+                    <View style={[styles.sanctuaryModalScene, { height: sceneH }]}>
+                      <View style={styles.sanctuaryModalLandscapeBg}>
+                        <LottieView
+                          source={require('../assets/nature-landscape.json')}
+                          autoPlay
+                          loop
+                          style={styles.sanctuaryModalLottie}
+                          resizeMode="cover"
+                        />
+                      </View>
 
-              <View style={styles.sanctuaryModalGround} />
-            </View>
+                      {/* Animals */}
+                      <View style={styles.sanctuaryModalAnimals}>
+                        {(() => {
+                          const positions = generatePositions(myAnimals.length, modalW, sceneH);
+                          return myAnimals.map((userAnimal, index) => {
+                            const imageSource = getAnimalImage(userAnimal.animal.name);
+                            const pos = positions[index];
+                            return (
+                              <View
+                                key={userAnimal.id}
+                                style={[
+                                  styles.sanctuaryModalAnimal,
+                                  { bottom: pos.bottom, left: pos.left, transform: [{ scale: pos.scale }] },
+                                ]}
+                              >
+                                {imageSource ? (
+                                  <Image source={imageSource} style={styles.sanctuaryModalAnimalImg} />
+                                ) : (
+                                  <Text style={styles.sanctuaryModalAnimalEmoji}>
+                                    {animalEmojis[userAnimal.animal.name] || '🦁'}
+                                  </Text>
+                                )}
+                                <View style={styles.sanctuaryModalNameTag}>
+                                  <Text style={styles.sanctuaryModalNameText} numberOfLines={1}>
+                                    {userAnimal.nickname || userAnimal.animal.name.split(' ').pop()}
+                                  </Text>
+                                </View>
+                              </View>
+                            );
+                          });
+                        })()}
+                      </View>
+
+                      <View style={styles.sanctuaryModalGround} />
+                    </View>
+                  );
+                })()}
+
+                {/* White item tray footer */}
+                {ownedDecorationItems.length > 0 && (
+                  <View style={styles.itemTrayFooter}>
+                    <Text style={styles.itemTrayLabel}>Drag items!</Text>
+                    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.itemTrayRow}>
+                      {ownedDecorationItems.map((item) => {
+                        const isPlaced = itemAssignments.some(a => a.itemId === item.id);
+                        return (
+                          <View key={item.id} style={[styles.itemTraySlot, isPlaced && styles.itemTraySlotEmpty]}>
+                            {!isPlaced && (
+                              <Image source={item.image} style={styles.itemTraySlotImg} resizeMode="contain" />
+                            )}
+                          </View>
+                        );
+                      })}
+                    </ScrollView>
+                  </View>
+                )}
+
+                {/* Draggable items — absolutely positioned over the whole wrapper */}
+                {ownedDecorationItems.map((item, idx) => {
+                  const existing = itemAssignments.find(a => a.itemId === item.id);
+                  const wrapperH = sanctuaryContentH > 0 ? sanctuaryContentH : SCREEN_HEIGHT * 0.6;
+                  const trayTopY = wrapperH - 50;
+                  const totalTrayW = ownedDecorationItems.length * 48;
+                  const modalInnerW = SCREEN_WIDTH - 20 - spacing.sm * 2;
+                  const trayStartX = (modalInnerW - totalTrayW) / 2;
+                  const slotX = trayStartX + idx * 48 + 6;
+                  const isDecoration = item.id.startsWith('dec_');
+                  return (
+                    <DraggableItem
+                      key={item.id}
+                      itemId={item.id}
+                      image={item.image}
+                      size={isDecoration ? 40 : 24}
+                      startX={existing ? existing.x : slotX}
+                      startY={existing ? existing.y : trayTopY}
+                      onDrop={handleItemDrop}
+                      onDragStart={() => setIsDragging(true)}
+                      onDragEnd={() => setIsDragging(false)}
+                    />
+                  );
+                })}
+              </View>
+            </ScrollView>
 
             {/* Footer */}
             <View style={styles.sanctuaryModalFooter}>
-              <Text style={styles.sanctuaryModalFooterText}>
-                Tap any animal to see its details
-              </Text>
               <TouchableOpacity
                 style={styles.sanctuaryModalDoneBtn}
                 onPress={() => setShowSanctuaryModal(false)}
@@ -833,9 +1053,9 @@ const styles = StyleSheet.create({
   },
   sanctuaryLottie: {
     width: '100%',
-    height: 230,
+    height: 300,
     position: 'absolute',
-    top: -20,
+    top: -80,
     left: 0,
   },
   sanctuaryAnimals: {
@@ -849,8 +1069,8 @@ const styles = StyleSheet.create({
     position: 'absolute',
   },
   sanctuaryAnimalImage: {
-    width: 58,
-    height: 58,
+    width: 56,
+    height: 56,
   },
   sanctuaryAnimalEmoji: {
     fontSize: 38,
@@ -909,21 +1129,22 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.7)',
     justifyContent: 'center',
-    padding: spacing.sm,
+    paddingHorizontal: 10,
+    paddingTop: 44,
+    paddingBottom: 24,
   },
   sanctuaryModalContent: {
     flex: 1,
     backgroundColor: '#F0F7F0',
-    borderRadius: 28,
+    borderRadius: 24,
     overflow: 'hidden',
-    marginVertical: spacing.md,
   },
   sanctuaryModalHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingHorizontal: spacing.lg,
-    paddingTop: spacing.lg,
+    paddingTop: spacing.md,
     paddingBottom: spacing.sm,
   },
   sanctuaryModalTitle: {
@@ -948,13 +1169,22 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: colors.textSecondary,
   },
-  sanctuaryModalScene: {
+  sanctuaryScroll: {
     flex: 1,
+  },
+  sanctuaryScrollContent: {
+    flexGrow: 1,
+  },
+  sanctuaryDragWrapper: {
+    position: 'relative',
+  },
+  sanctuaryModalScene: {
     position: 'relative',
     overflow: 'hidden',
-    backgroundColor: '#C8E6C9',
+    backgroundColor: '#A5D6A7',
     marginHorizontal: spacing.sm,
-    borderRadius: 20,
+    borderTopLeftRadius: 16,
+    borderTopRightRadius: 16,
   },
   sanctuaryModalLandscapeBg: {
     position: 'absolute',
@@ -965,9 +1195,9 @@ const styles = StyleSheet.create({
   },
   sanctuaryModalLottie: {
     width: '100%',
-    height: '120%',
+    height: '160%',
     position: 'absolute',
-    top: -30,
+    top: '-55%' as any,
     left: 0,
   },
   sanctuaryModalCloud1: {
@@ -1003,11 +1233,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   sanctuaryModalAnimalImg: {
-    width: 60,
-    height: 60,
+    width: 58,
+    height: 58,
   },
   sanctuaryModalAnimalEmoji: {
-    fontSize: 40,
+    fontSize: 36,
   },
   sanctuaryModalNameTag: {
     backgroundColor: 'rgba(255,255,255,0.85)',
@@ -1039,9 +1269,10 @@ const styles = StyleSheet.create({
     height: 60,
     zIndex: 3,
   },
-  decorationEmoji: {
+  decorationImg: {
     position: 'absolute',
-    fontSize: 22,
+    width: 42,
+    height: 42,
   },
   decorationRowPreview: {
     position: 'absolute',
@@ -1051,9 +1282,10 @@ const styles = StyleSheet.create({
     height: 40,
     zIndex: 3,
   },
-  decorationEmojiPreview: {
+  decorationImgPreview: {
     position: 'absolute',
-    fontSize: 16,
+    width: 32,
+    height: 32,
   },
   shopEntryBtn: {
     flexDirection: 'row',
@@ -1086,7 +1318,7 @@ const styles = StyleSheet.create({
   },
   sanctuaryModalFooter: {
     alignItems: 'center',
-    paddingVertical: spacing.md,
+    paddingVertical: spacing.sm,
     paddingHorizontal: spacing.lg,
   },
   sanctuaryModalFooterText: {
@@ -1107,6 +1339,103 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '700',
     color: colors.textOnPrimary,
+  },
+  placedItemPreview: {
+    width: 20,
+    height: 20,
+    position: 'absolute',
+    zIndex: 10,
+  },
+  draggableItem: {
+    position: 'absolute',
+    zIndex: 100,
+    width: 28,
+    height: 28,
+  },
+  draggableItemImg: {
+    width: 24,
+    height: 24,
+  },
+  itemTrayFooter: {
+    backgroundColor: '#FFFFFF',
+    marginHorizontal: spacing.sm,
+    borderBottomLeftRadius: 16,
+    borderBottomRightRadius: 16,
+    paddingTop: 8,
+    paddingBottom: 12,
+    paddingHorizontal: spacing.md,
+    borderTopWidth: 1,
+    borderTopColor: colors.cardBorder + '80',
+  },
+  itemTrayLabel: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: colors.textMuted,
+    textAlign: 'center',
+    marginBottom: 6,
+    letterSpacing: 0.5,
+    textTransform: 'uppercase',
+  },
+  itemTrayRow: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    flexGrow: 1,
+    gap: 8,
+  },
+  itemTraySlot: {
+    width: 42,
+    height: 42,
+    borderRadius: 12,
+    backgroundColor: colors.cardBorder + '30',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1.5,
+    borderColor: colors.cardBorder + '80',
+    borderStyle: 'dashed' as any,
+  },
+  itemTraySlotEmpty: {
+    borderColor: colors.cardBorder + '40',
+    backgroundColor: 'transparent',
+    opacity: 0.4,
+  },
+  itemTraySlotImg: {
+    width: 28,
+    height: 28,
+    opacity: 0.3,
+  },
+  itemTrayItem: {
+    width: 48,
+    height: 48,
+    borderRadius: 14,
+    backgroundColor: colors.surface,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1.5,
+    borderColor: colors.cardBorder,
+  },
+  itemTrayItemAssigned: {
+    borderColor: colors.primary,
+    backgroundColor: colors.primary + '10',
+  },
+  itemTrayImg: {
+    width: 34,
+    height: 34,
+  },
+  itemTrayCheck: {
+    position: 'absolute',
+    top: -4,
+    right: -4,
+    width: 16,
+    height: 16,
+    borderRadius: 8,
+    backgroundColor: colors.primary,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  itemTrayCheckText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#fff',
   },
   sectionHeader: {
     flexDirection: 'row',
@@ -1188,6 +1517,25 @@ const styles = StyleSheet.create({
     marginBottom: 2,
     textAlign: 'center',
     lineHeight: 15,
+  },
+  animalCountBadge: {
+    position: 'absolute',
+    top: -4,
+    right: -4,
+    backgroundColor: colors.primary,
+    borderRadius: 10,
+    minWidth: 22,
+    height: 22,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 4,
+    borderWidth: 2,
+    borderColor: colors.surface,
+  },
+  animalCountText: {
+    color: '#fff',
+    fontSize: 11,
+    fontWeight: '700',
   },
   tapToNickname: {
     fontSize: 10,

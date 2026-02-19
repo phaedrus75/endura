@@ -66,7 +66,7 @@ def health_check():
     return {
         "status": "healthy", 
         "app": "Endura API", 
-        "version": "1.0.13",
+        "version": "1.0.14",
         "database": db_type,
         "database_configured": has_db_url,
         "db_url_preview": db_url[:30] + "..." if len(db_url) > 30 else db_url if db_url else "not set",
@@ -278,9 +278,18 @@ def complete_study_session(
             session.animal_name,
             session.subject
         )
+        session_hour = None
+        if study_session.completed_at:
+            session_hour = study_session.completed_at.hour
+        new_badges = crud.check_badges(
+            db, current_user.id,
+            session_hour=session_hour,
+            session_minutes=session.duration_minutes
+        )
         return {
             "session": study_session,
-            "hatched_animal": hatched_animal
+            "hatched_animal": hatched_animal,
+            "new_badges": [crud.BADGE_MAP[bid] for bid in new_badges if bid in crud.BADGE_MAP]
         }
     except Exception as e:
         db.rollback()
@@ -494,6 +503,26 @@ def spend_coins(
     db.commit()
     db.refresh(user)
     return {"current_coins": user.current_coins, "spent": req.amount}
+
+
+# ============ Badge Endpoints ============
+
+@app.get("/badges", response_model=List[schemas.BadgeResponse])
+def get_badges(
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    return crud.get_user_badges(db, current_user.id)
+
+@app.post("/badges/check")
+def check_badges(
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    new_badges = crud.check_badges(db, current_user.id)
+    return {
+        "new_badges": [crud.BADGE_MAP[bid] for bid in new_badges if bid in crud.BADGE_MAP]
+    }
 
 
 # ============ Health Check ============

@@ -107,9 +107,28 @@ class AnimalResponse(BaseModel):
         from_attributes = True
 
 
+class BadgeInfo(BaseModel):
+    id: str
+    name: str
+    icon: str
+    description: str
+    category: str
+    tier: str
+
+class BadgeResponse(BaseModel):
+    id: str
+    name: str
+    icon: str
+    description: str
+    category: str
+    tier: str
+    earned: bool
+    earned_at: Optional[str] = None
+
 class StudySessionWithHatchResponse(BaseModel):
     session: StudySessionResponse
     hatched_animal: Optional[AnimalResponse] = None
+    new_badges: Optional[List[BadgeInfo]] = None
 
 
 class UserAnimalResponse(BaseModel):

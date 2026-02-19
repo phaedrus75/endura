@@ -28,6 +28,7 @@ class User(Base):
     tasks = relationship("Task", back_populates="user")
     study_sessions = relationship("StudySession", back_populates="user")
     animals = relationship("UserAnimal", back_populates="user")
+    badges = relationship("UserBadge", back_populates="user")
     friendships = relationship("Friendship", foreign_keys="Friendship.user_id", back_populates="user")
 
 
@@ -124,6 +125,18 @@ class TipView(Base):
     tip_id = Column(Integer, ForeignKey("study_tips.id"))
     viewed_at = Column(DateTime, default=datetime.utcnow)
     liked = Column(Boolean, default=False)
+
+
+class UserBadge(Base):
+    """Badges earned by users"""
+    __tablename__ = "user_badges"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"))
+    badge_id = Column(String, nullable=False)
+    earned_at = Column(DateTime, default=datetime.utcnow)
+
+    user = relationship("User", back_populates="badges")
 
 
 class Friendship(Base):

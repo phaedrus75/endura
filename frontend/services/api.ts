@@ -103,6 +103,24 @@ export interface LeaderboardEntry {
   animals_count: number;
 }
 
+export interface BadgeInfo {
+  id: string;
+  name: string;
+  icon: string;
+  description: string;
+  category: string;
+  tier: string;
+}
+
+export interface BadgeResponse extends BadgeInfo {
+  earned: boolean;
+  earned_at?: string;
+}
+
+export interface StudySessionWithHatchAndBadges extends StudySessionWithHatch {
+  new_badges?: BadgeInfo[];
+}
+
 export interface UserStats {
   total_coins: number;
   current_coins: number;
@@ -146,14 +164,14 @@ async function apiFetch<T>(
     
     if (!response.ok) {
       const error = await response.json().catch(() => ({ detail: 'An error occurred' }));
+      console.error(`🔴 API ${response.status}:`, JSON.stringify(error));
       
-      // If unauthorized, clear the token so user can re-login
       if (response.status === 401) {
         console.log('🔒 Unauthorized - clearing token');
         await SecureStore.deleteItemAsync('authToken');
       }
       
-      throw new Error(error.detail || 'An error occurred');
+      throw new Error(error.detail || `HTTP ${response.status}`);
     }
     
     return response.json();
@@ -227,7 +245,7 @@ export const tasksAPI = {
 // Study Sessions API
 export const sessionsAPI = {
   completeSession: (duration_minutes: number, task_id?: number, animal_name?: string, subject?: string) =>
-    apiFetch<StudySessionWithHatch>('/sessions', {
+    apiFetch<StudySessionWithHatchAndBadges>('/sessions', {
       method: 'POST',
       body: JSON.stringify({ duration_minutes, task_id, animal_name, subject }),
     }),
@@ -295,6 +313,13 @@ export const shopAPI = {
       method: 'POST',
       body: JSON.stringify({ amount }),
     }),
+};
+
+// Badges API
+export const badgesAPI = {
+  getBadges: () => apiFetch<BadgeResponse[]>('/badges'),
+  checkBadges: () =>
+    apiFetch<{ new_badges: BadgeInfo[] }>('/badges/check', { method: 'POST' }),
 };
 
 export const setApiUrl = (url: string) => {
