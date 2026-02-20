@@ -70,7 +70,7 @@ def health_check():
     return {
         "status": "healthy", 
         "app": "Endura API", 
-        "version": "1.0.23",
+        "version": "1.0.24",
         "database": db_type,
         "database_configured": has_db_url,
         "db_url_preview": db_url[:30] + "..." if len(db_url) > 30 else db_url if db_url else "not set",
@@ -282,19 +282,34 @@ def seed_animals():
         ]
 
         existing_tips = db.query(models.StudyTip).count()
-        if existing_tips > 0:
-            db.query(models.TipView).delete()
-            db.query(models.StudyTip).delete()
+        print(f"[STARTUP] Found {existing_tips} existing tips, replacing with 100 new ones")
+        try:
+            db.execute(text("DELETE FROM tip_views"))
+            db.execute(text("DELETE FROM study_tips"))
             db.commit()
-            print(f"[STARTUP] Cleared {existing_tips} old tips and all tip views")
+            print(f"[STARTUP] Cleared all old tips and tip views via raw SQL")
+        except Exception as del_err:
+            print(f"[STARTUP] Raw delete failed: {del_err}, trying TRUNCATE CASCADE")
+            db.rollback()
+            try:
+                db.execute(text("TRUNCATE TABLE tip_views, study_tips RESTART IDENTITY CASCADE"))
+                db.commit()
+                print("[STARTUP] Truncated tips tables with CASCADE")
+            except Exception as trunc_err:
+                print(f"[STARTUP] TRUNCATE also failed: {trunc_err}")
+                db.rollback()
 
         for tip_data in tips:
             db.add(models.StudyTip(**tip_data))
-        
+
         db.commit()
-        print("Successfully seeded animals and tips!")
+        final_count = db.query(models.StudyTip).count()
+        sample = db.query(models.StudyTip).first()
+        print(f"Successfully seeded {final_count} tips! Sample animal: {getattr(sample, 'animal_name', 'N/A')}")
     except Exception as e:
+        import traceback
         print(f"Warning: Could not seed database on startup: {e}")
+        traceback.print_exc()
 
 
 # ============ Auth Endpoints ============
