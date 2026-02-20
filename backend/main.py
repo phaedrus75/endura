@@ -70,7 +70,7 @@ def health_check():
     return {
         "status": "healthy", 
         "app": "Endura API", 
-        "version": "1.0.22",
+        "version": "1.0.23",
         "database": db_type,
         "database_configured": has_db_url,
         "db_url_preview": db_url[:30] + "..." if len(db_url) > 30 else db_url if db_url else "not set",
@@ -80,6 +80,19 @@ def health_check():
 @app.get("/health")
 def health():
     return {"status": "ok"}
+
+
+@app.get("/debug/tips-count")
+def debug_tips_count(db: Session = Depends(get_db)):
+    total = db.query(models.StudyTip).count()
+    sample = db.query(models.StudyTip).limit(3).all()
+    return {
+        "total_tips": total,
+        "sample": [
+            {"id": t.id, "animal_name": getattr(t, 'animal_name', None), "content": t.content[:60]}
+            for t in sample
+        ],
+    }
 
 
 # ============ Startup: Seed Animals ============
@@ -270,8 +283,10 @@ def seed_animals():
 
         existing_tips = db.query(models.StudyTip).count()
         if existing_tips > 0:
+            db.query(models.TipView).delete()
             db.query(models.StudyTip).delete()
-            print(f"[STARTUP] Cleared {existing_tips} old tips")
+            db.commit()
+            print(f"[STARTUP] Cleared {existing_tips} old tips and all tip views")
 
         for tip_data in tips:
             db.add(models.StudyTip(**tip_data))
