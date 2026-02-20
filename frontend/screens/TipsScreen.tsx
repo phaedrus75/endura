@@ -3,57 +3,19 @@ import {
   View,
   Text,
   StyleSheet,
-  Dimensions,
   TouchableOpacity,
   FlatList,
   ScrollView,
   RefreshControl,
-  Alert,
-  TextInput,
-  Modal,
   Animated,
+  Image,
 } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { colors, shadows, spacing, borderRadius } from '../theme/colors';
+import { colors, shadows, spacing } from '../theme/colors';
 import { tipsAPI, StudyTip } from '../services/api';
-
-const { width } = Dimensions.get('window');
-
-const ANIMAL_EMOJI_MAP: Record<string, string> = {
-  'Sunda Island Tiger': '🐅',
-  'Javan Rhino': '🦏',
-  'Amur Leopard': '🐆',
-  'Mountain Gorilla': '🦍',
-  'Tapanuli Orangutan': '🦧',
-  'Polar Bear': '🐻‍❄️',
-  'African Forest Elephant': '🐘',
-  'Hawksbill Turtle': '🐢',
-  'Calamian Deer': '🦌',
-  'Axolotl': '🦎',
-  'Red Wolf': '🐺',
-  'Monarch Butterfly': '🦋',
-  'Red Panda': '🐼',
-  'Panda': '🐼',
-  'Mexican Bobcat': '🐱',
-  'Chinchilla': '🐭',
-  'Otter': '🦦',
-  'Koala': '🐨',
-  'Langur Monkey': '🐒',
-  'Pacific Pocket Mouse': '🐁',
-  'Wallaby': '🦘',
-  'Avahi': '🐒',
-  'Blue Whale': '🐋',
-  'Gray Bat': '🦇',
-  'Grey Parrot': '🦜',
-  'Grizzly Bear': '🐻',
-  'Mountain Zebra': '🦓',
-  'Pangolin': '🦔',
-  'Seal': '🦭',
-  'Wombat': '🐻',
-};
+import { animalImages, ANIMAL_NAMES_IN_ORDER } from '../assets/animals';
 
 const ANIMAL_COLORS: Record<string, { bg: string; accent: string }> = {
   'Sunda Island Tiger': { bg: '#FFF3E6', accent: '#D4883E' },
@@ -88,14 +50,19 @@ const ANIMAL_COLORS: Record<string, { bg: string; accent: string }> = {
   'Wombat': { bg: '#EBE8E4', accent: '#7A6A5A' },
 };
 
-const CATEGORIES: { key: string; label: string; color: string }[] = [
-  { key: 'focus', label: '🎯 Focus', color: '#2F4A3E' },
-  { key: 'memorization', label: '🧠 Memory', color: '#3B5466' },
-  { key: 'motivation', label: '✨ Motivation', color: '#5F8C87' },
-  { key: 'general', label: '🌿 General', color: '#7C8F86' },
-];
-
 type Tab = 'feed' | 'saved';
+
+const UpArrow = ({ active }: { active: boolean }) => (
+  <View style={[styles.arrowWrap, active && styles.arrowWrapActiveUp]}>
+    <Text style={[styles.arrowIcon, active && styles.arrowIconActiveUp]}>▲</Text>
+  </View>
+);
+
+const DownArrow = ({ active }: { active: boolean }) => (
+  <View style={[styles.arrowWrap, active && styles.arrowWrapActiveDown]}>
+    <Text style={[styles.arrowIcon, active && styles.arrowIconActiveDown]}>▼</Text>
+  </View>
+);
 
 const TipCard = React.memo(({
   item,
@@ -108,11 +75,10 @@ const TipCard = React.memo(({
   onVote: (id: number, vote: 'up' | 'down') => void;
   isSaved: boolean;
 }) => {
-  const allAnimals = Object.keys(ANIMAL_EMOJI_MAP);
-  const fallbackAnimal = allAnimals[item.id % allAnimals.length];
+  const fallbackAnimal = ANIMAL_NAMES_IN_ORDER[item.id % ANIMAL_NAMES_IN_ORDER.length];
   const animalName = item.animal_name || fallbackAnimal;
-  const emoji = ANIMAL_EMOJI_MAP[animalName] || '🐨';
   const animalColor = ANIMAL_COLORS[animalName] || { bg: '#E7EFEA', accent: '#5F8C87' };
+  const animalImg = animalImages[animalName] || null;
   const saveScale = useRef(new Animated.Value(1)).current;
   const upScale = useRef(new Animated.Value(1)).current;
   const downScale = useRef(new Animated.Value(1)).current;
@@ -125,28 +91,24 @@ const TipCard = React.memo(({
     cb();
   };
 
-  const cat = CATEGORIES.find(c => c.key === item.category) || CATEGORIES[3];
-
   return (
     <View style={styles.cardContainer}>
       {/* Animal avatar */}
       <View style={[styles.avatarWrap, { backgroundColor: animalColor.bg }]}>
-        <Text style={styles.avatarEmoji}>{emoji}</Text>
+        {animalImg ? (
+          <Image source={animalImg} style={styles.avatarImage} />
+        ) : (
+          <Text style={styles.avatarFallback}>🐾</Text>
+        )}
       </View>
 
       {/* Speech bubble */}
       <View style={styles.bubbleWrap}>
-        {/* Triangle pointer */}
         <View style={[styles.bubbleTriangle, { borderRightColor: animalColor.bg }]} />
 
         <View style={[styles.bubble, { backgroundColor: animalColor.bg }]}>
-          {/* Animal name + category */}
-          <View style={styles.bubbleHeader}>
-            <Text style={[styles.animalName, { color: animalColor.accent }]}>{animalName}</Text>
-            <View style={[styles.catBadge, { backgroundColor: cat.color + '18' }]}>
-              <Text style={[styles.catBadgeText, { color: cat.color }]}>{cat.label}</Text>
-            </View>
-          </View>
+          {/* Animal name */}
+          <Text style={[styles.animalName, { color: animalColor.accent }]}>{animalName}</Text>
 
           {/* Tip text */}
           <Text style={styles.tipText}>{item.content}</Text>
@@ -156,14 +118,14 @@ const TipCard = React.memo(({
             {/* Upvote */}
             <Animated.View style={{ transform: [{ scale: upScale }] }}>
               <TouchableOpacity
-                style={[styles.voteBtn, item.user_liked && styles.voteBtnActive]}
+                style={styles.voteBtn}
                 onPress={() => bounceAnim(upScale, () => onVote(item.id, 'up'))}
                 activeOpacity={0.7}
               >
-                <Text style={styles.voteBtnIcon}>👍</Text>
+                <UpArrow active={item.user_liked} />
                 <Text style={[
                   styles.voteBtnCount,
-                  item.user_liked && { color: '#5E7F6E', fontWeight: '700' as const },
+                  item.user_liked && styles.voteCountActiveUp,
                 ]}>
                   {item.likes_count || 0}
                 </Text>
@@ -173,14 +135,14 @@ const TipCard = React.memo(({
             {/* Downvote */}
             <Animated.View style={{ transform: [{ scale: downScale }] }}>
               <TouchableOpacity
-                style={[styles.voteBtn, item.user_disliked && styles.voteBtnActiveDown]}
+                style={styles.voteBtn}
                 onPress={() => bounceAnim(downScale, () => onVote(item.id, 'down'))}
                 activeOpacity={0.7}
               >
-                <Text style={styles.voteBtnIcon}>👎</Text>
+                <DownArrow active={item.user_disliked} />
                 <Text style={[
                   styles.voteBtnCount,
-                  item.user_disliked && { color: '#A0705C', fontWeight: '700' as const },
+                  item.user_disliked && styles.voteCountActiveDown,
                 ]}>
                   {item.dislikes_count || 0}
                 </Text>
@@ -196,10 +158,10 @@ const TipCard = React.memo(({
                 onPress={() => bounceAnim(saveScale, () => onToggleSave(item.id))}
                 activeOpacity={0.7}
               >
-                <Text style={styles.saveBtnIcon}>{isSaved ? '🔖' : '📌'}</Text>
+                <Text style={styles.saveIcon}>{isSaved ? '♥' : '♡'}</Text>
                 <Text style={[
                   styles.saveBtnText,
-                  isSaved && { color: '#5F8C87', fontWeight: '700' as const },
+                  isSaved && styles.saveBtnTextActive,
                 ]}>
                   {isSaved ? 'Saved' : 'Save'}
                 </Text>
@@ -216,9 +178,6 @@ export default function TipsScreen() {
   const navigation = useNavigation<any>();
   const [tips, setTips] = useState<StudyTip[]>([]);
   const [isRefreshing, setIsRefreshing] = useState(false);
-  const [showCreateModal, setShowCreateModal] = useState(false);
-  const [newTipContent, setNewTipContent] = useState('');
-  const [newTipCategory, setNewTipCategory] = useState('general');
   const [savedIds, setSavedIds] = useState<Record<number, boolean>>({});
   const [activeTab, setActiveTab] = useState<Tab>('feed');
   const flatListRef = useRef<FlatList>(null);
@@ -315,22 +274,6 @@ export default function TipsScreen() {
     }
   }, []);
 
-  const handleCreateTip = async () => {
-    if (!newTipContent.trim()) {
-      Alert.alert('Error', 'Please enter a tip');
-      return;
-    }
-    try {
-      await tipsAPI.createTip(newTipContent.trim(), newTipCategory);
-      setNewTipContent('');
-      setShowCreateModal(false);
-      await loadTips();
-      Alert.alert('Shared!', 'Your study tip is now live.');
-    } catch (error: any) {
-      Alert.alert('Error', error.message);
-    }
-  };
-
   const onViewableItemsChanged = useRef(({ viewableItems }: any) => {
     viewableItems.forEach((item: any) => {
       if (item.item?.id) markAsSeen(item.item.id);
@@ -363,19 +306,9 @@ export default function TipsScreen() {
           </TouchableOpacity>
           <View>
             <Text style={styles.headerTitle}>Study Tips</Text>
-            <Text style={styles.headerSub}>Wisdom from our animal friends 🌿</Text>
+            <Text style={styles.headerSub}>Wisdom from our animal friends</Text>
           </View>
         </View>
-        <TouchableOpacity onPress={() => setShowCreateModal(true)}>
-          <LinearGradient
-            colors={['#5F8C87', '#3B5466']}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 0 }}
-            style={styles.shareBtn}
-          >
-            <Text style={styles.shareBtnText}>+ Share</Text>
-          </LinearGradient>
-        </TouchableOpacity>
       </View>
 
       {/* Tabs */}
@@ -385,7 +318,7 @@ export default function TipsScreen() {
           onPress={() => setActiveTab('feed')}
         >
           <Text style={[styles.tabText, activeTab === 'feed' && styles.tabTextActive]}>
-            🌱 For You
+            For You
           </Text>
         </TouchableOpacity>
         <TouchableOpacity
@@ -393,7 +326,7 @@ export default function TipsScreen() {
           onPress={() => setActiveTab('saved')}
         >
           <Text style={[styles.tabText, activeTab === 'saved' && styles.tabTextActive]}>
-            🔖 Saved{savedCount > 0 ? ` (${savedCount})` : ''}
+            Saved{savedCount > 0 ? ` (${savedCount})` : ''}
           </Text>
         </TouchableOpacity>
       </View>
@@ -416,7 +349,7 @@ export default function TipsScreen() {
             <View style={styles.emptyState}>
               <Text style={styles.emptyEmoji}>🌿</Text>
               <Text style={styles.emptyTitle}>No tips yet</Text>
-              <Text style={styles.emptyText}>Pull down to refresh, or share your own tip!</Text>
+              <Text style={styles.emptyText}>Pull down to refresh!</Text>
             </View>
           }
         />
@@ -431,7 +364,7 @@ export default function TipsScreen() {
         >
           {savedTips.length === 0 ? (
             <View style={styles.emptyState}>
-              <Text style={styles.emptyEmoji}>📌</Text>
+              <Text style={styles.emptyEmoji}>♡</Text>
               <Text style={styles.emptyTitle}>No saved tips yet</Text>
               <Text style={styles.emptyText}>Tap "Save" on any tip to keep it here for later.</Text>
             </View>
@@ -448,64 +381,6 @@ export default function TipsScreen() {
           )}
         </ScrollView>
       )}
-
-      {/* Create Tip Modal */}
-      <Modal visible={showCreateModal} transparent animationType="slide">
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <View style={styles.modalHandle} />
-            <Text style={styles.modalTitle}>Share a Study Tip 🌱</Text>
-            <Text style={styles.modalSub}>Help fellow learners with something you've found useful</Text>
-
-            <TextInput
-              style={styles.tipInput}
-              placeholder="What study tip would you share with a friend?"
-              placeholderTextColor={colors.textMuted}
-              value={newTipContent}
-              onChangeText={setNewTipContent}
-              multiline
-              maxLength={300}
-            />
-
-            <Text style={styles.categoryLabel}>Category</Text>
-            <View style={styles.categoryOptions}>
-              {CATEGORIES.map(cat => {
-                const isActive = newTipCategory === cat.key;
-                return (
-                  <TouchableOpacity
-                    key={cat.key}
-                    style={[
-                      styles.categoryChip,
-                      { borderColor: isActive ? cat.color : '#A9BDAF' },
-                      isActive && { backgroundColor: cat.color + '15' },
-                    ]}
-                    onPress={() => setNewTipCategory(cat.key)}
-                  >
-                    <Text style={[styles.categoryChipText, isActive && { color: cat.color, fontWeight: '700' as const }]}>
-                      {cat.label}
-                    </Text>
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
-
-            <TouchableOpacity onPress={handleCreateTip}>
-              <LinearGradient
-                colors={['#5F8C87', '#3B5466']}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 0 }}
-                style={styles.submitButton}
-              >
-                <Text style={styles.submitButtonText}>Share Tip</Text>
-              </LinearGradient>
-            </TouchableOpacity>
-
-            <TouchableOpacity style={styles.cancelButton} onPress={() => setShowCreateModal(false)}>
-              <Text style={styles.cancelButtonText}>Cancel</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </Modal>
     </SafeAreaView>
   );
 }
@@ -547,16 +422,6 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: colors.textMuted,
     marginTop: 2,
-  },
-  shareBtn: {
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: 20,
-  },
-  shareBtnText: {
-    color: '#FFFFFF',
-    fontWeight: '700',
-    fontSize: 13,
   },
 
   tabBar: {
@@ -603,7 +468,6 @@ const styles = StyleSheet.create({
     paddingTop: 4,
   },
 
-  // ---- Card / Speech bubble ----
   cardContainer: {
     flexDirection: 'row',
     alignItems: 'flex-start',
@@ -617,10 +481,16 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     marginTop: 8,
+    overflow: 'hidden',
     ...shadows.small,
   },
-  avatarEmoji: {
-    fontSize: 24,
+  avatarImage: {
+    width: 40,
+    height: 40,
+    resizeMode: 'contain',
+  },
+  avatarFallback: {
+    fontSize: 22,
   },
   bubbleWrap: {
     flex: 1,
@@ -645,25 +515,11 @@ const styles = StyleSheet.create({
     padding: 14,
     ...shadows.small,
   },
-  bubbleHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 8,
-  },
   animalName: {
     fontSize: 13,
     fontWeight: '700',
     letterSpacing: 0.3,
-  },
-  catBadge: {
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 8,
-  },
-  catBadgeText: {
-    fontSize: 11,
-    fontWeight: '600',
+    marginBottom: 6,
   },
   tipText: {
     fontSize: 15,
@@ -673,11 +529,10 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
 
-  // ---- Actions row ----
   actionsRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    gap: 6,
     borderTopWidth: 1,
     borderTopColor: 'rgba(0,0,0,0.05)',
     paddingTop: 10,
@@ -685,25 +540,48 @@ const styles = StyleSheet.create({
   voteBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 12,
-    backgroundColor: 'rgba(255,255,255,0.7)',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 10,
     gap: 4,
   },
-  voteBtnActive: {
-    backgroundColor: '#E7EFEA',
+  arrowWrap: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: 'rgba(255,255,255,0.8)',
+    justifyContent: 'center',
+    alignItems: 'center',
   },
-  voteBtnActiveDown: {
-    backgroundColor: '#F5E8E4',
+  arrowWrapActiveUp: {
+    backgroundColor: '#D6E9E0',
   },
-  voteBtnIcon: {
-    fontSize: 14,
+  arrowWrapActiveDown: {
+    backgroundColor: '#F0DDD6',
+  },
+  arrowIcon: {
+    fontSize: 10,
+    color: '#8A9A92',
+  },
+  arrowIconActiveUp: {
+    color: '#3D7A5F',
+  },
+  arrowIconActiveDown: {
+    color: '#A0705C',
   },
   voteBtnCount: {
-    fontSize: 12,
+    fontSize: 13,
     fontWeight: '600',
-    color: colors.textMuted,
+    color: '#8A9A92',
+    minWidth: 14,
+  },
+  voteCountActiveUp: {
+    color: '#3D7A5F',
+    fontWeight: '700',
+  },
+  voteCountActiveDown: {
+    color: '#A0705C',
+    fontWeight: '700',
   },
   saveBtn: {
     flexDirection: 'row',
@@ -715,18 +593,22 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   saveBtnActive: {
-    backgroundColor: '#E7EFEA',
+    backgroundColor: '#D6E9E0',
   },
-  saveBtnIcon: {
-    fontSize: 14,
+  saveIcon: {
+    fontSize: 15,
+    color: '#8A9A92',
   },
   saveBtnText: {
     fontSize: 12,
     fontWeight: '600',
-    color: colors.textMuted,
+    color: '#8A9A92',
+  },
+  saveBtnTextActive: {
+    color: '#3D7A5F',
+    fontWeight: '700',
   },
 
-  // ---- Empty state ----
   emptyState: {
     paddingVertical: 80,
     justifyContent: 'center',
@@ -748,98 +630,5 @@ const styles = StyleSheet.create({
     fontSize: 14,
     textAlign: 'center',
     lineHeight: 21,
-  },
-
-  // ---- Modal ----
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.4)',
-    justifyContent: 'flex-end',
-  },
-  modalContent: {
-    backgroundColor: '#F4F7F5',
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    padding: spacing.lg,
-    paddingBottom: spacing.xxl,
-  },
-  modalHandle: {
-    width: 40,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: colors.divider,
-    alignSelf: 'center',
-    marginBottom: spacing.md,
-  },
-  modalTitle: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: colors.textPrimary,
-    textAlign: 'center',
-    marginBottom: 4,
-  },
-  modalSub: {
-    fontSize: 13,
-    color: colors.textMuted,
-    textAlign: 'center',
-    marginBottom: spacing.lg,
-  },
-  tipInput: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    padding: spacing.md,
-    color: colors.textPrimary,
-    fontSize: 15,
-    minHeight: 110,
-    textAlignVertical: 'top',
-    marginBottom: spacing.lg,
-    borderWidth: 1,
-    borderColor: '#A9BDAF',
-    lineHeight: 22,
-  },
-  categoryLabel: {
-    fontSize: 13,
-    color: colors.textSecondary,
-    marginBottom: spacing.sm,
-    fontWeight: '600',
-  },
-  categoryOptions: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    marginBottom: spacing.lg,
-    gap: spacing.sm,
-  },
-  categoryChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 14,
-    paddingVertical: 9,
-    borderRadius: 14,
-    borderWidth: 1.5,
-    backgroundColor: '#FFFFFF',
-  },
-  categoryChipText: {
-    color: colors.textSecondary,
-    fontWeight: '600',
-    fontSize: 13,
-  },
-  submitButton: {
-    borderRadius: 20,
-    paddingVertical: 14,
-    alignItems: 'center',
-    marginBottom: spacing.sm,
-  },
-  submitButtonText: {
-    color: '#FFFFFF',
-    fontWeight: '700',
-    fontSize: 16,
-  },
-  cancelButton: {
-    paddingVertical: spacing.sm,
-    alignItems: 'center',
-  },
-  cancelButtonText: {
-    color: colors.textMuted,
-    fontSize: 14,
   },
 });
