@@ -19,10 +19,10 @@ const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const BADGE_SIZE = (SCREEN_WIDTH - spacing.lg * 2 - spacing.sm * 2) / 3;
 
 const TIER_COLORS: Record<string, { bg: string; border: string; label: string }> = {
-  bronze: { bg: '#FDF0E6', border: '#D4A574', label: 'Bronze' },
-  silver: { bg: '#F0F3F8', border: '#A8B5C8', label: 'Silver' },
-  gold:   { bg: '#FFF8E7', border: '#D4A84B', label: 'Gold' },
-  diamond:{ bg: '#F0F0FF', border: '#9B8FD4', label: 'Diamond' },
+  bronze: { bg: '#E7EFEA', border: '#8B7D6B', label: 'Bronze' },
+  silver: { bg: '#E7EFEA', border: '#A9BDAF', label: 'Silver' },
+  gold:   { bg: '#A8C8D830', border: '#5F8C87', label: 'Gold' },
+  diamond:{ bg: '#3B546620', border: '#2F4A3E', label: 'Diamond' },
 };
 
 const CATEGORY_LABELS: Record<string, { title: string; emoji: string }> = {

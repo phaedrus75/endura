@@ -23,6 +23,15 @@ export const animalImages: { [key: string]: any } = {
   'Langur Monkey': require('./langur monkey.png'),
   'Pacific Pocket Mouse': require('./pacific pocket mouse.png'),
   'Wallaby': require('./wallaby.png'),
+  'Avahi': require('./avahi.png'),
+  'Blue Whale': require('./blue whale.png'),
+  'Gray Bat': require('./gray bat.png'),
+  'Grey Parrot': require('./grey parrot.png'),
+  'Grizzly Bear': require('./grizzly bear.png'),
+  'Mountain Zebra': require('./mountain zebra.png'),
+  'Pangolin': require('./pangolin.png'),
+  'Seal': require('./seal.png'),
+  'Wombat': require('./wombat.png'),
 };
 
 // Get animal image by name, with fallback
@@ -53,4 +62,13 @@ export const ANIMAL_NAMES_IN_ORDER = [
   'Langur Monkey',
   'Pacific Pocket Mouse',
   'Wallaby',
+  'Avahi',
+  'Blue Whale',
+  'Gray Bat',
+  'Grey Parrot',
+  'Grizzly Bear',
+  'Mountain Zebra',
+  'Pangolin',
+  'Seal',
+  'Wombat',
 ];

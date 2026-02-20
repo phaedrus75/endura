@@ -13,6 +13,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
+import { LinearGradient as ExpoLinearGradient } from 'expo-linear-gradient';
 import Svg, { Circle, Rect, G, Text as SvgText, Path, Defs, LinearGradient, Stop } from 'react-native-svg';
 import { colors, shadows, spacing, borderRadius } from '../theme/colors';
 import { useAuth } from '../contexts/AuthContext';
@@ -131,7 +132,14 @@ const ProgressBar = ({ value, maxValue, label, color }: { value: number; maxValu
         <Text style={styles.progressBarValue}>{value} / {maxValue}</Text>
       </View>
       <View style={styles.progressBarTrack}>
-        <View style={[styles.progressBarFill, { width: `${percentage}%`, backgroundColor: color }]} />
+        {percentage > 0 && (
+          <ExpoLinearGradient
+            colors={['#A8C8D8', '#5F8C87']}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 0 }}
+            style={[styles.progressBarFill, { width: `${percentage}%` }]}
+          />
+        )}
       </View>
     </View>
   );
@@ -235,45 +243,85 @@ export default function ProfileScreen() {
         </View>
 
         {/* Profile Header */}
-        <View style={styles.profileHeader}>
+        <ExpoLinearGradient
+          colors={['#5F8C87', '#3B5466']}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={styles.profileHeader}
+        >
           <View style={styles.avatarContainer}>
             <Text style={styles.avatarEmoji}>👤</Text>
           </View>
           <Text style={styles.username}>{user?.username || 'Studier'}</Text>
           <Text style={styles.email}>{user?.email}</Text>
-          <View style={styles.streakContainer}>
+          <ExpoLinearGradient
+            colors={['#A8C8D8', '#E7EFEA']}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 0, y: 1 }}
+            style={styles.streakContainer}
+          >
             <Text style={styles.streakEmoji}>🔥</Text>
             <Text style={styles.streakValue}>{user?.current_streak || 0}</Text>
             <Text style={styles.streakLabel}>day streak</Text>
-          </View>
-        </View>
+          </ExpoLinearGradient>
+        </ExpoLinearGradient>
 
         {/* Stats Grid */}
         <View style={styles.statsGrid}>
-          <View style={styles.statBox}>
+          <ExpoLinearGradient
+            colors={['#FFFFFF', '#E7EFEA']}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 0, y: 1 }}
+            style={styles.statBox}
+          >
             <Text style={styles.statValue}>{formatTime(stats?.total_study_minutes || 0)}</Text>
             <Text style={styles.statLabel}>Total Study</Text>
-          </View>
-          <View style={styles.statBox}>
+          </ExpoLinearGradient>
+          <ExpoLinearGradient
+            colors={['#FFFFFF', '#E7EFEA']}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 0, y: 1 }}
+            style={styles.statBox}
+          >
             <Text style={styles.statValue}>{stats?.total_sessions || 0}</Text>
             <Text style={styles.statLabel}>Sessions</Text>
-          </View>
-          <View style={styles.statBox}>
+          </ExpoLinearGradient>
+          <ExpoLinearGradient
+            colors={['#FFFFFF', '#E7EFEA']}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 0, y: 1 }}
+            style={styles.statBox}
+          >
             <Text style={styles.statValue}>{stats?.total_coins || 0}</Text>
             <Text style={styles.statLabel}>Total Eco-Credits</Text>
-          </View>
-          <View style={styles.statBox}>
+          </ExpoLinearGradient>
+          <ExpoLinearGradient
+            colors={['#FFFFFF', '#E7EFEA']}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 0, y: 1 }}
+            style={styles.statBox}
+          >
             <Text style={styles.statValue}>{stats?.animals_hatched || 0}</Text>
             <Text style={styles.statLabel}>Animals</Text>
-          </View>
-          <View style={styles.statBox}>
+          </ExpoLinearGradient>
+          <ExpoLinearGradient
+            colors={['#FFFFFF', '#E7EFEA']}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 0, y: 1 }}
+            style={styles.statBox}
+          >
             <Text style={styles.statValue}>{stats?.tasks_completed || 0}</Text>
             <Text style={styles.statLabel}>Tasks Done</Text>
-          </View>
-          <View style={styles.statBox}>
+          </ExpoLinearGradient>
+          <ExpoLinearGradient
+            colors={['#FFFFFF', '#E7EFEA']}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 0, y: 1 }}
+            style={styles.statBox}
+          >
             <Text style={styles.statValue}>{stats?.longest_streak || 0}</Text>
             <Text style={styles.statLabel}>Best Streak</Text>
-          </View>
+          </ExpoLinearGradient>
         </View>
 
         {/* Leaderboard */}
@@ -283,8 +331,16 @@ export default function ProfileScreen() {
             <TouchableOpacity
               style={styles.addFriendButton}
               onPress={() => setShowFriendModal(true)}
+              activeOpacity={0.8}
             >
-              <Text style={styles.addFriendText}>+ Add Friend</Text>
+              <ExpoLinearGradient
+                colors={['#5F8C87', '#3B5466']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 0 }}
+                style={styles.addFriendButtonGradient}
+              >
+                <Text style={styles.addFriendText}>+ Add Friend</Text>
+              </ExpoLinearGradient>
             </TouchableOpacity>
           </View>
 
@@ -294,28 +350,48 @@ export default function ProfileScreen() {
               <Text style={styles.emptyText}>Add friends to compete!</Text>
             </View>
           ) : (
-            leaderboard.map((entry, index) => (
-              <View
-                key={entry.user_id}
-                style={[
-                  styles.leaderboardRow,
-                  entry.user_id === user?.id && styles.leaderboardRowMe,
-                ]}
-              >
-                <Text style={styles.leaderboardRank}>
-                  {index === 0 ? '🥇' : index === 1 ? '🥈' : index === 2 ? '🥉' : `${entry.rank}`}
-                </Text>
-                <View style={styles.leaderboardInfo}>
-                  <Text style={styles.leaderboardName}>
-                    {entry.username || 'Anonymous'}
-                    {entry.user_id === user?.id && ' (You)'}
+            leaderboard.map((entry, index) => {
+              const isMe = entry.user_id === user?.id;
+              return isMe ? (
+                <ExpoLinearGradient
+                  key={entry.user_id}
+                  colors={['rgba(231, 239, 234, 0.3)', 'rgba(168, 200, 216, 0.3)']}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 0, y: 1 }}
+                  style={styles.leaderboardRowMe}
+                >
+                  <Text style={styles.leaderboardRank}>
+                    {index === 0 ? '🥇' : index === 1 ? '🥈' : index === 2 ? '🥉' : `${entry.rank}`}
                   </Text>
-                  <Text style={styles.leaderboardStats}>
-                    {formatTime(entry.total_study_minutes)} • 🔥 {entry.current_streak} • 🦁 {entry.animals_count}
+                  <View style={styles.leaderboardInfo}>
+                    <Text style={styles.leaderboardName}>
+                      {entry.username || 'Anonymous'}
+                      {' (You)'}
+                    </Text>
+                    <Text style={styles.leaderboardStats}>
+                      {formatTime(entry.total_study_minutes)} • 🔥 {entry.current_streak} • 🦁 {entry.animals_count}
+                    </Text>
+                  </View>
+                </ExpoLinearGradient>
+              ) : (
+                <View
+                  key={entry.user_id}
+                  style={styles.leaderboardRow}
+                >
+                  <Text style={styles.leaderboardRank}>
+                    {index === 0 ? '🥇' : index === 1 ? '🥈' : index === 2 ? '🥉' : `${entry.rank}`}
                   </Text>
+                  <View style={styles.leaderboardInfo}>
+                    <Text style={styles.leaderboardName}>
+                      {entry.username || 'Anonymous'}
+                    </Text>
+                    <Text style={styles.leaderboardStats}>
+                      {formatTime(entry.total_study_minutes)} • 🔥 {entry.current_streak} • 🦁 {entry.animals_count}
+                    </Text>
+                  </View>
                 </View>
-              </View>
-            ))
+              );
+            })
           )}
         </View>
 
@@ -372,8 +448,15 @@ export default function ProfileScreen() {
               autoCapitalize="none"
             />
 
-            <TouchableOpacity style={styles.sendButton} onPress={handleAddFriend}>
-              <Text style={styles.sendButtonText}>Send Request</Text>
+            <TouchableOpacity style={styles.sendButton} onPress={handleAddFriend} activeOpacity={0.8}>
+              <ExpoLinearGradient
+                colors={['#5F8C87', '#3B5466']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 0 }}
+                style={styles.sendButtonGradient}
+              >
+                <Text style={styles.sendButtonText}>Send Request</Text>
+              </ExpoLinearGradient>
             </TouchableOpacity>
 
             <TouchableOpacity
@@ -439,6 +522,9 @@ const styles = StyleSheet.create({
   profileHeader: {
     alignItems: 'center',
     marginBottom: spacing.xl,
+    padding: spacing.lg,
+    borderRadius: borderRadius.xl,
+    paddingTop: spacing.xl,
   },
   avatarContainer: {
     width: 100,
@@ -458,18 +544,18 @@ const styles = StyleSheet.create({
   username: {
     fontSize: 28,
     fontWeight: '700',
-    color: colors.textPrimary,
+    color: '#FFFFFF',
     marginBottom: spacing.xs,
   },
   email: {
     fontSize: 14,
-    color: colors.textMuted,
+    color: '#FFFFFF',
     marginBottom: spacing.md,
+    opacity: 0.9,
   },
   streakContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: colors.surface,
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
     borderRadius: borderRadius.full,
@@ -497,7 +583,6 @@ const styles = StyleSheet.create({
   },
   statBox: {
     width: '31%',
-    backgroundColor: colors.surface,
     borderRadius: borderRadius.lg,
     padding: spacing.md,
     alignItems: 'center',
@@ -606,10 +691,12 @@ const styles = StyleSheet.create({
     borderRadius: 5,
   },
   addFriendButton: {
-    backgroundColor: colors.primary,
+    borderRadius: borderRadius.full,
+    overflow: 'hidden',
+  },
+  addFriendButtonGradient: {
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm - 2,
-    borderRadius: borderRadius.full,
   },
   addFriendText: {
     color: colors.textOnPrimary,
@@ -643,9 +730,13 @@ const styles = StyleSheet.create({
     borderColor: colors.cardBorder,
   },
   leaderboardRowMe: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: borderRadius.md,
+    padding: spacing.md,
+    marginBottom: spacing.sm,
     borderWidth: 2,
     borderColor: colors.primary,
-    backgroundColor: colors.primaryLight + '15',
   },
   leaderboardRank: {
     fontSize: 24,
@@ -766,11 +857,13 @@ const styles = StyleSheet.create({
     borderColor: colors.cardBorder,
   },
   sendButton: {
-    backgroundColor: colors.primary,
     borderRadius: borderRadius.md,
+    marginBottom: spacing.md,
+    overflow: 'hidden',
+  },
+  sendButtonGradient: {
     padding: spacing.md,
     alignItems: 'center',
-    marginBottom: spacing.md,
   },
   sendButtonText: {
     color: colors.textOnPrimary,

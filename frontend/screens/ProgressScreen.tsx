@@ -13,6 +13,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import Svg, { Rect, G, Text as SvgText, Defs, LinearGradient, Stop } from 'react-native-svg';
+import { LinearGradient as ExpoLinearGradient } from 'expo-linear-gradient';
 import { colors, shadows, spacing, borderRadius } from '../theme/colors';
 import { useAuth } from '../contexts/AuthContext';
 import { statsAPI, tasksAPI, badgesAPI, UserStats, Task, BadgeResponse } from '../services/api';
@@ -21,14 +22,14 @@ const { width } = Dimensions.get('window');
 const CHART_WIDTH = width - spacing.lg * 2;
 
 const SUBJECT_COLORS = [
-  '#4CAF50', // Green
-  '#2196F3', // Blue
-  '#FF9800', // Orange
-  '#9C27B0', // Purple
-  '#E91E63', // Pink
-  '#00BCD4', // Cyan
-  '#FF5722', // Deep Orange
-  '#607D8B', // Blue Grey
+  '#5F8C87', // Ocean Sage
+  '#3B5466', // Navy
+  '#A9BDAF', // Moss Grey
+  '#2F4A3E', // Deep Pine
+  '#A8C8D8', // Light Blue
+  '#5E7F6E', // Forest Calm
+  '#7C8F86', // Stone Fog
+  '#3B5466', // Navy
 ];
 
 const LABEL_PAD = 20;
@@ -159,10 +160,10 @@ const SubjectBarChart = ({ data, height = 150 }: { data: { label: string; value:
   );
 };
 
-// Progress Bar Component
+// Progress Bar Component with gradient fill
 const ProgressBar = ({ value, maxValue, label, color }: { value: number; maxValue: number; label: string; color: string }) => {
   const percentage = Math.min((value / maxValue) * 100, 100);
-  
+
   return (
     <View style={styles.progressBarContainer}>
       <View style={styles.progressBarHeader}>
@@ -170,7 +171,14 @@ const ProgressBar = ({ value, maxValue, label, color }: { value: number; maxValu
         <Text style={styles.progressBarValue}>{value} / {maxValue}</Text>
       </View>
       <View style={styles.progressBarTrack}>
-        <View style={[styles.progressBarFill, { width: `${percentage}%`, backgroundColor: color }]} />
+        {percentage > 0 && (
+          <ExpoLinearGradient
+            colors={['#A8C8D8', '#5F8C87', '#3B5466']}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 0 }}
+            style={[styles.progressBarFill, { width: `${percentage}%` }]}
+          />
+        )}
       </View>
     </View>
   );
@@ -196,7 +204,6 @@ export default function ProgressScreen() {
         tasksAPI.getTasks(true),
         badgesAPI.getBadges().catch(() => []),
       ]);
-      console.log('Stats loaded:', JSON.stringify(statsData));
       setStats(statsData);
       setTasks(tasksData);
       setBadges(badgesData);
@@ -242,10 +249,10 @@ export default function ProgressScreen() {
   };
 
   const TIER_COLORS: Record<string, { bg: string; border: string; label: string }> = {
-    bronze:  { bg: '#FDF0E6', border: '#D4A574', label: 'Bronze' },
-    silver:  { bg: '#F0F3F8', border: '#A8B5C8', label: 'Silver' },
-    gold:    { bg: '#FFF8E7', border: '#D4A84B', label: 'Gold' },
-    diamond: { bg: '#F0F0FF', border: '#9B8FD4', label: 'Diamond' },
+    bronze:  { bg: '#E7EFEA', border: '#8B7D6B', label: 'Bronze' },
+    silver:  { bg: '#E7EFEA', border: '#A9BDAF', label: 'Silver' },
+    gold:    { bg: '#A8C8D830', border: '#5F8C87', label: 'Gold' },
+    diamond: { bg: '#3B546620', border: '#2F4A3E', label: 'Diamond' },
   };
   const CATEGORY_LABELS: Record<string, { title: string; emoji: string }> = {
     getting_started: { title: 'Getting Started', emoji: '🚀' },
@@ -306,8 +313,8 @@ export default function ProgressScreen() {
         </View>
 
         {loadError && (
-          <View style={{ backgroundColor: '#FFF3E0', padding: 12, borderRadius: 12, marginBottom: spacing.md }}>
-            <Text style={{ color: '#E65100', fontSize: 13, textAlign: 'center' }}>
+          <View style={{ backgroundColor: '#E7EFEA', padding: 12, borderRadius: 12, marginBottom: spacing.md }}>
+            <Text style={{ color: '#3B5466', fontSize: 13, textAlign: 'center' }}>
               ⚠️ Couldn't load progress data. Pull down to retry.
             </Text>
           </View>
@@ -387,7 +394,7 @@ export default function ProgressScreen() {
             value={stats?.tasks_completed || 0} 
             maxValue={100} 
             label="✅ Tasks Completed" 
-            color="#4CAF50"
+            color="#5E7F6E"
           />
         </View>
 
@@ -730,7 +737,7 @@ const styles = StyleSheet.create({
   },
   badgesProgressFill: {
     height: '100%',
-    backgroundColor: '#E8B86D',
+    backgroundColor: '#5F8C87',
     borderRadius: 4,
   },
   badgesTierRow: {

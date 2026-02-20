@@ -20,10 +20,11 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 import { colors, shadows, spacing, borderRadius } from '../theme/colors';
 import { useAuth } from '../contexts/AuthContext';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
-  pactsAPI, groupsAPI, feedAPI, socialAPI,
+  pactsAPI, groupsAPI, feedAPI, socialAPI, tipsAPI,
   StudyPact, StudyGroup, GroupMessage, FeedEvent,
-  Friend,
+  Friend, StudyTip,
 } from '../services/api';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
@@ -99,6 +100,9 @@ export default function SocialScreen() {
   const [chatInput, setChatInput] = useState('');
   const [showInviteModal, setShowInviteModal] = useState(false);
   const [inviteGroupId, setInviteGroupId] = useState<number | null>(null);
+  const [showTipsPicker, setShowTipsPicker] = useState(false);
+  const [savedTips, setSavedTips] = useState<StudyTip[]>([]);
+  const [showChatActions, setShowChatActions] = useState(false);
 
   // Feed
   const [feed, setFeed] = useState<FeedEvent[]>([]);
@@ -309,6 +313,7 @@ export default function SocialScreen() {
 
   const openGroupChat = async (group: StudyGroup) => {
     setSelectedGroup(group);
+    setShowChatActions(false);
     try {
       const msgs = await groupsAPI.getMessages(group.id);
       setMessages(msgs);
@@ -324,6 +329,56 @@ export default function SocialScreen() {
       setMessages(msgs);
     } catch {}
   };
+
+  const loadSavedTips = async () => {
+    try {
+      const raw = await AsyncStorage.getItem('savedTipIds');
+      if (raw) {
+        const ids: number[] = JSON.parse(raw);
+        if (ids.length > 0) {
+          const allTips = await tipsAPI.getTips(100);
+          setSavedTips(allTips.filter(t => ids.includes(t.id)));
+        }
+      }
+    } catch {}
+  };
+
+  const sendTipToChat = async (tip: StudyTip) => {
+    if (!selectedGroup) return;
+    const content = `📚 [TIP] ${tip.content}`;
+    try {
+      await groupsAPI.sendMessage(selectedGroup.id, content);
+      setShowTipsPicker(false);
+      const msgs = await groupsAPI.getMessages(selectedGroup.id);
+      setMessages(msgs);
+    } catch {}
+  };
+
+  const sendHatchInvite = async () => {
+    if (!selectedGroup) return;
+    const content = `🥚 [HATCH_INVITE] wants to hatch an animal together! Tap to accept the challenge — study together to hatch a shared egg! 🐣`;
+    try {
+      await groupsAPI.sendMessage(selectedGroup.id, content);
+      setShowChatActions(false);
+      const msgs = await groupsAPI.getMessages(selectedGroup.id);
+      setMessages(msgs);
+    } catch {}
+  };
+
+  const acceptHatchInvite = async (senderName: string) => {
+    if (!selectedGroup) return;
+    const content = `🐣 [HATCH_ACCEPT] accepted the hatch challenge from ${senderName}! Let's study and hatch this egg together! 🎉`;
+    try {
+      await groupsAPI.sendMessage(selectedGroup.id, content);
+      const msgs = await groupsAPI.getMessages(selectedGroup.id);
+      setMessages(msgs);
+    } catch {}
+  };
+
+  const isTipMessage = (content: string) => content.startsWith('📚 [TIP] ');
+  const isHatchInvite = (content: string) => content.startsWith('🥚 [HATCH_INVITE]');
+  const isHatchAccept = (content: string) => content.startsWith('🐣 [HATCH_ACCEPT]');
+  const isSpecialMessage = (content: string) => isTipMessage(content) || isHatchInvite(content) || isHatchAccept(content);
 
   // ---- Feed Actions ----
   const handleReact = async (eventId: number, reaction: string) => {
@@ -843,39 +898,192 @@ export default function SocialScreen() {
               <Text style={styles.chatBackArrow}>‹</Text>
               <Text style={styles.chatBackText}>Back</Text>
             </TouchableOpacity>
-            <Text style={styles.chatTitle} numberOfLines={1}>{selectedGroup?.name}</Text>
+            <View style={styles.chatHeaderCenter}>
+              <Text style={styles.chatTitle} numberOfLines={1}>{selectedGroup?.name}</Text>
+              <Text style={styles.chatSubtitle}>{selectedGroup?.members.length || 0} members</Text>
+            </View>
             <View style={styles.chatHeaderSpacer} />
           </View>
+
           <FlatList
             data={messages}
             keyExtractor={m => m.id.toString()}
             contentContainerStyle={styles.chatList}
+            inverted={false}
+            ListEmptyComponent={
+              <View style={styles.chatEmpty}>
+                <Text style={styles.chatEmptyEmoji}>💬</Text>
+                <Text style={styles.chatEmptyTitle}>No messages yet</Text>
+                <Text style={styles.chatEmptySubtitle}>Start the conversation or share a study tip!</Text>
+              </View>
+            }
             renderItem={({ item }) => {
               const isMine = item.user_id === user?.id;
+
+              if (isTipMessage(item.content)) {
+                const tipText = item.content.replace('📚 [TIP] ', '');
+                return (
+                  <View style={[styles.chatSpecialBubble, isMine ? { alignSelf: 'flex-end' } : { alignSelf: 'flex-start' }]}>
+                    {!isMine && <Text style={styles.chatSpecialSender}>{item.username || 'Someone'} shared a tip</Text>}
+                    {isMine && <Text style={styles.chatSpecialSenderMine}>You shared a tip</Text>}
+                    <LinearGradient
+                      colors={['#E7EFEA', '#FFFFFF']}
+                      start={{ x: 0, y: 0 }}
+                      end={{ x: 0, y: 1 }}
+                      style={styles.chatTipCard}
+                    >
+                      <Text style={styles.chatTipEmoji}>📚</Text>
+                      <Text style={styles.chatTipText}>{tipText}</Text>
+                    </LinearGradient>
+                    <Text style={styles.chatSpecialTime}>{timeAgo(item.created_at)}</Text>
+                  </View>
+                );
+              }
+
+              if (isHatchInvite(item.content)) {
+                return (
+                  <View style={[styles.chatSpecialBubble, isMine ? { alignSelf: 'flex-end' } : { alignSelf: 'flex-start' }]}>
+                    {!isMine && <Text style={styles.chatSpecialSender}>{item.username || 'Someone'}</Text>}
+                    <LinearGradient
+                      colors={['#A8C8D8', '#5F8C87']}
+                      start={{ x: 0, y: 0 }}
+                      end={{ x: 1, y: 1 }}
+                      style={styles.chatHatchCard}
+                    >
+                      <Text style={styles.chatHatchEmoji}>🥚</Text>
+                      <Text style={styles.chatHatchTitle}>Hatch Together Invite!</Text>
+                      <Text style={styles.chatHatchDesc}>Study together to hatch a shared animal egg</Text>
+                      {!isMine && (
+                        <TouchableOpacity
+                          style={styles.chatHatchAcceptBtn}
+                          onPress={() => acceptHatchInvite(item.username || 'Someone')}
+                        >
+                          <Text style={styles.chatHatchAcceptText}>🐣 Accept Challenge</Text>
+                        </TouchableOpacity>
+                      )}
+                    </LinearGradient>
+                    <Text style={styles.chatSpecialTime}>{timeAgo(item.created_at)}</Text>
+                  </View>
+                );
+              }
+
+              if (isHatchAccept(item.content)) {
+                return (
+                  <View style={[styles.chatSpecialBubble, { alignSelf: 'center' }]}>
+                    <View style={styles.chatHatchAcceptedBanner}>
+                      <Text style={styles.chatHatchAcceptedText}>
+                        🎉 {isMine ? 'You' : (item.username || 'Someone')} accepted the hatch challenge!
+                      </Text>
+                      <Text style={styles.chatHatchAcceptedSub}>Study together to hatch your shared egg 🐣</Text>
+                    </View>
+                    <Text style={[styles.chatSpecialTime, { textAlign: 'center' }]}>{timeAgo(item.created_at)}</Text>
+                  </View>
+                );
+              }
+
               return (
-                <View style={[styles.chatBubble, isMine ? styles.chatBubbleMine : styles.chatBubbleTheirs]}>
-                  {!isMine && <Text style={styles.chatBubbleSender}>{item.username || 'Someone'}</Text>}
-                  <Text style={[styles.chatBubbleText, isMine && { color: '#fff' }]}>{item.content}</Text>
-                  <Text style={[styles.chatBubbleTime, isMine && { color: 'rgba(255,255,255,0.7)' }]}>{timeAgo(item.created_at)}</Text>
+                <View style={[styles.chatBubbleWrap, isMine ? styles.chatBubbleWrapMine : styles.chatBubbleWrapTheirs]}>
+                  {!isMine && <View style={styles.chatAvatar}><Text style={styles.chatAvatarText}>{(item.username || '?')[0].toUpperCase()}</Text></View>}
+                  <View style={[styles.chatBubble, isMine ? styles.chatBubbleMine : styles.chatBubbleTheirs]}>
+                    {!isMine && <Text style={styles.chatBubbleSender}>{item.username || 'Someone'}</Text>}
+                    <Text style={[styles.chatBubbleText, isMine && { color: '#fff' }]}>{item.content}</Text>
+                    <Text style={[styles.chatBubbleTime, isMine && { color: 'rgba(255,255,255,0.7)' }]}>{timeAgo(item.created_at)}</Text>
+                  </View>
                 </View>
               );
             }}
           />
+
+          {/* Chat action bar */}
+          {showChatActions && (
+            <View style={styles.chatActionsBar}>
+              <TouchableOpacity
+                style={styles.chatActionItem}
+                onPress={() => {
+                  setShowChatActions(false);
+                  loadSavedTips();
+                  setShowTipsPicker(true);
+                }}
+              >
+                <Text style={styles.chatActionEmoji}>📚</Text>
+                <Text style={styles.chatActionLabel}>Share Tip</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.chatActionItem}
+                onPress={() => {
+                  setShowChatActions(false);
+                  sendHatchInvite();
+                }}
+              >
+                <Text style={styles.chatActionEmoji}>🥚</Text>
+                <Text style={styles.chatActionLabel}>Hatch Together</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+
           <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
             <View style={styles.chatInputRow}>
+              <TouchableOpacity
+                style={styles.chatPlusBtn}
+                onPress={() => setShowChatActions(!showChatActions)}
+              >
+                <Text style={styles.chatPlusBtnText}>{showChatActions ? '×' : '+'}</Text>
+              </TouchableOpacity>
               <TextInput
                 style={styles.chatInput}
                 placeholder="Type a message..."
                 placeholderTextColor={colors.textMuted}
                 value={chatInput}
                 onChangeText={setChatInput}
+                onFocus={() => setShowChatActions(false)}
               />
-              <TouchableOpacity style={styles.chatSendButton} onPress={handleSendMessage}>
+              <TouchableOpacity
+                style={[styles.chatSendButton, !chatInput.trim() && styles.chatSendButtonDisabled]}
+                onPress={handleSendMessage}
+                disabled={!chatInput.trim()}
+              >
                 <Text style={styles.chatSendText}>Send</Text>
               </TouchableOpacity>
             </View>
           </KeyboardAvoidingView>
         </SafeAreaView>
+      </Modal>
+
+      {/* Tips Picker Modal */}
+      <Modal visible={showTipsPicker} transparent animationType="slide">
+        <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => setShowTipsPicker(false)}>
+          <TouchableOpacity activeOpacity={1}>
+            <View style={[styles.modalContent, { maxHeight: SCREEN_WIDTH * 1.2 }]}>
+              <Text style={styles.modalTitle}>📚 Share a Study Tip</Text>
+              {savedTips.length === 0 ? (
+                <View style={{ alignItems: 'center', paddingVertical: 20 }}>
+                  <Text style={{ fontSize: 32, marginBottom: 8 }}>📝</Text>
+                  <Text style={styles.noFriendsText}>No saved tips yet! Save tips from the Tips tab first.</Text>
+                </View>
+              ) : (
+                <ScrollView style={{ maxHeight: 340 }} showsVerticalScrollIndicator={false}>
+                  {savedTips.map(tip => (
+                    <TouchableOpacity
+                      key={tip.id}
+                      style={styles.tipPickerItem}
+                      onPress={() => sendTipToChat(tip)}
+                      activeOpacity={0.7}
+                    >
+                      <View style={styles.tipPickerBadge}>
+                        <Text style={styles.tipPickerBadgeText}>{tip.category}</Text>
+                      </View>
+                      <Text style={styles.tipPickerText} numberOfLines={3}>{tip.content}</Text>
+                      <Text style={styles.tipPickerSend}>Send →</Text>
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
+              )}
+              <TouchableOpacity style={styles.modalCancel} onPress={() => setShowTipsPicker(false)}>
+                <Text style={styles.modalCancelText}>Cancel</Text>
+              </TouchableOpacity>
+            </View>
+          </TouchableOpacity>
+        </TouchableOpacity>
       </Modal>
 
       {/* Invite Friends to Group Modal */}
@@ -1491,12 +1699,12 @@ const styles = StyleSheet.create({
   noFriendsText: { fontSize: 13, color: colors.textMuted, paddingVertical: 10 },
 
   // Chat
-  chatContainer: { flex: 1, backgroundColor: colors.background },
+  chatContainer: { flex: 1, backgroundColor: '#F0F4F2' },
   chatHeader: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingHorizontal: spacing.md, paddingVertical: 14,
+    paddingHorizontal: spacing.md, paddingVertical: 12,
     borderBottomWidth: 1, borderBottomColor: colors.cardBorder, backgroundColor: colors.surface,
-    minHeight: 52,
+    minHeight: 56,
   },
   chatBackBtn: {
     flexDirection: 'row',
@@ -1507,29 +1715,109 @@ const styles = StyleSheet.create({
   },
   chatBackArrow: { fontSize: 28, fontWeight: '300', color: colors.primary, marginRight: 2, marginTop: -2 },
   chatBackText: { fontSize: 16, fontWeight: '600', color: colors.primary },
-  chatTitle: { fontSize: 17, fontWeight: '700', color: colors.textPrimary, flex: 1, textAlign: 'center' },
+  chatHeaderCenter: { flex: 1, alignItems: 'center' },
+  chatTitle: { fontSize: 17, fontWeight: '700', color: colors.textPrimary },
+  chatSubtitle: { fontSize: 11, color: colors.textMuted, marginTop: 1 },
   chatHeaderSpacer: { minWidth: 70 },
-  chatList: { padding: spacing.md, paddingBottom: 20 },
-  chatBubble: {
-    maxWidth: '78%', padding: 12, borderRadius: 18, marginBottom: 8,
+  chatList: { paddingHorizontal: spacing.md, paddingTop: 16, paddingBottom: 12 },
+  chatEmpty: { alignItems: 'center', paddingVertical: 60 },
+  chatEmptyEmoji: { fontSize: 40, marginBottom: 8 },
+  chatEmptyTitle: { fontSize: 16, fontWeight: '700', color: colors.textPrimary },
+  chatEmptySubtitle: { fontSize: 13, color: colors.textMuted, marginTop: 4, textAlign: 'center' },
+  chatBubbleWrap: {
+    flexDirection: 'row', alignItems: 'flex-end', marginBottom: 10,
   },
-  chatBubbleMine: { alignSelf: 'flex-end', backgroundColor: colors.primary, borderBottomRightRadius: 4 },
-  chatBubbleTheirs: { alignSelf: 'flex-start', backgroundColor: colors.surface, borderBottomLeftRadius: 4, ...shadows.small },
+  chatBubbleWrapMine: { justifyContent: 'flex-end' },
+  chatBubbleWrapTheirs: { justifyContent: 'flex-start' },
+  chatAvatar: {
+    width: 28, height: 28, borderRadius: 14, backgroundColor: colors.primary + '20',
+    alignItems: 'center', justifyContent: 'center', marginRight: 8, marginBottom: 2,
+  },
+  chatAvatarText: { fontSize: 12, fontWeight: '700', color: colors.primary },
+  chatBubble: {
+    maxWidth: '75%', paddingHorizontal: 14, paddingVertical: 10, borderRadius: 18,
+  },
+  chatBubbleMine: {
+    backgroundColor: colors.primary, borderBottomRightRadius: 4,
+  },
+  chatBubbleTheirs: {
+    backgroundColor: colors.surface, borderBottomLeftRadius: 4, ...shadows.small,
+  },
   chatBubbleSender: { fontSize: 11, fontWeight: '700', color: colors.primary, marginBottom: 3 },
-  chatBubbleText: { fontSize: 14, color: colors.textPrimary, lineHeight: 20 },
+  chatBubbleText: { fontSize: 15, color: colors.textPrimary, lineHeight: 21 },
   chatBubbleTime: { fontSize: 10, color: colors.textMuted, marginTop: 4, textAlign: 'right' },
+
+  chatSpecialBubble: { maxWidth: '82%', marginBottom: 12 },
+  chatSpecialSender: { fontSize: 11, fontWeight: '600', color: colors.textMuted, marginBottom: 4 },
+  chatSpecialSenderMine: { fontSize: 11, fontWeight: '600', color: colors.textMuted, marginBottom: 4, textAlign: 'right' },
+  chatSpecialTime: { fontSize: 10, color: colors.textMuted, marginTop: 4 },
+
+  chatTipCard: {
+    borderRadius: 16, padding: 14, borderWidth: 1, borderColor: colors.cardBorder,
+  },
+  chatTipEmoji: { fontSize: 20, marginBottom: 6 },
+  chatTipText: { fontSize: 14, color: colors.textPrimary, lineHeight: 20, fontStyle: 'italic' },
+
+  chatHatchCard: {
+    borderRadius: 16, padding: 16, alignItems: 'center',
+  },
+  chatHatchEmoji: { fontSize: 36, marginBottom: 6 },
+  chatHatchTitle: { fontSize: 16, fontWeight: '700', color: '#fff', marginBottom: 4 },
+  chatHatchDesc: { fontSize: 13, color: 'rgba(255,255,255,0.85)', textAlign: 'center', marginBottom: 10 },
+  chatHatchAcceptBtn: {
+    backgroundColor: '#fff', borderRadius: 20, paddingHorizontal: 20, paddingVertical: 10,
+  },
+  chatHatchAcceptText: { fontSize: 14, fontWeight: '700', color: colors.primary },
+  chatHatchAcceptedBanner: {
+    backgroundColor: colors.primary + '12', borderRadius: 16, padding: 14, alignItems: 'center',
+    borderWidth: 1, borderColor: colors.primary + '25',
+  },
+  chatHatchAcceptedText: { fontSize: 14, fontWeight: '700', color: colors.textPrimary, textAlign: 'center' },
+  chatHatchAcceptedSub: { fontSize: 12, color: colors.textSecondary, marginTop: 4, textAlign: 'center' },
+
+  chatActionsBar: {
+    flexDirection: 'row', backgroundColor: colors.surface,
+    borderTopWidth: 1, borderTopColor: colors.cardBorder,
+    paddingVertical: 10, paddingHorizontal: spacing.lg,
+  },
+  chatActionItem: {
+    flex: 1, alignItems: 'center', paddingVertical: 8,
+  },
+  chatActionEmoji: { fontSize: 24, marginBottom: 4 },
+  chatActionLabel: { fontSize: 12, fontWeight: '600', color: colors.textSecondary },
+
   chatInputRow: {
-    flexDirection: 'row', alignItems: 'center', gap: 8,
-    paddingHorizontal: spacing.md, paddingVertical: 10,
+    flexDirection: 'row', alignItems: 'center',
+    paddingHorizontal: 10, paddingVertical: 8,
     borderTopWidth: 1, borderTopColor: colors.cardBorder, backgroundColor: colors.surface,
   },
+  chatPlusBtn: {
+    width: 36, height: 36, borderRadius: 18, backgroundColor: colors.surfaceAlt,
+    alignItems: 'center', justifyContent: 'center', marginRight: 8,
+    borderWidth: 1, borderColor: colors.cardBorder,
+  },
+  chatPlusBtnText: { fontSize: 22, fontWeight: '400', color: colors.primary, marginTop: -1 },
   chatInput: {
     flex: 1, backgroundColor: colors.surfaceAlt, borderRadius: 20,
     paddingHorizontal: 16, paddingVertical: 10, fontSize: 14, color: colors.textPrimary,
+    borderWidth: 1, borderColor: colors.cardBorder,
   },
   chatSendButton: {
     backgroundColor: colors.primary, borderRadius: 20,
-    paddingHorizontal: 18, paddingVertical: 10,
+    paddingHorizontal: 16, paddingVertical: 10, marginLeft: 8,
   },
+  chatSendButtonDisabled: { opacity: 0.4 },
   chatSendText: { fontSize: 14, fontWeight: '700', color: '#fff' },
+
+  tipPickerItem: {
+    backgroundColor: colors.surfaceAlt, borderRadius: 14, padding: 14,
+    marginBottom: 10, borderWidth: 1, borderColor: colors.cardBorder,
+  },
+  tipPickerBadge: {
+    alignSelf: 'flex-start', backgroundColor: colors.primary + '15',
+    paddingHorizontal: 10, paddingVertical: 3, borderRadius: 10, marginBottom: 6,
+  },
+  tipPickerBadgeText: { fontSize: 11, fontWeight: '700', color: colors.primary, textTransform: 'capitalize' },
+  tipPickerText: { fontSize: 14, color: colors.textPrimary, lineHeight: 20, marginBottom: 8 },
+  tipPickerSend: { fontSize: 13, fontWeight: '700', color: colors.primary, textAlign: 'right' },
 });

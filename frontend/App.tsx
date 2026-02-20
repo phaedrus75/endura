@@ -33,6 +33,7 @@ const TabIcon = ({ name, focused }: { name: string; focused: boolean }) => {
     Collection: '🥚',
     Progress: '🏆',
     Social: '👥',
+    Tips: '💡',
   };
   
   return (
@@ -62,6 +63,7 @@ function MainTabs() {
       <Tab.Screen name="Collection" component={CollectionScreen} />
       <Tab.Screen name="Progress" component={ProgressScreen} />
       <Tab.Screen name="Social" component={SocialScreen} />
+      <Tab.Screen name="Tips" component={TipsScreen} />
     </Tab.Navigator>
   );
 }

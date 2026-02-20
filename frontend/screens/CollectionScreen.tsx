@@ -19,7 +19,8 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import Svg, { Circle, Defs, LinearGradient, Stop } from 'react-native-svg';
+import { LinearGradient } from 'expo-linear-gradient';
+import Svg, { Circle, Defs, LinearGradient as SvgLinearGradient, Stop } from 'react-native-svg';
 import LottieView from 'lottie-react-native';
 import { colors, shadows, spacing, borderRadius } from '../theme/colors';
 import { animalsAPI, badgesAPI, UserAnimal, Animal } from '../services/api';
@@ -28,7 +29,7 @@ import { getAnimalImage } from '../assets/animals';
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 const CARD_WIDTH = (SCREEN_WIDTH - spacing.lg * 2 - spacing.md) / 2;
 
-// Emoji representations for animals (synced with backend - 21 animals)
+// Emoji representations for animals (synced with backend - 30 animals)
 const animalEmojis: Record<string, string> = {
   'Sunda Island Tiger': '🐅',
   'Javan Rhino': '🦏',
@@ -51,6 +52,15 @@ const animalEmojis: Record<string, string> = {
   'Langur Monkey': '🐒',
   'Pacific Pocket Mouse': '🐁',
   'Wallaby': '🦘',
+  'Avahi': '🐒',
+  'Blue Whale': '🐋',
+  'Gray Bat': '🦇',
+  'Grey Parrot': '🦜',
+  'Grizzly Bear': '🐻',
+  'Mountain Zebra': '🦓',
+  'Pangolin': '🦔',
+  'Seal': '🦭',
+  'Wombat': '🐻',
 };
 
 const rarityColors: Record<string, string> = {
@@ -85,11 +95,11 @@ const animalDetails: Record<string, { habitat: string; funFact: string }> = {
 };
 
 const conservationStatusInfo: Record<string, { color: string; description: string }> = {
-  'Least Concern': { color: '#4CAF50', description: 'Population is stable and widespread' },
-  'Near Threatened': { color: '#8BC34A', description: 'May become endangered in the near future' },
-  'Vulnerable': { color: '#FFC107', description: 'High risk of extinction in the wild' },
-  'Endangered': { color: '#FF9800', description: 'Very high risk of extinction in the wild' },
-  'Critically Endangered': { color: '#F44336', description: 'Extremely high risk of extinction' },
+  'Least Concern': { color: '#5E7F6E', description: 'Population is stable and widespread' },
+  'Near Threatened': { color: '#A9BDAF', description: 'May become endangered in the near future' },
+  'Vulnerable': { color: '#3B5466', description: 'High risk of extinction in the wild' },
+  'Endangered': { color: '#B85C4A', description: 'Very high risk of extinction in the wild' },
+  'Critically Endangered': { color: '#B85C4A', description: 'Extremely high risk of extinction' },
 };
 
 // Progress Ring Component
@@ -102,10 +112,10 @@ const ProgressRing = ({ progress, size = 80 }: { progress: number; size?: number
   return (
     <Svg width={size} height={size}>
       <Defs>
-        <LinearGradient id="ringGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+        <SvgLinearGradient id="ringGrad" x1="0%" y1="0%" x2="100%" y2="0%">
           <Stop offset="0%" stopColor={colors.primary} />
-          <Stop offset="100%" stopColor={colors.grass} />
-        </LinearGradient>
+          <Stop offset="100%" stopColor={colors.primaryLight} />
+        </SvgLinearGradient>
       </Defs>
       <Circle
         cx={size / 2}
@@ -182,12 +192,15 @@ interface DraggableItemProps {
   onDragEnd?: () => void;
 }
 
-const DraggableItem = React.memo(({ itemId, image, startX, startY, size, onDrop, onDragStart, onDragEnd }: DraggableItemProps) => {
+const DraggableItem = ({ itemId, image, startX, startY, size, onDrop, onDragStart, onDragEnd }: DraggableItemProps) => {
   const currentPos = useRef({ x: startX, y: startY });
   const panX = useRef(new Animated.Value(startX)).current;
   const panY = useRef(new Animated.Value(startY)).current;
   const scale = useRef(new Animated.Value(1)).current;
+  const opacity = useRef(new Animated.Value(0)).current;
   const lastGesture = useRef({ dx: 0, dy: 0 });
+  const hasBeenDragged = useRef(false);
+  const isInitialized = useRef(false);
 
   const onDropRef = useRef(onDrop);
   const onDragStartRef = useRef(onDragStart);
@@ -195,6 +208,20 @@ const DraggableItem = React.memo(({ itemId, image, startX, startY, size, onDrop,
   onDropRef.current = onDrop;
   onDragStartRef.current = onDragStart;
   onDragEndRef.current = onDragEnd;
+
+  React.useEffect(() => {
+    if (!hasBeenDragged.current) {
+      currentPos.current = { x: startX, y: startY };
+      panX.setValue(startX);
+      panY.setValue(startY);
+    }
+    if (startX > 0 || startY > 0) {
+      if (!isInitialized.current) {
+        isInitialized.current = true;
+        Animated.timing(opacity, { toValue: 1, duration: 200, useNativeDriver: false }).start();
+      }
+    }
+  }, [startX, startY]);
 
   const panResponder = useRef(
     PanResponder.create({
@@ -211,6 +238,7 @@ const DraggableItem = React.memo(({ itemId, image, startX, startY, size, onDrop,
         panY.setValue(currentPos.current.y + gesture.dy);
       },
       onPanResponderRelease: () => {
+        hasBeenDragged.current = true;
         const finalX = currentPos.current.x + lastGesture.current.dx;
         const finalY = currentPos.current.y + lastGesture.current.dy;
         currentPos.current = { x: finalX, y: finalY };
@@ -235,6 +263,7 @@ const DraggableItem = React.memo(({ itemId, image, startX, startY, size, onDrop,
         {
           width: s + 4,
           height: s + 4,
+          opacity,
           transform: [
             { translateX: panX },
             { translateY: panY },
@@ -246,7 +275,16 @@ const DraggableItem = React.memo(({ itemId, image, startX, startY, size, onDrop,
       <Image source={image} style={{ width: s, height: s }} resizeMode="contain" />
     </Animated.View>
   );
-});
+};
+
+const getBaseItemId = (instanceId: string): string => {
+  const parts = instanceId.split('__');
+  return parts[0];
+};
+
+const getShopImage = (instanceId: string): any => {
+  return SHOP_IMAGES[getBaseItemId(instanceId)];
+};
 
 const SHOP_IMAGES: Record<string, any> = {
   acc_tophat: require('../assets/shop/accessories/tophat.png'),
@@ -274,16 +312,24 @@ export default function CollectionScreen() {
   const [nicknameInput, setNicknameInput] = useState('');
   const [showModal, setShowModal] = useState(false);
   const [showSanctuaryModal, setShowSanctuaryModal] = useState(false);
-  const [purchasedItems, setPurchasedItems] = useState<Record<string, boolean>>({});
+  const [purchasedItems, setPurchasedItems] = useState<Record<string, number>>({});
   const [itemAssignments, setItemAssignments] = useState<ItemAssignment[]>([]);
   const itemAssignmentsRef = useRef<ItemAssignment[]>([]);
   const [sanctuaryContentH, setSanctuaryContentH] = useState(0);
+  const sanctuaryContentHRef = useRef(0);
   const [isDragging, setIsDragging] = useState(false);
 
   const loadPurchases = async () => {
     try {
       const raw = await AsyncStorage.getItem(PURCHASED_ITEMS_KEY);
-      if (raw) setPurchasedItems(JSON.parse(raw));
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        const migrated: Record<string, number> = {};
+        for (const [key, val] of Object.entries(parsed)) {
+          migrated[key] = typeof val === 'number' ? (val as number) : (val ? 1 : 0);
+        }
+        setPurchasedItems(migrated);
+      }
     } catch (e) {}
   };
 
@@ -322,8 +368,22 @@ export default function CollectionScreen() {
   };
 
   const ownedDecorationItems = Object.keys(purchasedItems)
-    .filter(id => purchasedItems[id] && SHOP_IMAGES[id])
-    .map(id => ({ id, image: SHOP_IMAGES[id] }));
+    .filter(id => (purchasedItems[id] || 0) > 0 && SHOP_IMAGES[id])
+    .flatMap(id => {
+      const count = purchasedItems[id] || 0;
+      return Array.from({ length: count }, (_, i) => ({
+        id: i === 0 ? id : `${id}__${i}`,
+        image: SHOP_IMAGES[id],
+      }));
+    });
+
+  const openSanctuary = async () => {
+    setSanctuaryContentH(0);
+    sanctuaryContentHRef.current = 0;
+    await loadPurchases();
+    await loadAssignments();
+    setShowSanctuaryModal(true);
+  };
 
   const loadData = async () => {
     try {
@@ -405,20 +465,30 @@ export default function CollectionScreen() {
         }
         showsVerticalScrollIndicator={false}
       >
-        <View style={styles.header}>
-          <Text style={styles.title}>My Collection</Text>
+        <LinearGradient
+          colors={['#5F8C87', '#3B5466']}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={styles.header}
+        >
+          <Text style={styles.titleWhite}>My Collection</Text>
           <TouchableOpacity 
             style={styles.profileButton}
             onPress={() => navigation.navigate('Profile')}
           >
             <Text style={styles.profileButtonEmoji}>👤</Text>
           </TouchableOpacity>
-        </View>
+        </LinearGradient>
 
         {/* Progress Card */}
-        <View style={styles.progressCard}>
+        <LinearGradient
+          colors={['#FFFFFF', '#E7EFEA']}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 0, y: 1 }}
+          style={styles.progressCard}
+        >
           <View style={styles.progressLeft}>
-            <ProgressRing progress={collectionProgress} />
+            <ProgressRing progress={collectionProgress} size={56} />
             <View style={styles.progressTextContainer}>
               <Text style={styles.progressPercent}>
                 {Math.round(collectionProgress * 100)}%
@@ -430,11 +500,8 @@ export default function CollectionScreen() {
             <Text style={styles.progressValue}>
               {collectedIds.size} of {allAnimals.length} species
             </Text>
-            <Text style={styles.progressHint}>
-              Keep studying to protect endangered species!
-            </Text>
           </View>
-        </View>
+        </LinearGradient>
 
         {/* Animal Sanctuary */}
         {myAnimals.length > 0 && (() => {
@@ -446,7 +513,7 @@ export default function CollectionScreen() {
               <Text style={styles.sanctuaryTitle}>🌿 Your Animal Sanctuary</Text>
               <TouchableOpacity
                 activeOpacity={0.9}
-                onPress={() => setShowSanctuaryModal(true)}
+                onPress={openSanctuary}
               >
                 <View style={styles.sanctuaryContainer}>
                   <View style={styles.sanctuaryLandscape}>
@@ -482,19 +549,21 @@ export default function CollectionScreen() {
                     })}
                     {/* Placed items scaled from full sanctuary */}
                     {(() => {
-                      const modalSceneW = SCREEN_WIDTH - 20 - spacing.sm * 2;
-                      const mCols = Math.max(2, Math.min(5, Math.floor((modalSceneW - 20) / (62 + 10))));
+                      const modalInnerW = SCREEN_WIDTH - 20 - spacing.sm * 2;
+                      const mCols = Math.max(2, Math.min(5, Math.floor((modalInnerW - 20) / (62 + 10))));
                       const mRows = Math.ceil(myAnimals.length / mCols);
                       const modalSceneH = Math.max(SCREEN_HEIGHT * 0.65, mRows * 72 + 80);
-                      const scaleX = previewW / modalSceneW;
+                      const wrapperW = SCREEN_WIDTH - 20;
+                      const scaleX = previewW / wrapperW;
                       const scaleY = previewH / modalSceneH;
-                      const ratio = Math.min(scaleX, scaleY);
                       return itemAssignments.map((a) => {
-                        const img = SHOP_IMAGES[a.itemId];
+                        const img = getShopImage(a.itemId);
                         if (!img || typeof a.x !== 'number' || typeof a.y !== 'number') return null;
-                        const isDec = a.itemId.startsWith('dec_');
+                        if (a.y > modalSceneH) return null;
+                        const baseId = getBaseItemId(a.itemId);
+                        const isDec = baseId.startsWith('dec_');
                         const baseSize = isDec ? 40 : 24;
-                        const sz = Math.round(baseSize * ratio);
+                        const sz = Math.max(Math.round(baseSize * Math.min(scaleX, scaleY)), isDec ? 22 : 14);
                         return (
                           <Image
                             key={a.itemId}
@@ -504,7 +573,7 @@ export default function CollectionScreen() {
                               zIndex: 10,
                               width: sz,
                               height: sz,
-                              left: (a.x - spacing.sm) * scaleX,
+                              left: a.x * scaleX,
                               top: a.y * scaleY,
                             }}
                             resizeMode="contain"
@@ -522,12 +591,18 @@ export default function CollectionScreen() {
                 </View>
               </TouchableOpacity>
               <TouchableOpacity
-                style={styles.viewSanctuaryBtn}
-                onPress={() => setShowSanctuaryModal(true)}
+                onPress={openSanctuary}
                 activeOpacity={0.8}
               >
-                <Text style={styles.viewSanctuaryBtnEmoji}>🏞️</Text>
-                <Text style={styles.viewSanctuaryBtnText}>View Whole Sanctuary</Text>
+                <LinearGradient
+                  colors={['#5F8C87', '#3B5466']}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 0 }}
+                  style={styles.viewSanctuaryBtn}
+                >
+                  <Text style={styles.viewSanctuaryBtnEmoji}>🏞️</Text>
+                  <Text style={styles.viewSanctuaryBtnTextWhite}>View Whole Sanctuary</Text>
+                </LinearGradient>
               </TouchableOpacity>
               <Text style={styles.sanctuaryCaption}>
                 {myAnimals.length === 1
@@ -675,7 +750,12 @@ export default function CollectionScreen() {
             contentContainerStyle={styles.modalScrollContent}
             showsVerticalScrollIndicator={false}
           >
-            <View style={styles.modalContent}>
+            <LinearGradient
+              colors={['#FFFFFF', '#E7EFEA']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 0, y: 1 }}
+              style={styles.modalContent}
+            >
               {selectedAnimal && (
                 <>
                   <View style={styles.modalHeader}>
@@ -772,7 +852,12 @@ export default function CollectionScreen() {
                   </View>
 
                   {/* Fun Fact Section */}
-                  <View style={styles.funFactSection}>
+                  <LinearGradient
+                    colors={['rgba(168, 200, 216, 0.2)', '#E7EFEA']}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 0, y: 1 }}
+                    style={styles.funFactSection}
+                  >
                     <View style={styles.infoSectionHeader}>
                       <Text style={styles.infoSectionIcon}>💡</Text>
                       <Text style={styles.infoSectionTitle}>Fun Fact</Text>
@@ -782,11 +867,11 @@ export default function CollectionScreen() {
                         selectedAnimal.animal.description || 
                         'This amazing creature is part of your collection!'}
                     </Text>
-                  </View>
+                  </LinearGradient>
 
                 </>
               )}
-            </View>
+            </LinearGradient>
           </ScrollView>
         </View>
       </Modal>
@@ -796,7 +881,9 @@ export default function CollectionScreen() {
         <View style={styles.sanctuaryModalOverlay}>
           <View style={styles.sanctuaryModalContent}>
             {/* Header */}
-            <View style={styles.sanctuaryModalHeader}>
+            <View
+              style={[styles.sanctuaryModalHeader, { backgroundColor: '#FFFFFF' }]}
+            >
               <View>
                 <Text style={styles.sanctuaryModalTitle}>🌿 Your Sanctuary</Text>
                 <Text style={styles.sanctuaryModalSub}>
@@ -822,7 +909,11 @@ export default function CollectionScreen() {
               <View
                 style={styles.sanctuaryDragWrapper}
                 onLayout={(e: LayoutChangeEvent) => {
-                  setSanctuaryContentH(e.nativeEvent.layout.height);
+                  const h = e.nativeEvent.layout.height;
+                  sanctuaryContentHRef.current = h;
+                  if (sanctuaryContentH === 0 || Math.abs(h - sanctuaryContentH) > 5) {
+                    setSanctuaryContentH(h);
+                  }
                 }}
               >
                 {/* Landscape Scene */}
@@ -901,15 +992,14 @@ export default function CollectionScreen() {
                 )}
 
                 {/* Draggable items — absolutely positioned over the whole wrapper */}
-                {ownedDecorationItems.map((item, idx) => {
+                {sanctuaryContentH > 0 && ownedDecorationItems.map((item, idx) => {
                   const existing = itemAssignments.find(a => a.itemId === item.id);
-                  const wrapperH = sanctuaryContentH > 0 ? sanctuaryContentH : SCREEN_HEIGHT * 0.6;
-                  const trayTopY = wrapperH - 50;
+                  const trayTopY = sanctuaryContentHRef.current - 50;
                   const totalTrayW = ownedDecorationItems.length * 48;
                   const modalInnerW = SCREEN_WIDTH - 20 - spacing.sm * 2;
                   const trayStartX = (modalInnerW - totalTrayW) / 2;
                   const slotX = trayStartX + idx * 48 + 6;
-                  const isDecoration = item.id.startsWith('dec_');
+                  const isDecoration = getBaseItemId(item.id).startsWith('dec_');
                   return (
                     <DraggableItem
                       key={item.id}
@@ -930,10 +1020,17 @@ export default function CollectionScreen() {
             {/* Footer */}
             <View style={styles.sanctuaryModalFooter}>
               <TouchableOpacity
-                style={styles.sanctuaryModalDoneBtn}
                 onPress={() => setShowSanctuaryModal(false)}
+                activeOpacity={0.8}
               >
-                <Text style={styles.sanctuaryModalDoneBtnText}>Close Sanctuary</Text>
+                <LinearGradient
+                  colors={['#5F8C87', '#3B5466']}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 0 }}
+                  style={styles.sanctuaryModalDoneBtn}
+                >
+                  <Text style={styles.sanctuaryModalDoneBtnText}>Close Sanctuary</Text>
+                </LinearGradient>
               </TouchableOpacity>
             </View>
           </View>
@@ -960,11 +1057,19 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: spacing.lg,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.md,
+    borderRadius: borderRadius.lg,
   },
   title: {
     fontSize: 28,
     fontWeight: '700',
     color: colors.textPrimary,
+  },
+  titleWhite: {
+    fontSize: 28,
+    fontWeight: '700',
+    color: '#FFFFFF',
   },
   profileButton: {
     width: 44,
@@ -979,19 +1084,19 @@ const styles = StyleSheet.create({
     fontSize: 22,
   },
   progressCard: {
-    backgroundColor: colors.surface,
-    borderRadius: borderRadius.xl,
-    padding: spacing.lg,
-    marginBottom: spacing.xl,
+    borderRadius: borderRadius.lg,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    marginBottom: spacing.md,
     flexDirection: 'row',
     alignItems: 'center',
     borderWidth: 1,
     borderColor: colors.cardBorder,
-    ...shadows.medium,
+    ...shadows.small,
   },
   progressLeft: {
     position: 'relative',
-    marginRight: spacing.lg,
+    marginRight: spacing.md,
   },
   progressTextContainer: {
     position: 'absolute',
@@ -1003,7 +1108,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   progressPercent: {
-    fontSize: 18,
+    fontSize: 14,
     fontWeight: '700',
     color: colors.primary,
   },
@@ -1019,10 +1124,9 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5,
   },
   progressValue: {
-    fontSize: 24,
+    fontSize: 18,
     fontWeight: '700',
     color: colors.textPrimary,
-    marginBottom: spacing.xs,
   },
   progressHint: {
     fontSize: 12,
@@ -1042,7 +1146,7 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     overflow: 'hidden',
     position: 'relative',
-    backgroundColor: '#D4EDDA',
+    backgroundColor: '#E7EFEA',
   },
   sanctuaryLandscape: {
     position: 'absolute',
@@ -1101,12 +1205,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: colors.surface,
     marginTop: spacing.sm,
     paddingVertical: 10,
     borderRadius: borderRadius.full,
-    borderWidth: 1.5,
-    borderColor: colors.primary,
     gap: 6,
   },
   viewSanctuaryBtnEmoji: {
@@ -1116,6 +1217,11 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '700',
     color: colors.primary,
+  },
+  viewSanctuaryBtnTextWhite: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#FFFFFF',
   },
   sanctuaryCaption: {
     fontSize: 13,
@@ -1135,7 +1241,7 @@ const styles = StyleSheet.create({
   },
   sanctuaryModalContent: {
     flex: 1,
-    backgroundColor: '#F0F7F0',
+    backgroundColor: '#FFFFFF',
     borderRadius: 24,
     overflow: 'hidden',
   },
@@ -1181,7 +1287,7 @@ const styles = StyleSheet.create({
   sanctuaryModalScene: {
     position: 'relative',
     overflow: 'hidden',
-    backgroundColor: '#A5D6A7',
+    backgroundColor: '#A9BDAF',
     marginHorizontal: spacing.sm,
     borderTopLeftRadius: 16,
     borderTopRightRadius: 16,
@@ -1328,7 +1434,6 @@ const styles = StyleSheet.create({
     marginBottom: spacing.sm,
   },
   sanctuaryModalDoneBtn: {
-    backgroundColor: colors.primary,
     paddingVertical: 12,
     paddingHorizontal: spacing.xxl,
     borderRadius: borderRadius.full,
@@ -1629,7 +1734,6 @@ const styles = StyleSheet.create({
     flexGrow: 1,
   },
   modalContent: {
-    backgroundColor: colors.surface,
     borderTopLeftRadius: borderRadius.xl,
     borderTopRightRadius: borderRadius.xl,
     padding: spacing.lg,
@@ -1786,7 +1890,6 @@ const styles = StyleSheet.create({
   },
   funFactSection: {
     width: '100%',
-    backgroundColor: colors.primaryLight,
     borderRadius: borderRadius.lg,
     padding: spacing.md,
     marginBottom: spacing.lg,

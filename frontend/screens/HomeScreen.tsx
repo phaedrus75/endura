@@ -20,8 +20,48 @@ import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import ConfettiCannon from 'react-native-confetti-cannon';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import LottieView from 'lottie-react-native';
-import { colors, shadows, spacing, borderRadius } from '../theme/colors';
+import { spacing, borderRadius } from '../theme/colors';
 import { useAuth } from '../contexts/AuthContext';
+
+// HomeScreen preserves its original palette independent of the global theme
+const colors = {
+  background: '#F5F8F5',
+  surface: '#FFFFFF',
+  surfaceAlt: '#EDF2ED',
+  primary: '#6B9B9B',
+  primaryDark: '#5A8585',
+  primaryLight: '#8FB5B5',
+  textPrimary: '#2D3B36',
+  textSecondary: '#5A6B65',
+  textMuted: '#8A9A94',
+  textOnPrimary: '#FFFFFF',
+  success: '#6BBF8A',
+  cardBorder: '#E2EAE5',
+  divider: '#E8EDE9',
+};
+const shadows = {
+  small: {
+    shadowColor: '#2D3B36',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.06,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  medium: {
+    shadowColor: '#2D3B36',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  large: {
+    shadowColor: '#2D3B36',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.10,
+    shadowRadius: 16,
+    elevation: 8,
+  },
+};
 import { animalsAPI, tasksAPI, statsAPI, badgesAPI, Egg, Task, UserStats, UserAnimal, BadgeResponse } from '../services/api';
 import { animalImages, getAnimalImage } from '../assets/animals';
 
@@ -64,6 +104,9 @@ const animalEmojiMap: Record<string, string> = {
   'Red Panda': '🐼', 'Panda': '🐼', 'Mexican Bobcat': '🐱',
   'Chinchilla': '🐭', 'Otter': '🦦', 'Koala': '🐨',
   'Langur Monkey': '🐒', 'Pacific Pocket Mouse': '🐁', 'Wallaby': '🦘',
+  'Avahi': '🐒', 'Blue Whale': '🐋', 'Gray Bat': '🦇',
+  'Grey Parrot': '🦜', 'Grizzly Bear': '🐻', 'Mountain Zebra': '🦓',
+  'Pangolin': '🦔', 'Seal': '🦭', 'Wombat': '🐻',
 };
 
 // Recent Hatch Card - Animal displayed cleanly without nest

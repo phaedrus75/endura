@@ -13,6 +13,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
+import { LinearGradient } from 'expo-linear-gradient';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { colors, shadows, spacing, borderRadius } from '../theme/colors';
 import { shopAPI, statsAPI, badgesAPI, UserStats } from '../services/api';
@@ -60,15 +61,15 @@ function getItemImage(item: ShopItem): ImageSourcePropType | null {
 }
 
 const CATEGORY_INFO: Record<ShopCategory, { label: string; emoji: string; color: string }> = {
-  accessories: { label: 'Accessories', emoji: '🎀', color: '#B794D4' },
-  decorations: { label: 'Decorations', emoji: '✨', color: '#7EC8E3' },
+  accessories: { label: 'Accessories', emoji: '🎀', color: '#3B5466' },
+  decorations: { label: 'Decorations', emoji: '✨', color: '#5E7F6E' },
 };
 
 const RARITY_COLORS: Record<string, string> = {
-  common: '#8FBF9F',
-  rare: '#7EC8E3',
-  epic: '#B794D4',
-  legendary: '#E8B86D',
+  common: '#A9BDAF',
+  rare: '#5E7F6E',
+  epic: '#3B5466',
+  legendary: '#2F4A3E',
 };
 
 const STORAGE_KEY = 'endura_purchased_items';
@@ -78,7 +79,7 @@ export default function ShopScreen() {
   const { refreshUser } = useAuth();
   const [stats, setStats] = useState<UserStats | null>(null);
   const [activeCategory, setActiveCategory] = useState<ShopCategory>('accessories');
-  const [purchasedIds, setPurchasedIds] = useState<Record<string, boolean>>({});
+  const [purchasedIds, setPurchasedIds] = useState<Record<string, number>>({});
   const [selectedItem, setSelectedItem] = useState<ShopItem | null>(null);
   const [showPreview, setShowPreview] = useState(false);
 
@@ -89,7 +90,14 @@ export default function ShopScreen() {
         AsyncStorage.getItem(STORAGE_KEY),
       ]);
       setStats(statsData);
-      if (storedPurchases) setPurchasedIds(JSON.parse(storedPurchases));
+      if (storedPurchases) {
+        const parsed = JSON.parse(storedPurchases);
+        const migrated: Record<string, number> = {};
+        for (const [key, val] of Object.entries(parsed)) {
+          migrated[key] = typeof val === 'number' ? (val as number) : (val ? 1 : 0);
+        }
+        setPurchasedIds(migrated);
+      }
     } catch (e) {
       console.error('Failed to load shop data:', e);
     }
@@ -103,10 +111,6 @@ export default function ShopScreen() {
       Alert.alert('Not Enough Eco-Credits', `You need ${item.price - coins} more eco-credits. Keep studying to earn more!`);
       return;
     }
-    if (purchasedIds[item.id]) {
-      Alert.alert('Already Owned', 'You already have this item in your sanctuary!');
-      return;
-    }
 
     try {
       await shopAPI.spendCoins(item.price);
@@ -115,8 +119,9 @@ export default function ShopScreen() {
       return;
     }
 
+    const currentCount = purchasedIds[item.id] || 0;
     try {
-      const updated = { ...purchasedIds, [item.id]: true };
+      const updated = { ...purchasedIds, [item.id]: currentCount + 1 };
       setPurchasedIds(updated);
       await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
       await refreshUser();
@@ -130,7 +135,7 @@ export default function ShopScreen() {
         `${item.name} has been added to your sanctuary! Visit your Collection to see it.`
       );
     } catch (e: any) {
-      const updated = { ...purchasedIds, [item.id]: true };
+      const updated = { ...purchasedIds, [item.id]: currentCount + 1 };
       setPurchasedIds(updated);
       await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
       setShowPreview(false);
@@ -140,13 +145,18 @@ export default function ShopScreen() {
   };
 
   const categoryItems = SHOP_ITEMS.filter((i) => i.category === activeCategory);
-  const purchasedCount = Object.values(purchasedIds).filter(Boolean).length;
+  const purchasedCount = Object.values(purchasedIds).reduce((sum, n) => sum + (n || 0), 0);
 
   return (
     <SafeAreaView style={styles.container}>
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
         {/* Header */}
-        <View style={styles.header}>
+        <LinearGradient
+          colors={['#7DA9A4', '#5F8C87']}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={styles.header}
+        >
           <View>
             <Text style={styles.headerTitle}>Sanctuary Shop</Text>
             <Text style={styles.headerSub}>Customize your animal haven</Text>
@@ -154,10 +164,15 @@ export default function ShopScreen() {
           <TouchableOpacity style={styles.profileButton} onPress={() => navigation.navigate('Profile')}>
             <Text style={styles.profileButtonEmoji}>👤</Text>
           </TouchableOpacity>
-        </View>
+        </LinearGradient>
 
         {/* Balance Card */}
-        <View style={styles.balanceCard}>
+        <LinearGradient
+          colors={['#5F8C87', '#7DA9A4']}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 0 }}
+          style={styles.balanceCard}
+        >
           <View style={styles.balanceLeft}>
             <Text style={styles.balanceLabel}>Your Eco-Credits</Text>
             <View style={styles.balanceRow}>
@@ -169,7 +184,7 @@ export default function ShopScreen() {
             <Text style={styles.ownedCount}>{purchasedCount}</Text>
             <Text style={styles.ownedLabel}>items owned</Text>
           </View>
-        </View>
+        </LinearGradient>
 
         {/* Category Tabs */}
         <View style={styles.categoryRow}>
@@ -179,11 +194,26 @@ export default function ShopScreen() {
             return (
               <TouchableOpacity
                 key={cat}
-                style={[styles.categoryTab, isActive && { backgroundColor: info.color + '20', borderColor: info.color }]}
+                style={[styles.categoryTab, isActive && { borderColor: info.color }]}
                 onPress={() => setActiveCategory(cat)}
+                activeOpacity={0.8}
               >
-                <Text style={styles.categoryTabEmoji}>{info.emoji}</Text>
-                <Text style={[styles.categoryTabText, isActive && { color: info.color, fontWeight: '700' as const }]}>{info.label}</Text>
+                {isActive ? (
+                  <LinearGradient
+                    colors={['#7DA9A4', '#5F8C87']}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 0 }}
+                    style={styles.categoryTabGradient}
+                  >
+                    <Text style={styles.categoryTabEmoji}>{info.emoji}</Text>
+                    <Text style={[styles.categoryTabText, { color: '#FFFFFF', fontWeight: '700' as const }]}>{info.label}</Text>
+                  </LinearGradient>
+                ) : (
+                  <View style={styles.categoryTabInner}>
+                    <Text style={styles.categoryTabEmoji}>{info.emoji}</Text>
+                    <Text style={[styles.categoryTabText, { color: colors.textSecondary }]}>{info.label}</Text>
+                  </View>
+                )}
               </TouchableOpacity>
             );
           })}
@@ -192,7 +222,8 @@ export default function ShopScreen() {
         {/* Item Grid */}
         <View style={styles.itemGrid}>
           {categoryItems.map((item) => {
-            const owned = !!purchasedIds[item.id];
+            const ownedCount = purchasedIds[item.id] || 0;
+            const owned = ownedCount > 0;
             const canAfford = (stats?.current_coins || 0) >= item.price;
             const img = getItemImage(item);
             return (
@@ -204,7 +235,7 @@ export default function ShopScreen() {
               >
                 {owned && (
                   <View style={styles.ownedBadge}>
-                    <Text style={styles.ownedBadgeText}>Owned</Text>
+                    <Text style={styles.ownedBadgeText}>×{ownedCount}</Text>
                   </View>
                 )}
                 <View style={[styles.itemRarityDot, { backgroundColor: RARITY_COLORS[item.rarity] }]} />
@@ -231,10 +262,15 @@ export default function ShopScreen() {
       {/* Item Preview Modal */}
       <Modal visible={showPreview} transparent animationType="slide">
         <View style={styles.previewOverlay}>
-          <View style={styles.previewContent}>
+          <LinearGradient
+            colors={['#FFFFFF', '#E7EFEA']}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 0, y: 1 }}
+            style={styles.previewContent}
+          >
             <View style={styles.previewHandle} />
             {selectedItem && (() => {
-              const owned = !!purchasedIds[selectedItem.id];
+              const ownedCount = purchasedIds[selectedItem.id] || 0;
               const canAfford = (stats?.current_coins || 0) >= selectedItem.price;
               const catInfo = CATEGORY_INFO[selectedItem.category];
               const img = getItemImage(selectedItem);
@@ -258,42 +294,52 @@ export default function ShopScreen() {
                     <Text style={styles.previewPriceLabel}>eco-credits</Text>
                   </View>
 
-                  {owned ? (
+                  {ownedCount > 0 && (
                     <View style={styles.previewOwnedMsg}>
                       <Text style={styles.previewOwnedEmoji}>✅</Text>
-                      <Text style={styles.previewOwnedText}>You already own this item!</Text>
+                      <Text style={styles.previewOwnedText}>You own {ownedCount} of this item</Text>
                     </View>
-                  ) : !canAfford ? (
+                  )}
+
+                  {!canAfford && (
                     <View style={styles.previewCantAfford}>
                       <Text style={styles.previewCantAffordText}>
                         You need {selectedItem.price - (stats?.current_coins || 0)} more eco-credits
                       </Text>
                     </View>
-                  ) : null}
+                  )}
 
                   <View style={styles.previewButtons}>
-                    {!owned && (
-                      <TouchableOpacity
-                        style={[styles.buyButton, !canAfford && styles.buyButtonDisabled]}
-                        onPress={() => purchaseItem(selectedItem)}
-                        disabled={!canAfford}
-                      >
-                        <Text style={styles.buyButtonText}>
-                          {canAfford ? 'Purchase' : 'Not Enough Credits'}
-                        </Text>
-                      </TouchableOpacity>
-                    )}
+                    <TouchableOpacity
+                      style={[styles.buyButton, !canAfford && styles.buyButtonDisabled]}
+                      onPress={() => purchaseItem(selectedItem)}
+                      disabled={!canAfford}
+                      activeOpacity={0.8}
+                    >
+                      {canAfford ? (
+                        <LinearGradient
+                          colors={['#7DA9A4', '#5F8C87']}
+                          start={{ x: 0, y: 0 }}
+                          end={{ x: 1, y: 0 }}
+                          style={styles.buyButtonGradient}
+                        >
+                          <Text style={styles.buyButtonText}>{ownedCount > 0 ? 'Buy Another' : 'Purchase'}</Text>
+                        </LinearGradient>
+                      ) : (
+                        <Text style={styles.buyButtonText}>Not Enough Credits</Text>
+                      )}
+                    </TouchableOpacity>
                     <TouchableOpacity
                       style={styles.previewClose}
                       onPress={() => { setShowPreview(false); setSelectedItem(null); }}
                     >
-                      <Text style={styles.previewCloseText}>{owned ? 'Close' : 'Maybe Later'}</Text>
+                      <Text style={styles.previewCloseText}>Maybe Later</Text>
                     </TouchableOpacity>
                   </View>
                 </>
               );
             })()}
-          </View>
+          </LinearGradient>
         </View>
       </Modal>
     </SafeAreaView>
@@ -305,7 +351,7 @@ const ITEM_WIDTH = (width - spacing.lg * 2 - spacing.sm) / 2;
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F5F8F5',
+    backgroundColor: '#E7EFEA',
   },
   scrollContent: {
     padding: spacing.lg,
@@ -316,16 +362,19 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: spacing.md,
+    padding: spacing.md,
+    borderRadius: borderRadius.lg,
   },
   headerTitle: {
     fontSize: 26,
     fontWeight: '700',
-    color: colors.textPrimary,
+    color: '#FFFFFF',
   },
   headerSub: {
     fontSize: 13,
-    color: colors.textMuted,
+    color: '#FFFFFF',
     marginTop: 2,
+    opacity: 0.9,
   },
   profileButton: {
     width: 40,
@@ -341,13 +390,10 @@ const styles = StyleSheet.create({
   },
   balanceCard: {
     flexDirection: 'row',
-    backgroundColor: colors.surface,
     borderRadius: 20,
     padding: spacing.lg,
     marginBottom: spacing.md,
     alignItems: 'center',
-    borderWidth: 1,
-    borderColor: colors.cardBorder,
     ...shadows.medium,
   },
   balanceLeft: {
@@ -356,10 +402,11 @@ const styles = StyleSheet.create({
   balanceLabel: {
     fontSize: 12,
     fontWeight: '600',
-    color: colors.textMuted,
+    color: '#FFFFFF',
     textTransform: 'uppercase',
     letterSpacing: 0.5,
     marginBottom: 4,
+    opacity: 0.9,
   },
   balanceRow: {
     flexDirection: 'row',
@@ -372,11 +419,11 @@ const styles = StyleSheet.create({
   balanceAmount: {
     fontSize: 32,
     fontWeight: '800',
-    color: colors.tertiary,
+    color: '#FFFFFF',
   },
   balanceRight: {
     alignItems: 'center',
-    backgroundColor: colors.primaryLight + '25',
+    backgroundColor: 'rgba(255, 255, 255, 0.25)',
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
     borderRadius: 14,
@@ -384,12 +431,13 @@ const styles = StyleSheet.create({
   ownedCount: {
     fontSize: 22,
     fontWeight: '800',
-    color: colors.primary,
+    color: '#FFFFFF',
   },
   ownedLabel: {
     fontSize: 11,
-    color: colors.textMuted,
+    color: '#FFFFFF',
     fontWeight: '600',
+    opacity: 0.9,
   },
   categoryRow: {
     flexDirection: 'row',
@@ -398,14 +446,24 @@ const styles = StyleSheet.create({
   },
   categoryTab: {
     flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 10,
     borderRadius: 16,
     borderWidth: 1.5,
     borderColor: colors.cardBorder,
     backgroundColor: colors.surface,
+    overflow: 'hidden',
+  },
+  categoryTabGradient: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 10,
+    gap: 6,
+  },
+  categoryTabInner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 10,
     gap: 6,
   },
   categoryTabEmoji: {
@@ -434,7 +492,7 @@ const styles = StyleSheet.create({
     ...shadows.small,
   },
   itemCardOwned: {
-    backgroundColor: '#F0F7F0',
+    backgroundColor: '#E7EFEA',
     borderColor: colors.primary + '40',
   },
   ownedBadge: {
@@ -511,7 +569,6 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
   },
   previewContent: {
-    backgroundColor: '#FAFCFA',
     borderTopLeftRadius: 28,
     borderTopRightRadius: 28,
     padding: spacing.lg,
@@ -620,20 +677,24 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
   },
   buyButton: {
-    backgroundColor: colors.primary,
-    paddingVertical: 14,
     borderRadius: borderRadius.full,
-    alignItems: 'center',
+    overflow: 'hidden',
     ...shadows.small,
+  },
+  buyButtonGradient: {
+    paddingVertical: 14,
+    alignItems: 'center',
   },
   buyButtonDisabled: {
     backgroundColor: colors.textMuted,
     opacity: 0.6,
+    paddingVertical: 14,
+    alignItems: 'center',
   },
   buyButtonText: {
     fontSize: 16,
     fontWeight: '700',
-    color: colors.textOnPrimary,
+    color: '#FFFFFF',
   },
   previewClose: {
     paddingVertical: 10,

@@ -107,24 +107,27 @@ class Egg(Base):
 class StudyTip(Base):
     """Study tips for the scrolling feed"""
     __tablename__ = "study_tips"
-    
+
     id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey("users.id"), nullable=True)  # Null for system tips
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
     content = Column(Text, nullable=False)
-    category = Column(String, default="general")  # focus, memorization, motivation, etc.
+    category = Column(String, default="general")
+    animal_name = Column(String, nullable=True)
     likes_count = Column(Integer, default=0)
+    dislikes_count = Column(Integer, default=0)
     created_at = Column(DateTime, default=datetime.utcnow)
 
 
 class TipView(Base):
     """Track which tips a user has viewed"""
     __tablename__ = "tip_views"
-    
+
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"))
     tip_id = Column(Integer, ForeignKey("study_tips.id"))
     viewed_at = Column(DateTime, default=datetime.utcnow)
     liked = Column(Boolean, default=False)
+    disliked = Column(Boolean, default=False)
 
 
 class UserBadge(Base):

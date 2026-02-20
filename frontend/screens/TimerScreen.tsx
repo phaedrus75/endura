@@ -17,6 +17,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import ConfettiCannon from 'react-native-confetti-cannon';
 import Svg, { Circle, Defs, LinearGradient, Stop } from 'react-native-svg';
+import { LinearGradient as ExpoLinearGradient } from 'expo-linear-gradient';
 import LottieView from 'lottie-react-native';
 import Slider from '@react-native-community/slider';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -25,7 +26,7 @@ import { sessionsAPI, tasksAPI, animalsAPI, Task, BadgeInfo } from '../services/
 import { useAuth } from '../contexts/AuthContext';
 import { getAnimalImage } from '../assets/animals';
 
-// 21 Endangered Animals - unlocked in order (synced with backend)
+// 30 Endangered Animals - unlocked in order (synced with backend)
 const ENDANGERED_ANIMALS = [
   { id: 1, name: 'Sunda Island Tiger', emoji: '🐅', status: 'Critically Endangered' },
   { id: 2, name: 'Javan Rhino', emoji: '🦏', status: 'Critically Endangered' },
@@ -48,6 +49,15 @@ const ENDANGERED_ANIMALS = [
   { id: 19, name: 'Langur Monkey', emoji: '🐒', status: 'Critically Endangered' },
   { id: 20, name: 'Pacific Pocket Mouse', emoji: '🐁', status: 'Endangered' },
   { id: 21, name: 'Wallaby', emoji: '🦘', status: 'Near Threatened' },
+  { id: 22, name: 'Avahi', emoji: '🐒', status: 'Vulnerable' },
+  { id: 23, name: 'Blue Whale', emoji: '🐋', status: 'Endangered' },
+  { id: 24, name: 'Gray Bat', emoji: '🦇', status: 'Vulnerable' },
+  { id: 25, name: 'Grey Parrot', emoji: '🦜', status: 'Endangered' },
+  { id: 26, name: 'Grizzly Bear', emoji: '🐻', status: 'Threatened' },
+  { id: 27, name: 'Mountain Zebra', emoji: '🦓', status: 'Vulnerable' },
+  { id: 28, name: 'Pangolin', emoji: '🦔', status: 'Critically Endangered' },
+  { id: 29, name: 'Seal', emoji: '🦭', status: 'Endangered' },
+  { id: 30, name: 'Wombat', emoji: '🐻', status: 'Critically Endangered' },
 ];
 
 const { width } = Dimensions.get('window');
@@ -69,18 +79,22 @@ const PRESET_TIMES = [
 const TIME_MULTIPLIER = TEST_MODE ? 1 : 60;
 
 // Circular Progress Component
-const CircularProgress = ({ progress, size = 260, strokeWidth = 12, children }: any) => {
+const CircularProgress = ({ progress, size = 260, strokeWidth = 14, children }: any) => {
   const radius = (size - strokeWidth) / 2;
   const circumference = radius * 2 * Math.PI;
   const strokeDashoffset = circumference - (progress * circumference);
   
   return (
-    <View style={{ width: size, height: size, alignItems: 'center', justifyContent: 'center' }}>
+    <View style={{
+      width: size + 16, height: size + 16, alignItems: 'center', justifyContent: 'center',
+      overflow: 'hidden',
+    }}>
       <Svg width={size} height={size} style={{ position: 'absolute' }}>
         <Defs>
-          <LinearGradient id="progressGrad" x1="0%" y1="0%" x2="100%" y2="0%">
-            <Stop offset="0%" stopColor={colors.primary} />
-            <Stop offset="100%" stopColor={colors.primaryLight} />
+          <LinearGradient id="progressGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+            <Stop offset="0%" stopColor="#A8C8D8" />
+            <Stop offset="50%" stopColor="#5F8C87" />
+            <Stop offset="100%" stopColor="#3B5466" />
           </LinearGradient>
         </Defs>
         {/* Background circle */}
@@ -88,7 +102,7 @@ const CircularProgress = ({ progress, size = 260, strokeWidth = 12, children }: 
           cx={size / 2}
           cy={size / 2}
           r={radius}
-          stroke={colors.surfaceAlt}
+          stroke="#A9BDAF40"
           strokeWidth={strokeWidth}
           fill="none"
         />
@@ -129,6 +143,8 @@ export default function TimerScreen() {
   const [customMinutes, setCustomMinutes] = useState(30);
   const [hatchedAnimalInfo, setHatchedAnimalInfo] = useState<{emoji: string; name: string; ecoCredits: number} | null>(null);
   const [newBadges, setNewBadges] = useState<BadgeInfo[]>([]);
+  const [pendingBadges, setPendingBadges] = useState<BadgeInfo[]>([]);
+  const [showBadgesModal, setShowBadgesModal] = useState(false);
   const [sessionSaveError, setSessionSaveError] = useState(false);
   const [unlockedAnimals, setUnlockedAnimals] = useState<number[]>([]);
   const [selectedAnimalId, setSelectedAnimalId] = useState<number | null>(null);
@@ -199,14 +215,15 @@ export default function TimerScreen() {
     return () => backHandler.remove();
   }, [isRunning]);
 
-  // Handle app going to background during timer — kill egg if gone >10s
+  // Handle app going to background during timer
   useEffect(() => {
     const subscription = AppState.addEventListener('change', nextAppState => {
-      if (isRunning && appState.current === 'active' && nextAppState.match(/inactive|background/)) {
+      if (isRunningRef.current && appState.current === 'active' && nextAppState.match(/inactive|background/)) {
         backgroundTimestamp.current = Date.now();
+        setIsPaused(true);
       }
 
-      if (isRunning && appState.current.match(/inactive|background/) && nextAppState === 'active') {
+      if (isRunningRef.current && appState.current.match(/inactive|background/) && nextAppState === 'active') {
         if (backgroundTimestamp.current) {
           const elapsed = (Date.now() - backgroundTimestamp.current) / 1000;
           backgroundTimestamp.current = null;
@@ -220,6 +237,8 @@ export default function TimerScreen() {
             setDeadAnimalName(dying);
             setShowEggDeathModal(true);
             Vibration.vibrate([0, 300, 100, 300, 100, 300]);
+          } else {
+            showExitWarning();
           }
         }
       }
@@ -262,12 +281,19 @@ export default function TimerScreen() {
   }, [navigation, isRunning, selectedAnimalId]);
 
   const showExitWarning = (onConfirm?: () => void) => {
+    setIsPaused(true);
     const animalName = ENDANGERED_ANIMALS.find(a => a.id === selectedAnimalId)?.name || 'your animal';
     Alert.alert(
       '💀 YOUR EGG WILL DIE!',
       `If you leave now, ${animalName} will never hatch. This endangered creature is counting on you to stay focused. Every second matters.\n\nYou will lose ALL progress and earn ZERO eco-credits.`,
       [
-        { text: "I'll stay! 🛡️", style: 'cancel' },
+        {
+          text: "I'll stay! 🛡️",
+          style: 'cancel',
+          onPress: () => {
+            setIsPaused(false);
+          },
+        },
         {
           text: 'Abandon Egg',
           style: 'destructive',
@@ -277,7 +303,8 @@ export default function TimerScreen() {
             if (onConfirm) onConfirm();
           },
         },
-      ]
+      ],
+      { cancelable: false }
     );
   };
 
@@ -392,10 +419,21 @@ export default function TimerScreen() {
     setShowConfetti(false);
     setHatchedAnimalInfo(null);
     setSessionSaveError(false);
-    setNewBadges([]);
+    if (newBadges.length > 0) {
+      setPendingBadges([...newBadges]);
+      setNewBadges([]);
+      setTimeout(() => setShowBadgesModal(true), 400);
+    } else {
+      setNewBadges([]);
+    }
     setSelectedAnimalId(null);
     setSelectedSubject(null);
     resetTimer();
+  };
+
+  const closeBadgesModal = () => {
+    setShowBadgesModal(false);
+    setPendingBadges([]);
   };
 
   const handleStartPress = () => {
@@ -478,30 +516,31 @@ export default function TimerScreen() {
           </TouchableOpacity>
         </View>
         
-        {TEST_MODE && (
-          <View style={styles.testModeBanner}>
-            <Text style={styles.testModeText}>⚡ TEST MODE: Minutes = Seconds</Text>
-          </View>
-        )}
-
         {/* Timer Display */}
         <View style={styles.timerContainer}>
           {isRunning ? (
-            <CircularProgress progress={progress} size={320} strokeWidth={14}>
+            <CircularProgress progress={progress} size={336} strokeWidth={14}>
               <View style={styles.timerEggContainer}>
                 <LottieView
                   source={require('../assets/egg-animation.json')}
                   autoPlay
                   loop
-                  style={{ width: 220, height: 220 }}
+                  style={{ width: 330, height: 330, marginTop: -43 }}
                 />
                 <Text style={styles.timerTextSmall}>{formatTime(timeLeft)}</Text>
               </View>
             </CircularProgress>
           ) : (
-            <CircularProgress progress={progress} size={240} strokeWidth={10}>
-              <Text style={styles.timerText}>{formatTime(timeLeft)}</Text>
-              <Text style={styles.timerStatus}>Ready</Text>
+            <CircularProgress progress={progress} size={312} strokeWidth={12}>
+              <View style={styles.timerEggContainer}>
+                <LottieView
+                  source={require('../assets/egg-animation.json')}
+                  autoPlay
+                  loop
+                  style={{ width: 300, height: 300, marginTop: -39 }}
+                />
+                <Text style={styles.timerText}>{formatTime(timeLeft)}</Text>
+              </View>
             </CircularProgress>
           )}
         </View>
@@ -610,8 +649,15 @@ export default function TimerScreen() {
         {/* Control Buttons */}
         <View style={styles.controlsContainer}>
           {!isRunning ? (
-            <TouchableOpacity style={styles.startButton} onPress={handleStartPress}>
-              <Text style={styles.startButtonText}>Start Studying 🚀</Text>
+            <TouchableOpacity onPress={handleStartPress}>
+              <ExpoLinearGradient
+                colors={['#5F8C87', '#3B5466']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 0 }}
+                style={styles.startButton}
+              >
+                <Text style={styles.startButtonText}>Start Studying 🚀</Text>
+              </ExpoLinearGradient>
             </TouchableOpacity>
           ) : (
             <View style={styles.runningControls}>
@@ -722,14 +768,21 @@ export default function TimerScreen() {
                 <Text style={styles.animalModalCancelText}>Cancel</Text>
               </TouchableOpacity>
               <TouchableOpacity
-                style={[
-                  styles.animalModalStart,
-                  !selectedAnimalId && styles.animalModalStartDisabled,
-                ]}
                 onPress={confirmAnimalAndStart}
                 disabled={!selectedAnimalId}
+                style={[{ flex: 2 }, !selectedAnimalId && styles.animalModalStartDisabledWrapper]}
               >
-                <Text style={styles.animalModalStartText}>Start Hatching! 🚀</Text>
+                <ExpoLinearGradient
+                  colors={['#5F8C87', '#3B5466']}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 0 }}
+                  style={[
+                    styles.animalModalStart,
+                    !selectedAnimalId && styles.animalModalStartDisabled,
+                  ]}
+                >
+                  <Text style={styles.animalModalStartText}>Start Hatching! 🚀</Text>
+                </ExpoLinearGradient>
               </TouchableOpacity>
             </View>
           </View>
@@ -779,14 +832,21 @@ export default function TimerScreen() {
                 <Text style={styles.subjectModalCancelText}>Cancel</Text>
               </TouchableOpacity>
               <TouchableOpacity
-                style={[
-                  styles.subjectModalStart,
-                  !selectedSubject && styles.subjectModalStartDisabled,
-                ]}
                 onPress={confirmSubjectAndStart}
                 disabled={!selectedSubject}
+                style={[{ flex: 2 }, !selectedSubject && styles.subjectModalStartDisabledWrapper]}
               >
-                <Text style={styles.subjectModalStartText}>Start Timer! ⏱️</Text>
+                <ExpoLinearGradient
+                  colors={['#5F8C87', '#3B5466']}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 0 }}
+                  style={[
+                    styles.subjectModalStart,
+                    !selectedSubject && styles.subjectModalStartDisabled,
+                  ]}
+                >
+                  <Text style={styles.subjectModalStartText}>Start Timer! ⏱️</Text>
+                </ExpoLinearGradient>
               </TouchableOpacity>
             </View>
           </View>
@@ -796,7 +856,12 @@ export default function TimerScreen() {
       {/* Celebration Modal */}
       <Modal visible={showCelebrationModal} transparent animationType="fade">
         <View style={styles.celebrationOverlay}>
-          <View style={styles.celebrationContent}>
+          <ExpoLinearGradient
+            colors={['#A9BDAF', '#5F8C87']}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 0, y: 1 }}
+            style={styles.celebrationContent}
+          >
             <Text style={styles.celebrationTitle}>Congratulations!</Text>
             <Text style={styles.celebrationSubtitle}>You hatched a new friend!</Text>
             
@@ -818,8 +883,9 @@ export default function TimerScreen() {
             </Text>
             
             <View style={styles.celebrationCoins}>
+              <Text style={styles.celebrationCoinsEmoji}>🍀</Text>
               <Text style={styles.celebrationCoinsText}>
-                +{hatchedAnimalInfo?.ecoCredits || 0} eco-credits earned 🍀
+                +{hatchedAnimalInfo?.ecoCredits || 0} eco-credits earned
               </Text>
             </View>
             
@@ -827,25 +893,8 @@ export default function TimerScreen() {
               This endangered animal has been added to your collection!
             </Text>
 
-            {newBadges.length > 0 && (
-              <View style={styles.newBadgesSection}>
-                <Text style={styles.newBadgesTitle}>
-                  {newBadges.length === 1 ? 'New Badge Earned!' : `${newBadges.length} New Badges!`}
-                </Text>
-                {newBadges.map(b => (
-                  <View key={b.id} style={styles.newBadgeRow}>
-                    <Text style={styles.newBadgeIcon}>{b.icon}</Text>
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.newBadgeName}>{b.name}</Text>
-                      <Text style={styles.newBadgeDesc}>{b.description}</Text>
-                    </View>
-                  </View>
-                ))}
-              </View>
-            )}
-
             {sessionSaveError && (
-              <Text style={{ color: '#E53935', fontSize: 12, textAlign: 'center', marginTop: 6 }}>
+              <Text style={{ color: '#2F4A3E', fontSize: 12, textAlign: 'center', marginTop: 6 }}>
                 ⚠️ Session couldn't be saved to the server. Progress may not update.
               </Text>
             )}
@@ -861,13 +910,19 @@ export default function TimerScreen() {
                 <Text style={styles.celebrationButtonSecondaryText}>View Collection</Text>
               </TouchableOpacity>
               <TouchableOpacity
-                style={styles.celebrationButton}
                 onPress={closeCelebrationModal}
               >
-                <Text style={styles.celebrationButtonText}>Start Another Session</Text>
+                <ExpoLinearGradient
+                  colors={['#5F8C87', '#3B5466']}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 0 }}
+                  style={styles.celebrationButton}
+                >
+                  <Text style={styles.celebrationButtonText}>Continue</Text>
+                </ExpoLinearGradient>
               </TouchableOpacity>
             </View>
-          </View>
+          </ExpoLinearGradient>
           {showConfetti && (
             <ConfettiCannon
               count={250}
@@ -881,10 +936,67 @@ export default function TimerScreen() {
         </View>
       </Modal>
 
+      {/* Badges Modal */}
+      <Modal visible={showBadgesModal} transparent animationType="fade">
+        <View style={styles.celebrationOverlay}>
+          <ExpoLinearGradient
+            colors={['#A9BDAF', '#5F8C87']}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 0, y: 1 }}
+            style={styles.badgesModalContent}
+          >
+            <Text style={styles.badgesModalEmoji}>🏅</Text>
+            <Text style={styles.badgesModalTitle}>
+              {pendingBadges.length === 1 ? 'New Badge Earned!' : `${pendingBadges.length} New Badges!`}
+            </Text>
+            <Text style={styles.badgesModalSubtitle}>
+              Your hard work is paying off
+            </Text>
+            {pendingBadges.map(b => (
+              <View key={b.id} style={styles.badgesModalRow}>
+                <View style={styles.badgesModalIconWrap}>
+                  <Text style={styles.badgesModalIcon}>{b.icon}</Text>
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.badgesModalName}>{b.name}</Text>
+                  <Text style={styles.badgesModalDesc}>{b.description}</Text>
+                </View>
+              </View>
+            ))}
+            <View style={styles.badgesModalButtonsWrap}>
+              <TouchableOpacity onPress={closeBadgesModal}>
+                <ExpoLinearGradient
+                  colors={['#5F8C87', '#3B5466']}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 0 }}
+                  style={styles.badgesModalPrimaryBtn}
+                >
+                  <Text style={styles.celebrationButtonText}>Awesome!</Text>
+                </ExpoLinearGradient>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.badgesModalSecondaryBtn}
+                onPress={() => {
+                  closeBadgesModal();
+                  (navigation as any).navigate('Badges');
+                }}
+              >
+                <Text style={styles.badgesModalSecondaryBtnText}>View All Badges</Text>
+              </TouchableOpacity>
+            </View>
+          </ExpoLinearGradient>
+        </View>
+      </Modal>
+
       {/* Egg Death Modal */}
       <Modal visible={showEggDeathModal} transparent animationType="fade">
         <View style={styles.eggDeathOverlay}>
-          <View style={styles.eggDeathContent}>
+          <ExpoLinearGradient
+            colors={['#2F4A3E', '#3B5466']}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 0, y: 1 }}
+            style={styles.eggDeathContent}
+          >
             <Text style={styles.eggDeathIcon}>💔</Text>
 
             <Text style={styles.eggDeathTitle}>
@@ -912,7 +1024,6 @@ export default function TimerScreen() {
             </View>
 
             <TouchableOpacity
-              style={styles.eggDeathButton}
               onPress={() => {
                 setShowEggDeathModal(false);
                 setDeadAnimalName('');
@@ -921,9 +1032,16 @@ export default function TimerScreen() {
                 resetTimer();
               }}
             >
-              <Text style={styles.eggDeathButtonText}>Try Again</Text>
+              <ExpoLinearGradient
+                colors={['#5F8C87', '#3B5466']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 0 }}
+                style={styles.eggDeathButton}
+              >
+                <Text style={styles.eggDeathButtonText}>Try Again</Text>
+              </ExpoLinearGradient>
             </TouchableOpacity>
-          </View>
+          </ExpoLinearGradient>
         </View>
       </Modal>
 
@@ -966,13 +1084,20 @@ export default function TimerScreen() {
                 <Text style={styles.customModalCancelText}>Cancel</Text>
               </TouchableOpacity>
               <TouchableOpacity
-                style={styles.customModalConfirm}
+                style={{ flex: 1 }}
                 onPress={() => {
                   selectPreset(customMinutes);
                   setShowCustomModal(false);
                 }}
               >
-                <Text style={styles.customModalConfirmText}>Set Timer</Text>
+                <ExpoLinearGradient
+                  colors={['#5F8C87', '#3B5466']}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 0 }}
+                  style={styles.customModalConfirm}
+                >
+                  <Text style={styles.customModalConfirmText}>Set Timer</Text>
+                </ExpoLinearGradient>
               </TouchableOpacity>
             </View>
           </View>
@@ -988,7 +1113,8 @@ const styles = StyleSheet.create({
     backgroundColor: colors.background,
   },
   scrollContent: {
-    padding: spacing.md,
+    paddingHorizontal: spacing.md,
+    paddingTop: spacing.xs,
     paddingBottom: spacing.xl,
   },
   header: {
@@ -1034,28 +1160,32 @@ const styles = StyleSheet.create({
   },
   timerContainer: {
     alignItems: 'center',
-    marginBottom: spacing.sm,
+    marginBottom: spacing.md,
   },
   timerInner: {
     alignItems: 'center',
     justifyContent: 'center',
   },
   timerText: {
-    fontSize: 52,
-    fontWeight: '700',
+    fontSize: 43,
+    fontWeight: '800',
     color: colors.textPrimary,
     fontVariant: ['tabular-nums'],
+    letterSpacing: 1,
+    marginTop: -50,
   },
   timerTextSmall: {
-    fontSize: 28,
-    fontWeight: '700',
+    fontSize: 41,
+    fontWeight: '800',
     color: colors.textPrimary,
     fontVariant: ['tabular-nums'],
-    marginTop: -4,
+    letterSpacing: 1,
+    marginTop: -52,
   },
   timerEggContainer: {
     alignItems: 'center',
     justifyContent: 'center',
+    marginTop: -45,
   },
   timerStatus: {
     fontSize: 14,
@@ -1172,13 +1302,13 @@ const styles = StyleSheet.create({
     color: colors.textOnPrimary,
   },
   presetChip: {
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.sm + 4,
+    paddingVertical: spacing.xs + 3,
     backgroundColor: colors.surface,
     borderRadius: borderRadius.full,
-    borderWidth: 2,
+    borderWidth: 1.5,
     borderColor: colors.cardBorder,
-    minWidth: 56,
+    minWidth: 44,
     alignItems: 'center',
   },
   presetChipActive: {
@@ -1260,14 +1390,17 @@ const styles = StyleSheet.create({
   },
   customModalButtons: {
     flexDirection: 'row',
-    gap: spacing.md,
+    gap: spacing.sm,
+    marginTop: spacing.sm,
   },
   customModalCancel: {
     flex: 1,
-    paddingVertical: spacing.md,
-    borderRadius: borderRadius.lg,
+    paddingVertical: 14,
+    borderRadius: borderRadius.full,
     backgroundColor: colors.surfaceAlt,
     alignItems: 'center',
+    borderWidth: 1.5,
+    borderColor: colors.cardBorder,
   },
   customModalCancelText: {
     color: colors.textSecondary,
@@ -1275,10 +1408,8 @@ const styles = StyleSheet.create({
     fontSize: 16,
   },
   customModalConfirm: {
-    flex: 1,
-    paddingVertical: spacing.md,
-    borderRadius: borderRadius.lg,
-    backgroundColor: colors.primary,
+    paddingVertical: 14,
+    borderRadius: borderRadius.full,
     alignItems: 'center',
   },
   customModalConfirmText: {
@@ -1291,12 +1422,12 @@ const styles = StyleSheet.create({
   },
   taskChip: {
     paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm + 2,
+    paddingVertical: spacing.sm,
     backgroundColor: colors.surface,
     borderRadius: borderRadius.full,
     marginRight: spacing.sm,
-    maxWidth: 150,
-    borderWidth: 1,
+    maxWidth: 160,
+    borderWidth: 1.5,
     borderColor: colors.cardBorder,
   },
   taskChipActive: {
@@ -1315,7 +1446,6 @@ const styles = StyleSheet.create({
     marginBottom: spacing.md,
   },
   startButton: {
-    backgroundColor: colors.primary,
     paddingVertical: spacing.md + 2,
     borderRadius: borderRadius.lg,
     alignItems: 'center',
@@ -1347,7 +1477,7 @@ const styles = StyleSheet.create({
   resetButton: {
     backgroundColor: colors.surface,
     borderWidth: 2,
-    borderColor: colors.error,
+    borderColor: colors.secondary,
   },
   controlButtonText: {
     color: colors.textOnPrimary,
@@ -1355,7 +1485,7 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   resetButtonText: {
-    color: colors.error,
+    color: colors.textSecondary,
     fontSize: 16,
     fontWeight: '600',
   },
@@ -1442,7 +1572,7 @@ const styles = StyleSheet.create({
   },
   checkMark: {
     fontSize: 12,
-    color: '#4CAF50',
+    color: '#5E7F6E',
     position: 'absolute',
     bottom: 2,
     right: 2,
@@ -1491,12 +1621,13 @@ const styles = StyleSheet.create({
     flex: 2,
     paddingVertical: spacing.md,
     borderRadius: borderRadius.md,
-    backgroundColor: colors.primary,
     alignItems: 'center',
     ...shadows.small,
   },
   animalModalStartDisabled: {
-    backgroundColor: colors.textMuted,
+    opacity: 0.6,
+  },
+  animalModalStartDisabledWrapper: {
     opacity: 0.6,
   },
   animalModalStartText: {
@@ -1513,30 +1644,35 @@ const styles = StyleSheet.create({
     padding: spacing.lg,
   },
   celebrationContent: {
-    backgroundColor: colors.surface,
     borderRadius: borderRadius.xl,
     padding: spacing.xl,
     alignItems: 'center',
     width: '100%',
     maxWidth: 340,
     ...shadows.large,
+    overflow: 'hidden',
   },
   celebrationTitle: {
     fontSize: 28,
     fontWeight: '800',
-    color: colors.textPrimary,
+    color: '#FFFFFF',
     textAlign: 'center',
     marginBottom: spacing.sm,
   },
   celebrationSubtitle: {
     fontSize: 16,
-    color: colors.textSecondary,
+    color: '#2F4A3E',
     textAlign: 'center',
     marginBottom: spacing.xl,
   },
   celebrationAnimalContainer: {
     marginBottom: spacing.lg,
     alignItems: 'center',
+    backgroundColor: 'rgba(255,255,255,0.25)',
+    borderRadius: 100,
+    width: 160,
+    height: 160,
+    justifyContent: 'center',
   },
   celebrationAnimalEmoji: {
     fontSize: 80,
@@ -1548,25 +1684,31 @@ const styles = StyleSheet.create({
   celebrationAnimalName: {
     fontSize: 24,
     fontWeight: '700',
-    color: colors.primary,
+    color: '#2F4A3E',
     textAlign: 'center',
     marginBottom: spacing.md,
   },
   celebrationCoins: {
-    backgroundColor: colors.tertiary + '20',
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255,255,255,0.30)',
     paddingHorizontal: spacing.lg,
     paddingVertical: spacing.sm,
     borderRadius: borderRadius.full,
     marginBottom: spacing.lg,
+    gap: 6,
+  },
+  celebrationCoinsEmoji: {
+    fontSize: 18,
   },
   celebrationCoinsText: {
     fontSize: 16,
     fontWeight: '700',
-    color: colors.tertiary,
+    color: '#2F4A3E',
   },
   celebrationMessage: {
     fontSize: 14,
-    color: colors.textSecondary,
+    color: '#FFFFFF',
     textAlign: 'center',
     marginBottom: spacing.lg,
     lineHeight: 20,
@@ -1576,7 +1718,6 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
   },
   celebrationButton: {
-    backgroundColor: colors.primary,
     paddingVertical: 14,
     borderRadius: borderRadius.full,
     alignItems: 'center',
@@ -1593,28 +1734,31 @@ const styles = StyleSheet.create({
     borderRadius: borderRadius.full,
     alignItems: 'center',
     borderWidth: 2,
-    borderColor: colors.primary,
+    borderColor: 'rgba(255,255,255,0.5)',
   },
   celebrationButtonSecondaryText: {
     fontSize: 16,
     fontWeight: '700',
-    color: colors.primary,
+    color: '#FFFFFF',
   },
   newBadgesSection: {
     width: '100%',
-    backgroundColor: '#FFF8E7',
     borderRadius: borderRadius.lg,
     padding: spacing.md,
     marginBottom: spacing.lg,
     borderWidth: 1,
-    borderColor: '#E8B86D40',
+    borderColor: '#5F8C8740',
+  },
+  newBadgesTitleWrapper: {
+    borderRadius: borderRadius.md,
+    paddingVertical: spacing.sm,
+    marginBottom: spacing.sm,
   },
   newBadgesTitle: {
     fontSize: 14,
     fontWeight: '800',
-    color: '#D4A84B',
+    color: '#5F8C87',
     textAlign: 'center',
-    marginBottom: spacing.sm,
   },
   newBadgeRow: {
     flexDirection: 'row' as const,
@@ -1630,6 +1774,90 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: colors.textPrimary,
   },
+  badgesModalContent: {
+    borderRadius: borderRadius.xl,
+    padding: spacing.xl,
+    alignItems: 'center' as const,
+    width: '100%',
+    maxWidth: 340,
+    ...shadows.large,
+    overflow: 'hidden' as const,
+  },
+  badgesModalEmoji: {
+    fontSize: 48,
+    marginBottom: spacing.sm,
+  },
+  badgesModalTitle: {
+    fontSize: 24,
+    fontWeight: '800' as const,
+    color: '#FFFFFF',
+    textAlign: 'center' as const,
+    marginBottom: spacing.xs,
+  },
+  badgesModalSubtitle: {
+    fontSize: 14,
+    color: '#2F4A3E',
+    textAlign: 'center' as const,
+    marginBottom: spacing.lg,
+  },
+  badgesModalRow: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    gap: 12,
+    paddingVertical: 10,
+    paddingHorizontal: spacing.md,
+    backgroundColor: 'rgba(255,255,255,0.22)',
+    borderRadius: borderRadius.lg,
+    marginBottom: spacing.sm,
+    width: '100%',
+  },
+  badgesModalButtonsWrap: {
+    width: '100%',
+    alignItems: 'center' as const,
+    marginTop: spacing.lg,
+    gap: spacing.sm,
+  },
+  badgesModalPrimaryBtn: {
+    paddingVertical: 14,
+    paddingHorizontal: 48,
+    borderRadius: borderRadius.full,
+    alignItems: 'center' as const,
+    ...shadows.small,
+  },
+  badgesModalSecondaryBtn: {
+    paddingVertical: 12,
+    paddingHorizontal: 32,
+    borderRadius: borderRadius.full,
+    alignItems: 'center' as const,
+    borderWidth: 2,
+    borderColor: 'rgba(255,255,255,0.5)',
+  },
+  badgesModalSecondaryBtnText: {
+    fontSize: 15,
+    fontWeight: '700' as const,
+    color: '#FFFFFF',
+  },
+  badgesModalIconWrap: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: 'rgba(255,255,255,0.25)',
+    alignItems: 'center' as const,
+    justifyContent: 'center' as const,
+  },
+  badgesModalIcon: {
+    fontSize: 24,
+  },
+  badgesModalName: {
+    fontSize: 15,
+    fontWeight: '700' as const,
+    color: '#2F4A3E',
+  },
+  badgesModalDesc: {
+    fontSize: 12,
+    color: 'rgba(47,74,62,0.7)',
+    marginTop: 2,
+  },
   newBadgeDesc: {
     fontSize: 11,
     color: colors.textSecondary,
@@ -1644,7 +1872,6 @@ const styles = StyleSheet.create({
     padding: spacing.lg,
   },
   eggDeathContent: {
-    backgroundColor: '#1C1C1E',
     borderRadius: 28,
     padding: spacing.xl,
     alignItems: 'center',
@@ -1660,7 +1887,7 @@ const styles = StyleSheet.create({
   eggDeathTitle: {
     fontSize: 24,
     fontWeight: '800',
-    color: '#FF6B6B',
+    color: '#B85C4A',
     textAlign: 'center',
     marginBottom: spacing.lg,
   },
@@ -1690,14 +1917,14 @@ const styles = StyleSheet.create({
   },
   eggDeathMessage: {
     fontSize: 15,
-    color: '#CCCCCC',
+    color: '#A9BDAF',
     textAlign: 'center',
     lineHeight: 23,
     marginBottom: spacing.md,
   },
   eggDeathSubMessage: {
     fontSize: 13,
-    color: '#FF6B6B',
+    color: '#B85C4A',
     textAlign: 'center',
     fontWeight: '600',
     fontStyle: 'italic',
@@ -1714,11 +1941,10 @@ const styles = StyleSheet.create({
   },
   eggDeathStatsText: {
     fontSize: 13,
-    color: '#999',
+    color: '#7C8F86',
     fontWeight: '600',
   },
   eggDeathButton: {
-    backgroundColor: '#FF6B6B',
     paddingVertical: 14,
     paddingHorizontal: spacing.xxl,
     borderRadius: borderRadius.full,
@@ -1805,12 +2031,14 @@ const styles = StyleSheet.create({
     flex: 2,
     paddingVertical: spacing.md,
     borderRadius: borderRadius.lg,
-    backgroundColor: colors.primary,
     alignItems: 'center',
     ...shadows.small,
   },
   subjectModalStartDisabled: {
-    backgroundColor: colors.textMuted,
+    opacity: 0.6,
+  },
+  subjectModalStartDisabledWrapper: {
+    opacity: 0.6,
   },
   subjectModalStartText: {
     fontSize: 16,

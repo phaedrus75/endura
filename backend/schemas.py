@@ -170,9 +170,12 @@ class StudyTipResponse(BaseModel):
     id: int
     content: str
     category: str
+    animal_name: Optional[str] = None
     likes_count: int
+    dislikes_count: int = 0
     created_at: datetime
     user_liked: bool = False
+    user_disliked: bool = False
 
     class Config:
         from_attributes = True

@@ -1,94 +1,102 @@
-// Endura Color Theme - Light nature-inspired for focus & calm
+// Endura Color Theme - Nature-inspired with ocean & sky tones
 export const colors = {
-  // Primary palette - Light & Natural
-  background: '#F5F8F5',        // Soft off-white with green tint
-  surface: '#FFFFFF',           // Pure white for cards
-  surfaceAlt: '#EDF2ED',        // Slightly darker surface
-  
-  // Brand colors - Sage/Teal nature tones
-  primary: '#6B9B9B',           // Sage teal - main brand color
-  primaryDark: '#5A8585',       // Darker sage for pressed states
-  primaryLight: '#8FB5B5',      // Lighter sage for backgrounds
-  secondary: '#7BA3A3',         // Secondary teal
-  tertiary: '#4CAF50',          // Green for eco-credits 🍀
-  
+  // Primary palette
+  background: '#E7EFEA',          // Mist Sage
+  surface: '#FFFFFF',             // Pure white for cards
+  surfaceAlt: '#E7EFEA',          // Mist Sage for alt surfaces
+
+  // Brand colors
+  primary: '#5F8C87',             // Ocean Sage - main brand
+  primaryDark: '#3B5466',         // Navy - pressed/dark states
+  primaryLight: '#A8C8D8',        // Light Blue - lighter variant
+  secondary: '#7C8F86',           // Stone Fog
+  tertiary: '#5F8C87',            // Ocean Sage for eco/actions
+
   // Accent colors
-  accent: '#E8B86D',            // Warm gold accent
-  coral: '#E8A598',             // Soft coral for hearts/eggs
-  mint: '#A8D5BA',              // Mint green
-  
+  accent: '#3B5466',              // Navy
+  coral: '#A8C8D8',               // Light Blue
+  mint: '#A9BDAF',                // Moss Grey
+
+  // New palette colors
+  navy: '#3B5466',                // Deep ocean navy
+  lightBlue: '#A8C8D8',          // Morning sky blue
+  driftwood: '#8B7D6B',          // Warm driftwood (subtle accent)
+
   // Rarity colors
-  common: '#8FBF9F',            // Soft sage green
-  rare: '#7EC8E3',              // Sky blue
-  epic: '#B794D4',              // Soft purple
-  legendary: '#E8B86D',         // Gold
-  
+  common: '#A9BDAF',              // Moss Grey
+  rare: '#5F8C87',                // Ocean Sage
+  epic: '#3B5466',                // Navy
+  legendary: '#2F4A3E',           // Deep Pine
+
   // Text - Dark on light
-  textPrimary: '#2D3B36',       // Dark forest green
-  textSecondary: '#5A6B65',     // Medium gray-green
-  textMuted: '#8A9A94',         // Light gray-green
-  textOnPrimary: '#FFFFFF',     // White text on primary buttons
-  
+  textPrimary: '#2F4A3E',         // Deep Pine
+  textSecondary: '#5F8C87',       // Ocean Sage
+  textMuted: '#7C8F86',           // Stone Fog
+  textOnPrimary: '#FFFFFF',       // White text on primary buttons
+
   // Status
-  success: '#6BBF8A',
-  warning: '#E8B86D',
-  error: '#D97B7B',
-  
+  success: '#5F8C87',             // Ocean Sage
+  warning: '#3B5466',             // Navy
+  error: '#B85C4A',               // Earthy red
+
   // Streaks
-  streakActive: '#E8A035',
-  streakInactive: '#D4DDD8',
-  
+  streakActive: '#3B5466',        // Navy
+  streakInactive: '#A8C8D8',      // Light Blue
+
   // Timer
-  timerActive: '#6B9B9B',
-  timerPaused: '#E8B86D',
-  timerComplete: '#6BBF8A',
-  
+  timerActive: '#5F8C87',         // Ocean Sage
+  timerPaused: '#3B5466',         // Navy
+  timerComplete: '#5F8C87',       // Ocean Sage
+
   // Nature theme elements
-  grass: '#7CB87F',
-  grassLight: '#A8D4AA',
-  grassDark: '#5A9A5C',
-  sky: '#B8D4E3',
-  hills: '#9FC5A8',
-  
+  grass: '#5F8C87',               // Ocean Sage
+  grassLight: '#A8C8D8',          // Light Blue
+  grassDark: '#3B5466',           // Navy
+  sky: '#A8C8D8',                 // Light Blue
+  hills: '#A9BDAF',               // Moss Grey
+
   // Card styling
-  cardBorder: '#E2EAE5',
-  divider: '#E8EDE9',
-  
-  // Gradients (as arrays for LinearGradient)
-  gradientPrimary: ['#6B9B9B', '#5A8585'],
-  gradientBackground: ['#F5F8F5', '#E8EDE9'],
-  gradientEgg: ['#FDFEFE', '#F0F4F1'],
-  gradientGold: ['#E8B86D', '#D4A84B'],
-  gradientNature: ['#A8D5BA', '#7CB87F'],
-  gradientSky: ['#D4E8F0', '#B8D4E3'],
+  cardBorder: '#A9BDAF',          // Moss Grey
+  divider: '#A9BDAF',             // Moss Grey
+
+  // Gradients
+  gradientPrimary: ['#5F8C87', '#3B5466'],
+  gradientBackground: ['#E7EFEA', '#A9BDAF'],
+  gradientEgg: ['#FDFEFE', '#E7EFEA'],
+  gradientGold: ['#5F8C87', '#3B5466'],
+  gradientNature: ['#A8C8D8', '#5F8C87'],
+  gradientSky: ['#E7EFEA', '#A8C8D8'],
+  gradientNavy: ['#3B5466', '#2F4A3E'],
+  gradientOcean: ['#A8C8D8', '#5F8C87'],
+  gradientFrost: ['#FFFFFF', '#E7EFEA'],
 };
 
 export const shadows = {
   small: {
-    shadowColor: '#2D3B36',
+    shadowColor: '#3B5466',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.06,
     shadowRadius: 4,
     elevation: 2,
   },
   medium: {
-    shadowColor: '#2D3B36',
+    shadowColor: '#3B5466',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.08,
     shadowRadius: 8,
     elevation: 4,
   },
   large: {
-    shadowColor: '#2D3B36',
+    shadowColor: '#3B5466',
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.10,
     shadowRadius: 16,
     elevation: 8,
   },
   soft: {
-    shadowColor: '#6B9B9B',
+    shadowColor: '#5F8C87',
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.15,
+    shadowOpacity: 0.12,
     shadowRadius: 12,
     elevation: 4,
   },

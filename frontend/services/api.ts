@@ -80,8 +80,12 @@ export interface StudyTip {
   id: number;
   content: string;
   category: string;
+  animal_name?: string;
   likes_count: number;
+  dislikes_count: number;
   created_at: string;
+  user_liked: boolean;
+  user_disliked: boolean;
   user_liked: boolean;
 }
 
@@ -339,10 +343,16 @@ export const animalsAPI = {
 // Study Tips API
 export const tipsAPI = {
   getTips: (limit = 10) => apiFetch<StudyTip[]>(`/tips?limit=${limit}`),
-  
+
   markViewed: (tipId: number, liked = false) =>
     apiFetch(`/tips/${tipId}/view?liked=${liked}`, { method: 'POST' }),
-  
+
+  voteTip: (tipId: number, vote: 'up' | 'down') =>
+    apiFetch<{ likes_count: number; dislikes_count: number; user_liked: boolean; user_disliked: boolean }>(
+      `/tips/${tipId}/vote?vote=${vote}`,
+      { method: 'POST' },
+    ),
+
   createTip: (content: string, category = 'general') =>
     apiFetch<StudyTip>('/tips', {
       method: 'POST',
