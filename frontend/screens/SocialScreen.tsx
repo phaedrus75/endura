@@ -904,6 +904,7 @@ export default function SocialScreen() {
       {/* Group Chat Modal */}
       <Modal visible={!!selectedGroup} animationType="slide" onRequestClose={() => setSelectedGroup(null)}>
         <SafeAreaView style={styles.chatContainer} edges={['top', 'bottom']}>
+          {/* Chat Header */}
           <View style={styles.chatHeader}>
             <TouchableOpacity
               style={styles.chatBackBtn}
@@ -911,15 +912,14 @@ export default function SocialScreen() {
               hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
             >
               <Text style={styles.chatBackArrow}>‹</Text>
-              <Text style={styles.chatBackText}>Back</Text>
             </TouchableOpacity>
             <View style={styles.chatHeaderCenter}>
               <Text style={styles.chatTitle} numberOfLines={1}>{selectedGroup?.name}</Text>
               <Text style={styles.chatSubtitle}>{selectedGroup?.members.length || 0} members</Text>
             </View>
-            <View style={styles.chatHeaderSpacer} />
           </View>
 
+          {/* Messages */}
           <FlatList
             data={messages}
             keyExtractor={m => m.id.toString()}
@@ -929,7 +929,7 @@ export default function SocialScreen() {
               <View style={styles.chatEmpty}>
                 <Text style={styles.chatEmptyEmoji}>💬</Text>
                 <Text style={styles.chatEmptyTitle}>No messages yet</Text>
-                <Text style={styles.chatEmptySubtitle}>Start the conversation or share a study tip!</Text>
+                <Text style={styles.chatEmptySubtitle}>Start the conversation!</Text>
               </View>
             }
             renderItem={({ item }) => {
@@ -998,7 +998,11 @@ export default function SocialScreen() {
 
               return (
                 <View style={[styles.chatBubbleWrap, isMine ? styles.chatBubbleWrapMine : styles.chatBubbleWrapTheirs]}>
-                  {!isMine && <View style={styles.chatAvatar}><Text style={styles.chatAvatarText}>{(item.username || '?')[0].toUpperCase()}</Text></View>}
+                  {!isMine && (
+                    <View style={styles.chatAvatar}>
+                      <Text style={styles.chatAvatarText}>{(item.username || '?')[0].toUpperCase()}</Text>
+                    </View>
+                  )}
                   <View style={[styles.chatBubble, isMine ? styles.chatBubbleMine : styles.chatBubbleTheirs]}>
                     {!isMine && <Text style={styles.chatBubbleSender}>{item.username || 'Someone'}</Text>}
                     <Text style={[styles.chatBubbleText, isMine && { color: '#fff' }]}>{item.content}</Text>
@@ -1036,6 +1040,7 @@ export default function SocialScreen() {
             </View>
           )}
 
+          {/* Chat Input */}
           <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
             <View style={styles.chatInputRow}>
               <TouchableOpacity
@@ -1044,20 +1049,23 @@ export default function SocialScreen() {
               >
                 <Text style={styles.chatPlusBtnText}>{showChatActions ? '×' : '+'}</Text>
               </TouchableOpacity>
-              <TextInput
-                style={styles.chatInput}
-                placeholder="Type a message..."
-                placeholderTextColor={colors.textMuted}
-                value={chatInput}
-                onChangeText={setChatInput}
-                onFocus={() => setShowChatActions(false)}
-              />
+              <View style={styles.chatInputWrap}>
+                <TextInput
+                  style={styles.chatInput}
+                  placeholder="Type a message..."
+                  placeholderTextColor={colors.textMuted}
+                  value={chatInput}
+                  onChangeText={setChatInput}
+                  onFocus={() => setShowChatActions(false)}
+                  multiline
+                />
+              </View>
               <TouchableOpacity
                 style={[styles.chatSendButton, !chatInput.trim() && styles.chatSendButtonDisabled]}
                 onPress={handleSendMessage}
                 disabled={!chatInput.trim()}
               >
-                <Text style={styles.chatSendText}>Send</Text>
+                <Text style={styles.chatSendText}>↑</Text>
               </TouchableOpacity>
             </View>
           </KeyboardAvoidingView>
@@ -1714,115 +1722,313 @@ const styles = StyleSheet.create({
   noFriendsText: { fontSize: 13, color: colors.textMuted, paddingVertical: 10 },
 
   // Chat
-  chatContainer: { flex: 1, backgroundColor: '#F0F4F2' },
-  chatHeader: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingHorizontal: spacing.md, paddingVertical: 12,
-    borderBottomWidth: 1, borderBottomColor: colors.cardBorder, backgroundColor: colors.surface,
-    minHeight: 56,
+  chatContainer: {
+    flex: 1,
+    backgroundColor: '#F4F7F5',
   },
-  chatBackBtn: {
+  chatHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 6,
-    paddingRight: 12,
-    minWidth: 70,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(0,0,0,0.06)',
+    backgroundColor: '#FFFFFF',
   },
-  chatBackArrow: { fontSize: 28, fontWeight: '300', color: colors.primary, marginRight: 2, marginTop: -2 },
-  chatBackText: { fontSize: 16, fontWeight: '600', color: colors.primary },
-  chatHeaderCenter: { flex: 1, alignItems: 'center' },
-  chatTitle: { fontSize: 17, fontWeight: '700', color: colors.textPrimary },
-  chatSubtitle: { fontSize: 11, color: colors.textMuted, marginTop: 1 },
-  chatHeaderSpacer: { minWidth: 70 },
-  chatList: { paddingHorizontal: spacing.md, paddingTop: 16, paddingBottom: 12 },
-  chatEmpty: { alignItems: 'center', paddingVertical: 60 },
-  chatEmptyEmoji: { fontSize: 40, marginBottom: 8 },
-  chatEmptyTitle: { fontSize: 16, fontWeight: '700', color: colors.textPrimary },
-  chatEmptySubtitle: { fontSize: 13, color: colors.textMuted, marginTop: 4, textAlign: 'center' },
+  chatBackBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#E7EFEA',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
+  },
+  chatBackArrow: {
+    fontSize: 22,
+    fontWeight: '600',
+    color: colors.textPrimary,
+    marginTop: -1,
+    marginLeft: -1,
+  },
+  chatHeaderCenter: {
+    flex: 1,
+  },
+  chatTitle: {
+    fontSize: 17,
+    fontWeight: '700',
+    color: colors.textPrimary,
+  },
+  chatSubtitle: {
+    fontSize: 12,
+    color: colors.textMuted,
+    marginTop: 1,
+  },
+  chatList: {
+    paddingHorizontal: 16,
+    paddingTop: 16,
+    paddingBottom: 8,
+    flexGrow: 1,
+  },
+  chatEmpty: {
+    alignItems: 'center',
+    paddingVertical: 80,
+  },
+  chatEmptyEmoji: {
+    fontSize: 44,
+    marginBottom: 12,
+  },
+  chatEmptyTitle: {
+    fontSize: 17,
+    fontWeight: '700',
+    color: colors.textPrimary,
+  },
+  chatEmptySubtitle: {
+    fontSize: 13,
+    color: colors.textMuted,
+    marginTop: 4,
+    textAlign: 'center',
+  },
   chatBubbleWrap: {
-    flexDirection: 'row', alignItems: 'flex-end', marginBottom: 10,
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    marginBottom: 12,
   },
-  chatBubbleWrapMine: { justifyContent: 'flex-end' },
-  chatBubbleWrapTheirs: { justifyContent: 'flex-start' },
+  chatBubbleWrapMine: {
+    justifyContent: 'flex-end',
+  },
+  chatBubbleWrapTheirs: {
+    justifyContent: 'flex-start',
+  },
   chatAvatar: {
-    width: 28, height: 28, borderRadius: 14, backgroundColor: colors.primary + '20',
-    alignItems: 'center', justifyContent: 'center', marginRight: 8, marginBottom: 2,
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    backgroundColor: '#5F8C87' + '20',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 8,
+    marginBottom: 2,
   },
-  chatAvatarText: { fontSize: 12, fontWeight: '700', color: colors.primary },
+  chatAvatarText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#5F8C87',
+  },
   chatBubble: {
-    maxWidth: '75%', paddingHorizontal: 14, paddingVertical: 10, borderRadius: 18,
+    maxWidth: '72%',
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 20,
   },
   chatBubbleMine: {
-    backgroundColor: colors.primary, borderBottomRightRadius: 4,
+    backgroundColor: '#5F8C87',
+    borderBottomRightRadius: 6,
   },
   chatBubbleTheirs: {
-    backgroundColor: colors.surface, borderBottomLeftRadius: 4, ...shadows.small,
+    backgroundColor: '#FFFFFF',
+    borderBottomLeftRadius: 6,
+    ...shadows.small,
   },
-  chatBubbleSender: { fontSize: 11, fontWeight: '700', color: colors.primary, marginBottom: 3 },
-  chatBubbleText: { fontSize: 15, color: colors.textPrimary, lineHeight: 21 },
-  chatBubbleTime: { fontSize: 10, color: colors.textMuted, marginTop: 4, textAlign: 'right' },
+  chatBubbleSender: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#5F8C87',
+    marginBottom: 3,
+  },
+  chatBubbleText: {
+    fontSize: 15,
+    color: colors.textPrimary,
+    lineHeight: 21,
+  },
+  chatBubbleTime: {
+    fontSize: 10,
+    color: colors.textMuted,
+    marginTop: 4,
+    textAlign: 'right',
+  },
 
-  chatSpecialBubble: { maxWidth: '82%', marginBottom: 12 },
-  chatSpecialSender: { fontSize: 11, fontWeight: '600', color: colors.textMuted, marginBottom: 4 },
-  chatSpecialSenderMine: { fontSize: 11, fontWeight: '600', color: colors.textMuted, marginBottom: 4, textAlign: 'right' },
-  chatSpecialTime: { fontSize: 10, color: colors.textMuted, marginTop: 4 },
+  chatSpecialBubble: {
+    maxWidth: '80%',
+    marginBottom: 14,
+  },
+  chatSpecialSender: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: colors.textMuted,
+    marginBottom: 4,
+    marginLeft: 4,
+  },
+  chatSpecialSenderMine: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: colors.textMuted,
+    marginBottom: 4,
+    textAlign: 'right',
+    marginRight: 4,
+  },
+  chatSpecialTime: {
+    fontSize: 10,
+    color: colors.textMuted,
+    marginTop: 4,
+    marginLeft: 4,
+  },
 
   chatTipCard: {
-    borderRadius: 16, padding: 14, borderWidth: 1, borderColor: colors.cardBorder,
+    borderRadius: 16,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: 'rgba(0,0,0,0.06)',
   },
-  chatTipEmoji: { fontSize: 20, marginBottom: 6 },
-  chatTipText: { fontSize: 14, color: colors.textPrimary, lineHeight: 20, fontStyle: 'italic' },
+  chatTipEmoji: {
+    fontSize: 20,
+    marginBottom: 6,
+  },
+  chatTipText: {
+    fontSize: 14,
+    color: colors.textPrimary,
+    lineHeight: 20,
+    fontStyle: 'italic',
+  },
 
   chatHatchCard: {
-    borderRadius: 16, padding: 16, alignItems: 'center',
+    borderRadius: 16,
+    padding: 18,
+    alignItems: 'center',
   },
-  chatHatchEmoji: { fontSize: 36, marginBottom: 6 },
-  chatHatchTitle: { fontSize: 16, fontWeight: '700', color: '#fff', marginBottom: 4 },
-  chatHatchDesc: { fontSize: 13, color: 'rgba(255,255,255,0.85)', textAlign: 'center', marginBottom: 10 },
+  chatHatchEmoji: {
+    fontSize: 36,
+    marginBottom: 8,
+  },
+  chatHatchTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#fff',
+    marginBottom: 4,
+  },
+  chatHatchDesc: {
+    fontSize: 13,
+    color: 'rgba(255,255,255,0.85)',
+    textAlign: 'center',
+    marginBottom: 12,
+  },
   chatHatchAcceptBtn: {
-    backgroundColor: '#fff', borderRadius: 20, paddingHorizontal: 20, paddingVertical: 10,
+    backgroundColor: '#fff',
+    borderRadius: 20,
+    paddingHorizontal: 22,
+    paddingVertical: 10,
   },
-  chatHatchAcceptText: { fontSize: 14, fontWeight: '700', color: colors.primary },
+  chatHatchAcceptText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#5F8C87',
+  },
   chatHatchAcceptedBanner: {
-    backgroundColor: colors.primary + '12', borderRadius: 16, padding: 14, alignItems: 'center',
-    borderWidth: 1, borderColor: colors.primary + '25',
+    backgroundColor: '#5F8C87' + '12',
+    borderRadius: 16,
+    padding: 14,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#5F8C87' + '25',
   },
-  chatHatchAcceptedText: { fontSize: 14, fontWeight: '700', color: colors.textPrimary, textAlign: 'center' },
-  chatHatchAcceptedSub: { fontSize: 12, color: colors.textSecondary, marginTop: 4, textAlign: 'center' },
+  chatHatchAcceptedText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: colors.textPrimary,
+    textAlign: 'center',
+  },
+  chatHatchAcceptedSub: {
+    fontSize: 12,
+    color: colors.textSecondary,
+    marginTop: 4,
+    textAlign: 'center',
+  },
 
   chatActionsBar: {
-    flexDirection: 'row', backgroundColor: colors.surface,
-    borderTopWidth: 1, borderTopColor: colors.cardBorder,
-    paddingVertical: 10, paddingHorizontal: spacing.lg,
+    flexDirection: 'row',
+    backgroundColor: '#FFFFFF',
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(0,0,0,0.06)',
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+    gap: 12,
   },
   chatActionItem: {
-    flex: 1, alignItems: 'center', paddingVertical: 8,
+    flex: 1,
+    alignItems: 'center',
+    paddingVertical: 10,
+    backgroundColor: '#E7EFEA',
+    borderRadius: 14,
   },
-  chatActionEmoji: { fontSize: 24, marginBottom: 4 },
-  chatActionLabel: { fontSize: 12, fontWeight: '600', color: colors.textSecondary },
+  chatActionEmoji: {
+    fontSize: 22,
+    marginBottom: 4,
+  },
+  chatActionLabel: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: colors.textSecondary,
+  },
 
   chatInputRow: {
-    flexDirection: 'row', alignItems: 'center',
-    paddingHorizontal: 10, paddingVertical: 8,
-    borderTopWidth: 1, borderTopColor: colors.cardBorder, backgroundColor: colors.surface,
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    paddingBottom: 12,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(0,0,0,0.06)',
+    backgroundColor: '#FFFFFF',
+    gap: 10,
   },
   chatPlusBtn: {
-    width: 36, height: 36, borderRadius: 18, backgroundColor: colors.surfaceAlt,
-    alignItems: 'center', justifyContent: 'center', marginRight: 8,
-    borderWidth: 1, borderColor: colors.cardBorder,
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: '#E7EFEA',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 1,
   },
-  chatPlusBtnText: { fontSize: 22, fontWeight: '400', color: colors.primary, marginTop: -1 },
+  chatPlusBtnText: {
+    fontSize: 22,
+    fontWeight: '500',
+    color: '#5F8C87',
+    marginTop: -1,
+  },
+  chatInputWrap: {
+    flex: 1,
+    backgroundColor: '#F4F7F5',
+    borderRadius: 22,
+    borderWidth: 1,
+    borderColor: 'rgba(0,0,0,0.06)',
+    maxHeight: 100,
+  },
   chatInput: {
-    flex: 1, backgroundColor: colors.surfaceAlt, borderRadius: 20,
-    paddingHorizontal: 16, paddingVertical: 10, fontSize: 14, color: colors.textPrimary,
-    borderWidth: 1, borderColor: colors.cardBorder,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    fontSize: 15,
+    color: colors.textPrimary,
+    maxHeight: 100,
   },
   chatSendButton: {
-    backgroundColor: colors.primary, borderRadius: 20,
-    paddingHorizontal: 16, paddingVertical: 10, marginLeft: 8,
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: '#5F8C87',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 1,
   },
-  chatSendButtonDisabled: { opacity: 0.4 },
-  chatSendText: { fontSize: 14, fontWeight: '700', color: '#fff' },
+  chatSendButtonDisabled: {
+    opacity: 0.35,
+  },
+  chatSendText: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#FFFFFF',
+    marginTop: -1,
+  },
 
   tipPickerItem: {
     backgroundColor: colors.surfaceAlt, borderRadius: 14, padding: 14,
