@@ -108,7 +108,9 @@ const TipCard = React.memo(({
   onVote: (id: number, vote: 'up' | 'down') => void;
   isSaved: boolean;
 }) => {
-  const animalName = item.animal_name || 'Koala';
+  const allAnimals = Object.keys(ANIMAL_EMOJI_MAP);
+  const fallbackAnimal = allAnimals[item.id % allAnimals.length];
+  const animalName = item.animal_name || fallbackAnimal;
   const emoji = ANIMAL_EMOJI_MAP[animalName] || '🐨';
   const animalColor = ANIMAL_COLORS[animalName] || { bg: '#E7EFEA', accent: '#5F8C87' };
   const saveScale = useRef(new Animated.Value(1)).current;

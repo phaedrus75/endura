@@ -259,19 +259,20 @@ def hatch_egg(db: Session, user_id: int) -> tuple[bool, Optional[models.Animal],
 # ============ Study Tips CRUD ============
 
 def get_study_tips(db: Session, user_id: int, limit: int = 10) -> List[models.StudyTip]:
-    # Get tips the user hasn't viewed yet
+    if limit >= 50:
+        return db.query(models.StudyTip).order_by(models.StudyTip.id).all()
+
     viewed_ids = db.query(models.TipView.tip_id).filter(
         models.TipView.user_id == user_id
     ).subquery()
-    
+
     tips = db.query(models.StudyTip).filter(
         ~models.StudyTip.id.in_(viewed_ids)
     ).order_by(func.random()).limit(limit).all()
-    
-    # If not enough unviewed tips, get random tips
+
     if len(tips) < limit:
         tips = db.query(models.StudyTip).order_by(func.random()).limit(limit).all()
-    
+
     return tips
 
 
