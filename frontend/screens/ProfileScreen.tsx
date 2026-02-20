@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import {
   View,
   Text,
@@ -10,11 +10,16 @@ import {
   TextInput,
   Modal,
   Dimensions,
+  Image,
+  ActionSheetIOS,
+  Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { LinearGradient as ExpoLinearGradient } from 'expo-linear-gradient';
 import Svg, { Circle, Rect, G, Text as SvgText, Path, Defs, LinearGradient, Stop } from 'react-native-svg';
+import * as ImagePicker from 'expo-image-picker';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { colors, shadows, spacing, borderRadius } from '../theme/colors';
 import { useAuth } from '../contexts/AuthContext';
 import {
@@ -24,6 +29,8 @@ import {
   LeaderboardEntry,
   Friend,
 } from '../services/api';
+
+const PROFILE_PIC_KEY = 'user_profile_picture';
 
 const { width } = Dimensions.get('window');
 const CHART_WIDTH = width - spacing.lg * 2;
@@ -154,6 +161,90 @@ export default function ProfileScreen() {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [showFriendModal, setShowFriendModal] = useState(false);
   const [friendEmail, setFriendEmail] = useState('');
+  const [profilePic, setProfilePic] = useState<string | null>(null);
+
+  useEffect(() => {
+    AsyncStorage.getItem(PROFILE_PIC_KEY).then(uri => {
+      if (uri) setProfilePic(uri);
+    });
+  }, []);
+
+  const pickImage = async (source: 'camera' | 'gallery') => {
+    if (source === 'camera') {
+      const perm = await ImagePicker.requestCameraPermissionsAsync();
+      if (!perm.granted) {
+        Alert.alert('Permission needed', 'Please allow camera access to take a photo.');
+        return;
+      }
+      const result = await ImagePicker.launchCameraAsync({
+        allowsEditing: true,
+        aspect: [1, 1],
+        quality: 0.7,
+      });
+      if (!result.canceled && result.assets[0]) {
+        const uri = result.assets[0].uri;
+        setProfilePic(uri);
+        await AsyncStorage.setItem(PROFILE_PIC_KEY, uri);
+      }
+    } else {
+      const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!perm.granted) {
+        Alert.alert('Permission needed', 'Please allow photo library access.');
+        return;
+      }
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ['images'],
+        allowsEditing: true,
+        aspect: [1, 1],
+        quality: 0.7,
+      });
+      if (!result.canceled && result.assets[0]) {
+        const uri = result.assets[0].uri;
+        setProfilePic(uri);
+        await AsyncStorage.setItem(PROFILE_PIC_KEY, uri);
+      }
+    }
+  };
+
+  const handleAvatarPress = () => {
+    if (Platform.OS === 'ios') {
+      const options = profilePic
+        ? ['Take Photo', 'Choose from Library', 'Remove Photo', 'Cancel']
+        : ['Take Photo', 'Choose from Library', 'Cancel'];
+      ActionSheetIOS.showActionSheetWithOptions(
+        {
+          options,
+          cancelButtonIndex: options.length - 1,
+          destructiveButtonIndex: profilePic ? 2 : undefined,
+        },
+        async (buttonIndex) => {
+          if (buttonIndex === 0) pickImage('camera');
+          else if (buttonIndex === 1) pickImage('gallery');
+          else if (buttonIndex === 2 && profilePic) {
+            setProfilePic(null);
+            await AsyncStorage.removeItem(PROFILE_PIC_KEY);
+          }
+        },
+      );
+    } else {
+      const buttons: any[] = [
+        { text: 'Take Photo', onPress: () => pickImage('camera') },
+        { text: 'Choose from Library', onPress: () => pickImage('gallery') },
+      ];
+      if (profilePic) {
+        buttons.push({
+          text: 'Remove Photo',
+          style: 'destructive',
+          onPress: async () => {
+            setProfilePic(null);
+            await AsyncStorage.removeItem(PROFILE_PIC_KEY);
+          },
+        });
+      }
+      buttons.push({ text: 'Cancel', style: 'cancel' });
+      Alert.alert('Profile Photo', 'Choose an option', buttons);
+    }
+  };
 
   const loadData = async () => {
     try {
@@ -249,9 +340,18 @@ export default function ProfileScreen() {
           end={{ x: 1, y: 1 }}
           style={styles.profileHeader}
         >
-          <View style={styles.avatarContainer}>
-            <Text style={styles.avatarEmoji}>👤</Text>
-          </View>
+          <TouchableOpacity onPress={handleAvatarPress} activeOpacity={0.8}>
+            <View style={styles.avatarContainer}>
+              {profilePic ? (
+                <Image source={{ uri: profilePic }} style={styles.avatarImage} />
+              ) : (
+                <Text style={styles.avatarEmoji}>👤</Text>
+              )}
+              <View style={styles.cameraOverlay}>
+                <Text style={styles.cameraIcon}>📷</Text>
+              </View>
+            </View>
+          </TouchableOpacity>
           <Text style={styles.username}>{user?.username || 'Studier'}</Text>
           <Text style={styles.email}>{user?.email}</Text>
           <ExpoLinearGradient
@@ -538,8 +638,29 @@ const styles = StyleSheet.create({
     borderColor: colors.primary,
     ...shadows.medium,
   },
+  avatarImage: {
+    width: 94,
+    height: 94,
+    borderRadius: 47,
+  },
   avatarEmoji: {
     fontSize: 48,
+  },
+  cameraOverlay: {
+    position: 'absolute',
+    bottom: 0,
+    right: 0,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#5F8C87',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: '#FFFFFF',
+  },
+  cameraIcon: {
+    fontSize: 14,
   },
   username: {
     fontSize: 28,
