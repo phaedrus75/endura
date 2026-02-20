@@ -304,12 +304,20 @@ export default function ProgressScreen() {
             <Text style={styles.title}>My Progress</Text>
             <Text style={styles.subtitle}>Track your study journey 📈</Text>
           </View>
-          <TouchableOpacity 
-            style={styles.profileButton}
-            onPress={() => navigation.navigate('Profile')}
-          >
-            <Text style={styles.profileButtonEmoji}>👤</Text>
-          </TouchableOpacity>
+          <View style={{ flexDirection: 'row', gap: 8 }}>
+            <TouchableOpacity 
+              style={styles.profileButton}
+              onPress={() => navigation.navigate('Tips')}
+            >
+              <Text style={styles.profileButtonEmoji}>💡</Text>
+            </TouchableOpacity>
+            <TouchableOpacity 
+              style={styles.profileButton}
+              onPress={() => navigation.navigate('Profile')}
+            >
+              <Text style={styles.profileButtonEmoji}>👤</Text>
+            </TouchableOpacity>
+          </View>
         </View>
 
         {loadError && (

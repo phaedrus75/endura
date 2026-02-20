@@ -30,12 +30,11 @@ const TabIcon = ({ name, focused }: { name: string; focused: boolean }) => {
   const icons: Record<string, string> = {
     Home: '🏠',
     Timer: '⌛️',
-    Collection: '🥚',
+    Sanctuary: '🥚',
     Progress: '🏆',
-    Social: '👥',
-    Tips: '💡',
+    Friends: '👥',
   };
-  
+
   return (
     <View style={[styles.tabIcon, focused && styles.tabIconFocused]}>
       <Text style={[styles.tabEmoji, focused && styles.tabEmojiFocused]}>
@@ -60,10 +59,9 @@ function MainTabs() {
     >
       <Tab.Screen name="Home" component={HomeScreen} />
       <Tab.Screen name="Timer" component={TimerScreen} />
-      <Tab.Screen name="Collection" component={CollectionScreen} />
+      <Tab.Screen name="Sanctuary" component={CollectionScreen} />
       <Tab.Screen name="Progress" component={ProgressScreen} />
-      <Tab.Screen name="Social" component={SocialScreen} />
-      <Tab.Screen name="Tips" component={TipsScreen} />
+      <Tab.Screen name="Friends" component={SocialScreen} />
     </Tab.Navigator>
   );
 }
@@ -78,6 +76,16 @@ function MainStackNavigator() {
       <MainStack.Screen 
         name="Profile" 
         component={ProfileScreen}
+        options={{
+          presentation: 'modal',
+          animation: 'slide_from_bottom',
+          gestureEnabled: true,
+          gestureDirection: 'vertical',
+        }}
+      />
+      <MainStack.Screen 
+        name="Tips" 
+        component={TipsScreen}
         options={{
           presentation: 'modal',
           animation: 'slide_from_bottom',

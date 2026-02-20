@@ -471,13 +471,21 @@ export default function CollectionScreen() {
           end={{ x: 1, y: 1 }}
           style={styles.header}
         >
-          <Text style={styles.titleWhite}>My Collection</Text>
-          <TouchableOpacity 
-            style={styles.profileButton}
-            onPress={() => navigation.navigate('Profile')}
-          >
-            <Text style={styles.profileButtonEmoji}>👤</Text>
-          </TouchableOpacity>
+          <Text style={styles.titleWhite}>My Sanctuary</Text>
+          <View style={{ flexDirection: 'row', gap: 8 }}>
+            <TouchableOpacity 
+              style={styles.profileButton}
+              onPress={() => navigation.navigate('Tips')}
+            >
+              <Text style={styles.profileButtonEmoji}>💡</Text>
+            </TouchableOpacity>
+            <TouchableOpacity 
+              style={styles.profileButton}
+              onPress={() => navigation.navigate('Profile')}
+            >
+              <Text style={styles.profileButtonEmoji}>👤</Text>
+            </TouchableOpacity>
+          </View>
         </LinearGradient>
 
         {/* Progress Card */}

@@ -315,12 +315,20 @@ export default function HomeScreen() {
               <Text style={styles.greeting}>Hello, {user?.username || 'Friend'}!</Text>
               <Text style={styles.title}>Home</Text>
             </View>
-            <TouchableOpacity 
-              style={styles.profileButton}
-              onPress={() => navigation.navigate('Profile')}
-            >
-              <Text style={styles.profileButtonEmoji}>👤</Text>
-            </TouchableOpacity>
+            <View style={{ flexDirection: 'row', gap: 8 }}>
+              <TouchableOpacity 
+                style={styles.profileButton}
+                onPress={() => navigation.navigate('Tips')}
+              >
+                <Text style={styles.profileButtonEmoji}>💡</Text>
+              </TouchableOpacity>
+              <TouchableOpacity 
+                style={styles.profileButton}
+                onPress={() => navigation.navigate('Profile')}
+              >
+                <Text style={styles.profileButtonEmoji}>👤</Text>
+              </TouchableOpacity>
+            </View>
           </View>
 
           {/* User Stats Pills */}
@@ -334,7 +342,7 @@ export default function HomeScreen() {
             </TouchableOpacity>
             <TouchableOpacity 
               style={[styles.statPill, styles.statPillAnimals]}
-              onPress={() => navigation.navigate('Collection')}
+              onPress={() => navigation.navigate('Sanctuary')}
             >
               <Text style={styles.statPillIcon}>🐾</Text>
               <Text style={styles.statPillTextLight}>{stats?.animals_hatched || 0}</Text>

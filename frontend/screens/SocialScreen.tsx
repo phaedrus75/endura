@@ -17,7 +17,7 @@ import {
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useFocusEffect } from '@react-navigation/native';
+import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { colors, shadows, spacing, borderRadius } from '../theme/colors';
 import { useAuth } from '../contexts/AuthContext';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -78,6 +78,7 @@ interface IncomingReaction {
 
 export default function SocialScreen() {
   const { user } = useAuth();
+  const navigation = useNavigation<any>();
   const [tab, setTab] = useState<Tab>('Buddies');
   const [refreshing, setRefreshing] = useState(false);
 
@@ -671,19 +672,33 @@ export default function SocialScreen() {
     <SafeAreaView style={styles.container} edges={['top']}>
       <View style={styles.header}>
         <View>
-          <Text style={styles.headerTitle}>Social</Text>
+          <Text style={styles.headerTitle}>Friends</Text>
           <Text style={styles.headerSubtitle}>{friends.length} friends</Text>
         </View>
-        <TouchableOpacity onPress={() => setShowAddFriend(true)}>
-          <LinearGradient
-            colors={['#5F8C87', '#3B5466']}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 0 }}
-            style={styles.addFriendButton}
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+          <TouchableOpacity onPress={() => setShowAddFriend(true)}>
+            <LinearGradient
+              colors={['#5F8C87', '#3B5466']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 0 }}
+              style={styles.addFriendButton}
+            >
+              <Text style={styles.addFriendButtonText}>+ Add</Text>
+            </LinearGradient>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={{ width: 38, height: 38, borderRadius: 19, backgroundColor: '#FFFFFF', justifyContent: 'center', alignItems: 'center' }}
+            onPress={() => navigation.navigate('Tips')}
           >
-            <Text style={styles.addFriendButtonText}>+ Add Friend</Text>
-          </LinearGradient>
-        </TouchableOpacity>
+            <Text style={{ fontSize: 18 }}>💡</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={{ width: 38, height: 38, borderRadius: 19, backgroundColor: '#FFFFFF', justifyContent: 'center', alignItems: 'center' }}
+            onPress={() => navigation.navigate('Profile')}
+          >
+            <Text style={{ fontSize: 18 }}>👤</Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
       {/* Pending Requests */}

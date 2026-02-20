@@ -508,12 +508,20 @@ export default function TimerScreen() {
             <Text style={styles.title}>Study Timer</Text>
             <Text style={styles.subtitle}>Focus and earn eco-credits!</Text>
           </View>
-          <TouchableOpacity 
-            style={styles.profileButton}
-            onPress={() => navigation.navigate('Profile')}
-          >
-            <Text style={styles.profileButtonEmoji}>👤</Text>
-          </TouchableOpacity>
+          <View style={{ flexDirection: 'row', gap: 8 }}>
+            <TouchableOpacity 
+              style={styles.profileButton}
+              onPress={() => navigation.navigate('Tips')}
+            >
+              <Text style={styles.profileButtonEmoji}>💡</Text>
+            </TouchableOpacity>
+            <TouchableOpacity 
+              style={styles.profileButton}
+              onPress={() => navigation.navigate('Profile')}
+            >
+              <Text style={styles.profileButtonEmoji}>👤</Text>
+            </TouchableOpacity>
+          </View>
         </View>
         
         {/* Timer Display */}
@@ -904,7 +912,7 @@ export default function TimerScreen() {
                 style={styles.celebrationButtonSecondary}
                 onPress={() => {
                   closeCelebrationModal();
-                  (navigation as any).navigate('Collection');
+                  (navigation as any).navigate('Sanctuary');
                 }}
               >
                 <Text style={styles.celebrationButtonSecondaryText}>View Collection</Text>

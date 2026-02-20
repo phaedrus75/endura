@@ -15,7 +15,7 @@ import {
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useFocusEffect } from '@react-navigation/native';
+import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { colors, shadows, spacing, borderRadius } from '../theme/colors';
 import { tipsAPI, StudyTip } from '../services/api';
@@ -213,6 +213,7 @@ const TipCard = React.memo(({
 });
 
 export default function TipsScreen() {
+  const navigation = useNavigation<any>();
   const [tips, setTips] = useState<StudyTip[]>([]);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -353,9 +354,17 @@ export default function TipsScreen() {
     <SafeAreaView style={styles.container}>
       {/* Header */}
       <View style={styles.header}>
-        <View>
-          <Text style={styles.headerTitle}>Study Tips</Text>
-          <Text style={styles.headerSub}>Wisdom from our animal friends 🌿</Text>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+          <TouchableOpacity
+            onPress={() => navigation.goBack()}
+            style={styles.backBtn}
+          >
+            <Text style={styles.backBtnText}>‹</Text>
+          </TouchableOpacity>
+          <View>
+            <Text style={styles.headerTitle}>Study Tips</Text>
+            <Text style={styles.headerSub}>Wisdom from our animal friends 🌿</Text>
+          </View>
         </View>
         <TouchableOpacity onPress={() => setShowCreateModal(true)}>
           <LinearGradient
@@ -514,6 +523,20 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.lg,
     paddingTop: spacing.sm,
     paddingBottom: spacing.md,
+  },
+  backBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#E7EFEA',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  backBtnText: {
+    fontSize: 24,
+    fontWeight: '600',
+    color: colors.textPrimary,
+    marginTop: -2,
   },
   headerTitle: {
     fontSize: 24,
