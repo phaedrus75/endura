@@ -269,6 +269,10 @@ class GroupResponse(BaseModel):
 class GroupMessageCreate(BaseModel):
     content: str
 
+class GroupInvite(BaseModel):
+    username: Optional[str] = None
+    user_id: Optional[int] = None
+
 
 # ============ Activity Feed Schemas ============
 

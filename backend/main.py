@@ -24,6 +24,7 @@ except Exception as e:
 # Migrate: add columns that create_all won't add to existing tables
 _migrations = [
     ("study_sessions", "subject", "ALTER TABLE study_sessions ADD COLUMN subject VARCHAR"),
+    ("feed_reactions", "seen", "ALTER TABLE feed_reactions ADD COLUMN seen BOOLEAN DEFAULT FALSE"),
 ]
 try:
     with engine.connect() as conn:
@@ -66,7 +67,7 @@ def health_check():
     return {
         "status": "healthy", 
         "app": "Endura API", 
-        "version": "1.0.16",
+        "version": "1.0.20",
         "database": db_type,
         "database_configured": has_db_url,
         "db_url_preview": db_url[:30] + "..." if len(db_url) > 30 else db_url if db_url else "not set",
@@ -92,12 +93,7 @@ def seed_animals():
         existing_count = db.query(models.Animal).count()
         print(f"[STARTUP] Found {existing_count} animals in database")
         
-        # Skip if we already have enough animals
-        if existing_count >= 21:
-            print("[STARTUP] Already seeded, skipping")
-            return
-        
-        # 21 Endangered animals to seed (in unlock order)
+        # 30 Endangered animals to seed (in unlock order)
         animals = [
             {"name": "Sunda Island Tiger", "species": "Panthera tigris sondaica", "rarity": "legendary", "conservation_status": "Critically Endangered", "description": "The smallest tiger subspecies, found only in Sumatra"},
             {"name": "Javan Rhino", "species": "Rhinoceros sondaicus", "rarity": "legendary", "conservation_status": "Critically Endangered", "description": "One of the rarest large mammals on Earth"},
@@ -120,29 +116,150 @@ def seed_animals():
             {"name": "Langur Monkey", "species": "Trachypithecus poliocephalus", "rarity": "common", "conservation_status": "Critically Endangered", "description": "Golden-headed langur of Vietnam"},
             {"name": "Pacific Pocket Mouse", "species": "Chaetodipus fallax fallax", "rarity": "common", "conservation_status": "Endangered", "description": "Tiny mouse once thought extinct"},
             {"name": "Wallaby", "species": "Petrogale lateralis", "rarity": "common", "conservation_status": "Near Threatened", "description": "Small kangaroo relative from Australia"},
+            {"name": "Avahi", "species": "Avahi laniger", "rarity": "rare", "conservation_status": "Vulnerable", "description": "Woolly lemur of Madagascar's rainforests, active at night"},
+            {"name": "Blue Whale", "species": "Balaenoptera musculus", "rarity": "legendary", "conservation_status": "Endangered", "description": "The largest animal ever to have lived on Earth"},
+            {"name": "Gray Bat", "species": "Myotis grisescens", "rarity": "common", "conservation_status": "Vulnerable", "description": "Cave-dwelling bat of the southeastern United States"},
+            {"name": "Grey Parrot", "species": "Psittacus erithacus", "rarity": "rare", "conservation_status": "Endangered", "description": "Highly intelligent parrot known for remarkable speech ability"},
+            {"name": "Grizzly Bear", "species": "Ursus arctos horribilis", "rarity": "epic", "conservation_status": "Threatened", "description": "Powerful North American bear and icon of the wilderness"},
+            {"name": "Mountain Zebra", "species": "Equus zebra", "rarity": "rare", "conservation_status": "Vulnerable", "description": "Striped equine of southern Africa's mountain slopes"},
+            {"name": "Pangolin", "species": "Manis javanica", "rarity": "epic", "conservation_status": "Critically Endangered", "description": "The world's most trafficked mammal, covered in protective scales"},
+            {"name": "Seal", "species": "Monachus monachus", "rarity": "epic", "conservation_status": "Endangered", "description": "Mediterranean monk seal, one of the rarest marine mammals"},
+            {"name": "Wombat", "species": "Lasiorhinus krefftii", "rarity": "rare", "conservation_status": "Critically Endangered", "description": "Burrowing marsupial of northern Australia, extremely rare"},
         ]
         
+        # Clean up: remove duplicates and any animals not in the canonical list
+        canonical_names = [a["name"] for a in animals]
+        all_db_animals = db.query(models.Animal).all()
+        seen_names = set()
+        removed = 0
+        for animal in all_db_animals:
+            if animal.name not in canonical_names or animal.name in seen_names:
+                db.delete(animal)
+                removed += 1
+            else:
+                seen_names.add(animal.name)
+        if removed > 0:
+            print(f"[STARTUP] Removed {removed} duplicate/extra animals")
+
+        added = 0
         for animal_data in animals:
-            animal = models.Animal(**animal_data)
-            db.add(animal)
+            exists = db.query(models.Animal).filter(models.Animal.name == animal_data["name"]).first()
+            if not exists:
+                db.add(models.Animal(**animal_data))
+                added += 1
+        print(f"[STARTUP] Added {added} new animals")
         
         # Seed some study tips
         tips = [
-            {"content": "Use the Pomodoro Technique: 25 minutes of focus, 5 minute break.", "category": "focus"},
-            {"content": "Teach what you learn to someone else.", "category": "memorization"},
-            {"content": "Study in different locations for stronger memories.", "category": "memorization"},
-            {"content": "Take handwritten notes for better retention.", "category": "focus"},
-            {"content": "Exercise before studying boosts brain function.", "category": "motivation"},
-            {"content": "Use spaced repetition: 1 day, 3 days, 1 week, 2 weeks.", "category": "memorization"},
-            {"content": "Sleep is when your brain consolidates memories.", "category": "general"},
-            {"content": "Start with the hardest task when energy is highest.", "category": "focus"},
-            {"content": "Create a dedicated study space.", "category": "focus"},
-            {"content": "Use active recall instead of re-reading.", "category": "memorization"},
+            {"content": "Study something simple first. Small wins spark confidence, and confidence fuels focus for what comes next.", "category": "motivation"},
+            {"content": "After learning a concept, explain it out loud in the simplest way possible, as if you're teaching a child. If it feels complicated to explain, you haven't fully mastered it yet.", "category": "memorization"},
+            {"content": "Struggling to memorise something? Turn it into a ridiculous acronym or mnemonic. The sillier it is, the stickier it becomes.", "category": "memorization"},
+            {"content": "Review your notes or flashcards right before sleep. Your brain consolidates information overnight, just don't sacrifice your sleep or fall into a midnight spiral.", "category": "memorization"},
+            {"content": "If you're too tired to study, move your body first. A short workout or walk boosts blood flow, sharpens thinking, and resets your energy.", "category": "motivation"},
+            {"content": "Try studying while standing. It increases alertness, reduces fatigue, and cuts down sedentary time, just keep your posture aligned.", "category": "focus"},
+            {"content": "Add nature into your study routine. Rain sounds, birds, fresh air, or outdoor breaks stimulate creativity and calm your nervous system.", "category": "general"},
+            {"content": "Record your notes as voice memos and replay them while doing everyday tasks. Passive listening reinforces memory in unexpected moments.", "category": "memorization"},
+            {"content": "Take 10\u201320 minute power naps between study blocks. Short naps recharge focus and help cement what you just learned.", "category": "general"},
+            {"content": "If motivation is low, commit to just five minutes. Momentum often carries you further than willpower ever could.", "category": "motivation"},
+            {"content": "Study with your future in mind. Visualise your goals \u2014 grades, university, career \u2014 and create a moodboard if it helps. Purpose sustains discipline.", "category": "motivation"},
+            {"content": "Experiment with different formats: videos, podcasts, quizzes, interactive tools. Discover how your brain learns best \u2014 then optimise around it.", "category": "general"},
+            {"content": "When using flashcards, sort them into easy, medium, and hard piles. Prioritise the hard ones first and move cards up as you improve.", "category": "memorization"},
+            {"content": "Practice interleaving. Mix topics and question types instead of mastering one block at a time. It trains your brain for real exam conditions.", "category": "focus"},
+            {"content": "To expand vocabulary, build mind maps. Add synonyms, antonyms, and example sentences \u2014 visual connections deepen understanding.", "category": "memorization"},
+            {"content": "Surround yourself with focus. Libraries, quiet caf\u00e9s, or study groups raise your productivity ceiling. Environment shapes behaviour more than motivation does.", "category": "focus"},
+            {"content": "Study something easy first. Confidence triggers dopamine, and dopamine boosts focus for harder tasks afterwards.", "category": "motivation"},
+            {"content": "When revising a concept, doodle it, even if you're bad at drawing. The visual reinforcement cements it into your brain.", "category": "memorization"},
+            {"content": "Try \"reverse outlining\": after reading a chapter, write a mini outline from memory. Compare it to the actual one: it reveals what your brain kept and what slipped away.", "category": "memorization"},
+            {"content": "Assign each subject a unique scent (like citrus for biology, vanilla for English). Smell cues can trigger memory recall when you smell them again during tests.", "category": "memorization"},
+            {"content": "If you can't focus, record a time-lapse of yourself studying. The feeling of pretending someone's watching improves accountability whilst helping you stay off your phone.", "category": "focus"},
+            {"content": "End every study session by writing one sentence: \"Future me should start here.\" It gives future you an instant starting point.", "category": "focus"},
+            {"content": "Rephrase complex definitions into memes, tweets, or text messages you'd send to a friend. Humour = memory glue.", "category": "memorization"},
+            {"content": "Whisper your notes aloud instead of reading silently. Verbalising improves comprehension by activating auditory memory.", "category": "memorization"},
+            {"content": "Create a \"study trigger\" ritual: same candle, same pen, same song. Your brain will associate it with focus mode.", "category": "focus"},
+            {"content": "Write your weakest topic on a sticky note and put it on your wall. Seeing it daily reminds your brain to file it deeper.", "category": "memorization"},
+            {"content": "Use post-it notes to \"map\" your progress on a wall \u2014 when you complete a topic, remove the note. Watching the wall empty is addictive.", "category": "motivation"},
+            {"content": "Recreate test conditions once a week \u2014 no phone, no notes, timer on. It trains your stress response for real exams.", "category": "focus"},
+            {"content": "Keep a \"mistake log.\" Write down questions you got wrong and what tricked you. You'll start to see your thought patterns.", "category": "memorization"},
+            {"content": "End each week by rewriting the hardest concept of that week in one paragraph \u2014 it's the ultimate test of understanding.", "category": "memorization"},
+            {"content": "Set a recurring calendar event called \"Pretend Deadline.\" Trick your brain into urgency before the real one hits.", "category": "motivation"},
+            {"content": "Use Google Docs voice typing to speak your notes. Talking activates different memory networks than writing.", "category": "memorization"},
+            {"content": "Listen to instrumental tracks from video games \u2014 they're designed for focus and flow.", "category": "focus"},
+            {"content": "Record \"brain dump\" voice memos \u2014 talk through everything you remember without notes. Re-listen later to find gaps.", "category": "memorization"},
+            {"content": "Write equations or definitions on your mirror with a whiteboard marker. Review while brushing your teeth.", "category": "memorization"},
+            {"content": "Use your phone wallpaper to display a concept you're trying to memorize that week.", "category": "memorization"},
+            {"content": "Try studying with lo-fi music at 60\u201370 BPM \u2014 it synchronizes with your resting heart rate for calm alertness.", "category": "focus"},
+            {"content": "Schedule your hardest subjects right after meals. Glucose = better brain fuel.", "category": "general"},
+            {"content": "Set a specific \"quit time.\" It gives your study sessions boundaries, avoiding burnout.", "category": "focus"},
+            {"content": "Keep a \"Questions I Want to Ask\" list \u2014 not just what you don't know, but what you're curious about. Curiosity = long-term learning.", "category": "motivation"},
+            {"content": "End with gratitude: write one sentence about what you're proud of today. You'll associate studying with positivity.", "category": "motivation"},
+            {"content": "When memorizing, exaggerate emotion \u2014 whisper, laugh, gesture. Emotion makes information memorable.", "category": "memorization"},
+            {"content": "Caffeine works best after breakfast, not before. Drinking it on an empty stomach spikes cortisol, not focus.", "category": "general"},
+            {"content": "\"Recall before review\": try remembering everything you can before opening your notes. This strengthens neural retrieval pathways.", "category": "memorization"},
+            {"content": "Your prefrontal cortex tires out after about 45 minutes. Schedule deep work in sprints, not marathons.", "category": "focus"},
+            {"content": "Review material within 24 hours, then again 3 days later, then a week later. It's called the \"Ebbinghaus saving curve.\"", "category": "memorization"},
+            {"content": "Write instead of type when learning new content. Handwriting engages motor memory, which encodes information more deeply.", "category": "memorization"},
+            {"content": "When you feel mentally stuck, move your eyes side-to-side for 30 seconds. It activates both brain hemispheres and resets focus.", "category": "focus"},
+            {"content": "Keep your study room around 21\u00b0C (70\u00b0F). Too hot or too cold drains cognitive performance.", "category": "general"},
+            {"content": "Use background noise between 40\u201370 decibels \u2014 coffee shop hums are perfect for creative thinking.", "category": "focus"},
+            {"content": "Write in the margins \u2014 spacing helps the hippocampus chunk info into digestible bits.", "category": "memorization"},
+            {"content": "The brain loves questions more than answers. Rewrite your notes as \"why\" and \"how\" questions to activate curiosity networks.", "category": "memorization"},
+            {"content": "The smell of rosemary and peppermint has been shown to slightly improve alertness and recall. Diffuse it while studying.", "category": "general"},
+            {"content": "Hydration matters. Even 1% dehydration reduces concentration and working memory.", "category": "general"},
+            {"content": "Chewing crunchy food boosts blood flow to the brain by activating jaw muscles. Snack smart.", "category": "general"},
+            {"content": "Use light strategically. Natural light increases serotonin; warm lamps increase comfort but can make you drowsy.", "category": "general"},
+            {"content": "Smiling (even fake) releases dopamine \u2014 a micro-hack to lift focus mood.", "category": "motivation"},
+            {"content": "Alternate between visual, auditory, and kinesthetic tasks. This cross-wiring strengthens long-term storage.", "category": "memorization"},
+            {"content": "Don't scroll between study sets \u2014 the dopamine spikes from social media flatten focus for 20+ minutes afterwards.", "category": "focus"},
+            {"content": "Meditation before studying improves sustained attention by literally thickening your prefrontal cortex over time.", "category": "focus"},
+            {"content": "Space out flashcard sessions across days, not hours \u2014 your synapses need recovery time to strengthen.", "category": "memorization"},
+            {"content": "Every 20 minutes, look 20 feet away for 20 seconds. Protect your eyes, protect your focus.", "category": "general"},
+            {"content": "Swap pens halfway through a session. Micro-change refreshes attention.", "category": "focus"},
+            {"content": "Stand on one leg while recalling definitions. Balance increases cognitive engagement.", "category": "memorization"},
+            {"content": "Read difficult passages dramatically, like you're narrating a documentary. Emotion amplifies memory.", "category": "memorization"},
+            {"content": "After finishing a topic, close your eyes and replay it mentally. Visual rehearsal strengthens neural maps.", "category": "memorization"},
+            {"content": "Study facing a blank wall. Fewer visuals = fewer distractions.", "category": "focus"},
+            {"content": "Create a tiny reward ritual after finishing a section. Completion becomes addictive.", "category": "motivation"},
+            {"content": "Write formulas on scrap paper repeatedly until the page feels automatic. Muscle memory matters.", "category": "memorization"},
+            {"content": "Switch between sitting on a chair and the floor. Posture shifts reset energy.", "category": "general"},
+            {"content": "Limit yourself to one highlighter colour. Over-highlighting dilutes focus.", "category": "focus"},
+            {"content": "Write what you learned before checking if it's correct. Confidence grows through retrieval.", "category": "memorization"},
+            {"content": "End sessions by predicting one exam question. Anticipation deepens mastery.", "category": "memorization"},
+            {"content": "Keep a \"micro-goal\" list for days when motivation is low. Tiny wins count.", "category": "motivation"},
+            {"content": "Switch to pen and paper when stuck digitally. Analog clears cognitive fog.", "category": "focus"},
+            {"content": "Read notes in a different accent. Novelty boosts attention.", "category": "memorization"},
+            {"content": "Write summaries without using the textbook's vocabulary. Translation proves comprehension.", "category": "memorization"},
+            {"content": "Alternate between reading and writing every 10 minutes. Avoid passive absorption.", "category": "focus"},
+            {"content": "Start sessions with your weakest subject once a week. Courage compounds.", "category": "motivation"},
+            {"content": "Rewrite definitions in your own slang. Personal language sticks.", "category": "memorization"},
+            {"content": "Write memory triggers in the margins. Tiny cues unlock big recall.", "category": "memorization"},
+            {"content": "Begin studying at the same time daily. Routine reduces resistance.", "category": "focus"},
+            {"content": "If your exam is in the morning, in the days leading up to it, study the content at the same exact time. Routine matters.", "category": "focus"},
+            {"content": "Study with a straight spine. Posture influences alertness.", "category": "general"},
+            {"content": "Study with intentional breathing: inhale 4, exhale 6. Calm equals clarity.", "category": "focus"},
+            {"content": "Rewrite notes vertically instead of horizontally. Layout novelty refreshes thinking.", "category": "memorization"},
+            {"content": "Tap your pen lightly while recalling facts. Rhythm can anchor memory.", "category": "memorization"},
+            {"content": "Turn diagrams into stories. Narrative sticks better than labels.", "category": "memorization"},
+            {"content": "Keep a visible \"distraction list.\" Write distractions down instead of acting on them.", "category": "focus"},
+            {"content": "Make your study space slightly cooler than comfortable. Alertness increases.", "category": "general"},
+            {"content": "Avoid multitasking entirely. Single-tasking maximises depth.", "category": "focus"},
+            {"content": "Make your own practice test before searching online. Creation deepens mastery.", "category": "memorization"},
+            {"content": "Use bold headings to create mental anchors. Structure guides memory.", "category": "memorization"},
+            {"content": "Use tactile tools like index cards over screens. Touch enhances encoding.", "category": "memorization"},
+            {"content": "Rewrite tricky points three different ways. Multiple angles deepen mastery.", "category": "memorization"},
+            {"content": "Study slightly earlier than you think you need to. Time cushion reduces stress.", "category": "motivation"},
+            {"content": "Revisit old notes monthly. Long-term memory needs rehearsal.", "category": "memorization"},
+            {"content": "Set a 3-minute \"confusion sprint.\" Tackle the part you've been avoiding immediately.", "category": "motivation"},
+            {"content": "Explain a concept using only analogies. If you can compare it, you understand it.", "category": "memorization"},
+            {"content": "Create a \"topic ladder\" \u2014 list subtopics from easiest to hardest and climb upward.", "category": "focus"},
         ]
-        
+
+        existing_tips = db.query(models.StudyTip).count()
+        if existing_tips > 0:
+            db.query(models.StudyTip).delete()
+            print(f"[STARTUP] Cleared {existing_tips} old tips")
+
         for tip_data in tips:
-            tip = models.StudyTip(**tip_data)
-            db.add(tip)
+            db.add(models.StudyTip(**tip_data))
         
         db.commit()
         print("Successfully seeded animals and tips!")
@@ -652,6 +769,32 @@ def get_group_messages(
 ):
     return crud.get_group_messages(db, group_id)
 
+@app.post("/groups/{group_id}/invite")
+def invite_to_group(
+    group_id: int,
+    data: schemas.GroupInvite,
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    member = db.query(models.GroupMember).filter(
+        models.GroupMember.group_id == group_id,
+        models.GroupMember.user_id == current_user.id
+    ).first()
+    if not member:
+        raise HTTPException(status_code=403, detail="You are not a member of this group")
+    target = None
+    if data.user_id:
+        target = db.query(models.User).filter(models.User.id == data.user_id).first()
+    elif data.username:
+        target = db.query(models.User).filter(models.User.username == data.username).first()
+    if not target:
+        raise HTTPException(status_code=404, detail="User not found")
+    group, error = crud.join_group(db, target.id, group_id)
+    if error:
+        raise HTTPException(status_code=400, detail=error)
+    display_name = target.username or target.email.split('@')[0] if target.email else "User"
+    return {"message": f"{display_name} has been added to the group"}
+
 
 # ============ Activity Feed Endpoints ============
 
@@ -661,6 +804,37 @@ def get_feed(
     db: Session = Depends(get_db)
 ):
     return crud.get_friend_feed(db, current_user.id)
+
+@app.get("/feed/reactions/new")
+def get_new_reactions(
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    my_events = db.query(models.ActivityEvent).filter(
+        models.ActivityEvent.user_id == current_user.id
+    ).all()
+    event_ids = [e.id for e in my_events]
+    if not event_ids:
+        return []
+    unseen = db.query(models.FeedReaction).filter(
+        models.FeedReaction.event_id.in_(event_ids),
+        models.FeedReaction.user_id != current_user.id,
+        models.FeedReaction.seen == False
+    ).all()
+    results = []
+    for r in unseen:
+        sender = db.query(models.User).filter(models.User.id == r.user_id).first()
+        event = next((e for e in my_events if e.id == r.event_id), None)
+        results.append({
+            "id": r.id,
+            "sender_username": sender.username if sender else "Someone",
+            "reaction": r.reaction,
+            "event_description": event.description if event else "",
+            "created_at": r.created_at.isoformat() if r.created_at else "",
+        })
+        r.seen = True
+    db.commit()
+    return results
 
 @app.post("/feed/{event_id}/react")
 def react_to_event(

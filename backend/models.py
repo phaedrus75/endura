@@ -252,8 +252,9 @@ class FeedReaction(Base):
     id = Column(Integer, primary_key=True, index=True)
     event_id = Column(Integer, ForeignKey("activity_events.id"))
     user_id = Column(Integer, ForeignKey("users.id"))
-    reaction = Column(String, nullable=False)  # "nice", "keep_going", "fire", "wow"
+    reaction = Column(String, nullable=False)  # "nice", "keep_going", "fire", "wow", "heart"
     created_at = Column(DateTime, default=datetime.utcnow)
+    seen = Column(Boolean, default=False)
 
     event = relationship("ActivityEvent", back_populates="reactions")
     user = relationship("User")

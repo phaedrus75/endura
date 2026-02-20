@@ -413,6 +413,11 @@ export const groupsAPI = {
     }),
   getMessages: (groupId: number) =>
     apiFetch<GroupMessage[]>(`/groups/${groupId}/messages`),
+  invite: (groupId: number, opts: { username?: string; user_id?: number }) =>
+    apiFetch<{ message: string }>(`/groups/${groupId}/invite`, {
+      method: 'POST',
+      body: JSON.stringify(opts),
+    }),
 };
 
 // Activity Feed API
@@ -423,6 +428,14 @@ export const feedAPI = {
       method: 'POST',
       body: JSON.stringify({ reaction }),
     }),
+  getNewReactions: () =>
+    apiFetch<{
+      id: number;
+      sender_username: string;
+      reaction: string;
+      event_description: string;
+      created_at: string;
+    }[]>('/feed/reactions/new'),
 };
 
 // Badges API

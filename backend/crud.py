@@ -896,6 +896,8 @@ def check_badges(db: Session, user_id: int, session_hour: int = None, session_mi
         if r:
             new_badges.append(r)
 
+    MAX_BADGES_PER_CHECK = 2
+
     ts = user.total_sessions or 0
     tm = user.total_study_minutes or 0
     cs = user.current_streak or 0
@@ -904,37 +906,42 @@ def check_badges(db: Session, user_id: int, session_hour: int = None, session_mi
     tc = user.total_coins or 0
     cc = user.current_coins or 0
 
+    def capped_award(bid):
+        if len(new_badges) >= MAX_BADGES_PER_CHECK:
+            return
+        award(bid)
+
     # Getting Started
-    if ts >= 1: award("first_steps")
-    if ts >= 5: award("finding_rhythm")
-    if ts >= 10: award("double_digits")
-    if ts >= 25: award("halfway_hero")
-    if ts >= 100: award("session_centurion")
+    if ts >= 1: capped_award("first_steps")
+    if ts >= 8: capped_award("finding_rhythm")
+    if ts >= 20: capped_award("double_digits")
+    if ts >= 40: capped_award("halfway_hero")
+    if ts >= 100: capped_award("session_centurion")
 
     # Streaks
-    if best_streak >= 3: award("on_fire")
-    if best_streak >= 5: award("momentum_builder")
-    if best_streak >= 7: award("week_warrior")
-    if best_streak >= 14: award("fortnight_force")
-    if best_streak >= 30: award("monthly_machine")
-    if best_streak >= 60: award("iron_will")
-    if best_streak >= 100: award("unbreakable")
+    if best_streak >= 3: capped_award("on_fire")
+    if best_streak >= 5: capped_award("momentum_builder")
+    if best_streak >= 7: capped_award("week_warrior")
+    if best_streak >= 21: capped_award("fortnight_force")
+    if best_streak >= 45: capped_award("monthly_machine")
+    if best_streak >= 90: capped_award("iron_will")
+    if best_streak >= 150: capped_award("unbreakable")
 
     # Study Time (session length)
     if session_minutes is not None:
-        if session_minutes >= 60: award("hour_of_power")
-        if session_minutes >= 120: award("endurance_mode")
+        if session_minutes >= 60: capped_award("hour_of_power")
+        if session_minutes >= 120: capped_award("endurance_mode")
     # Study Time (cumulative)
-    if tm >= 600: award("marathon_mind")
-    if tm >= 3000: award("study_veteran")
-    if tm >= 1000: award("thousand_minute_club")
-    if tm >= 6000: award("time_lord")
+    if tm >= 600: capped_award("marathon_mind")
+    if tm >= 1500: capped_award("thousand_minute_club")
+    if tm >= 3000: capped_award("study_veteran")
+    if tm >= 6000: capped_award("time_lord")
 
     # Time of Day
     if session_hour is not None:
-        if session_hour < 7: award("early_bird")
-        if session_hour >= 23 or session_hour < 4: award("night_owl")
-        if 12 <= session_hour < 13: award("lunch_break_learner")
+        if session_hour < 7: capped_award("early_bird")
+        if session_hour >= 23 or session_hour < 4: capped_award("night_owl")
+        if 12 <= session_hour < 13: capped_award("lunch_break_learner")
 
     # Early bird / night owl multi-session
     early_count = db.query(models.StudySession).filter(
@@ -942,8 +949,8 @@ def check_badges(db: Session, user_id: int, session_hour: int = None, session_mi
     ).all()
     early_sessions = sum(1 for s in early_count if s.completed_at and s.completed_at.hour < 8)
     night_sessions = sum(1 for s in early_count if s.completed_at and s.completed_at.hour >= 22)
-    if early_sessions >= 5: award("dawn_patrol")
-    if night_sessions >= 5: award("moonlight_scholar")
+    if early_sessions >= 5: capped_award("dawn_patrol")
+    if night_sessions >= 5: capped_award("moonlight_scholar")
 
     # Weekend scholar
     today = datetime.utcnow().date()
@@ -954,7 +961,7 @@ def check_badges(db: Session, user_id: int, session_hour: int = None, session_mi
         models.StudySession.completed_at >= datetime.combine(monday, datetime.min.time())
     ).all()
     week_days = {s.completed_at.weekday() for s in week_sessions if s.completed_at}
-    if 5 in week_days and 6 in week_days: award("weekend_scholar")
+    if 5 in week_days and 6 in week_days: capped_award("weekend_scholar")
 
     # Comeback kid
     if user.last_study_date and "comeback_kid" not in already:
@@ -963,23 +970,23 @@ def check_badges(db: Session, user_id: int, session_hour: int = None, session_mi
         ).order_by(models.StudySession.completed_at.desc()).limit(2).all()
         if len(all_sessions) >= 2 and all_sessions[0].completed_at and all_sessions[1].completed_at:
             gap = (all_sessions[0].completed_at - all_sessions[1].completed_at).days
-            if gap >= 7: award("comeback_kid")
+            if gap >= 7: capped_award("comeback_kid")
 
     # Animals
     total_animals = db.query(models.UserAnimal).filter(models.UserAnimal.user_id == user_id).count()
     unique_animals = db.query(models.UserAnimal.animal_id).filter(
         models.UserAnimal.user_id == user_id
     ).distinct().count()
-    if total_animals >= 1: award("first_friend")
-    if unique_animals >= 5: award("growing_family")
-    if total_animals >= 25: award("collectors_pride")
-    if unique_animals >= 21: award("full_sanctuary")
+    if total_animals >= 1: capped_award("first_friend")
+    if unique_animals >= 8: capped_award("growing_family")
+    if total_animals >= 25: capped_award("collectors_pride")
+    if unique_animals >= 30: capped_award("full_sanctuary")
 
     # Favourite friend (same animal 5 times)
     dupes = db.query(func.count(models.UserAnimal.id)).filter(
         models.UserAnimal.user_id == user_id
     ).group_by(models.UserAnimal.animal_id).all()
-    if any(c[0] >= 5 for c in dupes): award("favourite_friend")
+    if any(c[0] >= 5 for c in dupes): capped_award("favourite_friend")
 
     # Speed hatcher (3 in one day)
     today_start = datetime.combine(today, datetime.min.time())
@@ -987,20 +994,20 @@ def check_badges(db: Session, user_id: int, session_hour: int = None, session_mi
         models.UserAnimal.user_id == user_id,
         models.UserAnimal.hatched_at >= today_start
     ).count()
-    if today_hatches >= 3: award("speed_hatcher")
+    if today_hatches >= 3: capped_award("speed_hatcher")
 
     # Naming ceremony
     named = db.query(models.UserAnimal).filter(
         models.UserAnimal.user_id == user_id,
         models.UserAnimal.nickname != None
     ).count()
-    if named >= 5: award("naming_ceremony")
+    if named >= 5: capped_award("naming_ceremony")
 
     # Eco-Credits
-    if cc >= 500: award("saver")
-    if tc >= 5000: award("eco_mogul")
+    if cc >= 500: capped_award("saver")
+    if tc >= 5000: capped_award("eco_mogul")
     spent = tc - cc
-    if spent >= 1000: award("big_spender")
+    if spent >= 1000: capped_award("big_spender")
 
     # Subjects
     subject_query = db.query(
@@ -1012,12 +1019,12 @@ def check_badges(db: Session, user_id: int, session_hour: int = None, session_mi
     ).group_by(models.StudySession.subject).all()
 
     distinct_subjects = len([s for s in subject_query if s[0]])
-    if distinct_subjects >= 3: award("subject_explorer")
-    if distinct_subjects >= 5: award("renaissance_student")
+    if distinct_subjects >= 3: capped_award("subject_explorer")
+    if distinct_subjects >= 6: capped_award("renaissance_student")
 
     max_subject_mins = max((s[1] for s in subject_query if s[1]), default=0)
-    if max_subject_mins >= 600: award("deep_diver")
-    if max_subject_mins >= 1500: award("subject_champion")
+    if max_subject_mins >= 600: capped_award("deep_diver")
+    if max_subject_mins >= 1500: capped_award("subject_champion")
 
     # Balanced brain: 3+ subjects in current week
     week_subjects = db.query(models.StudySession.subject).filter(
@@ -1025,14 +1032,14 @@ def check_badges(db: Session, user_id: int, session_hour: int = None, session_mi
         models.StudySession.completed_at >= datetime.combine(monday, datetime.min.time()),
         models.StudySession.subject != None
     ).distinct().count()
-    if week_subjects >= 3: award("balanced_brain")
+    if week_subjects >= 3: capped_award("balanced_brain")
 
     # Friends count
     friend_count = db.query(models.Friendship).filter(
         models.Friendship.status == "accepted",
         ((models.Friendship.user_id == user_id) | (models.Friendship.friend_id == user_id))
     ).count()
-    if friend_count >= 10: award("social_butterfly")
+    if friend_count >= 10: capped_award("social_butterfly")
 
     if new_badges:
         db.commit()

@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useRef } from 'react';
+import React, { useState, useCallback, useRef, useEffect } from 'react';
 import {
   View,
   Text,
@@ -13,7 +13,9 @@ import {
   KeyboardAvoidingView,
   Platform,
   FlatList,
+  Animated,
 } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 import { colors, shadows, spacing, borderRadius } from '../theme/colors';
@@ -34,7 +36,16 @@ const REACTIONS = [
   { key: 'keep_going', label: 'Keep going!', emoji: '💪' },
   { key: 'fire', label: 'Fire!', emoji: '🔥' },
   { key: 'wow', label: 'Wow!', emoji: '🤩' },
+  { key: 'heart', label: 'Love!', emoji: '❤️' },
 ];
+
+const REACTION_MESSAGES: Record<string, string[]> = {
+  nice: ['thinks you did great!', 'is cheering you on!', 'clapped for you!'],
+  keep_going: ['believes in you!', 'is rooting for you!', 'says keep pushing!'],
+  fire: ['thinks you\'re on fire!', 'is impressed!', 'says you\'re crushing it!'],
+  wow: ['is amazed by you!', 'can\'t believe it!', 'is blown away!'],
+  heart: ['sent you love!', 'loves what you did!', 'is sending good vibes!'],
+};
 
 function timeAgo(dateStr: string): string {
   const diff = Date.now() - new Date(dateStr).getTime();
@@ -57,6 +68,13 @@ const EVENT_ICONS: Record<string, string> = {
   group_goal_met: '🎉',
 };
 
+interface IncomingReaction {
+  id: number;
+  sender_username: string;
+  reaction: string;
+  event_description: string;
+}
+
 export default function SocialScreen() {
   const { user } = useAuth();
   const [tab, setTab] = useState<Tab>('Buddies');
@@ -75,9 +93,12 @@ export default function SocialScreen() {
   const [showCreateGroup, setShowCreateGroup] = useState(false);
   const [groupName, setGroupName] = useState('');
   const [groupGoal, setGroupGoal] = useState('500');
+  const [selectedGroupFriends, setSelectedGroupFriends] = useState<Set<number>>(new Set());
   const [selectedGroup, setSelectedGroup] = useState<StudyGroup | null>(null);
   const [messages, setMessages] = useState<GroupMessage[]>([]);
   const [chatInput, setChatInput] = useState('');
+  const [showInviteModal, setShowInviteModal] = useState(false);
+  const [inviteGroupId, setInviteGroupId] = useState<number | null>(null);
 
   // Feed
   const [feed, setFeed] = useState<FeedEvent[]>([]);
@@ -88,6 +109,64 @@ export default function SocialScreen() {
   const [pendingRequests, setPendingRequests] = useState<{ id: number; user_id: number; username: string | null; email: string }[]>([]);
   const [showAddFriend, setShowAddFriend] = useState(false);
   const [addFriendHandle, setAddFriendHandle] = useState('');
+
+  // Reaction notification
+  const [showReactionModal, setShowReactionModal] = useState(false);
+  const [incomingReactions, setIncomingReactions] = useState<IncomingReaction[]>([]);
+  const reactionScale = useRef(new Animated.Value(0)).current;
+  const reactionOpacity = useRef(new Animated.Value(0)).current;
+  const emojiFloat = useRef(new Animated.Value(0)).current;
+
+  const reactionMsgIdx = useRef(0);
+  const showReactionPopup = (reactions: IncomingReaction[]) => {
+    reactionMsgIdx.current = Math.floor(Math.random() * 3);
+    setIncomingReactions(reactions);
+    setShowReactionModal(true);
+    reactionScale.setValue(0);
+    reactionOpacity.setValue(0);
+    emojiFloat.setValue(0);
+    Animated.parallel([
+      Animated.spring(reactionScale, { toValue: 1, friction: 4, tension: 60, useNativeDriver: true }),
+      Animated.timing(reactionOpacity, { toValue: 1, duration: 300, useNativeDriver: true }),
+    ]).start(() => {
+      Animated.loop(
+        Animated.sequence([
+          Animated.timing(emojiFloat, { toValue: -8, duration: 1200, useNativeDriver: true }),
+          Animated.timing(emojiFloat, { toValue: 0, duration: 1200, useNativeDriver: true }),
+        ])
+      ).start();
+    });
+  };
+
+  const dismissReactionModal = () => {
+    Animated.parallel([
+      Animated.timing(reactionScale, { toValue: 0, duration: 200, useNativeDriver: true }),
+      Animated.timing(reactionOpacity, { toValue: 0, duration: 200, useNativeDriver: true }),
+    ]).start(() => {
+      setShowReactionModal(false);
+      setIncomingReactions([]);
+    });
+  };
+
+  const showReactionPopupRef = useRef(showReactionPopup);
+  showReactionPopupRef.current = showReactionPopup;
+
+  const checkNewReactions = useCallback(async () => {
+    try {
+      const newReactions = await feedAPI.getNewReactions();
+      if (newReactions && newReactions.length > 0) {
+        showReactionPopupRef.current(newReactions);
+      }
+    } catch {}
+  }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      checkNewReactions();
+      const interval = setInterval(checkNewReactions, 30000);
+      return () => clearInterval(interval);
+    }, [checkNewReactions])
+  );
 
   const loadData = useCallback(async () => {
     try {
@@ -179,14 +258,53 @@ export default function SocialScreen() {
   const handleCreateGroup = async () => {
     if (!groupName.trim()) return;
     try {
-      await groupsAPI.create(groupName.trim(), parseInt(groupGoal) || 500);
+      const result = await groupsAPI.create(groupName.trim(), parseInt(groupGoal) || 500);
+      const invited: string[] = [];
+      for (const friendId of selectedGroupFriends) {
+        const friend = friends.find(f => f.id === friendId);
+        if (friend) {
+          try {
+            await groupsAPI.invite(result.id, friend.username
+              ? { username: friend.username }
+              : { user_id: friend.id }
+            );
+            invited.push(friend.username || friend.email?.split('@')[0] || 'friend');
+          } catch {}
+        }
+      }
       setShowCreateGroup(false);
-      setGroupName(''); setGroupGoal('500');
-      Alert.alert('Group Created!', 'Share the group ID with friends to invite them.');
+      setGroupName(''); setGroupGoal('500'); setSelectedGroupFriends(new Set());
+      const msg = invited.length > 0
+        ? `Group created and ${invited.join(', ')} ${invited.length === 1 ? 'has' : 'have'} been added!`
+        : 'Group created! Add friends from the group card.';
+      Alert.alert('Group Created!', msg);
       loadData();
     } catch (e: any) {
       Alert.alert('Error', e.message || 'Could not create group');
     }
+  };
+
+  const handleInviteFriend = async (groupId: number, friend: Friend) => {
+    try {
+      await groupsAPI.invite(groupId, friend.username
+        ? { username: friend.username }
+        : { user_id: friend.id }
+      );
+      const name = friend.username || friend.email?.split('@')[0] || 'Friend';
+      Alert.alert('Added!', `${name} has been added to the group.`);
+      loadData();
+    } catch (e: any) {
+      Alert.alert('Error', e.message || 'Could not add friend');
+    }
+  };
+
+  const toggleGroupFriend = (friendId: number) => {
+    setSelectedGroupFriends(prev => {
+      const next = new Set(prev);
+      if (next.has(friendId)) next.delete(friendId);
+      else next.add(friendId);
+      return next;
+    });
   };
 
   const openGroupChat = async (group: StudyGroup) => {
@@ -217,10 +335,17 @@ export default function SocialScreen() {
 
   // ---- Render ----
   const renderBuddies = () => (
-    <ScrollView contentContainerStyle={styles.tabContent} showsVerticalScrollIndicator={false}>
-      <TouchableOpacity style={styles.createButton} onPress={() => setShowCreatePact(true)}>
-        <Text style={styles.createButtonIcon}>🤝</Text>
-        <Text style={styles.createButtonText}>New Study Pact</Text>
+    <View style={styles.tabContent}>
+      <TouchableOpacity onPress={() => setShowCreatePact(true)}>
+        <LinearGradient
+          colors={['#5F8C87', '#3B5466']}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 0 }}
+          style={styles.createButton}
+        >
+          <Text style={styles.createButtonIcon}>🤝</Text>
+          <Text style={styles.createButtonText}>New Study Pact</Text>
+        </LinearGradient>
       </TouchableOpacity>
 
       {pacts.length === 0 ? (
@@ -263,21 +388,35 @@ export default function SocialScreen() {
               </View>
             )}
             {isPending && (
-              <TouchableOpacity style={styles.acceptButton} onPress={() => handleAcceptPact(p.id)}>
-                <Text style={styles.acceptButtonText}>Accept Pact</Text>
+              <TouchableOpacity onPress={() => handleAcceptPact(p.id)}>
+                <LinearGradient
+                  colors={['#5F8C87', '#3B5466']}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 0 }}
+                  style={styles.acceptButton}
+                >
+                  <Text style={styles.acceptButtonText}>Accept Pact</Text>
+                </LinearGradient>
               </TouchableOpacity>
             )}
           </View>
         );
       })}
-    </ScrollView>
+    </View>
   );
 
   const renderGroups = () => (
-    <ScrollView contentContainerStyle={styles.tabContent} showsVerticalScrollIndicator={false}>
-      <TouchableOpacity style={styles.createButton} onPress={() => setShowCreateGroup(true)}>
-        <Text style={styles.createButtonIcon}>👥</Text>
-        <Text style={styles.createButtonText}>Create Study Group</Text>
+    <View style={styles.tabContent}>
+      <TouchableOpacity onPress={() => setShowCreateGroup(true)}>
+        <LinearGradient
+          colors={['#5F8C87', '#3B5466']}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 0 }}
+          style={styles.createButton}
+        >
+          <Text style={styles.createButtonIcon}>👥</Text>
+          <Text style={styles.createButtonText}>Create Study Group</Text>
+        </LinearGradient>
       </TouchableOpacity>
 
       {groups.length === 0 ? (
@@ -288,38 +427,125 @@ export default function SocialScreen() {
         </View>
       ) : groups.map(g => {
         const progress = g.goal_minutes > 0 ? Math.min((g.total_minutes / g.goal_minutes) * 100, 100) : 0;
+        const memberIds = new Set(g.members.map(m => m.user_id));
+        const invitableFriends = friends.filter(f => !memberIds.has(f.id));
         return (
-          <TouchableOpacity key={g.id} style={styles.groupCard} onPress={() => openGroupChat(g)} activeOpacity={0.7}>
-            <View style={styles.groupHeader}>
-              <Text style={styles.groupName}>{g.name}</Text>
-              {g.goal_met && <Text style={styles.goalMetBadge}>🎉 Goal Met!</Text>}
+          <View key={g.id} style={styles.groupCard}>
+            <TouchableOpacity onPress={() => openGroupChat(g)} activeOpacity={0.7}>
+              <View style={styles.groupHeader}>
+                <Text style={styles.groupName}>{g.name}</Text>
+                {g.goal_met && <Text style={styles.goalMetBadge}>🎉 Goal Met!</Text>}
+              </View>
+              <View style={styles.groupProgressBar}>
+                <LinearGradient
+                  colors={['#A8C8D8', '#5F8C87']}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 0 }}
+                  style={[styles.groupProgressFill, { width: `${Math.max(progress, 2)}%` }]}
+                />
+              </View>
+              <Text style={styles.groupProgressText}>
+                {g.total_minutes} / {g.goal_minutes} min
+              </Text>
+              <View style={styles.groupMembersRow}>
+                {g.members.slice(0, 5).map(m => (
+                  <View key={m.user_id} style={styles.memberChip}>
+                    <Text style={styles.memberChipText}>{m.username || '?'}</Text>
+                    <Text style={styles.memberChipMins}>{m.minutes_contributed}m</Text>
+                  </View>
+                ))}
+                {g.members.length > 5 && (
+                  <Text style={styles.memberMore}>+{g.members.length - 5}</Text>
+                )}
+              </View>
+            </TouchableOpacity>
+
+            <View style={styles.groupActions}>
+              <TouchableOpacity
+                style={styles.groupActionBtn}
+                onPress={() => openGroupChat(g)}
+                activeOpacity={0.7}
+              >
+                <Text style={styles.groupActionEmoji}>💬</Text>
+                <Text style={styles.groupActionText}>Chat</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.groupActionBtn}
+                onPress={() => { setInviteGroupId(g.id); setShowInviteModal(true); }}
+                activeOpacity={0.7}
+              >
+                <Text style={styles.groupActionEmoji}>➕</Text>
+                <Text style={styles.groupActionText}>Add Friends</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.groupActionBtnHighlight}
+                onPress={() => {
+                  Alert.alert(
+                    '🐣 Hatch Together',
+                    'Start a group study session! When your group hits the study goal, everyone shares custody of a rare animal.\n\nKeep studying as a group to unlock it!',
+                    [
+                      { text: 'Got it!', style: 'default' },
+                      { text: 'Start Session', onPress: () => openGroupChat(g) },
+                    ]
+                  );
+                }}
+                activeOpacity={0.7}
+              >
+                <LinearGradient
+                  colors={['#A8C8D8', '#5F8C87']}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 0 }}
+                  style={styles.groupActionBtnGradient}
+                >
+                  <Text style={styles.groupActionEmoji}>🥚</Text>
+                  <Text style={styles.groupActionTextWhite}>Hatch Together</Text>
+                </LinearGradient>
+              </TouchableOpacity>
             </View>
-            <View style={styles.groupProgressBar}>
-              <View style={[styles.groupProgressFill, { width: `${progress}%` }]} />
+
+            <View style={styles.groupFeatureRow}>
+              <TouchableOpacity
+                style={styles.groupFeatureChip}
+                onPress={() => {
+                  Alert.alert('🎯 Group Challenge', `Challenge your group to beat ${g.goal_minutes} minutes this week! Everyone in "${g.name}" contributes study time toward the shared goal.`);
+                }}
+              >
+                <Text style={styles.groupFeatureEmoji}>🎯</Text>
+                <Text style={styles.groupFeatureText}>Challenge</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.groupFeatureChip}
+                onPress={() => {
+                  const sorted = [...g.members].sort((a, b) => b.minutes_contributed - a.minutes_contributed);
+                  const leaderboard = sorted.map((m, i) =>
+                    `${i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `${i+1}.`} ${m.username || '?'} — ${m.minutes_contributed}m`
+                  ).join('\n');
+                  Alert.alert(`📊 ${g.name} Leaderboard`, leaderboard || 'No activity yet!');
+                }}
+              >
+                <Text style={styles.groupFeatureEmoji}>📊</Text>
+                <Text style={styles.groupFeatureText}>Leaderboard</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.groupFeatureChip}
+                onPress={() => {
+                  Alert.alert('🏆 Group Streak', `Study together every day to build a group streak! When all members study on the same day, your group streak grows.`);
+                }}
+              >
+                <Text style={styles.groupFeatureEmoji}>🏆</Text>
+                <Text style={styles.groupFeatureText}>Streak</Text>
+              </TouchableOpacity>
             </View>
-            <Text style={styles.groupProgressText}>
-              {g.total_minutes} / {g.goal_minutes} min
-            </Text>
-            <View style={styles.groupMembersRow}>
-              {g.members.slice(0, 5).map(m => (
-                <View key={m.user_id} style={styles.memberChip}>
-                  <Text style={styles.memberChipText}>{m.username || '?'}</Text>
-                  <Text style={styles.memberChipMins}>{m.minutes_contributed}m</Text>
-                </View>
-              ))}
-              {g.members.length > 5 && (
-                <Text style={styles.memberMore}>+{g.members.length - 5}</Text>
-              )}
-            </View>
-            <Text style={styles.groupIdText}>Group ID: {g.id} · Tap to chat</Text>
-          </TouchableOpacity>
+          </View>
         );
       })}
-    </ScrollView>
+    </View>
   );
 
   const renderFeed = () => (
-    <ScrollView contentContainerStyle={styles.tabContent} showsVerticalScrollIndicator={false}>
+    <View style={styles.tabContent}>
       {/* Leaderboard Preview */}
       {friends.length > 0 && (
         <View style={styles.leaderboardCard}>
@@ -383,7 +609,7 @@ export default function SocialScreen() {
           </View>
         </View>
       ))}
-    </ScrollView>
+    </View>
   );
 
   return (
@@ -393,14 +619,26 @@ export default function SocialScreen() {
           <Text style={styles.headerTitle}>Social</Text>
           <Text style={styles.headerSubtitle}>{friends.length} friends</Text>
         </View>
-        <TouchableOpacity style={styles.addFriendButton} onPress={() => setShowAddFriend(true)}>
-          <Text style={styles.addFriendButtonText}>+ Add Friend</Text>
+        <TouchableOpacity onPress={() => setShowAddFriend(true)}>
+          <LinearGradient
+            colors={['#5F8C87', '#3B5466']}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 0 }}
+            style={styles.addFriendButton}
+          >
+            <Text style={styles.addFriendButtonText}>+ Add Friend</Text>
+          </LinearGradient>
         </TouchableOpacity>
       </View>
 
       {/* Pending Requests */}
       {pendingRequests.length > 0 && (
-        <View style={styles.pendingSection}>
+        <LinearGradient
+          colors={['#FFFFFF', '#E7EFEA']}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 0, y: 1 }}
+          style={styles.pendingSection}
+        >
           <Text style={styles.pendingTitle}>Friend Requests ({pendingRequests.length})</Text>
           {pendingRequests.map(req => (
             <View key={req.id} style={styles.pendingRow}>
@@ -410,12 +648,17 @@ export default function SocialScreen() {
               </TouchableOpacity>
             </View>
           ))}
-        </View>
+        </LinearGradient>
       )}
 
       {/* All Users - Quick Add */}
       {allUsers.length > 0 && (
-        <View style={styles.allUsersSection}>
+        <LinearGradient
+          colors={['#E7EFEA', '#FFFFFF']}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 0, y: 1 }}
+          style={styles.allUsersSection}
+        >
           <Text style={styles.allUsersTitle}>👥 All Users ({allUsers.length})</Text>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.allUsersRow}>
             {allUsers.map(u => {
@@ -446,7 +689,7 @@ export default function SocialScreen() {
               );
             })}
           </ScrollView>
-        </View>
+        </LinearGradient>
       )}
 
       {/* Tab Bar */}
@@ -462,12 +705,15 @@ export default function SocialScreen() {
         ))}
       </View>
 
-      <View style={{ flex: 1 }}>
-        <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+      <ScrollView
+        style={{ flex: 1 }}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+        showsVerticalScrollIndicator={false}
+      >
         {tab === 'Buddies' && renderBuddies()}
         {tab === 'Groups' && renderGroups()}
         {tab === 'Feed' && renderFeed()}
-      </View>
+      </ScrollView>
 
       {/* Create Pact Modal */}
       <Modal visible={showCreatePact} transparent animationType="slide">
@@ -506,8 +752,15 @@ export default function SocialScreen() {
                   <TextInput style={styles.input} value={pactWager} onChangeText={setPactWager} keyboardType="number-pad" />
                 </View>
               </View>
-              <TouchableOpacity style={styles.modalPrimary} onPress={handleCreatePact}>
-                <Text style={styles.modalPrimaryText}>Send Pact</Text>
+              <TouchableOpacity onPress={handleCreatePact}>
+                <LinearGradient
+                  colors={['#5F8C87', '#3B5466']}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 0 }}
+                  style={styles.modalPrimary}
+                >
+                  <Text style={styles.modalPrimaryText}>Send Pact</Text>
+                </LinearGradient>
               </TouchableOpacity>
               <TouchableOpacity style={styles.modalCancel} onPress={() => setShowCreatePact(false)}>
                 <Text style={styles.modalCancelText}>Cancel</Text>
@@ -524,14 +777,53 @@ export default function SocialScreen() {
             <View style={styles.modalContent}>
               <Text style={styles.modalTitle}>👥 Create Study Group</Text>
               <Text style={styles.inputLabel}>Group name</Text>
-              <TextInput style={styles.input} placeholder="e.g. Bio Exam Crew" placeholderTextColor={colors.textMuted}
+              <TextInput style={styles.input} placeholder="Physics Study Group" placeholderTextColor={colors.textMuted}
                 value={groupName} onChangeText={setGroupName} />
               <Text style={styles.inputLabel}>Goal (total minutes)</Text>
-              <TextInput style={styles.input} value={groupGoal} onChangeText={setGroupGoal} keyboardType="number-pad" />
-              <TouchableOpacity style={styles.modalPrimary} onPress={handleCreateGroup}>
-                <Text style={styles.modalPrimaryText}>Create Group</Text>
+              <TextInput style={styles.input} value={groupGoal} onChangeText={setGroupGoal} keyboardType="number-pad"
+                placeholder="500" placeholderTextColor={colors.textMuted} />
+
+              {friends.length > 0 && (
+                <>
+                  <Text style={styles.inputLabel}>Add friends to group</Text>
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.friendSelectRow}>
+                    {friends.map(f => {
+                      const selected = selectedGroupFriends.has(f.id);
+                      return (
+                        <TouchableOpacity
+                          key={f.id}
+                          style={[styles.friendSelectChip, selected && styles.friendSelectChipActive, { marginRight: 8 }]}
+                          onPress={() => toggleGroupFriend(f.id)}
+                          activeOpacity={0.7}
+                        >
+                          <Text style={styles.friendSelectAvatar}>👤</Text>
+                          <Text style={[styles.friendSelectName, selected && styles.friendSelectNameActive]}>
+                            {f.username || f.email?.split('@')[0]}
+                          </Text>
+                          {selected && <Text style={styles.friendSelectCheck}>✓</Text>}
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </ScrollView>
+                  {selectedGroupFriends.size > 0 && (
+                    <Text style={styles.friendSelectCount}>
+                      {selectedGroupFriends.size} friend{selectedGroupFriends.size !== 1 ? 's' : ''} selected
+                    </Text>
+                  )}
+                </>
+              )}
+
+              <TouchableOpacity onPress={handleCreateGroup}>
+                <LinearGradient
+                  colors={['#5F8C87', '#3B5466']}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 0 }}
+                  style={styles.modalPrimary}
+                >
+                  <Text style={styles.modalPrimaryText}>Create Group</Text>
+                </LinearGradient>
               </TouchableOpacity>
-              <TouchableOpacity style={styles.modalCancel} onPress={() => setShowCreateGroup(false)}>
+              <TouchableOpacity style={styles.modalCancel} onPress={() => { setShowCreateGroup(false); setSelectedGroupFriends(new Set()); }}>
                 <Text style={styles.modalCancelText}>Cancel</Text>
               </TouchableOpacity>
             </View>
@@ -543,11 +835,16 @@ export default function SocialScreen() {
       <Modal visible={!!selectedGroup} animationType="slide" onRequestClose={() => setSelectedGroup(null)}>
         <SafeAreaView style={styles.chatContainer} edges={['top', 'bottom']}>
           <View style={styles.chatHeader}>
-            <TouchableOpacity onPress={() => setSelectedGroup(null)}>
-              <Text style={styles.chatBackText}>← Back</Text>
+            <TouchableOpacity
+              style={styles.chatBackBtn}
+              onPress={() => setSelectedGroup(null)}
+              hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+            >
+              <Text style={styles.chatBackArrow}>‹</Text>
+              <Text style={styles.chatBackText}>Back</Text>
             </TouchableOpacity>
-            <Text style={styles.chatTitle}>{selectedGroup?.name}</Text>
-            <View style={{ width: 50 }} />
+            <Text style={styles.chatTitle} numberOfLines={1}>{selectedGroup?.name}</Text>
+            <View style={styles.chatHeaderSpacer} />
           </View>
           <FlatList
             data={messages}
@@ -581,6 +878,59 @@ export default function SocialScreen() {
         </SafeAreaView>
       </Modal>
 
+      {/* Invite Friends to Group Modal */}
+      <Modal visible={showInviteModal} transparent animationType="fade">
+        <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => setShowInviteModal(false)}>
+          <TouchableOpacity activeOpacity={1}>
+            <View style={styles.modalContent}>
+              <Text style={styles.modalTitle}>➕ Add Friends to Group</Text>
+              {(() => {
+                const group = groups.find(g => g.id === inviteGroupId);
+                const memberIds = new Set(group?.members.map(m => m.user_id) || []);
+                const available = friends.filter(f => !memberIds.has(f.id));
+                if (available.length === 0) {
+                  return (
+                    <View style={{ alignItems: 'center', paddingVertical: 20 }}>
+                      <Text style={styles.emptyIcon}>✅</Text>
+                      <Text style={styles.noFriendsText}>All your friends are already in this group!</Text>
+                    </View>
+                  );
+                }
+                return (
+                  <View style={styles.inviteFriendList}>
+                    {available.map(f => (
+                      <View key={f.id} style={styles.inviteFriendRow}>
+                        <View style={styles.inviteFriendInfo}>
+                          <Text style={styles.inviteFriendAvatar}>👤</Text>
+                          <View>
+                            <Text style={styles.inviteFriendName}>{f.username || f.email?.split('@')[0]}</Text>
+                            <Text style={styles.inviteFriendStats}>🔥 {f.current_streak} · {f.total_study_minutes}m studied</Text>
+                          </View>
+                        </View>
+                        <TouchableOpacity
+                          style={styles.inviteFriendBtn}
+                          onPress={() => {
+                            if (inviteGroupId) {
+                              handleInviteFriend(inviteGroupId, f);
+                              setShowInviteModal(false);
+                            }
+                          }}
+                        >
+                          <Text style={styles.inviteFriendBtnText}>Add</Text>
+                        </TouchableOpacity>
+                      </View>
+                    ))}
+                  </View>
+                );
+              })()}
+              <TouchableOpacity style={styles.modalCancel} onPress={() => setShowInviteModal(false)}>
+                <Text style={styles.modalCancelText}>Done</Text>
+              </TouchableOpacity>
+            </View>
+          </TouchableOpacity>
+        </TouchableOpacity>
+      </Modal>
+
       {/* Add Friend Modal */}
       <Modal visible={showAddFriend} transparent animationType="fade">
         <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => setShowAddFriend(false)}>
@@ -597,8 +947,15 @@ export default function SocialScreen() {
                   onChangeText={setAddFriendHandle}
                   autoCapitalize="none"
                 />
-                <TouchableOpacity style={styles.modalPrimary} onPress={handleAddFriend}>
-                  <Text style={styles.modalPrimaryText}>Send Request</Text>
+                <TouchableOpacity onPress={handleAddFriend}>
+                  <LinearGradient
+                    colors={['#5F8C87', '#3B5466']}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 0 }}
+                    style={styles.modalPrimary}
+                  >
+                    <Text style={styles.modalPrimaryText}>Send Request</Text>
+                  </LinearGradient>
                 </TouchableOpacity>
                 <TouchableOpacity style={styles.modalCancel} onPress={() => setShowAddFriend(false)}>
                   <Text style={styles.modalCancelText}>Cancel</Text>
@@ -606,6 +963,92 @@ export default function SocialScreen() {
               </View>
             </TouchableOpacity>
           </KeyboardAvoidingView>
+        </TouchableOpacity>
+      </Modal>
+
+      {/* Reaction Notification Modal */}
+      <Modal visible={showReactionModal} transparent animationType="none">
+        <TouchableOpacity
+          style={styles.reactionModalOverlay}
+          activeOpacity={1}
+          onPress={dismissReactionModal}
+        >
+          <Animated.View style={[
+            styles.reactionModalCard,
+            {
+              opacity: reactionOpacity,
+              transform: [{ scale: reactionScale }],
+            },
+          ]}>
+            <LinearGradient
+              colors={['#FFFFFF', '#E7EFEA']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 0, y: 1 }}
+              style={styles.reactionModalGradient}
+            >
+              {incomingReactions.length === 1 ? (
+                <>
+                  <Animated.Text style={[styles.reactionModalBigEmoji, { transform: [{ translateY: emojiFloat }] }]}>
+                    {REACTIONS.find(r => r.key === incomingReactions[0].reaction)?.emoji || '💫'}
+                  </Animated.Text>
+                  <Text style={styles.reactionModalSender}>
+                    {incomingReactions[0].sender_username}
+                  </Text>
+                  <Text style={styles.reactionModalMessage}>
+                    {REACTION_MESSAGES[incomingReactions[0].reaction]?.[
+                      reactionMsgIdx.current % (REACTION_MESSAGES[incomingReactions[0].reaction]?.length || 1)
+                    ] || 'reacted to your activity!'}
+                  </Text>
+                  <Text style={styles.reactionModalContext} numberOfLines={2}>
+                    "{incomingReactions[0].event_description}"
+                  </Text>
+                </>
+              ) : (
+                <>
+                  <Animated.View style={[styles.reactionModalEmojiRow, { transform: [{ translateY: emojiFloat }] }]}>
+                    {[...new Set(incomingReactions.map(r => r.reaction))].map((rKey) => (
+                      <Text key={rKey} style={styles.reactionModalBigEmoji}>
+                        {REACTIONS.find(r => r.key === rKey)?.emoji || '💫'}
+                      </Text>
+                    ))}
+                  </Animated.View>
+                  <Text style={styles.reactionModalSender}>
+                    {incomingReactions.length} new reactions!
+                  </Text>
+                  <View style={styles.reactionModalList}>
+                    {incomingReactions.slice(0, 4).map((r) => (
+                      <View key={r.id} style={styles.reactionModalListItem}>
+                        <Text style={styles.reactionModalListEmoji}>
+                          {REACTIONS.find(rx => rx.key === r.reaction)?.emoji || '💫'}
+                        </Text>
+                        <Text style={styles.reactionModalListText} numberOfLines={1}>
+                          <Text style={{ fontWeight: '700' }}>{r.sender_username}</Text>
+                          {' '}{REACTION_MESSAGES[r.reaction]?.[0] || 'reacted!'}
+                        </Text>
+                      </View>
+                    ))}
+                    {incomingReactions.length > 4 && (
+                      <Text style={styles.reactionModalMoreText}>
+                        +{incomingReactions.length - 4} more
+                      </Text>
+                    )}
+                  </View>
+                </>
+              )}
+              <TouchableOpacity style={styles.reactionModalDismiss} onPress={dismissReactionModal}>
+                <LinearGradient
+                  colors={['#A8C8D8', '#5F8C87']}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 0 }}
+                  style={styles.reactionModalDismissGradient}
+                >
+                  <Text style={styles.reactionModalDismissText}>
+                    {incomingReactions.length === 1 ? '🥰 Aww, thanks!' : '🥰 So loved!'}
+                  </Text>
+                </LinearGradient>
+              </TouchableOpacity>
+            </LinearGradient>
+          </Animated.View>
         </TouchableOpacity>
       </Modal>
     </SafeAreaView>
@@ -621,16 +1064,16 @@ const styles = StyleSheet.create({
   headerTitle: { fontSize: 28, fontWeight: '800', color: colors.textPrimary },
   headerSubtitle: { fontSize: 13, color: colors.textSecondary, marginTop: 2 },
   addFriendButton: {
-    backgroundColor: colors.primary, borderRadius: borderRadius.full,
+    borderRadius: borderRadius.full,
     paddingHorizontal: 16, paddingVertical: 8,
   },
   addFriendButtonText: { fontSize: 13, fontWeight: '700', color: '#fff' },
   pendingSection: {
-    marginHorizontal: spacing.lg, backgroundColor: '#FFF8E7',
+    marginHorizontal: spacing.lg,
     borderRadius: borderRadius.lg, padding: spacing.md, marginBottom: spacing.sm,
-    borderWidth: 1, borderColor: '#E8B86D40',
+    borderWidth: 1, borderColor: '#5F8C8740',
   },
-  pendingTitle: { fontSize: 13, fontWeight: '700', color: '#D4A84B', marginBottom: 8 },
+  pendingTitle: { fontSize: 13, fontWeight: '700', color: '#5F8C87', marginBottom: 8 },
   pendingRow: {
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
     paddingVertical: 6,
@@ -644,6 +1087,7 @@ const styles = StyleSheet.create({
 
   allUsersSection: {
     paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
     marginBottom: spacing.sm,
   },
   allUsersTitle: {
@@ -693,40 +1137,40 @@ const styles = StyleSheet.create({
     color: '#fff',
   },
   allUserFriendBtn: {
-    backgroundColor: '#E8F5E9',
+    backgroundColor: '#E7EFEA',
   },
   allUserFriendText: {
     fontSize: 11,
     fontWeight: '600',
-    color: '#4CAF50',
+    color: '#5F8C87',
   },
   allUserPendingBtn: {
-    backgroundColor: '#FFF3E0',
+    backgroundColor: '#A8C8D830',
   },
   allUserPendingText: {
     fontSize: 11,
     fontWeight: '600',
-    color: '#FF9800',
+    color: '#5F8C87',
   },
 
   tabBar: {
     flexDirection: 'row', marginHorizontal: spacing.lg,
-    backgroundColor: colors.surfaceAlt, borderRadius: borderRadius.full,
+    backgroundColor: '#A9BDAF30', borderRadius: borderRadius.full,
     padding: 3, marginBottom: spacing.sm,
   },
   tabButton: {
-    flex: 1, paddingVertical: 10, borderRadius: borderRadius.full, alignItems: 'center',
+    flex: 1, paddingVertical: 10, borderRadius: borderRadius.full, alignItems: 'center', justifyContent: 'center',
   },
-  tabButtonActive: { backgroundColor: colors.surface, ...shadows.small },
+  tabButtonActive: { backgroundColor: '#5F8C87', ...shadows.small },
   tabButtonText: { fontSize: 14, fontWeight: '600', color: colors.textMuted },
-  tabButtonTextActive: { color: colors.primary, fontWeight: '700' },
+  tabButtonTextActive: { color: '#FFFFFF', fontWeight: '700' },
 
   tabContent: { paddingHorizontal: spacing.lg, paddingBottom: 40 },
 
   // Create buttons
   createButton: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-    backgroundColor: colors.primary, borderRadius: borderRadius.lg,
+    borderRadius: borderRadius.lg,
     paddingVertical: 14, gap: 8, marginBottom: spacing.md, ...shadows.small,
   },
   createButtonIcon: { fontSize: 18 },
@@ -749,9 +1193,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10, paddingVertical: 3, borderRadius: 10,
     backgroundColor: colors.surfaceAlt,
   },
-  statusActive: { backgroundColor: '#E3F2FD' },
-  statusCompleted: { backgroundColor: '#E8F5E9' },
-  statusFailed: { backgroundColor: '#FFEBEE' },
+  statusActive: { backgroundColor: '#E7EFEA' },
+  statusCompleted: { backgroundColor: '#E7EFEA' },
+  statusFailed: { backgroundColor: '#3B546620' },
   statusText: { fontSize: 11, fontWeight: '700', color: colors.textSecondary, textTransform: 'capitalize' },
   pactDetails: { fontSize: 13, color: colors.textSecondary, marginBottom: 8 },
   pactProgressRow: { flexDirection: 'row', gap: spacing.md },
@@ -759,7 +1203,7 @@ const styles = StyleSheet.create({
   pactProgressLabel: { fontSize: 11, color: colors.textMuted, marginBottom: 2 },
   pactProgressValue: { fontSize: 18, fontWeight: '800', color: colors.primary },
   acceptButton: {
-    backgroundColor: colors.tertiary, borderRadius: borderRadius.full,
+    borderRadius: borderRadius.full,
     paddingVertical: 10, alignItems: 'center', marginTop: 8,
   },
   acceptButtonText: { fontSize: 14, fontWeight: '700', color: '#fff' },
@@ -786,6 +1230,197 @@ const styles = StyleSheet.create({
   memberChipMins: { fontSize: 11, color: colors.textMuted },
   memberMore: { fontSize: 12, color: colors.textMuted, alignSelf: 'center' },
   groupIdText: { fontSize: 11, color: colors.textMuted },
+
+  groupActions: {
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 10,
+    borderTopWidth: 1,
+    borderTopColor: colors.divider,
+    paddingTop: 10,
+  },
+  groupActionBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4,
+    backgroundColor: colors.surfaceAlt,
+    paddingVertical: 8,
+    borderRadius: borderRadius.md,
+  },
+  groupActionBtnHighlight: {
+    flex: 1,
+    borderRadius: borderRadius.md,
+    overflow: 'hidden',
+  },
+  groupActionBtnGradient: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4,
+    paddingVertical: 8,
+  },
+  groupActionEmoji: { fontSize: 14 },
+  groupActionText: { fontSize: 12, fontWeight: '600', color: colors.textSecondary },
+  groupActionTextWhite: { fontSize: 12, fontWeight: '700', color: '#fff' },
+
+  groupFeatureRow: {
+    flexDirection: 'row',
+    gap: 6,
+    marginTop: 8,
+  },
+  groupFeatureChip: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4,
+    backgroundColor: colors.primary + '10',
+    paddingVertical: 6,
+    borderRadius: borderRadius.full,
+    borderWidth: 1,
+    borderColor: colors.primary + '20',
+  },
+  groupFeatureEmoji: { fontSize: 12 },
+  groupFeatureText: { fontSize: 11, fontWeight: '600', color: colors.primary },
+
+  friendSelectRow: {
+    maxHeight: 56,
+    marginTop: 6,
+    marginBottom: 4,
+  },
+  friendSelectChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: borderRadius.full,
+    backgroundColor: colors.surfaceAlt,
+    borderWidth: 1.5,
+    borderColor: colors.cardBorder,
+  },
+  friendSelectChipActive: {
+    backgroundColor: colors.primary + '15',
+    borderColor: colors.primary,
+  },
+  friendSelectAvatar: { fontSize: 16 },
+  friendSelectName: { fontSize: 13, fontWeight: '600', color: colors.textSecondary },
+  friendSelectNameActive: { color: colors.primary, fontWeight: '700' },
+  friendSelectCheck: { fontSize: 13, fontWeight: '800', color: colors.primary },
+  friendSelectCount: { fontSize: 12, fontWeight: '600', color: colors.primary, marginTop: 4 },
+
+  inviteFriendList: { marginTop: 8 },
+  inviteFriendRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.divider,
+  },
+  inviteFriendInfo: { flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1 },
+  inviteFriendAvatar: { fontSize: 24 },
+  inviteFriendName: { fontSize: 14, fontWeight: '700', color: colors.textPrimary },
+  inviteFriendStats: { fontSize: 11, color: colors.textMuted, marginTop: 1 },
+  inviteFriendBtn: {
+    backgroundColor: colors.primary,
+    paddingHorizontal: 16,
+    paddingVertical: 6,
+    borderRadius: borderRadius.full,
+  },
+  inviteFriendBtnText: { fontSize: 13, fontWeight: '700', color: '#fff' },
+
+  reactionModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.4)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  reactionModalCard: {
+    width: SCREEN_WIDTH * 0.82,
+    borderRadius: 28,
+    overflow: 'hidden',
+    ...shadows.large,
+  },
+  reactionModalGradient: {
+    paddingVertical: 32,
+    paddingHorizontal: 28,
+    alignItems: 'center',
+  },
+  reactionModalBigEmoji: {
+    fontSize: 56,
+    marginBottom: 8,
+  },
+  reactionModalEmojiRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 8,
+  },
+  reactionModalSender: {
+    fontSize: 20,
+    fontWeight: '800',
+    color: colors.textPrimary,
+    textAlign: 'center',
+    marginBottom: 4,
+  },
+  reactionModalMessage: {
+    fontSize: 16,
+    fontWeight: '500',
+    color: colors.textSecondary,
+    textAlign: 'center',
+    marginBottom: 10,
+  },
+  reactionModalContext: {
+    fontSize: 13,
+    fontStyle: 'italic',
+    color: colors.textMuted,
+    textAlign: 'center',
+    marginBottom: 6,
+    paddingHorizontal: 10,
+  },
+  reactionModalList: {
+    width: '100%',
+    marginTop: 8,
+    marginBottom: 4,
+  },
+  reactionModalListItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingVertical: 6,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.divider,
+  },
+  reactionModalListEmoji: { fontSize: 22 },
+  reactionModalListText: {
+    fontSize: 14,
+    color: colors.textPrimary,
+    flex: 1,
+  },
+  reactionModalMoreText: {
+    fontSize: 13,
+    color: colors.textMuted,
+    textAlign: 'center',
+    marginTop: 6,
+  },
+  reactionModalDismiss: {
+    marginTop: 16,
+    width: '100%',
+    borderRadius: borderRadius.full,
+    overflow: 'hidden',
+  },
+  reactionModalDismissGradient: {
+    paddingVertical: 14,
+    alignItems: 'center',
+    borderRadius: borderRadius.full,
+  },
+  reactionModalDismissText: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#fff',
+  },
 
   // Leaderboard
   leaderboardCard: {
@@ -839,7 +1474,7 @@ const styles = StyleSheet.create({
   },
   inputRow: { flexDirection: 'row', gap: 8 },
   modalPrimary: {
-    backgroundColor: colors.primary, borderRadius: borderRadius.full,
+    borderRadius: borderRadius.full,
     paddingVertical: 14, alignItems: 'center', marginTop: spacing.lg,
   },
   modalPrimaryText: { fontSize: 16, fontWeight: '700', color: '#fff' },
@@ -859,11 +1494,21 @@ const styles = StyleSheet.create({
   chatContainer: { flex: 1, backgroundColor: colors.background },
   chatHeader: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingHorizontal: spacing.md, paddingVertical: 12,
+    paddingHorizontal: spacing.md, paddingVertical: 14,
     borderBottomWidth: 1, borderBottomColor: colors.cardBorder, backgroundColor: colors.surface,
+    minHeight: 52,
   },
+  chatBackBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 6,
+    paddingRight: 12,
+    minWidth: 70,
+  },
+  chatBackArrow: { fontSize: 28, fontWeight: '300', color: colors.primary, marginRight: 2, marginTop: -2 },
   chatBackText: { fontSize: 16, fontWeight: '600', color: colors.primary },
-  chatTitle: { fontSize: 17, fontWeight: '700', color: colors.textPrimary },
+  chatTitle: { fontSize: 17, fontWeight: '700', color: colors.textPrimary, flex: 1, textAlign: 'center' },
+  chatHeaderSpacer: { minWidth: 70 },
   chatList: { padding: spacing.md, paddingBottom: 20 },
   chatBubble: {
     maxWidth: '78%', padding: 12, borderRadius: 18, marginBottom: 8,
