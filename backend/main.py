@@ -57,12 +57,6 @@ try:
             if result.fetchone() is None:
                 conn.execute(text(sql))
                 conn.commit()
-    # One-time: link existing donations to user_id=1 (popsie)
-    try:
-        conn.execute(text("UPDATE donations SET user_id = 1 WHERE user_id IS NULL"))
-        conn.commit()
-    except Exception:
-        pass
 except Exception:
     pass
 
@@ -89,33 +83,13 @@ def health_check():
     return {
         "status": "healthy",
         "app": "Endura API",
-        "version": "1.0.35",
+        "version": "1.0.36",
     }
 
 @app.get("/health")
 def health():
     return {"status": "ok"}
 
-@app.get("/admin/fix-donations")
-def fix_donations(db: Session = Depends(get_db)):
-    """One-time: link unlinked donations to user_id=1 (popsie)."""
-    try:
-        from sqlalchemy import inspect
-        inspector = inspect(db.bind)
-        cols = [c["name"] for c in inspector.get_columns("donations")]
-        if "user_id" not in cols:
-            db.execute(text("ALTER TABLE donations ADD COLUMN user_id INTEGER REFERENCES users(id)"))
-            db.commit()
-            cols.append("user_id")
-        if "partner_donation_id" not in cols:
-            db.execute(text("ALTER TABLE donations ADD COLUMN partner_donation_id VARCHAR"))
-            db.commit()
-
-        result = db.execute(text("UPDATE donations SET user_id = 1 WHERE user_id IS NULL"))
-        db.commit()
-        return {"status": "done", "rows_updated": result.rowcount, "columns": cols}
-    except Exception as e:
-        return {"status": "error", "detail": str(e)}
 
 
 # ============ Startup: Seed Animals ============
@@ -1156,9 +1130,6 @@ def get_community_donation_stats(db: Session = Depends(get_db)):
             "date": d.created_at.isoformat() if d.created_at else "",
         })
 
-    linked = db.query(models.Donation).filter(models.Donation.user_id.isnot(None)).count()
-    unlinked = db.query(models.Donation).filter(models.Donation.user_id.is_(None)).count()
-
     return {
         "total_raised": float(total_raised),
         "total_donors": total_donors,
@@ -1166,8 +1137,6 @@ def get_community_donation_stats(db: Session = Depends(get_db)):
         "this_month_raised": float(this_month),
         "this_month_count": this_month_count,
         "recent_donations": recent_list,
-        "linked_to_users": linked,
-        "unlinked": unlinked,
     }
 
 
