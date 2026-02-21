@@ -21,6 +21,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { colors, shadows, spacing } from '../theme/colors';
 import { tipsAPI, socialAPI, groupsAPI, StudyTip, Friend, StudyGroup } from '../services/api';
 import { animalImages, ANIMAL_NAMES_IN_ORDER } from '../assets/animals';
+import { Analytics } from '../services/analytics';
 
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -256,6 +257,7 @@ export default function TipsScreen() {
     if (!seenTipIdsRef.current.has(tipId)) {
       seenTipIdsRef.current.add(tipId);
       persistSeen(seenTipIdsRef.current);
+      Analytics.tipViewed(tipId);
     }
   }, []);
 
@@ -266,6 +268,7 @@ export default function TipsScreen() {
         delete updated[tipId];
       } else {
         updated[tipId] = true;
+        Analytics.tipSaved(tipId);
       }
       persistSaved(updated);
       return updated;
@@ -308,6 +311,7 @@ export default function TipsScreen() {
     try {
       const animalName = sendingTip.animal_name || ANIMAL_NAMES_IN_ORDER[sendingTip.id % ANIMAL_NAMES_IN_ORDER.length];
       await groupsAPI.sendMessage(groupId, `📚 Study tip from ${animalName}:\n\n"${sendingTip.content}"`);
+      Analytics.tipSent(sendingTip.id, 'group');
       setSentTo(prev => ({ ...prev, [key]: true }));
     } catch {
       Alert.alert('Oops', `Couldn't send to ${groupName}`);
@@ -320,6 +324,7 @@ export default function TipsScreen() {
     try {
       const animalName = sendingTip.animal_name || ANIMAL_NAMES_IN_ORDER[sendingTip.id % ANIMAL_NAMES_IN_ORDER.length];
       await tipsAPI.sendToFriend(friendId, sendingTip.content, animalName);
+      Analytics.tipSent(sendingTip.id, 'friend');
       setSentTo(prev => ({ ...prev, [key]: true }));
     } catch {
       Alert.alert('Oops', `Couldn't send to ${friendName}`);

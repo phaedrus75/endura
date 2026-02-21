@@ -24,6 +24,12 @@ class User(Base):
     total_study_minutes = Column(Integer, default=0)
     total_sessions = Column(Integer, default=0)
     
+    # Push notification token
+    push_token = Column(String, nullable=True)
+    notification_enabled = Column(Boolean, default=True)
+    study_reminder_hour = Column(Integer, nullable=True)
+    study_reminder_minute = Column(Integer, nullable=True)
+    
     # Relationships
     tasks = relationship("Task", back_populates="user")
     study_sessions = relationship("StudySession", back_populates="user")
@@ -269,6 +275,7 @@ class Donation(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     charge_id = Column(String, unique=True, nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
     amount = Column(Float, nullable=False)
     net_amount = Column(Float, nullable=True)
     currency = Column(String, default="USD")
@@ -278,4 +285,7 @@ class Donation(Base):
     donor_email = Column(String, nullable=True)
     nonprofit_name = Column(String, default="WWF")
     donation_date = Column(String, nullable=True)
+    partner_donation_id = Column(String, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
+
+    user = relationship("User")

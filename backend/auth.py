@@ -2,6 +2,7 @@ from datetime import datetime, timedelta
 from typing import Optional
 from jose import JWTError, jwt
 import bcrypt
+import logging
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.orm import Session
@@ -9,10 +10,17 @@ from database import get_db
 import models
 import os
 
-# Configuration
-SECRET_KEY = os.getenv("SECRET_KEY", "endura-secret-key-change-in-production-2024")
+logger = logging.getLogger(__name__)
+
+SECRET_KEY = os.getenv("SECRET_KEY")
+if not SECRET_KEY:
+    if os.getenv("RAILWAY_ENVIRONMENT") or os.getenv("DATABASE_URL", "").startswith("postgresql"):
+        raise RuntimeError("SECRET_KEY environment variable is required in production")
+    SECRET_KEY = "dev-only-insecure-key-not-for-production"
+    logger.warning("Using insecure dev SECRET_KEY — set SECRET_KEY env var for production")
+
 ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24 * 30  # 30 days
+ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24 * 7  # 7 days
 
 security = HTTPBearer()
 
@@ -56,15 +64,15 @@ def get_current_user(
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         email: str = payload.get("sub")
         if email is None:
-            print(f"Auth error: No email in token payload")
+            logger.warning("Auth: no email in token payload")
             raise credentials_exception
-    except JWTError as e:
-        print(f"Auth error: JWT decode failed - {str(e)}")
+    except JWTError:
+        logger.warning("Auth: JWT decode failed")
         raise credentials_exception
     
     user = db.query(models.User).filter(models.User.email == email).first()
     if user is None:
-        print(f"Auth error: User not found for email {email}")
+        logger.warning("Auth: user not found for token")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="User not found - please register again",

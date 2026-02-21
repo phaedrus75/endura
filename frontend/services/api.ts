@@ -3,8 +3,6 @@ import * as SecureStore from 'expo-secure-store';
 // Use local development server
 export const API_URL = 'https://web-production-34028.up.railway.app';
 
-// Debug: Log API URL on startup
-console.log('🔗 API URL:', API_URL);
 
 // Types
 export interface User {
@@ -218,7 +216,6 @@ async function apiFetch<T>(
   }
   
   const url = `${API_URL}${endpoint}`;
-  console.log('🌐 Fetching:', url);
   
   try {
     const response = await fetch(url, {
@@ -227,14 +224,10 @@ async function apiFetch<T>(
       redirect: 'follow',
     });
     
-    console.log('✅ Response status:', response.status);
-    
     if (!response.ok) {
       const error = await response.json().catch(() => ({ detail: 'An error occurred' }));
-      console.error(`🔴 API ${response.status}:`, JSON.stringify(error));
       
       if (response.status === 401) {
-        console.log('🔒 Unauthorized - clearing token');
         await SecureStore.deleteItemAsync('authToken');
       }
       
@@ -246,8 +239,7 @@ async function apiFetch<T>(
     
     return response.json();
   } catch (error: any) {
-    console.error('❌ Network error:', error.message);
-    console.error('📍 URL was:', url);
+    if (__DEV__) console.error('API error:', endpoint, error.message);
     throw error;
   }
 }
@@ -460,6 +452,14 @@ export const badgesAPI = {
   getBadges: () => apiFetch<BadgeResponse[]>('/badges'),
   checkBadges: () =>
     apiFetch<{ new_badges: BadgeInfo[] }>('/badges/check', { method: 'POST' }),
+};
+
+// Donations API
+export const donationsAPI = {
+  getUserStats: (userId: number) =>
+    apiFetch<{ total_donated: number; donation_count: number; history: { amount: number; currency: string; nonprofit: string; date: string }[] }>(
+      `/donations/user/${userId}`
+    ),
 };
 
 export const setApiUrl = (url: string) => {

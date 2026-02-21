@@ -1,10 +1,14 @@
-from fastapi import FastAPI, Depends, HTTPException, status
+from fastapi import FastAPI, Depends, HTTPException, status, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from sqlalchemy import text
 from datetime import timedelta
 from typing import List, Optional
+from slowapi import Limiter
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
+from fastapi.responses import JSONResponse
 import models
 import schemas
 import crud
@@ -15,9 +19,12 @@ from auth import (
 )
 import os
 import json as _json
+import logging
 import stripe
 
+logger = logging.getLogger(__name__)
 stripe.api_key = os.environ.get("STRIPE_SECRET_KEY")
+limiter = Limiter(key_func=get_remote_address)
 
 # Create tables (with error handling for Railway)
 try:
@@ -32,26 +39,37 @@ _migrations = [
     ("study_tips", "animal_name", "ALTER TABLE study_tips ADD COLUMN animal_name VARCHAR"),
     ("study_tips", "dislikes_count", "ALTER TABLE study_tips ADD COLUMN dislikes_count INTEGER DEFAULT 0"),
     ("tip_views", "disliked", "ALTER TABLE tip_views ADD COLUMN disliked BOOLEAN DEFAULT FALSE"),
+    ("users", "push_token", "ALTER TABLE users ADD COLUMN push_token VARCHAR"),
+    ("users", "notification_enabled", "ALTER TABLE users ADD COLUMN notification_enabled BOOLEAN DEFAULT TRUE"),
+    ("users", "study_reminder_hour", "ALTER TABLE users ADD COLUMN study_reminder_hour INTEGER"),
+    ("users", "study_reminder_minute", "ALTER TABLE users ADD COLUMN study_reminder_minute INTEGER"),
+    ("donations", "user_id", "ALTER TABLE donations ADD COLUMN user_id INTEGER REFERENCES users(id)"),
+    ("donations", "partner_donation_id", "ALTER TABLE donations ADD COLUMN partner_donation_id VARCHAR"),
 ]
 try:
     with engine.connect() as conn:
         for table, col, sql in _migrations:
-            result = conn.execute(text(
-                f"SELECT column_name FROM information_schema.columns "
-                f"WHERE table_name='{table}' AND column_name='{col}'"
-            ))
+            result = conn.execute(
+                text("SELECT column_name FROM information_schema.columns "
+                     "WHERE table_name=:tbl AND column_name=:col"),
+                {"tbl": table, "col": col}
+            )
             if result.fetchone() is None:
                 conn.execute(text(sql))
                 conn.commit()
-                print(f"Migration: added {table}.{col}")
-            else:
-                print(f"Migration: {table}.{col} already exists")
-except Exception as e:
-    print(f"Warning: migration check failed: {e}")
+except Exception:
+    pass
 
 app = FastAPI(title="Endura API", description="Gamified Study App Backend")
+app.state.limiter = limiter
 
-# CORS middleware
+@app.exception_handler(RateLimitExceeded)
+async def rate_limit_handler(request: Request, exc: RateLimitExceeded):
+    return JSONResponse(
+        status_code=429,
+        content={"detail": "Too many requests. Please try again later."},
+    )
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -60,43 +78,17 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Health check endpoint (no database required)
 @app.get("/")
 def health_check():
-    # Check the actual DATABASE_URL at runtime
-    db_url = os.getenv("DATABASE_URL", "")
-    db_type = "postgresql" if "postgres" in db_url.lower() else "sqlite"
-    has_db_url = bool(db_url)
-    
-    # Debug: find any env vars with DATABASE or POSTGRES in name
-    db_related_vars = [k for k in os.environ.keys() if "DATABASE" in k.upper() or "POSTGRES" in k.upper()]
-    
     return {
-        "status": "healthy", 
-        "app": "Endura API", 
-        "version": "1.0.25",
-        "database": db_type,
-        "database_configured": has_db_url,
-        "db_url_preview": db_url[:30] + "..." if len(db_url) > 30 else db_url if db_url else "not set",
-        "db_env_vars_found": db_related_vars,
+        "status": "healthy",
+        "app": "Endura API",
+        "version": "1.0.27",
     }
 
 @app.get("/health")
 def health():
     return {"status": "ok"}
-
-
-@app.get("/debug/tips-count")
-def debug_tips_count(db: Session = Depends(get_db)):
-    total = db.query(models.StudyTip).count()
-    sample = db.query(models.StudyTip).limit(3).all()
-    return {
-        "total_tips": total,
-        "sample": [
-            {"id": t.id, "animal_name": getattr(t, 'animal_name', None), "content": t.content[:60]}
-            for t in sample
-        ],
-    }
 
 
 # ============ Startup: Seed Animals ============
@@ -324,7 +316,8 @@ def seed_check():
 # ============ Auth Endpoints ============
 
 @app.post("/auth/register", response_model=schemas.Token)
-def register(user: schemas.UserCreate, db: Session = Depends(get_db)):
+@limiter.limit("5/minute")
+def register(request: Request, user: schemas.UserCreate, db: Session = Depends(get_db)):
     db_user = crud.get_user_by_email(db, user.email)
     if db_user:
         raise HTTPException(status_code=400, detail="Email already registered")
@@ -340,7 +333,8 @@ def register(user: schemas.UserCreate, db: Session = Depends(get_db)):
 
 
 @app.post("/auth/login", response_model=schemas.Token)
-def login(user: schemas.UserLogin, db: Session = Depends(get_db)):
+@limiter.limit("10/minute")
+def login(request: Request, user: schemas.UserLogin, db: Session = Depends(get_db)):
     db_user = crud.get_user_by_email(db, user.email)
     if not db_user or not verify_password(user.password, db_user.hashed_password):
         raise HTTPException(status_code=401, detail="Invalid credentials")
@@ -470,9 +464,9 @@ def complete_study_session(
         }
     except Exception as e:
         db.rollback()
-        print(f"[ERROR] Session create failed: {e}")
-        traceback.print_exc()
-        raise HTTPException(status_code=500, detail=str(e))
+        import logging
+        logging.getLogger(__name__).error(f"Session create failed: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to create session")
 
 
 @app.get("/sessions", response_model=List[schemas.StudySessionResponse])
@@ -1061,6 +1055,14 @@ async def every_org_webhook(request: dict, db: Session = Depends(get_db)):
         nonprofit = request.get("toNonprofit") or request.get("nonprofit") or request.get("data", {}).get("toNonprofit") or {}
         nonprofit_name = nonprofit.get("name", "WWF") if isinstance(nonprofit, dict) else "WWF"
         donation_date = request.get("donationDate") or request.get("donation_date") or request.get("data", {}).get("donationDate") or ""
+        partner_id = request.get("partnerDonationId") or request.get("partner_donation_id") or ""
+
+        linked_user_id = None
+        if partner_id and partner_id.startswith("endura-u"):
+            try:
+                linked_user_id = int(partner_id.split("-u")[1].split("-")[0])
+            except (ValueError, IndexError):
+                pass
 
         existing = db.query(models.Donation).filter(
             models.Donation.charge_id == charge_id
@@ -1069,6 +1071,7 @@ async def every_org_webhook(request: dict, db: Session = Depends(get_db)):
         if not existing:
             donation = models.Donation(
                 charge_id=charge_id,
+                user_id=linked_user_id,
                 amount=amount,
                 net_amount=net_amount,
                 currency=currency,
@@ -1078,25 +1081,19 @@ async def every_org_webhook(request: dict, db: Session = Depends(get_db)):
                 donor_email=donor_email,
                 nonprofit_name=nonprofit_name,
                 donation_date=donation_date,
+                partner_donation_id=partner_id,
             )
             db.add(donation)
             db.commit()
-            print(f"[DONATION] Stored ${amount} {currency} ({frequency}) from {donor_first or 'Anonymous'} | chargeId={charge_id}")
+            logger.info(f"Donation stored: ${amount} {currency} | user_id={linked_user_id}")
         else:
-            print(f"[DONATION] Duplicate chargeId={charge_id}, skipping")
+            logger.info(f"Duplicate donation skipped: {charge_id}")
 
         return {"status": "received", "chargeId": charge_id}
     except Exception as e:
-        print(f"[WEBHOOK ERROR] {e}")
-        import traceback
-        traceback.print_exc()
-        return {"status": "error", "detail": str(e)}
+        logger.error(f"Webhook error: {e}", exc_info=True)
+        return {"status": "error", "detail": "Webhook processing failed"}
 
-
-@app.get("/webhook/every-org/debug")
-def debug_webhook_payloads():
-    """Temporary: view the last raw webhook payloads to debug field mapping."""
-    return {"count": len(_last_webhook_payloads), "payloads": _last_webhook_payloads}
 
 
 @app.get("/donations/community-stats")
@@ -1140,6 +1137,143 @@ def get_community_donation_stats(db: Session = Depends(get_db)):
         "this_month_count": this_month_count,
         "recent_donations": recent_list,
     }
+
+
+@app.get("/donations/user/{user_id}")
+def get_user_donation_stats(user_id: int, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
+    """Per-user donation stats."""
+    if current_user.id != user_id:
+        raise HTTPException(status_code=403, detail="Forbidden")
+
+    from sqlalchemy import func
+
+    user_total = db.query(func.coalesce(func.sum(models.Donation.amount), 0)).filter(
+        models.Donation.user_id == user_id
+    ).scalar()
+
+    user_count = db.query(models.Donation).filter(
+        models.Donation.user_id == user_id
+    ).count()
+
+    user_donations = db.query(models.Donation).filter(
+        models.Donation.user_id == user_id
+    ).order_by(models.Donation.created_at.desc()).limit(10).all()
+
+    history = []
+    for d in user_donations:
+        history.append({
+            "amount": d.amount,
+            "currency": d.currency,
+            "nonprofit": d.nonprofit_name,
+            "date": d.created_at.isoformat() if d.created_at else "",
+        })
+
+    return {
+        "total_donated": float(user_total),
+        "donation_count": user_count,
+        "history": history,
+    }
+
+
+##############################################################################
+# Push Notifications
+##############################################################################
+
+class PushTokenRequest(BaseModel):
+    push_token: str
+
+class NotificationPrefsRequest(BaseModel):
+    notification_enabled: Optional[bool] = None
+    study_reminder_hour: Optional[int] = None
+    study_reminder_minute: Optional[int] = None
+
+@app.post("/users/{user_id}/push-token")
+def save_push_token(
+    user_id: int,
+    req: PushTokenRequest,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    if current_user.id != user_id:
+        raise HTTPException(status_code=403, detail="Not authorised")
+    current_user.push_token = req.push_token
+    db.commit()
+    return {"status": "ok"}
+
+@app.put("/users/{user_id}/notification-prefs")
+def update_notification_prefs(
+    user_id: int,
+    req: NotificationPrefsRequest,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    if current_user.id != user_id:
+        raise HTTPException(status_code=403, detail="Not authorised")
+    if req.notification_enabled is not None:
+        current_user.notification_enabled = req.notification_enabled
+    if req.study_reminder_hour is not None:
+        current_user.study_reminder_hour = req.study_reminder_hour
+    if req.study_reminder_minute is not None:
+        current_user.study_reminder_minute = req.study_reminder_minute
+    db.commit()
+    db.refresh(current_user)
+    return {
+        "notification_enabled": current_user.notification_enabled,
+        "study_reminder_hour": current_user.study_reminder_hour,
+        "study_reminder_minute": current_user.study_reminder_minute,
+    }
+
+@app.get("/users/{user_id}/notification-prefs")
+def get_notification_prefs(
+    user_id: int,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    if current_user.id != user_id:
+        raise HTTPException(status_code=403, detail="Not authorised")
+    return {
+        "notification_enabled": current_user.notification_enabled,
+        "study_reminder_hour": current_user.study_reminder_hour,
+        "study_reminder_minute": current_user.study_reminder_minute,
+    }
+
+EXPO_PUSH_URL = "https://exp.host/--/api/v2/push/send"
+
+@app.post("/notifications/send")
+async def send_push_notification(
+    user_ids: List[int],
+    title: str,
+    body: str,
+    data: Optional[dict] = None,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    import httpx
+
+    users = db.query(models.User).filter(
+        models.User.id.in_(user_ids),
+        models.User.push_token.isnot(None),
+        models.User.notification_enabled == True,
+    ).all()
+
+    messages = []
+    for user in users:
+        messages.append({
+            "to": user.push_token,
+            "title": title,
+            "body": body,
+            "data": data or {},
+            "sound": "default",
+            "priority": "high",
+        })
+
+    if not messages:
+        return {"sent": 0}
+
+    async with httpx.AsyncClient() as client:
+        resp = await client.post(EXPO_PUSH_URL, json=messages)
+
+    return {"sent": len(messages), "response": resp.json()}
 
 
 if __name__ == "__main__":

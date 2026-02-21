@@ -19,7 +19,7 @@ import * as WebBrowser from 'expo-web-browser';
 import { colors, shadows, spacing, borderRadius } from '../theme/colors';
 import { useAuth } from '../contexts/AuthContext';
 import { animalImages } from '../assets/animals';
-import { API_URL } from '../services/api';
+import { API_URL, donationsAPI } from '../services/api';
 
 const EVERY_ORG_WWF_BASE = 'https://www.every.org/wwf';
 const EVERY_ORG_WEBHOOK_TOKEN = '9f29c612e6f8';
@@ -33,10 +33,15 @@ interface CommunityStats {
   recent_donations: { name: string; amount: number; currency: string; date: string }[];
 }
 
+interface PersonalStats {
+  total_donated: number;
+  donation_count: number;
+  history: { amount: number; currency: string; nonprofit: string; date: string }[];
+}
+
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
 const DONATION_AMOUNTS = [
-  { amount: 1, label: '$1', nudge: 'A small step for wildlife' },
   { amount: 2, label: '$2', nudge: 'A coffee for conservation' },
   { amount: 5, label: '$5', nudge: 'Protect 1 acre of habitat', popular: true },
   { amount: 10, label: '$10', nudge: 'Feed a rescued animal for a week' },
@@ -94,10 +99,11 @@ const animalImageMap: Record<string, any> = {
 export default function TakeActionScreen() {
   const navigation = useNavigation<any>();
   const { user, profilePic } = useAuth();
-  const [selectedAmount, setSelectedAmount] = useState(1);
+  const [selectedAmount, setSelectedAmount] = useState(2);
   const [showThankYou, setShowThankYou] = useState(false);
   const [storyIndex, setStoryIndex] = useState(0);
   const [communityStats, setCommunityStats] = useState<CommunityStats | null>(null);
+  const [personalStats, setPersonalStats] = useState<PersonalStats | null>(null);
 
   const potFill = useRef(new Animated.Value(0.15)).current;
   const coinAnim = useRef(new Animated.Value(0)).current;
@@ -118,7 +124,17 @@ export default function TakeActionScreen() {
         Animated.spring(potFill, { toValue: goalProgress, friction: 6, useNativeDriver: false }).start();
       }
     } catch (e) {
-      console.log('Could not fetch community stats:', e);
+      if (__DEV__) console.log('Could not fetch community stats:', e);
+    }
+  };
+
+  const fetchPersonalStats = async () => {
+    if (!user?.id) return;
+    try {
+      const data = await donationsAPI.getUserStats(user.id);
+      setPersonalStats(data);
+    } catch (e) {
+      if (__DEV__) console.log('Could not fetch personal stats:', e);
     }
   };
 
@@ -136,7 +152,10 @@ export default function TakeActionScreen() {
     return msgs;
   }, [communityStats]);
 
-  useEffect(() => { fetchCommunityStats(); }, []);
+  useEffect(() => {
+    fetchCommunityStats();
+    fetchPersonalStats();
+  }, []);
 
   useEffect(() => {
     Animated.loop(
@@ -167,7 +186,7 @@ export default function TakeActionScreen() {
   }, []);
 
   const handleDonate = async () => {
-    const donationId = `endura-${Date.now()}`;
+    const donationId = user?.id ? `endura-u${user.id}-${Date.now()}` : `endura-${Date.now()}`;
     const donateUrl = `${EVERY_ORG_WWF_BASE}?amount=${selectedAmount}&frequency=ONCE&webhook_token=${EVERY_ORG_WEBHOOK_TOKEN}&partner_donation_id=${donationId}#donate`;
     try {
       await WebBrowser.openBrowserAsync(donateUrl, {
@@ -175,6 +194,7 @@ export default function TakeActionScreen() {
         controlsColor: '#2F4A3E',
       });
       fetchCommunityStats();
+      fetchPersonalStats();
       setShowThankYou(true);
       thankYouScale.setValue(0);
       Animated.spring(thankYouScale, { toValue: 1, friction: 4, tension: 50, useNativeDriver: true }).start();
@@ -279,6 +299,55 @@ export default function TakeActionScreen() {
         <Animated.View style={[styles.communityTicker, { opacity: nudgeFade }]}>
           <Text style={styles.communityText}>{communityMsg}</Text>
         </Animated.View>
+
+        {/* Your Impact + Community Stats Side-by-Side */}
+        <View style={styles.statsRow}>
+          <View style={styles.statCard}>
+            <Text style={styles.statEmoji}>🌱</Text>
+            <Text style={styles.statValue}>
+              ${personalStats ? personalStats.total_donated.toFixed(0) : '0'}
+            </Text>
+            <Text style={styles.statLabel}>Your Donations</Text>
+            {personalStats && personalStats.donation_count > 0 ? (
+              <Text style={styles.statSub}>
+                {personalStats.donation_count} donation{personalStats.donation_count !== 1 ? 's' : ''}
+              </Text>
+            ) : (
+              <Text style={styles.statSub}>Make your first!</Text>
+            )}
+          </View>
+          <View style={styles.statCard}>
+            <Text style={styles.statEmoji}>🌍</Text>
+            <Text style={styles.statValue}>
+              ${communityStats ? communityStats.total_raised.toFixed(0) : '0'}
+            </Text>
+            <Text style={styles.statLabel}>Community Total</Text>
+            <Text style={styles.statSub}>
+              {communityStats ? `${communityStats.total_donors} donor${communityStats.total_donors !== 1 ? 's' : ''}` : 'Be the first!'}
+            </Text>
+          </View>
+        </View>
+
+        {/* Personal donation history */}
+        {personalStats && personalStats.history.length > 0 && (
+          <View style={styles.historySection}>
+            <Text style={styles.historyTitle}>Your Recent Donations</Text>
+            {personalStats.history.slice(0, 5).map((d, i) => (
+              <View key={i} style={styles.historyRow}>
+                <View style={styles.historyLeft}>
+                  <Text style={styles.historyDot}>💚</Text>
+                  <View>
+                    <Text style={styles.historyAmount}>${d.amount.toFixed(2)}</Text>
+                    <Text style={styles.historyNonprofit}>to {d.nonprofit}</Text>
+                  </View>
+                </View>
+                <Text style={styles.historyDate}>
+                  {d.date ? new Date(d.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : ''}
+                </Text>
+              </View>
+            ))}
+          </View>
+        )}
 
         {/* Donation Pot Visual */}
         <View style={styles.potSection}>
@@ -397,6 +466,11 @@ export default function TakeActionScreen() {
               <Text style={styles.thankYouBody}>
                 Your donation is making a real difference for endangered species around the world.
               </Text>
+              {personalStats && personalStats.donation_count > 0 && (
+                <Text style={styles.thankYouStats}>
+                  You've donated ${personalStats.total_donated.toFixed(0)} across {personalStats.donation_count} donation{personalStats.donation_count !== 1 ? 's' : ''}! 🌟
+                </Text>
+              )}
               {communityStats && communityStats.total_donations > 0 && (
                 <Text style={styles.thankYouStats}>
                   Together, {communityStats.total_donors} donor{communityStats.total_donors !== 1 ? 's' : ''} have raised ${communityStats.total_raised.toFixed(0)} for conservation 🌿
@@ -508,6 +582,90 @@ const styles = StyleSheet.create({
     lineHeight: 22,
     color: '#3B5F50',
     textAlign: 'center',
+    fontWeight: '500',
+  },
+
+  // Stats Row (Your Impact + Community)
+  statsRow: {
+    flexDirection: 'row',
+    marginHorizontal: spacing.md,
+    gap: 10,
+    marginBottom: 12,
+  },
+  statCard: {
+    flex: 1,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    padding: 16,
+    alignItems: 'center',
+    ...shadows.small,
+  },
+  statEmoji: {
+    fontSize: 28,
+    marginBottom: 6,
+  },
+  statValue: {
+    fontSize: 24,
+    fontWeight: '800',
+    color: colors.primary,
+  },
+  statLabel: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: colors.textPrimary,
+    marginTop: 2,
+  },
+  statSub: {
+    fontSize: 11,
+    color: colors.textMuted,
+    fontWeight: '500',
+    marginTop: 2,
+  },
+
+  // Donation history
+  historySection: {
+    marginHorizontal: spacing.md,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 12,
+    ...shadows.small,
+  },
+  historyTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: colors.textPrimary,
+    marginBottom: 12,
+  },
+  historyRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F0F4F2',
+  },
+  historyLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  historyDot: {
+    fontSize: 14,
+  },
+  historyAmount: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: colors.textPrimary,
+  },
+  historyNonprofit: {
+    fontSize: 11,
+    color: colors.textMuted,
+    fontWeight: '500',
+  },
+  historyDate: {
+    fontSize: 12,
+    color: colors.textMuted,
     fontWeight: '500',
   },
 

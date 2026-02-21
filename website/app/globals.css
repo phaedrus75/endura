@@ -46,3 +46,11 @@ body {
   animation: float 6s ease-in-out infinite;
   animation-delay: 4s;
 }
+
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}

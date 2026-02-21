@@ -265,14 +265,14 @@ def get_study_tips(db: Session, user_id: int, limit: int = 10) -> List[models.St
     viewed_ids = db.query(models.TipView.tip_id).filter(
         models.TipView.user_id == user_id
     ).subquery()
-
+    
     tips = db.query(models.StudyTip).filter(
         ~models.StudyTip.id.in_(viewed_ids)
     ).order_by(func.random()).limit(limit).all()
-
+    
     if len(tips) < limit:
         tips = db.query(models.StudyTip).order_by(func.random()).limit(limit).all()
-
+    
     return tips
 
 

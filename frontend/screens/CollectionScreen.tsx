@@ -26,6 +26,7 @@ import { colors, shadows, spacing, borderRadius } from '../theme/colors';
 import { useAuth } from '../contexts/AuthContext';
 import { animalsAPI, badgesAPI, UserAnimal, Animal } from '../services/api';
 import { getAnimalImage } from '../assets/animals';
+import { Analytics } from '../services/analytics';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 const CARD_WIDTH = (SCREEN_WIDTH - spacing.lg * 2 - spacing.md) / 2;
@@ -315,6 +316,7 @@ export default function CollectionScreen() {
   const [sanctuaryContentH, setSanctuaryContentH] = useState(0);
   const sanctuaryContentHRef = useRef(0);
   const [isDragging, setIsDragging] = useState(false);
+  const [communityTotal, setCommunityTotal] = useState(0);
 
   const loadPurchases = async () => {
     try {
@@ -375,6 +377,7 @@ export default function CollectionScreen() {
     });
 
   const openSanctuary = async () => {
+    Analytics.sanctuaryViewed();
     setSanctuaryContentH(0);
     sanctuaryContentHRef.current = 0;
     await loadPurchases();
@@ -397,9 +400,20 @@ export default function CollectionScreen() {
     }
   };
 
+  const fetchCommunityTotal = async () => {
+    try {
+      const res = await fetch(`${API_URL}/donations/community-stats`);
+      if (res.ok) {
+        const data = await res.json();
+        setCommunityTotal(data.total_raised || 0);
+      }
+    } catch (e) {}
+  };
+
   useFocusEffect(
     useCallback(() => {
       loadData();
+      fetchCommunityTotal();
     }, [])
   );
 
@@ -499,7 +513,11 @@ export default function CollectionScreen() {
             <Text style={styles.takeActionEmoji}>🤝</Text>
             <View style={{ flex: 1 }}>
               <Text style={styles.takeActionTitle}>Take Action — Save Endangered Species</Text>
-              <Text style={styles.takeActionSub}>Donate to WWF and make a real difference</Text>
+              <Text style={styles.takeActionSub}>
+                {communityTotal > 0
+                  ? `$${communityTotal.toFixed(0)} raised by our community`
+                  : 'Donate to WWF and make a real difference'}
+              </Text>
             </View>
             <Text style={styles.takeActionArrow}>›</Text>
           </LinearGradient>

@@ -23,6 +23,7 @@ import LottieView from 'lottie-react-native';
 import { spacing, borderRadius } from '../theme/colors';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useAuth } from '../contexts/AuthContext';
+import { Analytics } from '../services/analytics';
 
 // HomeScreen preserves its original palette independent of the global theme
 const colors = {
@@ -241,6 +242,7 @@ export default function HomeScreen() {
         description: newTaskSubject.trim() || undefined,
         due_date: newTaskDueDate ? newTaskDueDate.toISOString().split('T')[0] : undefined,
       });
+      Analytics.todoCreated(newTaskSubject);
       setNewTaskTitle('');
       setNewTaskSubject('');
       setNewTaskDueDate(null);
@@ -461,7 +463,7 @@ export default function HomeScreen() {
             activeOpacity={0.8}
           >
             <LinearGradient
-              colors={['#FFFFFF', '#E7EFEA']}
+              colors={['#FFFFFF', '#F2F8F4']}
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 1 }}
               style={styles.createButton}
@@ -734,12 +736,8 @@ export default function HomeScreen() {
 
       {/* Badges Modal */}
       <Modal visible={showBadgesModal} transparent animationType="fade">
-        <TouchableOpacity
-          style={styles.badgesModalOverlay}
-          activeOpacity={1}
-          onPress={() => setShowBadgesModal(false)}
-        >
-          <TouchableOpacity activeOpacity={1} style={styles.badgesModalContent}>
+        <View style={styles.badgesModalOverlay}>
+          <View style={styles.badgesModalContent}>
             <TouchableOpacity
               style={styles.streakModalClose}
               onPress={() => setShowBadgesModal(false)}
@@ -774,7 +772,9 @@ export default function HomeScreen() {
 
             <ScrollView
               style={styles.badgesScrollView}
-              showsVerticalScrollIndicator={false}
+              showsVerticalScrollIndicator={true}
+              nestedScrollEnabled={true}
+              bounces={true}
             >
               {badges.filter(b => b.earned).length === 0 ? (
                 <View style={styles.badgesEmptyState}>
@@ -796,8 +796,15 @@ export default function HomeScreen() {
                 </View>
               )}
             </ScrollView>
-          </TouchableOpacity>
-        </TouchableOpacity>
+
+            <TouchableOpacity
+              style={{ paddingVertical: 12, paddingHorizontal: 24 }}
+              onPress={() => setShowBadgesModal(false)}
+            >
+              <Text style={{ fontSize: 15, fontWeight: '700', color: '#5E7F6E' }}>Close</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
       </Modal>
 
       {/* Streak Details Modal */}
@@ -1154,7 +1161,7 @@ const styles = StyleSheet.create({
     width: '100%',
     height: 240,
     position: 'absolute',
-    top: -52,
+    top: -48,
     left: 0,
   },
   landscapeWrapper: {
@@ -1305,6 +1312,7 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.1,
     shadowRadius: 4,
     elevation: 3,
+    width: '85%',
   },
   createButton: {
     flexDirection: 'row',
@@ -1314,7 +1322,6 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     borderRadius: 30,
     gap: spacing.sm,
-    minWidth: 260,
   },
   createButtonIcon: {
     fontSize: 18,
@@ -1338,7 +1345,7 @@ const styles = StyleSheet.create({
     borderRadius: 30,
     marginTop: spacing.sm,
     gap: spacing.sm,
-    minWidth: 260,
+    width: '85%',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
@@ -1772,7 +1779,7 @@ const styles = StyleSheet.create({
     padding: spacing.xl,
     paddingBottom: spacing.lg,
     width: '90%',
-    maxHeight: '80%',
+    maxHeight: '85%',
     alignItems: 'center',
     ...shadows.large,
   },
@@ -1793,24 +1800,25 @@ const styles = StyleSheet.create({
   },
   badgesScrollView: {
     width: '100%',
-    maxHeight: 340,
+    maxHeight: 500,
     marginBottom: spacing.md,
   },
   badgesGrid: {
     flexDirection: 'row' as const,
     flexWrap: 'wrap' as const,
-    gap: spacing.sm,
-    justifyContent: 'center' as const,
+    justifyContent: 'space-between' as const,
+    paddingHorizontal: 2,
   },
   badgeItem: {
-    width: 96,
+    width: '31%' as any,
     alignItems: 'center' as const,
-    paddingVertical: 10,
+    paddingVertical: 12,
     paddingHorizontal: 6,
-    backgroundColor: '#FFF8E7',
+    backgroundColor: '#E7EFEA',
     borderRadius: borderRadius.lg,
     borderWidth: 1,
-    borderColor: '#E8B86D40',
+    borderColor: '#A9BDAF40',
+    marginBottom: spacing.sm,
   },
   badgeItemIcon: {
     fontSize: 28,

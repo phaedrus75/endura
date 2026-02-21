@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { StatusBar } from 'expo-status-bar';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
@@ -6,10 +6,12 @@ import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { View, Text, StyleSheet, ActivityIndicator } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
-import { StripeProvider } from '@stripe/stripe-react-native';
 
 import { AuthProvider, useAuth } from './contexts/AuthContext';
+import { NotificationProvider } from './contexts/NotificationContext';
 import { colors, shadows, spacing } from './theme/colors';
+import { PostHogProvider } from 'posthog-react-native';
+import { posthogClient, identifyUser, resetUser, Analytics } from './services/analytics';
 
 // Screens
 import AuthScreen from './screens/AuthScreen';
@@ -57,6 +59,7 @@ function MainTabs() {
         tabBarLabelStyle: styles.tabLabel,
         tabBarItemStyle: styles.tabItem,
         headerShown: false,
+        sceneStyle: { backgroundColor: colors.surface },
       })}
     >
       <Tab.Screen name="Home" component={HomeScreen} />
@@ -121,6 +124,20 @@ function MainStackNavigator() {
 
 function AppNavigator() {
   const { isAuthenticated, isLoading, user } = useAuth();
+
+  useEffect(() => {
+    if (user) {
+      identifyUser(user.id, {
+        email: user.email,
+        username: user.username,
+        total_study_minutes: user.total_study_minutes,
+        current_streak: user.current_streak,
+      });
+      Analytics.appOpened();
+    } else {
+      resetUser();
+    }
+  }, [user?.id]);
   
   if (isLoading) {
     return (
@@ -147,23 +164,20 @@ function AppNavigator() {
   );
 }
 
-const STRIPE_PUBLISHABLE_KEY = 'pk_test_REPLACE_WITH_YOUR_KEY';
-
 export default function App() {
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <SafeAreaProvider>
-        <StripeProvider
-          publishableKey={STRIPE_PUBLISHABLE_KEY}
-          merchantIdentifier="merchant.com.endura.study"
-        >
-          <AuthProvider>
+        <AuthProvider>
+          <NotificationProvider>
             <NavigationContainer>
-              <StatusBar style="dark" />
-              <AppNavigator />
+              <PostHogProvider client={posthogClient} autocapture={false}>
+                <StatusBar style="dark" />
+                <AppNavigator />
+              </PostHogProvider>
             </NavigationContainer>
-          </AuthProvider>
-        </StripeProvider>
+          </NotificationProvider>
+        </AuthProvider>
       </SafeAreaProvider>
     </GestureHandlerRootView>
   );

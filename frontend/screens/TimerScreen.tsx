@@ -25,6 +25,7 @@ import { colors, shadows, spacing, borderRadius } from '../theme/colors';
 import { sessionsAPI, tasksAPI, animalsAPI, Task, BadgeInfo } from '../services/api';
 import { useAuth } from '../contexts/AuthContext';
 import { getAnimalImage } from '../assets/animals';
+import { Analytics } from '../services/analytics';
 
 // 30 Endangered Animals - unlocked in order (synced with backend)
 const ENDANGERED_ANIMALS = [
@@ -158,8 +159,10 @@ export default function TimerScreen() {
   const appState = useRef(AppState.currentState);
   const backgroundTimestamp = useRef<number | null>(null);
   const isRunningRef = useRef(false);
+  const timeLeftRef = useRef(timeLeft);
 
   useEffect(() => { isRunningRef.current = isRunning; }, [isRunning]);
+  useEffect(() => { timeLeftRef.current = timeLeft; }, [timeLeft]);
 
   // Load unlocked animals from storage
   useEffect(() => {
@@ -242,6 +245,8 @@ export default function TimerScreen() {
           const elapsed = (Date.now() - backgroundTimestamp.current) / 1000;
           backgroundTimestamp.current = null;
           if (elapsed > 10) {
+            const elapsedMinutes = Math.max(0, (selectedMinutes * TIME_MULTIPLIER - timeLeftRef.current) / 60);
+            Analytics.sessionAbandoned(elapsedMinutes);
             const dying = ENDANGERED_ANIMALS.find(a => a.id === selectedAnimalId)?.name || 'Your animal';
             if (intervalRef.current) clearInterval(intervalRef.current);
             isRunningRef.current = false;
@@ -426,6 +431,10 @@ export default function TimerScreen() {
 
     try { await refreshUser(); } catch (_) {}
 
+    Analytics.sessionCompleted(selectedMinutes, coinsEarned, selectedSubject || undefined);
+    const animalStatus = localAnimal?.status || 'Unknown';
+    Analytics.eggHatched(hatchedName, animalStatus);
+
     setHatchedAnimalInfo({
       emoji: hatchedEmoji,
       name: hatchedName,
@@ -478,6 +487,7 @@ export default function TimerScreen() {
       return;
     }
     setShowSubjectModal(false);
+    Analytics.sessionStarted(selectedMinutes, selectedSubject);
     setIsRunning(true);
     setIsPaused(false);
   };
@@ -714,7 +724,15 @@ export default function TimerScreen() {
                 onPress={() =>
                   Alert.alert('Reset Timer', 'Are you sure? You will lose progress.', [
                     { text: 'Cancel', style: 'cancel' },
-                    { text: 'Reset', onPress: resetTimer, style: 'destructive' },
+                    {
+                      text: 'Reset',
+                      onPress: () => {
+                        const elapsedMinutes = Math.max(0, (selectedMinutes * TIME_MULTIPLIER - timeLeft) / 60);
+                        Analytics.sessionAbandoned(elapsedMinutes);
+                        resetTimer();
+                      },
+                      style: 'destructive',
+                    },
                   ])
                 }
               >
