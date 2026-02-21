@@ -83,7 +83,7 @@ def health_check():
     return {
         "status": "healthy",
         "app": "Endura API",
-        "version": "1.0.43",
+        "version": "1.0.44",
     }
 
 @app.get("/health")
@@ -159,20 +159,33 @@ def seed_check():
             {"name": "Wombat", "species": "Lasiorhinus krefftii", "rarity": "rare", "conservation_status": "Critically Endangered", "description": "Burrowing marsupial of northern Australia, extremely rare"},
         ]
         
-        # Clean up: remove duplicates and any animals not in the canonical list
+        # Clean up: remove duplicates and reassign references to the kept copy
         canonical_names = [a["name"] for a in animals]
         all_db_animals = db.query(models.Animal).all()
-        seen_names = set()
-        removed = 0
+        keep_ids = {}
+        dupes = []
         for animal in all_db_animals:
-            if animal.name not in canonical_names or animal.name in seen_names:
-                db.delete(animal)
-                removed += 1
+            if animal.name not in canonical_names:
+                dupes.append(animal)
+            elif animal.name not in keep_ids:
+                keep_ids[animal.name] = animal.id
             else:
-                seen_names.add(animal.name)
+                dupes.append(animal)
+
+        removed = 0
+        for dupe in dupes:
+            keep_id = keep_ids.get(dupe.name)
+            if keep_id:
+                db.execute(text(f"UPDATE user_animals SET animal_id = {keep_id} WHERE animal_id = {dupe.id}"))
+                db.execute(text(f"UPDATE eggs SET animal_id = {keep_id} WHERE animal_id = {dupe.id}"))
+            else:
+                db.execute(text(f"DELETE FROM user_animals WHERE animal_id = {dupe.id}"))
+                db.execute(text(f"DELETE FROM eggs WHERE animal_id = {dupe.id}"))
+            db.delete(dupe)
+            removed += 1
         if removed > 0:
             db.commit()
-            print(f"[STARTUP] Removed {removed} duplicate/extra animals")
+            print(f"[STARTUP] Removed {removed} duplicate/extra animals, reassigned references")
 
         added = 0
         for animal_data in animals:
