@@ -2,6 +2,21 @@
 
 import { motion } from "framer-motion";
 
+const highlights = [
+  { icon: "🌍", stat: "170+", label: "Active users across 3 continents" },
+  { icon: "🏆", stat: "1st", label: "Place — IE Sustainability Datathon" },
+  { icon: "🎓", stat: "IB", label: "Diploma student, Southbank London" },
+];
+
+const credentials = [
+  "Founder & CEO",
+  "IB Diploma Student",
+  "Harvard MUN Delegate",
+  "UChicago Research Scholar",
+  "1st Place IE Datathon",
+  "Public Speaking Finalist",
+];
+
 export default function Founder() {
   return (
     <section
@@ -20,19 +35,35 @@ export default function Founder() {
           >
             <div className="relative">
               <div className="w-64 h-64 sm:w-80 sm:h-80 rounded-3xl bg-gradient-to-br from-sage-light to-sage overflow-hidden border-4 border-white shadow-xl">
-                {/* Placeholder for founder photo */}
                 <div className="w-full h-full flex flex-col items-center justify-center text-forest-dark/40">
                   <span className="text-7xl mb-2">🌿</span>
                   <span className="text-sm font-medium">Photo coming soon</span>
                 </div>
               </div>
-              {/* Decorative elements */}
               <div className="absolute -bottom-3 -right-3 bg-forest text-white w-16 h-16 rounded-2xl flex items-center justify-center shadow-lg text-2xl rotate-6">
                 16
               </div>
               <div className="absolute -top-3 -left-3 text-3xl animate-float">
                 🦁
               </div>
+            </div>
+
+            {/* Impact stats below photo */}
+            <div className="mt-8 grid grid-cols-3 gap-3">
+              {highlights.map((h) => (
+                <motion.div
+                  key={h.label}
+                  initial={{ opacity: 0, y: 10 }}
+                  whileInView={{ opacity: 1, y: 0 }}
+                  viewport={{ once: true }}
+                  transition={{ delay: 0.3, duration: 0.5 }}
+                  className="text-center"
+                >
+                  <span className="text-xl">{h.icon}</span>
+                  <p className="text-lg font-bold text-forest-dark mt-1">{h.stat}</p>
+                  <p className="text-[11px] text-forest-dark/50 leading-tight">{h.label}</p>
+                </motion.div>
+              ))}
             </div>
           </motion.div>
 
@@ -54,20 +85,30 @@ export default function Founder() {
 
             <div className="space-y-4 text-lg text-forest-dark/60 leading-relaxed">
               <p>
-                At just 16 years old, Rhea saw a problem she couldn&apos;t ignore:
-                students struggling to stay motivated, and endangered species
-                losing their fight for survival. Her answer? Connect the two.
+                At 16, Rhea saw a problem she couldn&apos;t ignore: students
+                struggling to stay motivated, and endangered species losing
+                their fight for survival. As an IB Diploma student at
+                Southbank International School in London, she decided to
+                connect the two.
               </p>
               <p>
-                Endura was born from a simple idea — that the hours young people
-                spend studying can be channelled into something meaningful. Every
-                study session becomes an act of conservation. Every student
-                becomes a guardian of endangered wildlife.
+                Endura was born from a simple idea — that the hours young
+                people spend studying can be channelled into something
+                meaningful. Every study session becomes an act of conservation.
+                Every student becomes a guardian of endangered wildlife. Today,
+                170+ active users across 3 continents study and protect species
+                through Endura.
               </p>
               <p>
-                As Founder & Youth Director of the Endura Conservation
-                Foundation, Rhea is building a movement where academic success
-                and environmental impact go hand in hand.
+                Beyond the app, Rhea has represented her school at Harvard and
+                Oxford Model UN, conducted psychology research at the
+                University of Chicago, won 1st place in the IE University
+                Sustainability Datathon, spoken to 400+ students across Delhi
+                about using AI responsibly, and volunteered teaching maths and
+                computer science in underserved communities. She was selected
+                as a student panellist at the international Cognita
+                &ldquo;School of the Future&rdquo; conference in Chile,
+                speaking to global educators about how AI will shape education.
               </p>
             </div>
 
@@ -83,14 +124,8 @@ export default function Founder() {
               motivation.&rdquo;
             </motion.blockquote>
 
-            {/* Credentials placeholder */}
-            <div className="mt-8 flex flex-wrap gap-3 justify-center lg:justify-start">
-              {[
-                "Founder & Youth Director",
-                "App Developer",
-                "Conservation Advocate",
-                "Age 16",
-              ].map((tag) => (
+            <div className="mt-8 flex flex-wrap gap-2.5 justify-center lg:justify-start">
+              {credentials.map((tag) => (
                 <span
                   key={tag}
                   className="bg-sand px-4 py-2 rounded-full text-sm font-medium text-forest-dark/60"
