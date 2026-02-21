@@ -83,7 +83,7 @@ def health_check():
     return {
         "status": "healthy",
         "app": "Endura API",
-        "version": "1.0.38",
+        "version": "1.0.39",
     }
 
 @app.get("/health")
@@ -1579,6 +1579,42 @@ def admin_activity(
         })
 
     return {"events": result}
+
+
+class AnimalUpdate(BaseModel):
+    name: Optional[str] = None
+    species: Optional[str] = None
+    rarity: Optional[str] = None
+    conservation_status: Optional[str] = None
+    description: Optional[str] = None
+    image_url: Optional[str] = None
+
+
+@app.put("/admin/animals/{animal_id}")
+def admin_update_animal(
+    animal_id: int,
+    body: AnimalUpdate,
+    db: Session = Depends(get_db),
+    _=Depends(verify_admin),
+):
+    animal = db.query(models.Animal).filter(models.Animal.id == animal_id).first()
+    if not animal:
+        raise HTTPException(status_code=404, detail="Animal not found")
+
+    updates = body.dict(exclude_unset=True)
+    for field, value in updates.items():
+        setattr(animal, field, value)
+    db.commit()
+    db.refresh(animal)
+    return {
+        "id": animal.id,
+        "name": animal.name,
+        "species": animal.species,
+        "rarity": animal.rarity,
+        "conservation_status": animal.conservation_status,
+        "description": animal.description,
+        "image_url": animal.image_url,
+    }
 
 
 if __name__ == "__main__":

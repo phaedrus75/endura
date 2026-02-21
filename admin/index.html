@@ -162,9 +162,37 @@
             border: 2px solid transparent; transition: all .15s;
         }
         .animal-card:hover { border-color: var(--forest-light); transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,.06); }
+        .animal-card { cursor: pointer; }
         .animal-card .emoji { font-size: 36px; }
+        .animal-card .animal-img { width: 48px; height: 48px; border-radius: 10px; object-fit: cover; }
         .animal-card .name { font-weight: 600; font-size: 14px; }
         .animal-card .status { font-size: 12px; color: var(--text-muted); }
+        .animal-card .rarity-tag { font-size: 10px; font-weight: 600; margin-top: 2px; text-transform: uppercase; letter-spacing: .3px; }
+
+        /* ---- Animal Edit Modal ---- */
+        .animal-detail-img { width: 120px; height: 120px; border-radius: 16px; object-fit: cover; border: 3px solid var(--border); }
+        .animal-detail-placeholder {
+            width: 120px; height: 120px; border-radius: 16px; border: 3px dashed var(--border);
+            display: flex; align-items: center; justify-content: center; font-size: 48px; background: var(--bg);
+        }
+        .animal-form label { display: block; font-size: 12px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: .3px; margin-bottom: 4px; margin-top: 14px; }
+        .animal-form input, .animal-form textarea, .animal-form select {
+            width: 100%; padding: 10px 12px; border: 1px solid var(--border);
+            border-radius: 10px; font-size: 14px; font-family: inherit;
+        }
+        .animal-form input:focus, .animal-form textarea:focus, .animal-form select:focus { outline: none; border-color: var(--forest); }
+        .animal-form textarea { min-height: 80px; resize: vertical; }
+        .animal-form .btn-row { display: flex; gap: 10px; margin-top: 20px; }
+        .animal-form .btn-save {
+            flex: 2; padding: 12px; background: linear-gradient(135deg, var(--forest-light), var(--forest));
+            color: #fff; border: none; border-radius: 10px; font-size: 14px; font-weight: 600; cursor: pointer;
+        }
+        .animal-form .btn-save:hover { opacity: .9; }
+        .animal-form .btn-cancel {
+            flex: 1; padding: 12px; background: var(--bg); border: 1px solid var(--border);
+            border-radius: 10px; font-size: 14px; font-weight: 600; cursor: pointer; color: var(--text-muted);
+        }
+        .save-success { color: var(--accent); font-size: 13px; font-weight: 600; margin-top: 10px; display: none; }
 
         /* ---- Activity Feed ---- */
         .feed-item {
@@ -359,6 +387,48 @@
             <button class="modal-close" onclick="closeUserModal()">&times;</button>
         </div>
         <div id="modalUserBody"></div>
+    </div>
+</div>
+
+<!-- Animal Edit Modal -->
+<div class="modal-overlay" id="animalModal">
+    <div class="modal-box">
+        <div class="modal-header">
+            <h2 id="animalModalTitle">Edit Animal</h2>
+            <button class="modal-close" onclick="closeAnimalModal()">&times;</button>
+        </div>
+        <div style="display:flex;gap:20px;align-items:flex-start;margin-bottom:10px">
+            <div id="animalImgWrap"></div>
+            <div style="flex:1">
+                <div style="font-size:13px;color:var(--text-muted)">ID: <span id="animalDetailId"></span></div>
+                <div id="animalDetailRarity" style="margin-top:4px"></div>
+            </div>
+        </div>
+        <form class="animal-form" id="animalEditForm">
+            <input type="hidden" id="animalEditId">
+            <label>Name</label>
+            <input type="text" id="animalEditName" required>
+            <label>Species</label>
+            <input type="text" id="animalEditSpecies">
+            <label>Rarity</label>
+            <select id="animalEditRarity">
+                <option value="common">Common</option>
+                <option value="rare">Rare</option>
+                <option value="epic">Epic</option>
+                <option value="legendary">Legendary</option>
+            </select>
+            <label>Conservation Status</label>
+            <input type="text" id="animalEditStatus">
+            <label>Image URL</label>
+            <input type="url" id="animalEditImage" placeholder="https://...">
+            <label>Description</label>
+            <textarea id="animalEditDesc"></textarea>
+            <div class="save-success" id="animalSaveSuccess">Saved successfully</div>
+            <div class="btn-row">
+                <button type="button" class="btn-cancel" onclick="closeAnimalModal()">Cancel</button>
+                <button type="submit" class="btn-save">Save Changes</button>
+            </div>
+        </form>
     </div>
 </div>
 
@@ -604,21 +674,95 @@ async function loadDonations() {
 }
 
 // ----- Content -----
+let allAnimals = [];
+
 async function loadContent() {
     try {
-        const animals = await fetch(API_URL + '/animals').then(r => r.json());
-        const grid = document.getElementById('animalGrid');
-        grid.innerHTML = animals.map(a => `
-            <div class="animal-card">
-                <span class="emoji">${getAnimalEmoji(a.name)}</span>
-                <div>
-                    <div class="name">${esc(a.name)}</div>
-                    <div class="status">${esc(a.conservation_status||a.rarity||'')}</div>
-                </div>
-            </div>
-        `).join('');
+        allAnimals = await fetch(API_URL + '/animals').then(r => r.json());
+        renderAnimalGrid();
     } catch (e) { console.error('Content load failed', e); }
 }
+
+function renderAnimalGrid() {
+    const grid = document.getElementById('animalGrid');
+    grid.innerHTML = allAnimals.map(a => {
+        const rarityColors = { common: 'badge-green', rare: 'badge-blue', epic: 'badge-purple', legendary: 'badge-amber' };
+        const imgHtml = a.image_url
+            ? `<img class="animal-img" src="${esc(a.image_url)}" alt="${esc(a.name)}" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'"><span class="emoji" style="display:none">${getAnimalEmoji(a.name)}</span>`
+            : `<span class="emoji">${getAnimalEmoji(a.name)}</span>`;
+        return `<div class="animal-card" onclick="openAnimalDetail(${a.id})">
+            ${imgHtml}
+            <div>
+                <div class="name">${esc(a.name)}</div>
+                <div class="status">${esc(a.conservation_status || '')}</div>
+                <div class="rarity-tag"><span class="badge ${rarityColors[a.rarity] || 'badge-green'}">${esc(a.rarity || 'common')}</span></div>
+            </div>
+        </div>`;
+    }).join('');
+}
+
+function openAnimalDetail(id) {
+    const a = allAnimals.find(x => x.id === id);
+    if (!a) return;
+    document.getElementById('animalEditId').value = a.id;
+    document.getElementById('animalDetailId').textContent = a.id;
+    document.getElementById('animalModalTitle').textContent = getAnimalEmoji(a.name) + ' ' + a.name;
+    document.getElementById('animalEditName').value = a.name || '';
+    document.getElementById('animalEditSpecies').value = a.species || '';
+    document.getElementById('animalEditRarity').value = a.rarity || 'common';
+    document.getElementById('animalEditStatus').value = a.conservation_status || '';
+    document.getElementById('animalEditImage').value = a.image_url || '';
+    document.getElementById('animalEditDesc').value = a.description || '';
+
+    const rarityColors = { common: 'badge-green', rare: 'badge-blue', epic: 'badge-purple', legendary: 'badge-amber' };
+    document.getElementById('animalDetailRarity').innerHTML = `<span class="badge ${rarityColors[a.rarity]||'badge-green'}">${esc(a.rarity||'common')}</span>`;
+
+    const wrap = document.getElementById('animalImgWrap');
+    if (a.image_url) {
+        wrap.innerHTML = `<img class="animal-detail-img" src="${esc(a.image_url)}" onerror="this.outerHTML='<div class=animal-detail-placeholder>${getAnimalEmoji(a.name)}</div>'">`;
+    } else {
+        wrap.innerHTML = `<div class="animal-detail-placeholder">${getAnimalEmoji(a.name)}</div>`;
+    }
+
+    document.getElementById('animalSaveSuccess').style.display = 'none';
+    document.getElementById('animalModal').classList.add('active');
+}
+
+function closeAnimalModal() { document.getElementById('animalModal').classList.remove('active'); }
+document.getElementById('animalModal').addEventListener('click', e => { if (e.target.id === 'animalModal') closeAnimalModal(); });
+
+document.getElementById('animalEditForm').addEventListener('submit', async e => {
+    e.preventDefault();
+    const id = document.getElementById('animalEditId').value;
+    const body = {
+        name: document.getElementById('animalEditName').value,
+        species: document.getElementById('animalEditSpecies').value,
+        rarity: document.getElementById('animalEditRarity').value,
+        conservation_status: document.getElementById('animalEditStatus').value,
+        image_url: document.getElementById('animalEditImage').value || null,
+        description: document.getElementById('animalEditDesc').value || null,
+    };
+    try {
+        const res = await fetch(API_URL + '/admin/animals/' + id, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json', 'X-Admin-Key': API_KEY },
+            body: JSON.stringify(body),
+        });
+        if (!res.ok) throw new Error(res.status);
+        const updated = await res.json();
+        const idx = allAnimals.findIndex(a => a.id === updated.id);
+        if (idx !== -1) allAnimals[idx] = { ...allAnimals[idx], ...updated };
+        renderAnimalGrid();
+        document.getElementById('animalSaveSuccess').style.display = 'block';
+        document.getElementById('animalModalTitle').textContent = getAnimalEmoji(updated.name) + ' ' + updated.name;
+        if (updated.image_url) {
+            document.getElementById('animalImgWrap').innerHTML = `<img class="animal-detail-img" src="${esc(updated.image_url)}">`;
+        }
+        setTimeout(() => { document.getElementById('animalSaveSuccess').style.display = 'none'; }, 2000);
+    } catch (err) {
+        alert('Failed to save: ' + err.message);
+    }
+});
 
 const ANIMAL_EMOJIS = {
     'Red Panda':'🐼','Sea Turtle':'🐢','Penguin':'🐧','Koala':'🐨','Flamingo':'🦩',
