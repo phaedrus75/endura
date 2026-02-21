@@ -24,7 +24,7 @@ import Svg, { Circle, Defs, LinearGradient as SvgLinearGradient, Stop } from 're
 import LottieView from 'lottie-react-native';
 import { colors, shadows, spacing, borderRadius } from '../theme/colors';
 import { useAuth } from '../contexts/AuthContext';
-import { animalsAPI, badgesAPI, UserAnimal, Animal } from '../services/api';
+import { animalsAPI, badgesAPI, donationsAPI, UserAnimal, Animal, DonationLeaderboardEntry } from '../services/api';
 import { getAnimalImage } from '../assets/animals';
 import { Analytics } from '../services/analytics';
 
@@ -317,6 +317,8 @@ export default function CollectionScreen() {
   const sanctuaryContentHRef = useRef(0);
   const [isDragging, setIsDragging] = useState(false);
   const [communityTotal, setCommunityTotal] = useState(0);
+  const [showChampionsModal, setShowChampionsModal] = useState(false);
+  const [donationLeaderboard, setDonationLeaderboard] = useState<DonationLeaderboardEntry[]>([]);
 
   const loadPurchases = async () => {
     try {
@@ -407,6 +409,10 @@ export default function CollectionScreen() {
         const data = await res.json();
         setCommunityTotal(data.total_raised || 0);
       }
+    } catch (e) {}
+    try {
+      const lb = await donationsAPI.getLeaderboard();
+      setDonationLeaderboard(lb);
     } catch (e) {}
   };
 
@@ -521,6 +527,17 @@ export default function CollectionScreen() {
             </View>
             <Text style={styles.takeActionArrow}>›</Text>
           </LinearGradient>
+        </TouchableOpacity>
+
+        {/* Conservation Champions Link */}
+        <TouchableOpacity
+          style={styles.championsLink}
+          onPress={() => setShowChampionsModal(true)}
+          activeOpacity={0.7}
+        >
+          <Text style={styles.championsLinkIcon}>🌍</Text>
+          <Text style={styles.championsLinkText}>Conservation Champions</Text>
+          <Text style={styles.championsLinkArrow}>›</Text>
         </TouchableOpacity>
 
         {/* Progress Card */}
@@ -1057,6 +1074,83 @@ export default function CollectionScreen() {
           </View>
         </View>
       </Modal>
+
+      {/* Conservation Champions Modal */}
+      <Modal visible={showChampionsModal} transparent animationType="slide">
+        <View style={styles.championsOverlay}>
+          <View style={styles.championsContent}>
+            <View style={styles.championsHeader}>
+              <View>
+                <Text style={styles.championsTitle}>🌍 Conservation Champions</Text>
+                <Text style={styles.championsSub}>Ranked by total donations to WWF</Text>
+              </View>
+              <TouchableOpacity
+                style={styles.championsClose}
+                onPress={() => setShowChampionsModal(false)}
+              >
+                <Text style={styles.championsCloseText}>✕</Text>
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView
+              showsVerticalScrollIndicator={false}
+              style={styles.championsScroll}
+            >
+              {donationLeaderboard.length === 0 ? (
+                <View style={styles.championsEmpty}>
+                  <Text style={{ fontSize: 48, marginBottom: 12 }}>💚</Text>
+                  <Text style={styles.championsEmptyText}>No donations yet.</Text>
+                  <Text style={styles.championsEmptySub}>Be the first to donate and lead the board!</Text>
+                  <TouchableOpacity
+                    style={styles.championsDonateBtn}
+                    onPress={() => { setShowChampionsModal(false); navigation.navigate('TakeAction'); }}
+                  >
+                    <Text style={styles.championsDonateBtnText}>Donate Now</Text>
+                  </TouchableOpacity>
+                </View>
+              ) : (
+                donationLeaderboard.map((entry) => (
+                  <View
+                    key={entry.user_id}
+                    style={[
+                      styles.championsRow,
+                      entry.is_current_user && styles.championsRowMe,
+                    ]}
+                  >
+                    <Text style={styles.championsRank}>
+                      {entry.rank === 1 ? '🥇' : entry.rank === 2 ? '🥈' : entry.rank === 3 ? '🥉' : `#${entry.rank}`}
+                    </Text>
+                    <View style={styles.championsInfo}>
+                      <Text style={styles.championsName}>
+                        {entry.username}{entry.is_current_user ? ' (You)' : ''}
+                      </Text>
+                      <Text style={styles.championsStats}>
+                        {entry.donation_count} donation{entry.donation_count !== 1 ? 's' : ''}
+                      </Text>
+                    </View>
+                    <Text style={styles.championsAmount}>${entry.total_donated.toFixed(0)}</Text>
+                  </View>
+                ))
+              )}
+            </ScrollView>
+
+            <TouchableOpacity
+              style={styles.championsFooterBtn}
+              onPress={() => { setShowChampionsModal(false); navigation.navigate('TakeAction'); }}
+              activeOpacity={0.8}
+            >
+              <LinearGradient
+                colors={['#2F4A3E', '#1A2F26']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 0 }}
+                style={styles.championsFooterGradient}
+              >
+                <Text style={styles.championsFooterText}>💚 Donate & Climb the Leaderboard</Text>
+              </LinearGradient>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -1148,6 +1242,161 @@ const styles = StyleSheet.create({
     fontSize: 26,
     fontWeight: '300',
     color: 'rgba(255,255,255,0.7)',
+  },
+  championsLink: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    marginHorizontal: spacing.lg,
+    marginTop: 8,
+    marginBottom: spacing.sm,
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    borderRadius: 14,
+    ...shadows.small,
+  },
+  championsLinkIcon: {
+    fontSize: 20,
+    marginRight: 10,
+  },
+  championsLinkText: {
+    flex: 1,
+    fontSize: 15,
+    fontWeight: '700',
+    color: colors.textPrimary,
+  },
+  championsLinkArrow: {
+    fontSize: 22,
+    fontWeight: '300',
+    color: colors.textMuted,
+  },
+  championsOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'flex-end',
+  },
+  championsContent: {
+    backgroundColor: '#FFFFFF',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    paddingTop: spacing.lg,
+    paddingBottom: 36,
+    maxHeight: '75%',
+  },
+  championsHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    paddingHorizontal: spacing.lg,
+    marginBottom: spacing.md,
+  },
+  championsTitle: {
+    fontSize: 20,
+    fontWeight: '800',
+    color: colors.textPrimary,
+  },
+  championsSub: {
+    fontSize: 13,
+    color: colors.textMuted,
+    fontWeight: '500',
+    marginTop: 2,
+  },
+  championsClose: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#F0F4F2',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  championsCloseText: {
+    fontSize: 16,
+    color: colors.textSecondary,
+  },
+  championsScroll: {
+    paddingHorizontal: spacing.lg,
+  },
+  championsEmpty: {
+    alignItems: 'center',
+    paddingVertical: 40,
+  },
+  championsEmptyText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: colors.textPrimary,
+  },
+  championsEmptySub: {
+    fontSize: 13,
+    color: colors.textMuted,
+    marginTop: 4,
+    marginBottom: 20,
+  },
+  championsDonateBtn: {
+    backgroundColor: '#2F4A3E',
+    borderRadius: 20,
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+  },
+  championsDonateBtnText: {
+    color: '#FFFFFF',
+    fontWeight: '700',
+    fontSize: 14,
+  },
+  championsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F0F4F2',
+  },
+  championsRowMe: {
+    backgroundColor: '#E7EFEA',
+    marginHorizontal: -spacing.lg,
+    paddingHorizontal: spacing.lg,
+    borderRadius: 12,
+    borderBottomWidth: 0,
+    marginBottom: 4,
+  },
+  championsRank: {
+    fontSize: 22,
+    width: 40,
+    textAlign: 'center',
+  },
+  championsInfo: {
+    flex: 1,
+    marginLeft: 8,
+  },
+  championsName: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: colors.textPrimary,
+  },
+  championsStats: {
+    fontSize: 12,
+    color: colors.textMuted,
+    fontWeight: '500',
+    marginTop: 1,
+  },
+  championsAmount: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: '#2F4A3E',
+  },
+  championsFooterBtn: {
+    marginHorizontal: spacing.lg,
+    marginTop: spacing.md,
+    borderRadius: 14,
+    overflow: 'hidden',
+  },
+  championsFooterGradient: {
+    paddingVertical: 14,
+    alignItems: 'center',
+    borderRadius: 14,
+  },
+  championsFooterText: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#FFFFFF',
   },
   progressCard: {
     borderRadius: borderRadius.md,
