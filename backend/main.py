@@ -101,9 +101,15 @@ def debug_tips_count(db: Session = Depends(get_db)):
 
 # ============ Startup: Seed Animals ============
 
+import threading
+
 @app.on_event("startup")
 def seed_animals():
-    """Seed animals on startup - with robust error handling"""
+    """Seed animals on startup in background thread so healthcheck passes quickly"""
+    print("[STARTUP] Launching seed in background thread...")
+    threading.Thread(target=_do_seed, daemon=True).start()
+
+def _do_seed():
     print("[STARTUP] Beginning seed_animals...")
     try:
         db = next(get_db())
