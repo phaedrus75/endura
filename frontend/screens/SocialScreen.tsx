@@ -14,6 +14,7 @@ import {
   Platform,
   FlatList,
   Animated,
+  Image,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -22,8 +23,8 @@ import { colors, shadows, spacing, borderRadius } from '../theme/colors';
 import { useAuth } from '../contexts/AuthContext';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
-  pactsAPI, groupsAPI, feedAPI, socialAPI, tipsAPI,
-  StudyPact, StudyGroup, GroupMessage, FeedEvent,
+  groupsAPI, feedAPI, socialAPI, tipsAPI,
+  StudyGroup, GroupMessage, FeedEvent,
   Friend, StudyTip,
 } from '../services/api';
 
@@ -77,18 +78,10 @@ interface IncomingReaction {
 }
 
 export default function SocialScreen() {
-  const { user } = useAuth();
+  const { user, profilePic } = useAuth();
   const navigation = useNavigation<any>();
   const [tab, setTab] = useState<Tab>('Buddies');
   const [refreshing, setRefreshing] = useState(false);
-
-  // Pacts
-  const [pacts, setPacts] = useState<StudyPact[]>([]);
-  const [showCreatePact, setShowCreatePact] = useState(false);
-  const [pactBuddy, setPactBuddy] = useState<Friend | null>(null);
-  const [pactMinutes, setPactMinutes] = useState('30');
-  const [pactDays, setPactDays] = useState('7');
-  const [pactWager, setPactWager] = useState('0');
 
   // Groups
   const [groups, setGroups] = useState<StudyGroup[]>([]);
@@ -105,12 +98,14 @@ export default function SocialScreen() {
   const [savedTips, setSavedTips] = useState<StudyTip[]>([]);
   const [showChatActions, setShowChatActions] = useState(false);
 
+  // Feature modals (challenge, leaderboard, streak, hatch)
+  const [featureModal, setFeatureModal] = useState<{ type: 'challenge' | 'leaderboard' | 'streak' | 'hatch'; group: StudyGroup } | null>(null);
+
   // Feed
   const [feed, setFeed] = useState<FeedEvent[]>([]);
 
   // Friends
   const [friends, setFriends] = useState<Friend[]>([]);
-  const [allUsers, setAllUsers] = useState<Friend[]>([]);
   const [pendingRequests, setPendingRequests] = useState<{ id: number; user_id: number; username: string | null; email: string }[]>([]);
   const [showAddFriend, setShowAddFriend] = useState(false);
   const [addFriendHandle, setAddFriendHandle] = useState('');
@@ -175,20 +170,16 @@ export default function SocialScreen() {
 
   const loadData = useCallback(async () => {
     try {
-      const [p, g, f, fr, pr, au] = await Promise.all([
-        pactsAPI.getAll().catch(() => []),
+      const [g, f, fr, pr] = await Promise.all([
         groupsAPI.getAll().catch(() => []),
         feedAPI.getFeed().catch(() => []),
         socialAPI.getFriends().catch(() => []),
         socialAPI.getPendingRequests().catch(() => []),
-        socialAPI.getAllUsers().catch(() => []),
       ]);
-      setPacts(p);
       setGroups(g);
       setFeed(f);
       setFriends(fr);
       setPendingRequests(pr);
-      setAllUsers(au);
     } catch {}
   }, []);
 
@@ -232,30 +223,6 @@ export default function SocialScreen() {
       loadData();
     } catch (e: any) {
       Alert.alert('Error', e.message || 'Could not accept request');
-    }
-  };
-
-  // ---- Pact Actions ----
-  const handleCreatePact = async () => {
-    if (!pactBuddy) { Alert.alert('Select a friend', 'Tap a friend to select them.'); return; }
-    try {
-      await pactsAPI.create(pactBuddy.username || '', parseInt(pactMinutes) || 30, parseInt(pactDays) || 7, parseInt(pactWager) || 0);
-      setShowCreatePact(false);
-      setPactBuddy(null); setPactMinutes('30'); setPactDays('7'); setPactWager('0');
-      Alert.alert('Pact Sent!', 'Waiting for your buddy to accept.');
-      loadData();
-    } catch (e: any) {
-      Alert.alert('Error', e.message || 'Could not create pact');
-    }
-  };
-
-  const handleAcceptPact = async (pactId: number) => {
-    try {
-      await pactsAPI.accept(pactId);
-      Alert.alert('Pact Accepted!', 'The study pact is now active. Good luck!');
-      loadData();
-    } catch (e: any) {
-      Alert.alert('Error', e.message || 'Could not accept pact');
     }
   };
 
@@ -392,72 +359,41 @@ export default function SocialScreen() {
   // ---- Render ----
   const renderBuddies = () => (
     <View style={styles.tabContent}>
-      <TouchableOpacity onPress={() => setShowCreatePact(true)}>
-        <LinearGradient
-          colors={['#5F8C87', '#3B5466']}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 0 }}
-          style={styles.createButton}
-        >
-          <Text style={styles.createButtonIcon}>🤝</Text>
-          <Text style={styles.createButtonText}>New Study Pact</Text>
-        </LinearGradient>
-      </TouchableOpacity>
-
-      {pacts.length === 0 ? (
-        <View style={styles.emptyState}>
-          <Text style={styles.emptyIcon}>🤝</Text>
-          <Text style={styles.emptyTitle}>No pacts yet</Text>
-          <Text style={styles.emptySubtitle}>Challenge a friend to a study pact!</Text>
+      {/* Leaderboard */}
+      {friends.length > 0 && (
+        <View style={styles.leaderboardCard}>
+          <Text style={styles.leaderboardTitle}>📊 Weekly Leaderboard</Text>
+          {[...friends, ...(user ? [{
+            id: user.id, username: user.username, email: user.email,
+            total_study_minutes: user.total_study_minutes, current_streak: user.current_streak, animals_count: 0
+          }] : [])]
+            .sort((a, b) => b.total_study_minutes - a.total_study_minutes)
+            .slice(0, 10)
+            .map((f, i) => (
+              <View key={f.id} style={styles.leaderboardRow}>
+                <Text style={styles.leaderboardRank}>
+                  {i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `${i + 1}.`}
+                </Text>
+                {f.id === user?.id && profilePic ? (
+                  <Image source={{ uri: profilePic }} style={{ width: 24, height: 24, borderRadius: 12, marginRight: 6 }} />
+                ) : null}
+                <Text style={[styles.leaderboardName, f.id === user?.id && styles.leaderboardNameSelf]}>
+                  {f.username || f.email?.split('@')[0]}
+                </Text>
+                <Text style={styles.leaderboardStreak}>🔥 {f.current_streak}</Text>
+                <Text style={styles.leaderboardMins}>{f.total_study_minutes}m</Text>
+              </View>
+            ))}
         </View>
-      ) : pacts.map(p => {
-        const isCreator = p.creator_id === user?.id;
-        const partnerName = isCreator ? p.buddy_username : p.creator_username;
-        const myProgress = isCreator ? p.creator_progress : p.buddy_progress;
-        const theirProgress = isCreator ? p.buddy_progress : p.creator_progress;
-        const myDone = myProgress.filter(d => d.completed).length;
-        const theirDone = theirProgress.filter(d => d.completed).length;
-        const isPending = p.status === 'pending' && !isCreator;
+      )}
 
-        return (
-          <View key={p.id} style={styles.pactCard}>
-            <View style={styles.pactHeader}>
-              <Text style={styles.pactPartner}>🤝 with {partnerName || 'Unknown'}</Text>
-              <View style={[styles.statusBadge, p.status === 'active' && styles.statusActive,
-                p.status === 'completed' && styles.statusCompleted, p.status === 'failed' && styles.statusFailed]}>
-                <Text style={styles.statusText}>{p.status}</Text>
-              </View>
-            </View>
-            <Text style={styles.pactDetails}>
-              {p.daily_minutes}min/day · {p.duration_days} days{p.wager_amount > 0 ? ` · ${p.wager_amount} 🍀 wager` : ''}
-            </Text>
-            {p.status === 'active' && (
-              <View style={styles.pactProgressRow}>
-                <View style={styles.pactProgressItem}>
-                  <Text style={styles.pactProgressLabel}>You</Text>
-                  <Text style={styles.pactProgressValue}>{myDone}/{p.duration_days}</Text>
-                </View>
-                <View style={styles.pactProgressItem}>
-                  <Text style={styles.pactProgressLabel}>{partnerName}</Text>
-                  <Text style={styles.pactProgressValue}>{theirDone}/{p.duration_days}</Text>
-                </View>
-              </View>
-            )}
-            {isPending && (
-              <TouchableOpacity onPress={() => handleAcceptPact(p.id)}>
-                <LinearGradient
-                  colors={['#5F8C87', '#3B5466']}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 0 }}
-                  style={styles.acceptButton}
-                >
-                  <Text style={styles.acceptButtonText}>Accept Pact</Text>
-                </LinearGradient>
-              </TouchableOpacity>
-            )}
-          </View>
-        );
-      })}
+      {friends.length === 0 && (
+        <View style={styles.emptyState}>
+          <Text style={styles.emptyIcon}>👥</Text>
+          <Text style={styles.emptyTitle}>No friends yet</Text>
+          <Text style={styles.emptySubtitle}>Add friends to see who's studying the most!</Text>
+        </View>
+      )}
     </View>
   );
 
@@ -504,95 +440,94 @@ export default function SocialScreen() {
                 {g.total_minutes} / {g.goal_minutes} min
               </Text>
               <View style={styles.groupMembersRow}>
-                {g.members.slice(0, 5).map(m => (
-                  <View key={m.user_id} style={styles.memberChip}>
-                    <Text style={styles.memberChipText}>{m.username || '?'}</Text>
-                    <Text style={styles.memberChipMins}>{m.minutes_contributed}m</Text>
-                  </View>
-                ))}
+                {g.members.slice(0, 5).map(m => {
+                  const isMe = m.user_id === user?.id;
+                  const displayName = m.username || '?';
+                  return (
+                    <View key={m.user_id} style={styles.memberChip}>
+                      {isMe && profilePic ? (
+                        <Image source={{ uri: profilePic }} style={styles.memberAvatar} />
+                      ) : (
+                        <View style={styles.memberAvatarFallback}>
+                          <Text style={styles.memberAvatarInitial}>{displayName.charAt(0).toUpperCase()}</Text>
+                        </View>
+                      )}
+                      <Text style={styles.memberChipText}>{displayName}</Text>
+                      <Text style={styles.memberChipMins}>{m.minutes_contributed}m</Text>
+                    </View>
+                  );
+                })}
                 {g.members.length > 5 && (
                   <Text style={styles.memberMore}>+{g.members.length - 5}</Text>
                 )}
               </View>
             </TouchableOpacity>
 
-            <View style={styles.groupActions}>
-              <TouchableOpacity
-                style={styles.groupActionBtn}
-                onPress={() => openGroupChat(g)}
-                activeOpacity={0.7}
-              >
-                <Text style={styles.groupActionEmoji}>💬</Text>
-                <Text style={styles.groupActionText}>Chat</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={styles.groupActionBtn}
-                onPress={() => { setInviteGroupId(g.id); setShowInviteModal(true); }}
-                activeOpacity={0.7}
-              >
-                <Text style={styles.groupActionEmoji}>➕</Text>
-                <Text style={styles.groupActionText}>Add Friends</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={styles.groupActionBtnHighlight}
-                onPress={() => {
-                  Alert.alert(
-                    '🐣 Hatch Together',
-                    'Start a group study session! When your group hits the study goal, everyone shares custody of a rare animal.\n\nKeep studying as a group to unlock it!',
-                    [
-                      { text: 'Got it!', style: 'default' },
-                      { text: 'Start Session', onPress: () => openGroupChat(g) },
-                    ]
-                  );
-                }}
-                activeOpacity={0.7}
-              >
-                <LinearGradient
-                  colors={['#A8C8D8', '#5F8C87']}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 0 }}
-                  style={styles.groupActionBtnGradient}
+            <View style={styles.groupActionsGrid}>
+              <View style={styles.groupActionsTopRow}>
+                <TouchableOpacity
+                  style={styles.groupActionBtnClean}
+                  onPress={() => openGroupChat(g)}
+                  activeOpacity={0.7}
                 >
-                  <Text style={styles.groupActionEmoji}>🥚</Text>
-                  <Text style={styles.groupActionTextWhite}>Hatch Together</Text>
-                </LinearGradient>
-              </TouchableOpacity>
-            </View>
+                  <Text style={styles.groupActionEmoji}>💬</Text>
+                  <Text style={styles.groupActionText}>Chat</Text>
+                </TouchableOpacity>
 
-            <View style={styles.groupFeatureRow}>
-              <TouchableOpacity
-                style={styles.groupFeatureChip}
-                onPress={() => {
-                  Alert.alert('🎯 Group Challenge', `Challenge your group to beat ${g.goal_minutes} minutes this week! Everyone in "${g.name}" contributes study time toward the shared goal.`);
-                }}
-              >
-                <Text style={styles.groupFeatureEmoji}>🎯</Text>
-                <Text style={styles.groupFeatureText}>Challenge</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.groupFeatureChip}
-                onPress={() => {
-                  const sorted = [...g.members].sort((a, b) => b.minutes_contributed - a.minutes_contributed);
-                  const leaderboard = sorted.map((m, i) =>
-                    `${i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `${i+1}.`} ${m.username || '?'} — ${m.minutes_contributed}m`
-                  ).join('\n');
-                  Alert.alert(`📊 ${g.name} Leaderboard`, leaderboard || 'No activity yet!');
-                }}
-              >
-                <Text style={styles.groupFeatureEmoji}>📊</Text>
-                <Text style={styles.groupFeatureText}>Leaderboard</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.groupFeatureChip}
-                onPress={() => {
-                  Alert.alert('🏆 Group Streak', `Study together every day to build a group streak! When all members study on the same day, your group streak grows.`);
-                }}
-              >
-                <Text style={styles.groupFeatureEmoji}>🏆</Text>
-                <Text style={styles.groupFeatureText}>Streak</Text>
-              </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.groupActionBtnClean}
+                  onPress={() => { setInviteGroupId(g.id); setShowInviteModal(true); }}
+                  activeOpacity={0.7}
+                >
+                  <Text style={styles.groupActionEmoji}>➕</Text>
+                  <Text style={styles.groupActionText}>Add</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={styles.groupActionBtnClean}
+                  onPress={() => setFeatureModal({ type: 'challenge', group: g })}
+                  activeOpacity={0.7}
+                >
+                  <Text style={styles.groupActionEmoji}>🎯</Text>
+                  <Text style={styles.groupActionText}>Challenge</Text>
+                </TouchableOpacity>
+              </View>
+
+              <View style={styles.groupActionsBottomRow}>
+                <TouchableOpacity
+                  style={styles.groupActionBtnClean}
+                  onPress={() => setFeatureModal({ type: 'leaderboard', group: g })}
+                  activeOpacity={0.7}
+                >
+                  <Text style={styles.groupActionEmoji}>📊</Text>
+                  <Text style={styles.groupActionText}>Leaderboard</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={styles.groupActionBtnClean}
+                  onPress={() => setFeatureModal({ type: 'streak', group: g })}
+                  activeOpacity={0.7}
+                >
+                  <Text style={styles.groupActionEmoji}>🏆</Text>
+                  <Text style={styles.groupActionText}>Streak</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={styles.groupActionBtnHighlight}
+                  onPress={() => setFeatureModal({ type: 'hatch', group: g })}
+                  activeOpacity={0.7}
+                >
+                  <LinearGradient
+                    colors={['#A8C8D8', '#5F8C87']}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 0 }}
+                    style={styles.groupActionBtnGradient}
+                  >
+                    <Text style={styles.groupActionEmoji}>🥚</Text>
+                    <Text style={styles.groupActionTextWhite}>Hatch</Text>
+                  </LinearGradient>
+                </TouchableOpacity>
+              </View>
             </View>
           </View>
         );
@@ -602,31 +537,6 @@ export default function SocialScreen() {
 
   const renderFeed = () => (
     <View style={styles.tabContent}>
-      {/* Leaderboard Preview */}
-      {friends.length > 0 && (
-        <View style={styles.leaderboardCard}>
-          <Text style={styles.leaderboardTitle}>📊 Weekly Leaderboard</Text>
-          {[...friends, ...(user ? [{
-            id: user.id, username: user.username, email: user.email,
-            total_study_minutes: user.total_study_minutes, current_streak: user.current_streak, animals_count: 0
-          }] : [])]
-            .sort((a, b) => b.total_study_minutes - a.total_study_minutes)
-            .slice(0, 5)
-            .map((f, i) => (
-              <View key={f.id} style={styles.leaderboardRow}>
-                <Text style={styles.leaderboardRank}>
-                  {i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `${i + 1}.`}
-                </Text>
-                <Text style={[styles.leaderboardName, f.id === user?.id && styles.leaderboardNameSelf]}>
-                  {f.username || f.email?.split('@')[0]}
-                </Text>
-                <Text style={styles.leaderboardStreak}>🔥 {f.current_streak}</Text>
-                <Text style={styles.leaderboardMins}>{f.total_study_minutes}m</Text>
-              </View>
-            ))}
-        </View>
-      )}
-
       {/* Activity Feed */}
       <Text style={styles.feedSectionTitle}>📣 Friend Activity</Text>
       {feed.length === 0 ? (
@@ -693,10 +603,14 @@ export default function SocialScreen() {
             <Text style={{ fontSize: 18 }}>💡</Text>
           </TouchableOpacity>
           <TouchableOpacity
-            style={{ width: 38, height: 38, borderRadius: 19, backgroundColor: '#FFFFFF', justifyContent: 'center', alignItems: 'center' }}
+            style={{ width: 38, height: 38, borderRadius: 19, backgroundColor: '#FFFFFF', justifyContent: 'center', alignItems: 'center', overflow: 'hidden' }}
             onPress={() => navigation.navigate('Profile')}
           >
-            <Text style={{ fontSize: 18 }}>👤</Text>
+            {profilePic ? (
+              <Image source={{ uri: profilePic }} style={{ width: 38, height: 38, borderRadius: 19 }} />
+            ) : (
+              <Text style={{ fontSize: 18 }}>👤</Text>
+            )}
           </TouchableOpacity>
         </View>
       </View>
@@ -721,43 +635,26 @@ export default function SocialScreen() {
         </LinearGradient>
       )}
 
-      {/* All Users - Quick Add */}
-      {allUsers.length > 0 && (
+      {/* Friends */}
+      {friends.length > 0 && (
         <LinearGradient
           colors={['#E7EFEA', '#FFFFFF']}
           start={{ x: 0, y: 0 }}
           end={{ x: 0, y: 1 }}
           style={styles.allUsersSection}
         >
-          <Text style={styles.allUsersTitle}>👥 All Users ({allUsers.length})</Text>
+          <Text style={styles.allUsersTitle}>👥 Friends ({friends.length})</Text>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.allUsersRow}>
-            {allUsers.map(u => {
-              const isFriend = friends.some(f => f.id === u.id);
-              const isPending = pendingRequests.some(r => r.user_id === u.id);
-              return (
-                <View key={u.id} style={styles.allUserChip}>
-                  <Text style={styles.allUserAvatar}>🧑‍🎓</Text>
-                  <Text style={styles.allUserName} numberOfLines={1}>@{u.username || u.email?.split('@')[0]}</Text>
-                  <Text style={styles.allUserStats}>{u.total_study_minutes}m · 🔥{u.current_streak}</Text>
-                  {isFriend ? (
-                    <View style={[styles.allUserActionBtn, styles.allUserFriendBtn]}>
-                      <Text style={styles.allUserFriendText}>✓ Friends</Text>
-                    </View>
-                  ) : isPending ? (
-                    <View style={[styles.allUserActionBtn, styles.allUserPendingBtn]}>
-                      <Text style={styles.allUserPendingText}>Pending</Text>
-                    </View>
-                  ) : (
-                    <TouchableOpacity
-                      style={[styles.allUserActionBtn, styles.allUserAddBtn]}
-                      onPress={() => handleQuickAdd(u.username || u.email)}
-                    >
-                      <Text style={styles.allUserAddText}>+ Add</Text>
-                    </TouchableOpacity>
-                  )}
+            {friends.map(f => (
+              <View key={f.id} style={styles.allUserChip}>
+                <Text style={styles.allUserAvatar}>🧑‍🎓</Text>
+                <Text style={styles.allUserName} numberOfLines={1}>@{f.username || f.email?.split('@')[0]}</Text>
+                <Text style={styles.allUserStats}>{f.total_study_minutes}m · 🔥{f.current_streak}</Text>
+                <View style={[styles.allUserActionBtn, styles.allUserFriendBtn]}>
+                  <Text style={styles.allUserFriendText}>✓ Friends</Text>
                 </View>
-              );
-            })}
+              </View>
+            ))}
           </ScrollView>
         </LinearGradient>
       )}
@@ -784,61 +681,6 @@ export default function SocialScreen() {
         {tab === 'Groups' && renderGroups()}
         {tab === 'Feed' && renderFeed()}
       </ScrollView>
-
-      {/* Create Pact Modal */}
-      <Modal visible={showCreatePact} transparent animationType="slide">
-        <View style={styles.modalOverlay}>
-          <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-            <View style={styles.modalContent}>
-              <Text style={styles.modalTitle}>🤝 New Study Pact</Text>
-              <Text style={styles.inputLabel}>Choose a friend</Text>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.friendPickerRow}>
-                {friends.map(f => (
-                  <TouchableOpacity
-                    key={f.id}
-                    style={[styles.friendPickerChip, pactBuddy?.id === f.id && styles.friendPickerChipActive]}
-                    onPress={() => setPactBuddy(pactBuddy?.id === f.id ? null : f)}
-                  >
-                    <Text style={[styles.friendPickerText, pactBuddy?.id === f.id && styles.friendPickerTextActive]}>
-                      {f.username || f.email.split('@')[0]}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-                {friends.length === 0 && (
-                  <Text style={styles.noFriendsText}>Add friends first!</Text>
-                )}
-              </ScrollView>
-              <View style={styles.inputRow}>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.inputLabel}>Min/day</Text>
-                  <TextInput style={styles.input} value={pactMinutes} onChangeText={setPactMinutes} keyboardType="number-pad" />
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.inputLabel}>Days</Text>
-                  <TextInput style={styles.input} value={pactDays} onChangeText={setPactDays} keyboardType="number-pad" />
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.inputLabel}>Wager 🍀</Text>
-                  <TextInput style={styles.input} value={pactWager} onChangeText={setPactWager} keyboardType="number-pad" />
-                </View>
-              </View>
-              <TouchableOpacity onPress={handleCreatePact}>
-                <LinearGradient
-                  colors={['#5F8C87', '#3B5466']}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 0 }}
-                  style={styles.modalPrimary}
-                >
-                  <Text style={styles.modalPrimaryText}>Send Pact</Text>
-                </LinearGradient>
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.modalCancel} onPress={() => setShowCreatePact(false)}>
-                <Text style={styles.modalCancelText}>Cancel</Text>
-              </TouchableOpacity>
-            </View>
-          </KeyboardAvoidingView>
-        </View>
-      </Modal>
 
       {/* Create Group Modal */}
       <Modal visible={showCreateGroup} transparent animationType="slide">
@@ -1008,6 +850,9 @@ export default function SocialScreen() {
                     <Text style={[styles.chatBubbleText, isMine && { color: '#fff' }]}>{item.content}</Text>
                     <Text style={[styles.chatBubbleTime, isMine && { color: 'rgba(255,255,255,0.7)' }]}>{timeAgo(item.created_at)}</Text>
                   </View>
+                  {isMine && profilePic && (
+                    <Image source={{ uri: profilePic }} style={styles.chatAvatarImage} />
+                  )}
                 </View>
               );
             }}
@@ -1195,6 +1040,121 @@ export default function SocialScreen() {
             </TouchableOpacity>
           </KeyboardAvoidingView>
         </TouchableOpacity>
+      </Modal>
+
+      {/* Feature Modal (Challenge / Leaderboard / Streak / Hatch) */}
+      <Modal visible={!!featureModal} transparent animationType="fade">
+        <View style={styles.modalOverlay}>
+          <View style={styles.featureModalContent}>
+            {featureModal?.type === 'challenge' && (
+              <>
+                <Text style={styles.featureModalIcon}>🎯</Text>
+                <Text style={styles.featureModalTitle}>Group Challenge</Text>
+                <Text style={styles.featureModalBody}>
+                  Challenge your group to beat {featureModal.group.goal_minutes} minutes this week!{'\n\n'}
+                  Everyone in "{featureModal.group.name}" contributes study time toward the shared goal. Keep pushing each other to reach it!
+                </Text>
+                <View style={styles.featureModalProgressSection}>
+                  <Text style={styles.featureModalProgressLabel}>Progress</Text>
+                  <View style={styles.featureModalProgressBar}>
+                    <LinearGradient
+                      colors={['#A8C8D8', '#5F8C87']}
+                      start={{ x: 0, y: 0 }}
+                      end={{ x: 1, y: 0 }}
+                      style={[styles.featureModalProgressFill, {
+                        width: `${Math.min((featureModal.group.total_minutes / featureModal.group.goal_minutes) * 100, 100)}%`
+                      }]}
+                    />
+                  </View>
+                  <Text style={styles.featureModalProgressText}>
+                    {featureModal.group.total_minutes} / {featureModal.group.goal_minutes} min
+                  </Text>
+                </View>
+              </>
+            )}
+            {featureModal?.type === 'leaderboard' && (() => {
+              const sorted = [...featureModal.group.members].sort((a, b) => b.minutes_contributed - a.minutes_contributed);
+              return (
+                <>
+                  <Text style={styles.featureModalIcon}>📊</Text>
+                  <Text style={styles.featureModalTitle}>{featureModal.group.name} Leaderboard</Text>
+                  {sorted.length === 0 ? (
+                    <Text style={styles.featureModalBody}>No activity yet!</Text>
+                  ) : (
+                    <View style={styles.featureLeaderboardList}>
+                      {sorted.map((m, i) => {
+                        const isMe = m.user_id === user?.id;
+                        return (
+                          <View key={m.user_id} style={[styles.featureLeaderboardRow, isMe && styles.featureLeaderboardRowSelf]}>
+                            <Text style={styles.featureLeaderboardRank}>
+                              {i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `${i + 1}.`}
+                            </Text>
+                            {isMe && profilePic ? (
+                              <Image source={{ uri: profilePic }} style={{ width: 28, height: 28, borderRadius: 14, marginRight: 8 }} />
+                            ) : (
+                              <View style={[styles.memberAvatarFallback, { width: 28, height: 28, borderRadius: 14, marginRight: 8 }]}>
+                                <Text style={[styles.memberAvatarInitial, { fontSize: 13 }]}>{(m.username || '?').charAt(0).toUpperCase()}</Text>
+                              </View>
+                            )}
+                            <Text style={[styles.featureLeaderboardName, isMe && { fontWeight: '700' }]}>
+                              {m.username || '?'}
+                            </Text>
+                            <Text style={styles.featureLeaderboardMins}>{m.minutes_contributed}m</Text>
+                          </View>
+                        );
+                      })}
+                    </View>
+                  )}
+                </>
+              );
+            })()}
+            {featureModal?.type === 'streak' && (
+              <>
+                <Text style={styles.featureModalIcon}>🏆</Text>
+                <Text style={styles.featureModalTitle}>Group Streak</Text>
+                <Text style={styles.featureModalBody}>
+                  Study together every day to build a group streak!{'\n\n'}
+                  When all members in "{featureModal.group.name}" study on the same day, your group streak grows. Keep the momentum going!
+                </Text>
+                <View style={styles.featureStreakDisplay}>
+                  <Text style={styles.featureStreakNumber}>🔥</Text>
+                  <Text style={styles.featureStreakLabel}>Keep studying daily to build your streak!</Text>
+                </View>
+              </>
+            )}
+            {featureModal?.type === 'hatch' && (
+              <>
+                <Text style={styles.featureModalIcon}>🥚</Text>
+                <Text style={styles.featureModalTitle}>Hatch Together</Text>
+                <Text style={styles.featureModalBody}>
+                  Start a group study session! When your group hits the study goal, everyone shares custody of a rare animal.{'\n\n'}
+                  Keep studying as a group to unlock it!
+                </Text>
+                <TouchableOpacity
+                  onPress={() => {
+                    setFeatureModal(null);
+                    openGroupChat(featureModal.group);
+                  }}
+                >
+                  <LinearGradient
+                    colors={['#5F8C87', '#3B5466']}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 0 }}
+                    style={styles.featureModalActionBtn}
+                  >
+                    <Text style={styles.featureModalActionText}>Start Session</Text>
+                  </LinearGradient>
+                </TouchableOpacity>
+              </>
+            )}
+            <TouchableOpacity
+              style={styles.featureModalCloseBtn}
+              onPress={() => setFeatureModal(null)}
+            >
+              <Text style={styles.featureModalCloseText}>Close</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
       </Modal>
 
       {/* Reaction Notification Modal */}
@@ -1455,29 +1415,45 @@ const styles = StyleSheet.create({
   groupMembersRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 6 },
   memberChip: {
     flexDirection: 'row', alignItems: 'center', backgroundColor: colors.surfaceAlt,
-    paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12, gap: 4,
+    paddingHorizontal: 10, paddingVertical: 5, borderRadius: 14, gap: 5,
+  },
+  memberAvatar: {
+    width: 22, height: 22, borderRadius: 11,
+  },
+  memberAvatarFallback: {
+    width: 22, height: 22, borderRadius: 11,
+    backgroundColor: '#5F8C87', justifyContent: 'center', alignItems: 'center',
+  },
+  memberAvatarInitial: {
+    fontSize: 11, fontWeight: '700', color: '#FFFFFF',
   },
   memberChipText: { fontSize: 12, fontWeight: '600', color: colors.textPrimary },
   memberChipMins: { fontSize: 11, color: colors.textMuted },
   memberMore: { fontSize: 12, color: colors.textMuted, alignSelf: 'center' },
   groupIdText: { fontSize: 11, color: colors.textMuted },
 
-  groupActions: {
-    flexDirection: 'row',
-    gap: 8,
+  groupActionsGrid: {
     marginTop: 10,
     borderTopWidth: 1,
     borderTopColor: colors.divider,
     paddingTop: 10,
+    gap: 6,
   },
-  groupActionBtn: {
-    flex: 1,
+  groupActionsTopRow: {
     flexDirection: 'row',
+    gap: 6,
+  },
+  groupActionsBottomRow: {
+    flexDirection: 'row',
+    gap: 6,
+  },
+  groupActionBtnClean: {
+    flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 4,
+    gap: 3,
     backgroundColor: colors.surfaceAlt,
-    paddingVertical: 8,
+    paddingVertical: 10,
     borderRadius: borderRadius.md,
   },
   groupActionBtnHighlight: {
@@ -1486,35 +1462,133 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   groupActionBtnGradient: {
-    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 4,
-    paddingVertical: 8,
+    gap: 3,
+    paddingVertical: 10,
   },
-  groupActionEmoji: { fontSize: 14 },
-  groupActionText: { fontSize: 12, fontWeight: '600', color: colors.textSecondary },
-  groupActionTextWhite: { fontSize: 12, fontWeight: '700', color: '#fff' },
+  groupActionEmoji: { fontSize: 16 },
+  groupActionText: { fontSize: 11, fontWeight: '600', color: colors.textSecondary },
+  groupActionTextWhite: { fontSize: 11, fontWeight: '700', color: '#fff' },
 
-  groupFeatureRow: {
-    flexDirection: 'row',
-    gap: 6,
-    marginTop: 8,
+  // Feature modals
+  featureModalContent: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 20,
+    padding: 24,
+    marginHorizontal: 24,
+    alignItems: 'center',
+    ...shadows.medium,
   },
-  groupFeatureChip: {
-    flex: 1,
+  featureModalIcon: {
+    fontSize: 40,
+    marginBottom: 12,
+  },
+  featureModalTitle: {
+    fontSize: 20,
+    fontWeight: '800',
+    color: colors.textPrimary,
+    marginBottom: 12,
+    textAlign: 'center',
+  },
+  featureModalBody: {
+    fontSize: 14,
+    lineHeight: 22,
+    color: colors.textSecondary,
+    textAlign: 'center',
+    marginBottom: 16,
+  },
+  featureModalProgressSection: {
+    width: '100%',
+    marginBottom: 16,
+  },
+  featureModalProgressLabel: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: colors.textMuted,
+    marginBottom: 6,
+  },
+  featureModalProgressBar: {
+    height: 10,
+    backgroundColor: colors.cardBorder,
+    borderRadius: 5,
+    overflow: 'hidden',
+    marginBottom: 6,
+  },
+  featureModalProgressFill: {
+    height: '100%',
+    borderRadius: 5,
+  },
+  featureModalProgressText: {
+    fontSize: 12,
+    color: colors.textMuted,
+    textAlign: 'right',
+  },
+  featureLeaderboardList: {
+    width: '100%',
+    marginBottom: 16,
+  },
+  featureLeaderboardRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    gap: 4,
-    backgroundColor: colors.primary + '10',
-    paddingVertical: 6,
-    borderRadius: borderRadius.full,
-    borderWidth: 1,
-    borderColor: colors.primary + '20',
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: borderRadius.md,
+    marginBottom: 4,
   },
-  groupFeatureEmoji: { fontSize: 12 },
-  groupFeatureText: { fontSize: 11, fontWeight: '600', color: colors.primary },
+  featureLeaderboardRowSelf: {
+    backgroundColor: colors.surfaceAlt,
+  },
+  featureLeaderboardRank: {
+    fontSize: 16,
+    width: 30,
+    textAlign: 'center',
+  },
+  featureLeaderboardName: {
+    flex: 1,
+    fontSize: 14,
+    fontWeight: '600',
+    color: colors.textPrimary,
+  },
+  featureLeaderboardMins: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: colors.primary,
+  },
+  featureStreakDisplay: {
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  featureStreakNumber: {
+    fontSize: 48,
+    marginBottom: 6,
+  },
+  featureStreakLabel: {
+    fontSize: 13,
+    color: colors.textMuted,
+    textAlign: 'center',
+  },
+  featureModalActionBtn: {
+    borderRadius: borderRadius.full,
+    paddingVertical: 12,
+    paddingHorizontal: 32,
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  featureModalActionText: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
+  featureModalCloseBtn: {
+    paddingVertical: 10,
+    paddingHorizontal: 24,
+  },
+  featureModalCloseText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: colors.textMuted,
+  },
 
   friendSelectRow: {
     maxHeight: 56,
@@ -1808,6 +1882,13 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: 8,
+    marginBottom: 2,
+  },
+  chatAvatarImage: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    marginLeft: 8,
     marginBottom: 2,
   },
   chatAvatarText: {

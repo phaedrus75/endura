@@ -10,3 +10,4 @@ httptools==0.7.1
 email-validator==2.3.0
 psycopg2-binary==2.9.9
 bcrypt==5.0.0
+stripe

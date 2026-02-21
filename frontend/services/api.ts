@@ -197,6 +197,7 @@ export interface UserStats {
   animals_hatched: number;
   tasks_completed: number;
   weekly_study_minutes: number[];
+  monthly_study_minutes: number[];
   study_minutes_by_subject: { [key: string]: number };
 }
 
@@ -357,6 +358,12 @@ export const tipsAPI = {
     apiFetch<StudyTip>('/tips', {
       method: 'POST',
       body: JSON.stringify({ content, category }),
+    }),
+
+  sendToFriend: (friendId: number, tipContent: string, animalName: string) =>
+    apiFetch<{ message: string }>('/tips/send', {
+      method: 'POST',
+      body: JSON.stringify({ friend_id: friendId, tip_content: tipContent, animal_name: animalName }),
     }),
 };
 

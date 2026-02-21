@@ -23,6 +23,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import Svg, { Circle, Defs, LinearGradient as SvgLinearGradient, Stop } from 'react-native-svg';
 import LottieView from 'lottie-react-native';
 import { colors, shadows, spacing, borderRadius } from '../theme/colors';
+import { useAuth } from '../contexts/AuthContext';
 import { animalsAPI, badgesAPI, UserAnimal, Animal } from '../services/api';
 import { getAnimalImage } from '../assets/animals';
 
@@ -196,11 +197,11 @@ const DraggableItem = ({ itemId, image, startX, startY, size, onDrop, onDragStar
   const currentPos = useRef({ x: startX, y: startY });
   const panX = useRef(new Animated.Value(startX)).current;
   const panY = useRef(new Animated.Value(startY)).current;
-  const scale = useRef(new Animated.Value(1)).current;
-  const opacity = useRef(new Animated.Value(0)).current;
+  const scaleAnim = useRef(new Animated.Value(1)).current;
+  const opacityAnim = useRef(new Animated.Value(1)).current;
   const lastGesture = useRef({ dx: 0, dy: 0 });
   const hasBeenDragged = useRef(false);
-  const isInitialized = useRef(false);
+  const startPosRef = useRef({ x: startX, y: startY });
 
   const onDropRef = useRef(onDrop);
   const onDragStartRef = useRef(onDragStart);
@@ -210,16 +211,11 @@ const DraggableItem = ({ itemId, image, startX, startY, size, onDrop, onDragStar
   onDragEndRef.current = onDragEnd;
 
   React.useEffect(() => {
-    if (!hasBeenDragged.current) {
+    if (!hasBeenDragged.current && (startX !== startPosRef.current.x || startY !== startPosRef.current.y)) {
+      startPosRef.current = { x: startX, y: startY };
       currentPos.current = { x: startX, y: startY };
       panX.setValue(startX);
       panY.setValue(startY);
-    }
-    if (startX > 0 || startY > 0) {
-      if (!isInitialized.current) {
-        isInitialized.current = true;
-        Animated.timing(opacity, { toValue: 1, duration: 200, useNativeDriver: false }).start();
-      }
     }
   }, [startX, startY]);
 
@@ -230,7 +226,7 @@ const DraggableItem = ({ itemId, image, startX, startY, size, onDrop, onDragStar
       onPanResponderGrant: () => {
         lastGesture.current = { dx: 0, dy: 0 };
         onDragStartRef.current?.();
-        Animated.timing(scale, { toValue: 1.2, duration: 100, useNativeDriver: false }).start();
+        Animated.spring(scaleAnim, { toValue: 1.15, friction: 6, useNativeDriver: false }).start();
       },
       onPanResponderMove: (_, gesture) => {
         lastGesture.current = { dx: gesture.dx, dy: gesture.dy };
@@ -242,13 +238,13 @@ const DraggableItem = ({ itemId, image, startX, startY, size, onDrop, onDragStar
         const finalX = currentPos.current.x + lastGesture.current.dx;
         const finalY = currentPos.current.y + lastGesture.current.dy;
         currentPos.current = { x: finalX, y: finalY };
-        Animated.timing(scale, { toValue: 1, duration: 100, useNativeDriver: false }).start();
+        Animated.spring(scaleAnim, { toValue: 1, friction: 6, useNativeDriver: false }).start();
         onDragEndRef.current?.();
         onDropRef.current(itemId, finalX, finalY);
       },
       onPanResponderTerminate: () => {
         onDragEndRef.current?.();
-        Animated.timing(scale, { toValue: 1, duration: 100, useNativeDriver: false }).start();
+        Animated.spring(scaleAnim, { toValue: 1, friction: 6, useNativeDriver: false }).start();
       },
     })
   ).current;
@@ -263,11 +259,11 @@ const DraggableItem = ({ itemId, image, startX, startY, size, onDrop, onDragStar
         {
           width: s + 4,
           height: s + 4,
-          opacity,
+          opacity: opacityAnim,
           transform: [
             { translateX: panX },
             { translateY: panY },
-            { scale },
+            { scale: scaleAnim },
           ],
         },
       ]}
@@ -305,6 +301,7 @@ const SHOP_IMAGES: Record<string, any> = {
 
 export default function CollectionScreen() {
   const navigation = useNavigation<any>();
+  const { profilePic } = useAuth();
   const [myAnimals, setMyAnimals] = useState<UserAnimal[]>([]);
   const [allAnimals, setAllAnimals] = useState<Animal[]>([]);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -465,13 +462,8 @@ export default function CollectionScreen() {
         }
         showsVerticalScrollIndicator={false}
       >
-        <LinearGradient
-          colors={['#5F8C87', '#3B5466']}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          style={styles.header}
-        >
-          <Text style={styles.titleWhite}>My Sanctuary</Text>
+        <View style={styles.header}>
+          <Text style={styles.titleBlack}>My Sanctuary</Text>
           <View style={{ flexDirection: 'row', gap: 8 }}>
             <TouchableOpacity 
               style={styles.profileButton}
@@ -483,10 +475,35 @@ export default function CollectionScreen() {
               style={styles.profileButton}
               onPress={() => navigation.navigate('Profile')}
             >
-              <Text style={styles.profileButtonEmoji}>👤</Text>
+              {profilePic ? (
+                <Image source={{ uri: profilePic }} style={styles.profileButtonImage} />
+              ) : (
+                <Text style={styles.profileButtonEmoji}>👤</Text>
+              )}
             </TouchableOpacity>
           </View>
-        </LinearGradient>
+        </View>
+
+        {/* Take Action CTA */}
+        <TouchableOpacity
+          style={styles.takeActionWrap}
+          onPress={() => navigation.navigate('TakeAction')}
+          activeOpacity={0.85}
+        >
+          <LinearGradient
+            colors={['#7BB5AD', '#2D4055']}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 0 }}
+            style={styles.takeActionBtn}
+          >
+            <Text style={styles.takeActionEmoji}>🤝</Text>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.takeActionTitle}>Take Action — Save Endangered Species</Text>
+              <Text style={styles.takeActionSub}>Donate to WWF and make a real difference</Text>
+            </View>
+            <Text style={styles.takeActionArrow}>›</Text>
+          </LinearGradient>
+        </TouchableOpacity>
 
         {/* Progress Card */}
         <LinearGradient
@@ -496,7 +513,7 @@ export default function CollectionScreen() {
           style={styles.progressCard}
         >
           <View style={styles.progressLeft}>
-            <ProgressRing progress={collectionProgress} size={56} />
+            <ProgressRing progress={collectionProgress} size={42} />
             <View style={styles.progressTextContainer}>
               <Text style={styles.progressPercent}>
                 {Math.round(collectionProgress * 100)}%
@@ -518,7 +535,7 @@ export default function CollectionScreen() {
           const previewPositions = generatePositions(Math.min(myAnimals.length, 8), previewW, previewH);
           return (
             <View style={styles.sanctuarySection}>
-              <Text style={styles.sanctuaryTitle}>🌿 Your Animal Sanctuary</Text>
+              <Text style={styles.sanctuaryTitle}>🌿 My Animal Sanctuary</Text>
               <TouchableOpacity
                 activeOpacity={0.9}
                 onPress={openSanctuary}
@@ -555,40 +572,6 @@ export default function CollectionScreen() {
                         </View>
                       );
                     })}
-                    {/* Placed items scaled from full sanctuary */}
-                    {(() => {
-                      const modalInnerW = SCREEN_WIDTH - 20 - spacing.sm * 2;
-                      const mCols = Math.max(2, Math.min(5, Math.floor((modalInnerW - 20) / (62 + 10))));
-                      const mRows = Math.ceil(myAnimals.length / mCols);
-                      const modalSceneH = Math.max(SCREEN_HEIGHT * 0.65, mRows * 72 + 80);
-                      const wrapperW = SCREEN_WIDTH - 20;
-                      const scaleX = previewW / wrapperW;
-                      const scaleY = previewH / modalSceneH;
-                      return itemAssignments.map((a) => {
-                        const img = getShopImage(a.itemId);
-                        if (!img || typeof a.x !== 'number' || typeof a.y !== 'number') return null;
-                        if (a.y > modalSceneH) return null;
-                        const baseId = getBaseItemId(a.itemId);
-                        const isDec = baseId.startsWith('dec_');
-                        const baseSize = isDec ? 40 : 24;
-                        const sz = Math.max(Math.round(baseSize * Math.min(scaleX, scaleY)), isDec ? 22 : 14);
-                        return (
-                          <Image
-                            key={a.itemId}
-                            source={img}
-                            style={{
-                              position: 'absolute',
-                              zIndex: 10,
-                              width: sz,
-                              height: sz,
-                              left: a.x * scaleX,
-                              top: a.y * scaleY,
-                            }}
-                            resizeMode="contain"
-                          />
-                        );
-                      });
-                    })()}
                   </View>
                   <View style={styles.sanctuaryGround} />
                   {myAnimals.length > 8 && (
@@ -612,6 +595,7 @@ export default function CollectionScreen() {
                   <Text style={styles.viewSanctuaryBtnTextWhite}>View Whole Sanctuary</Text>
                 </LinearGradient>
               </TouchableOpacity>
+              <Text style={styles.sanctuaryClickHint}>tap to view items</Text>
               <Text style={styles.sanctuaryCaption}>
                 {myAnimals.length === 1
                   ? 'Your first friend is settling in!'
@@ -624,7 +608,7 @@ export default function CollectionScreen() {
                 onPress={() => navigation.navigate('Shop')}
                 activeOpacity={0.8}
               >
-                <Text style={styles.shopEntryEmoji}>🛍️</Text>
+                <Text style={styles.shopEntryEmoji}>🛒</Text>
                 <View>
                   <Text style={styles.shopEntryTitle}>Sanctuary Shop</Text>
                   <Text style={styles.shopEntrySub}>Habitats, paths, accessories & more</Text>
@@ -1000,28 +984,39 @@ export default function CollectionScreen() {
                 )}
 
                 {/* Draggable items — absolutely positioned over the whole wrapper */}
-                {sanctuaryContentH > 0 && ownedDecorationItems.map((item, idx) => {
-                  const existing = itemAssignments.find(a => a.itemId === item.id);
+                {sanctuaryContentH > 0 && (() => {
                   const trayTopY = sanctuaryContentHRef.current - 50;
-                  const totalTrayW = ownedDecorationItems.length * 48;
-                  const modalInnerW = SCREEN_WIDTH - 20 - spacing.sm * 2;
-                  const trayStartX = (modalInnerW - totalTrayW) / 2;
-                  const slotX = trayStartX + idx * 48 + 6;
-                  const isDecoration = getBaseItemId(item.id).startsWith('dec_');
-                  return (
-                    <DraggableItem
-                      key={item.id}
-                      itemId={item.id}
-                      image={item.image}
-                      size={isDecoration ? 40 : 24}
-                      startX={existing ? existing.x : slotX}
-                      startY={existing ? existing.y : trayTopY}
-                      onDrop={handleItemDrop}
-                      onDragStart={() => setIsDragging(true)}
-                      onDragEnd={() => setIsDragging(false)}
-                    />
-                  );
-                })}
+                  const trayPadLeft = spacing.md + spacing.sm;
+                  const slotSize = 50;
+                  let unplacedIdx = 0;
+                  return ownedDecorationItems.map((item) => {
+                    const existing = itemAssignments.find(a => a.itemId === item.id);
+                    const isDecoration = getBaseItemId(item.id).startsWith('dec_');
+                    let spawnX: number;
+                    let spawnY: number;
+                    if (existing) {
+                      spawnX = existing.x;
+                      spawnY = existing.y;
+                    } else {
+                      spawnX = trayPadLeft + unplacedIdx * slotSize;
+                      spawnY = trayTopY;
+                      unplacedIdx++;
+                    }
+                    return (
+                      <DraggableItem
+                        key={item.id}
+                        itemId={item.id}
+                        image={item.image}
+                        size={isDecoration ? 40 : 24}
+                        startX={spawnX}
+                        startY={spawnY}
+                        onDrop={handleItemDrop}
+                        onDragStart={() => setIsDragging(true)}
+                        onDragEnd={() => setIsDragging(false)}
+                      />
+                    );
+                  });
+                })()}
               </View>
             </ScrollView>
 
@@ -1064,9 +1059,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: spacing.lg,
+    marginBottom: spacing.xs,
     paddingHorizontal: spacing.md,
-    paddingVertical: spacing.md,
+    paddingVertical: spacing.sm,
     borderRadius: borderRadius.lg,
   },
   title: {
@@ -1078,6 +1073,11 @@ const styles = StyleSheet.create({
     fontSize: 28,
     fontWeight: '700',
     color: '#FFFFFF',
+  },
+  titleBlack: {
+    fontSize: 28,
+    fontWeight: '700',
+    color: colors.textPrimary,
   },
   profileButton: {
     width: 44,
@@ -1091,20 +1091,59 @@ const styles = StyleSheet.create({
   profileButtonEmoji: {
     fontSize: 22,
   },
+  profileButtonImage: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+  },
+  takeActionWrap: {
+    borderRadius: 18,
+    overflow: 'hidden',
+    marginBottom: spacing.sm,
+    shadowColor: '#2F4A3E',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 10,
+    elevation: 6,
+  },
+  takeActionBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 16,
+    gap: 12,
+  },
+  takeActionEmoji: {
+    fontSize: 28,
+  },
+  takeActionTitle: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: '#FFFFFF',
+  },
+  takeActionSub: {
+    fontSize: 13,
+    color: 'rgba(255,255,255,0.8)',
+    fontWeight: '500',
+    marginTop: 3,
+  },
+  takeActionArrow: {
+    fontSize: 26,
+    fontWeight: '300',
+    color: 'rgba(255,255,255,0.7)',
+  },
   progressCard: {
-    borderRadius: borderRadius.lg,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-    marginBottom: spacing.md,
+    borderRadius: borderRadius.md,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    marginBottom: spacing.sm,
     flexDirection: 'row',
     alignItems: 'center',
     borderWidth: 1,
     borderColor: colors.cardBorder,
-    ...shadows.small,
   },
   progressLeft: {
     position: 'relative',
-    marginRight: spacing.md,
+    marginRight: 10,
   },
   progressTextContainer: {
     position: 'absolute',
@@ -1116,7 +1155,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   progressPercent: {
-    fontSize: 14,
+    fontSize: 11,
     fontWeight: '700',
     color: colors.primary,
   },
@@ -1124,15 +1163,13 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   progressLabel: {
-    fontSize: 12,
+    fontSize: 11,
     color: colors.textMuted,
-    marginBottom: spacing.xs,
-    textTransform: 'uppercase',
+    marginBottom: 2,
     fontWeight: '600',
-    letterSpacing: 0.5,
   },
   progressValue: {
-    fontSize: 18,
+    fontSize: 15,
     fontWeight: '700',
     color: colors.textPrimary,
   },
@@ -1231,11 +1268,18 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#FFFFFF',
   },
+  sanctuaryClickHint: {
+    fontSize: 12,
+    color: colors.textMuted,
+    textAlign: 'center',
+    marginTop: 6,
+    fontStyle: 'italic',
+  },
   sanctuaryCaption: {
     fontSize: 13,
     color: colors.textSecondary,
     textAlign: 'center',
-    marginTop: spacing.sm,
+    marginTop: 4,
     fontStyle: 'italic',
   },
   // Full Sanctuary Modal
@@ -1491,7 +1535,7 @@ const styles = StyleSheet.create({
   },
   itemTrayRow: {
     flexDirection: 'row',
-    justifyContent: 'center',
+    justifyContent: 'flex-start',
     flexGrow: 1,
     gap: 8,
   },

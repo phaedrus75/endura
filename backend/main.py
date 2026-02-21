@@ -14,6 +14,9 @@ from auth import (
     get_current_user, ACCESS_TOKEN_EXPIRE_MINUTES
 )
 import os
+import stripe
+
+stripe.api_key = os.environ.get("STRIPE_SECRET_KEY")
 
 # Create tables (with error handling for Railway)
 try:
@@ -944,6 +947,83 @@ def react_to_event(
     if not crud.add_reaction(db, current_user.id, event_id, data.reaction):
         raise HTTPException(status_code=404, detail="Event not found")
     return {"message": "Reaction added"}
+
+
+@app.post("/tips/send")
+def send_tip_to_friend(
+    data: dict,
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    friend_id = data.get("friend_id")
+    tip_content = data.get("tip_content", "")
+    animal_name = data.get("animal_name", "")
+
+    if not friend_id or not tip_content:
+        raise HTTPException(status_code=400, detail="friend_id and tip_content required")
+
+    friend = db.query(models.User).filter(models.User.id == friend_id).first()
+    if not friend:
+        raise HTTPException(status_code=404, detail="Friend not found")
+
+    sender_name = current_user.username or current_user.email.split("@")[0]
+    event = models.ActivityEvent(
+        user_id=current_user.id,
+        event_type="tip_shared",
+        description=f'shared a study tip with you from {animal_name}: "{tip_content}"',
+        extra_data=f'{{"recipient_id": {friend_id}, "animal_name": "{animal_name}"}}',
+    )
+    db.add(event)
+    db.commit()
+    return {"message": f"Tip sent to {friend.username or friend.email}"}
+
+
+# ============ Stripe / Donations ============
+
+class DonationRequest(BaseModel):
+    amount: int
+    currency: str = "usd"
+
+@app.post("/create-payment-intent")
+async def create_payment_intent(req: DonationRequest):
+    if not stripe.api_key:
+        raise HTTPException(status_code=500, detail="Stripe is not configured")
+    try:
+        intent = stripe.PaymentIntent.create(
+            amount=req.amount,
+            currency=req.currency,
+            payment_method_types=["card"],
+        )
+        return {
+            "clientSecret": intent.client_secret,
+            "paymentIntentId": intent.id,
+        }
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+# ============ Every.org Donation Webhook ============
+
+@app.post("/webhook/every-org")
+async def every_org_webhook(request: dict):
+    """Receive donation notifications from Every.org."""
+    try:
+        charge_id = request.get("chargeId", "unknown")
+        amount = request.get("amount", "0")
+        currency = request.get("currency", "USD")
+        frequency = request.get("frequency", "One-time")
+        donor_first = request.get("firstName", "Anonymous")
+        donor_last = request.get("lastName", "")
+        nonprofit = request.get("toNonprofit", {})
+        nonprofit_name = nonprofit.get("name", "WWF")
+        donation_date = request.get("donationDate", "")
+
+        print(f"[DONATION] ${amount} {currency} ({frequency}) from {donor_first} {donor_last} to {nonprofit_name} | chargeId={charge_id} | date={donation_date}")
+
+        return {"status": "received", "chargeId": charge_id}
+    except Exception as e:
+        print(f"[WEBHOOK ERROR] {e}")
+        return {"status": "error", "detail": str(e)}
 
 
 # ============ Health Check ============

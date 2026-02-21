@@ -439,7 +439,23 @@ def get_user_stats(db: Session, user_id: int) -> dict:
                 weekly_daily[day_idx] += session.duration_minutes
     
     weekly_minutes = sum(weekly_daily)
-    
+
+    # Monthly study minutes - weekly breakdown for last 4 weeks [Week 1, Week 2, Week 3, This Week]
+    monthly_weekly = [0] * 4
+    four_weeks_ago = monday - timedelta(days=21)
+    four_weeks_ago_dt = datetime.combine(four_weeks_ago, datetime.min.time())
+    month_sessions = db.query(models.StudySession).filter(
+        models.StudySession.user_id == user_id,
+        models.StudySession.completed_at != None,
+        models.StudySession.completed_at >= four_weeks_ago_dt
+    ).all()
+    for session in month_sessions:
+        if session.completed_at and session.duration_minutes:
+            session_date = session.completed_at.date() if hasattr(session.completed_at, 'date') else session.completed_at
+            days_since_start = (session_date - four_weeks_ago).days
+            week_idx = min(max(days_since_start // 7, 0), 3)
+            monthly_weekly[week_idx] += session.duration_minutes
+
     # Study minutes by subject
     subject_query = db.query(
         models.StudySession.subject,
@@ -461,6 +477,7 @@ def get_user_stats(db: Session, user_id: int) -> dict:
         "animals_hatched": animals_count,
         "tasks_completed": tasks_completed,
         "weekly_study_minutes": weekly_daily,
+        "monthly_study_minutes": monthly_weekly,
         "study_minutes_by_subject": study_minutes_by_subject
     }
 

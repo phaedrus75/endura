@@ -9,6 +9,7 @@ import {
   Dimensions,
   Modal,
   Animated,
+  Image,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
@@ -185,7 +186,7 @@ const ProgressBar = ({ value, maxValue, label, color }: { value: number; maxValu
 };
 
 export default function ProgressScreen() {
-  const { user } = useAuth();
+  const { user, profilePic } = useAuth();
   const navigation = useNavigation<any>();
   const [stats, setStats] = useState<UserStats | null>(null);
   const [tasks, setTasks] = useState<Task[]>([]);
@@ -315,7 +316,11 @@ export default function ProgressScreen() {
               style={styles.profileButton}
               onPress={() => navigation.navigate('Profile')}
             >
-              <Text style={styles.profileButtonEmoji}>👤</Text>
+              {profilePic ? (
+                <Image source={{ uri: profilePic }} style={styles.profileButtonImage} />
+              ) : (
+                <Text style={styles.profileButtonEmoji}>👤</Text>
+              )}
             </TouchableOpacity>
           </View>
         </View>
@@ -348,7 +353,7 @@ export default function ProgressScreen() {
 
         {/* Weekly Study Bar Chart */}
         <View style={styles.chartCard}>
-          <Text style={styles.chartTitle}>📅 This Week's Study</Text>
+          <Text style={styles.chartTitle}>📅 This Past Week</Text>
           <BarChart 
             data={(() => {
               const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
@@ -362,6 +367,28 @@ export default function ProgressScreen() {
             })()}
           />
           <Text style={styles.chartSubtext}>Minutes studied per day</Text>
+        </View>
+
+        {/* Monthly Study Bar Chart */}
+        <View style={styles.chartCard}>
+          <Text style={styles.chartTitle}>📆 This Past Month</Text>
+          <BarChart 
+            data={(() => {
+              const weeks = ['Week 1', 'Week 2', 'Week 3', 'This Week'];
+              let monthly = Array.isArray(stats?.monthly_study_minutes) ? stats.monthly_study_minutes : [0, 0, 0, 0];
+              if (monthly.every((v: number) => v === 0) && Array.isArray(stats?.weekly_study_minutes)) {
+                const thisWeekTotal = stats.weekly_study_minutes.reduce((a: number, b: number) => a + b, 0);
+                monthly = [0, 0, 0, thisWeekTotal];
+              }
+              const maxVal = Math.max(...monthly, 30);
+              return weeks.map((label, i) => ({
+                label,
+                value: monthly[i] || 0,
+                maxValue: maxVal,
+              }));
+            })()}
+          />
+          <Text style={styles.chartSubtext}>Minutes studied per week</Text>
         </View>
 
         {/* Subject Distribution Bar Chart */}
@@ -597,6 +624,11 @@ const styles = StyleSheet.create({
   },
   profileButtonEmoji: {
     fontSize: 22,
+  },
+  profileButtonImage: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
   },
   quickStats: {
     flexDirection: 'row',

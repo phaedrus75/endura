@@ -21,6 +21,7 @@ import ConfettiCannon from 'react-native-confetti-cannon';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import LottieView from 'lottie-react-native';
 import { spacing, borderRadius } from '../theme/colors';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useAuth } from '../contexts/AuthContext';
 
 // HomeScreen preserves its original palette independent of the global theme
@@ -134,7 +135,7 @@ const RecentHatchCard = ({ animal }: { animal?: UserAnimal }) => {
 };
 
 export default function HomeScreen() {
-  const { user, refreshUser } = useAuth();
+  const { user, refreshUser, profilePic } = useAuth();
   const navigation = useNavigation<any>();
   const [egg, setEgg] = useState<Egg | null>(null);
   const [tasks, setTasks] = useState<Task[]>([]);
@@ -151,6 +152,7 @@ export default function HomeScreen() {
   const [showStreakModal, setShowStreakModal] = useState(false);
   const [showEcoModal, setShowEcoModal] = useState(false);
   const [showBadgesModal, setShowBadgesModal] = useState(false);
+  const [showStudyTimeModal, setShowStudyTimeModal] = useState(false);
   const [badges, setBadges] = useState<BadgeResponse[]>([]);
   const [subjects, setSubjects] = useState<string[]>(['Math', 'Science', 'English', 'History']);
   const [showAddSubject, setShowAddSubject] = useState(false);
@@ -326,42 +328,66 @@ export default function HomeScreen() {
                 style={styles.profileButton}
                 onPress={() => navigation.navigate('Profile')}
               >
-                <Text style={styles.profileButtonEmoji}>👤</Text>
+                {profilePic ? (
+                  <Image source={{ uri: profilePic }} style={styles.profileButtonImage} />
+                ) : (
+                  <Text style={styles.profileButtonEmoji}>👤</Text>
+                )}
               </TouchableOpacity>
             </View>
           </View>
 
           {/* User Stats Pills */}
           <View style={styles.statsPills}>
-            <TouchableOpacity 
-              style={[styles.statPill, styles.statPillStreak]}
-              onPress={() => setShowStreakModal(true)}
-            >
-              <Text style={styles.statPillIcon}>🔥</Text>
-              <Text style={styles.statPillTextLight}>{stats?.current_streak || 0}</Text>
+            <TouchableOpacity style={styles.statPillWrap} onPress={() => setShowStreakModal(true)}>
+              <LinearGradient
+                colors={['#FFFFFF', '#D0E2D5']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={styles.statPillGradient}
+              >
+                <Text style={styles.statPillIcon}>🔥</Text>
+                <Text style={styles.statPillText}>{stats?.current_streak || 0}</Text>
+              </LinearGradient>
             </TouchableOpacity>
-            <TouchableOpacity 
-              style={[styles.statPill, styles.statPillAnimals]}
-              onPress={() => navigation.navigate('Sanctuary')}
-            >
-              <Text style={styles.statPillIcon}>🐾</Text>
-              <Text style={styles.statPillTextLight}>{stats?.animals_hatched || 0}</Text>
+            <TouchableOpacity style={styles.statPillWrap} onPress={() => navigation.navigate('Sanctuary')}>
+              <LinearGradient
+                colors={['#FFFFFF', '#D0E2D5']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={styles.statPillGradient}
+              >
+                <Text style={styles.statPillIcon}>🐾</Text>
+                <Text style={styles.statPillText}>{stats?.animals_hatched || 0}</Text>
+              </LinearGradient>
             </TouchableOpacity>
-            <TouchableOpacity 
-              style={[styles.statPill, styles.statPillCredits]}
-              onPress={() => setShowEcoModal(true)}
-            >
-              <Text style={styles.statPillIcon}>🍀</Text>
-              <Text style={styles.statPillTextLight}>{stats?.current_coins || 0}</Text>
+            <TouchableOpacity style={styles.statPillWrap} onPress={() => setShowBadgesModal(true)}>
+              <LinearGradient
+                colors={['#FFFFFF', '#D0E2D5']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={styles.statPillGradient}
+              >
+                <Text style={styles.statPillIcon}>🏅</Text>
+                <Text style={styles.statPillText}>
+                  {badges.filter(b => b.earned).length}
+                </Text>
+              </LinearGradient>
             </TouchableOpacity>
-            <TouchableOpacity 
-              style={[styles.statPill, styles.statPillBadges]}
-              onPress={() => setShowBadgesModal(true)}
-            >
-              <Text style={styles.statPillIcon}>🏅</Text>
-              <Text style={styles.statPillTextLight}>
-                {badges.filter(b => b.earned).length}
-              </Text>
+            <TouchableOpacity style={styles.statPillWrap} onPress={() => setShowStudyTimeModal(true)}>
+              <LinearGradient
+                colors={['#FFFFFF', '#D0E2D5']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={styles.statPillGradient}
+              >
+                <Text style={styles.statPillIcon}>📖</Text>
+                <Text style={styles.statPillText}>
+                  {stats?.weekly_study_minutes
+                    ? Math.floor((Array.isArray(stats.weekly_study_minutes) ? stats.weekly_study_minutes.reduce((a: number, b: number) => a + b, 0) : 0) / 60)
+                    : 0}h
+                </Text>
+              </LinearGradient>
             </TouchableOpacity>
           </View>
 
@@ -430,11 +456,19 @@ export default function HomeScreen() {
 
           {/* Create New To-Do Button */}
           <TouchableOpacity 
-            style={styles.createButton}
+            style={styles.createButtonWrap}
             onPress={() => setShowAddTask(true)}
+            activeOpacity={0.8}
           >
-            <Text style={styles.createButtonIcon}>+</Text>
-            <Text style={styles.createButtonText}>CREATE NEW TO-DO</Text>
+            <LinearGradient
+              colors={['#FFFFFF', '#E7EFEA']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={styles.createButton}
+            >
+              <Text style={styles.createButtonIcon}>+</Text>
+              <Text style={styles.createButtonText}>CREATE NEW TO-DO</Text>
+            </LinearGradient>
           </TouchableOpacity>
 
           {/* See Completed Button */}
@@ -473,6 +507,7 @@ export default function HomeScreen() {
             </View>
           )}
         </View>
+
       </ScrollView>
 
       {/* Add Task Modal */}
@@ -830,6 +865,114 @@ export default function HomeScreen() {
           </View>
         </View>
       </Modal>
+
+      {/* Study Time Statistics Modal */}
+      <Modal visible={showStudyTimeModal} transparent animationType="fade">
+        <View style={styles.studyTimeModalOverlay}>
+          <View style={styles.studyTimeModalContent}>
+            <TouchableOpacity
+              style={styles.studyTimeClose}
+              onPress={() => setShowStudyTimeModal(false)}
+            >
+              <Text style={styles.streakModalCloseText}>✕</Text>
+            </TouchableOpacity>
+
+            <ScrollView showsVerticalScrollIndicator={false}>
+              <View style={styles.studyTimeHeader}>
+                <Text style={{ fontSize: 36 }}>📖</Text>
+                <Text style={styles.studyTimeBigNumber}>
+                  {stats?.weekly_study_minutes
+                    ? Math.floor((Array.isArray(stats.weekly_study_minutes) ? stats.weekly_study_minutes.reduce((a: number, b: number) => a + b, 0) : 0) / 60)
+                    : 0}h {stats?.weekly_study_minutes
+                    ? (Array.isArray(stats.weekly_study_minutes) ? stats.weekly_study_minutes.reduce((a: number, b: number) => a + b, 0) : 0) % 60
+                    : 0}m
+                </Text>
+                <Text style={styles.studyTimeSubLabel}>studied this week</Text>
+              </View>
+
+              <View style={styles.weeklyChart}>
+                <Text style={styles.weeklyChartTitle}>Daily Breakdown</Text>
+                <View style={styles.weeklyBars}>
+                  {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((day, i) => {
+                    const mins = Array.isArray(stats?.weekly_study_minutes) ? (stats.weekly_study_minutes[i] || 0) : 0;
+                    const maxMins = Array.isArray(stats?.weekly_study_minutes)
+                      ? Math.max(...stats.weekly_study_minutes, 1)
+                      : 1;
+                    const barHeight = Math.max((mins / maxMins) * 60, 4);
+                    const today = new Date().getDay();
+                    const dayIdx = today === 0 ? 6 : today - 1;
+                    return (
+                      <View key={day} style={styles.weeklyBarCol}>
+                        <Text style={styles.weeklyBarMins}>{mins > 0 ? `${mins}m` : ''}</Text>
+                        <View style={[
+                          styles.weeklyBar,
+                          { height: barHeight },
+                          i === dayIdx && styles.weeklyBarToday,
+                        ]} />
+                        <Text style={[styles.weeklyBarLabel, i === dayIdx && styles.weeklyBarLabelToday]}>{day}</Text>
+                      </View>
+                    );
+                  })}
+                </View>
+              </View>
+
+              <View style={styles.studyTimeStatsGrid}>
+                <View style={styles.studyTimeStatItem}>
+                  <Text style={styles.studyTimeStatValue}>
+                    {stats?.total_study_minutes ? Math.floor(stats.total_study_minutes / 60) : 0}h {(stats?.total_study_minutes || 0) % 60}m
+                  </Text>
+                  <Text style={styles.studyTimeStatLabel}>All Time</Text>
+                </View>
+                <View style={styles.studyTimeStatItem}>
+                  <Text style={styles.studyTimeStatValue}>{stats?.total_sessions || 0}</Text>
+                  <Text style={styles.studyTimeStatLabel}>Total Sessions</Text>
+                </View>
+                <View style={styles.studyTimeStatItem}>
+                  <Text style={styles.studyTimeStatValue}>
+                    {stats?.total_study_minutes && stats?.total_sessions
+                      ? Math.round(stats.total_study_minutes / stats.total_sessions)
+                      : 0}m
+                  </Text>
+                  <Text style={styles.studyTimeStatLabel}>Avg per Session</Text>
+                </View>
+                <View style={styles.studyTimeStatItem}>
+                  <Text style={styles.studyTimeStatValue}>{stats?.current_streak || 0}</Text>
+                  <Text style={styles.studyTimeStatLabel}>Current Streak</Text>
+                </View>
+              </View>
+
+              {stats?.study_minutes_by_subject && Object.keys(stats.study_minutes_by_subject).length > 0 && (
+                <View style={styles.subjectBreakdown}>
+                  <Text style={styles.weeklyChartTitle}>By Subject</Text>
+                  {Object.entries(stats.study_minutes_by_subject)
+                    .sort(([, a], [, b]) => b - a)
+                    .slice(0, 6)
+                    .map(([subject, mins]) => {
+                      const totalMins = Object.values(stats.study_minutes_by_subject).reduce((a, b) => a + b, 0);
+                      const pct = totalMins > 0 ? (mins / totalMins) * 100 : 0;
+                      return (
+                        <View key={subject} style={styles.subjectRow}>
+                          <Text style={styles.subjectName} numberOfLines={1}>{subject}</Text>
+                          <View style={styles.subjectBarBg}>
+                            <View style={[styles.subjectBarFill, { width: `${Math.max(pct, 3)}%` }]} />
+                          </View>
+                          <Text style={styles.subjectMins}>{Math.floor(mins / 60)}h {mins % 60}m</Text>
+                        </View>
+                      );
+                    })}
+                </View>
+              )}
+
+              <TouchableOpacity 
+                style={styles.studyTimeCloseButton}
+                onPress={() => setShowStudyTimeModal(false)}
+              >
+                <Text style={styles.streakCloseButtonText}>Got it!</Text>
+              </TouchableOpacity>
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -877,6 +1020,11 @@ const styles = StyleSheet.create({
   profileButtonEmoji: {
     fontSize: 22,
   },
+  profileButtonImage: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+  },
   greeting: {
     fontSize: 22,
     fontWeight: '700',
@@ -896,35 +1044,34 @@ const styles = StyleSheet.create({
     marginBottom: spacing.xs,
     zIndex: 20,
   },
-  statPill: {
+  statPillWrap: {
     flex: 1,
+    marginHorizontal: 3,
+    borderRadius: borderRadius.full,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.7)',
+    shadowColor: '#2D3B36',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 3,
+    elevation: 2,
+  },
+  statPillGradient: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     paddingVertical: 10,
     borderRadius: borderRadius.full,
-    gap: 6,
-    marginHorizontal: 4,
-  },
-  statPillStreak: {
-    backgroundColor: '#F4E8D1',
-  },
-  statPillAnimals: {
-    backgroundColor: '#D9EEDC',
-  },
-  statPillCredits: {
-    backgroundColor: '#E0E8F0',
-  },
-  statPillBadges: {
-    backgroundColor: '#FFF3E0',
+    gap: 5,
   },
   statPillIcon: {
-    fontSize: 16,
+    fontSize: 14,
   },
-  statPillTextLight: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: '#4A5568',
+  statPillText: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#2D3B36',
   },
   eggSection: {
     alignItems: 'center',
@@ -988,14 +1135,15 @@ const styles = StyleSheet.create({
     marginTop: spacing.lg,
   },
   recentHatchesSection: {
-    marginTop: spacing.lg,
+    marginTop: spacing.sm,
     paddingHorizontal: 0,
   },
   sectionTitle: {
-    fontSize: 20,
+    fontSize: 24,
     fontWeight: '700',
     color: colors.textPrimary,
-    marginBottom: spacing.sm,
+    marginBottom: spacing.xs,
+    marginTop: 11,
   },
   landscapeContainer: {
     width: '100%',
@@ -1006,18 +1154,18 @@ const styles = StyleSheet.create({
     width: '100%',
     height: 240,
     position: 'absolute',
-    top: -15,
+    top: -52,
     left: 0,
   },
   landscapeWrapper: {
     position: 'relative',
-    height: 220,
+    height: 224,
     overflow: 'hidden',
     backgroundColor: '#E8F5E9',
   },
   recentHatchesOverlay: {
     position: 'absolute',
-    bottom: 8,
+    bottom: 49,
     left: 0,
     right: 0,
     flexDirection: 'row',
@@ -1069,7 +1217,7 @@ const styles = StyleSheet.create({
     color: colors.textMuted,
   },
   todoSection: {
-    marginTop: spacing.lg,
+    marginTop: spacing.lg - 26,
     marginHorizontal: spacing.md,
     paddingHorizontal: spacing.lg,
     paddingTop: spacing.lg,
@@ -1147,35 +1295,42 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     fontSize: 14,
   },
+  createButtonWrap: {
+    alignSelf: 'center',
+    marginTop: spacing.lg,
+    borderRadius: 30,
+    overflow: 'hidden',
+    shadowColor: '#2D3B36',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
   createButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    alignSelf: 'center',
-    backgroundColor: colors.primaryDark,
+    justifyContent: 'center',
     paddingHorizontal: 28,
     paddingVertical: 14,
     borderRadius: 30,
-    marginTop: spacing.lg,
     gap: spacing.sm,
-    shadowColor: '#2D4A32',
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.25,
-    shadowRadius: 6,
-    elevation: 6,
+    minWidth: 260,
   },
   createButtonIcon: {
     fontSize: 18,
-    color: colors.textOnPrimary,
+    color: colors.textPrimary,
+    fontWeight: '700',
   },
   createButtonText: {
     fontSize: 14,
     fontWeight: '700',
-    color: colors.textOnPrimary,
+    color: colors.textPrimary,
     letterSpacing: 0.5,
   },
   completedButton: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
     alignSelf: 'center',
     backgroundColor: 'rgba(255,255,255,0.15)',
     paddingHorizontal: 28,
@@ -1183,6 +1338,7 @@ const styles = StyleSheet.create({
     borderRadius: 30,
     marginTop: spacing.sm,
     gap: spacing.sm,
+    minWidth: 260,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
@@ -1202,6 +1358,46 @@ const styles = StyleSheet.create({
   completedSection: {
     marginTop: spacing.md,
   },
+
+  // Take Action CTA
+  takeActionWrap: {
+    marginHorizontal: spacing.md,
+    marginTop: spacing.lg,
+    marginBottom: spacing.sm,
+    borderRadius: 18,
+    overflow: 'hidden',
+    shadowColor: '#2F4A3E',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 10,
+    elevation: 6,
+  },
+  takeActionBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 18,
+    gap: 14,
+  },
+  takeActionEmoji: {
+    fontSize: 30,
+  },
+  takeActionTitle: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: '#FFFFFF',
+  },
+  takeActionSub: {
+    fontSize: 12,
+    color: 'rgba(255,255,255,0.8)',
+    fontWeight: '500',
+    marginTop: 2,
+  },
+  takeActionArrow: {
+    fontSize: 28,
+    fontWeight: '300',
+    color: 'rgba(255,255,255,0.7)',
+  },
+
   modalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0, 0, 0, 0.5)',
@@ -1638,5 +1834,161 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: colors.textMuted,
     textAlign: 'center' as const,
+  },
+
+  // Study Time Modal
+  studyTimeModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  studyTimeModalContent: {
+    backgroundColor: colors.surface,
+    borderRadius: 24,
+    padding: spacing.lg,
+    width: '100%',
+    maxHeight: '75%',
+  },
+  studyTimeClose: {
+    position: 'absolute',
+    top: 14,
+    right: 14,
+    zIndex: 10,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: colors.surfaceAlt,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  studyTimeHeader: {
+    alignItems: 'center',
+    marginBottom: 16,
+    marginTop: 4,
+  },
+  studyTimeBigNumber: {
+    fontSize: 40,
+    fontWeight: '800',
+    color: colors.textPrimary,
+    marginTop: 4,
+  },
+  studyTimeSubLabel: {
+    fontSize: 14,
+    color: colors.textMuted,
+    fontWeight: '500',
+    marginTop: 2,
+  },
+  studyTimeStatsGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginBottom: 16,
+  },
+  studyTimeStatItem: {
+    width: '47%',
+    backgroundColor: colors.surfaceAlt,
+    borderRadius: borderRadius.md,
+    padding: 10,
+    alignItems: 'center',
+  },
+  studyTimeStatValue: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: colors.primary,
+  },
+  studyTimeStatLabel: {
+    fontSize: 11,
+    color: colors.textMuted,
+    marginTop: 2,
+  },
+  studyTimeCloseButton: {
+    backgroundColor: colors.primary,
+    borderRadius: borderRadius.full,
+    paddingVertical: 12,
+    alignItems: 'center',
+    marginTop: 4,
+  },
+  weeklyChart: {
+    width: '100%',
+    marginBottom: spacing.md,
+  },
+  weeklyChartTitle: {
+    fontSize: 14,
+    fontWeight: '700' as const,
+    color: colors.textPrimary,
+    marginBottom: 12,
+  },
+  weeklyBars: {
+    flexDirection: 'row' as const,
+    alignItems: 'flex-end' as const,
+    justifyContent: 'space-between' as const,
+    height: 90,
+    paddingBottom: 4,
+  },
+  weeklyBarCol: {
+    flex: 1,
+    alignItems: 'center' as const,
+    justifyContent: 'flex-end' as const,
+  },
+  weeklyBarMins: {
+    fontSize: 9,
+    fontWeight: '600' as const,
+    color: colors.textMuted,
+    marginBottom: 4,
+  },
+  weeklyBar: {
+    width: 20,
+    borderRadius: 6,
+    backgroundColor: colors.primaryLight,
+  },
+  weeklyBarToday: {
+    backgroundColor: colors.primary,
+  },
+  weeklyBarLabel: {
+    fontSize: 11,
+    fontWeight: '500' as const,
+    color: colors.textMuted,
+    marginTop: 6,
+  },
+  weeklyBarLabelToday: {
+    fontWeight: '700' as const,
+    color: colors.primary,
+  },
+  subjectBreakdown: {
+    width: '100%',
+    marginBottom: spacing.md,
+  },
+  subjectRow: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    marginBottom: 10,
+  },
+  subjectName: {
+    width: 70,
+    fontSize: 12,
+    fontWeight: '600' as const,
+    color: colors.textSecondary,
+  },
+  subjectBarBg: {
+    flex: 1,
+    height: 10,
+    backgroundColor: colors.cardBorder,
+    borderRadius: 5,
+    overflow: 'hidden' as const,
+    marginHorizontal: 8,
+  },
+  subjectBarFill: {
+    height: '100%' as const,
+    backgroundColor: colors.primary,
+    borderRadius: 5,
+  },
+  subjectMins: {
+    fontSize: 11,
+    fontWeight: '600' as const,
+    color: colors.textMuted,
+    width: 52,
+    textAlign: 'right' as const,
   },
 });

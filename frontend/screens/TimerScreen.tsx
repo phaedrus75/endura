@@ -128,7 +128,7 @@ const CircularProgress = ({ progress, size = 260, strokeWidth = 14, children }: 
 };
 
 export default function TimerScreen() {
-  const { refreshUser } = useAuth();
+  const { refreshUser, profilePic } = useAuth();
   const navigation = useNavigation();
   const [selectedMinutes, setSelectedMinutes] = useState(25);
   const [timeLeft, setTimeLeft] = useState(25 * TIME_MULTIPLIER);
@@ -153,6 +153,7 @@ export default function TimerScreen() {
   const [subjects, setSubjects] = useState<string[]>(['Math', 'Science', 'English', 'History']);
   const [showEggDeathModal, setShowEggDeathModal] = useState(false);
   const [deadAnimalName, setDeadAnimalName] = useState('');
+  const [deathCause, setDeathCause] = useState<'timeout' | 'abandoned'>('timeout');
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
   const appState = useRef(AppState.currentState);
   const backgroundTimestamp = useRef<number | null>(null);
@@ -216,14 +217,27 @@ export default function TimerScreen() {
   }, [isRunning]);
 
   // Handle app going to background during timer
+  const exitWarningShownRef = useRef(false);
   useEffect(() => {
     const subscription = AppState.addEventListener('change', nextAppState => {
-      if (isRunningRef.current && appState.current === 'active' && nextAppState.match(/inactive|background/)) {
+      if (isRunningRef.current && appState.current === 'active' && nextAppState === 'inactive') {
         backgroundTimestamp.current = Date.now();
+        setIsPaused(true);
+        if (!exitWarningShownRef.current) {
+          exitWarningShownRef.current = true;
+          showExitWarning();
+        }
+      }
+
+      if (isRunningRef.current && appState.current === 'active' && nextAppState === 'background') {
+        if (!backgroundTimestamp.current) {
+          backgroundTimestamp.current = Date.now();
+        }
         setIsPaused(true);
       }
 
       if (isRunningRef.current && appState.current.match(/inactive|background/) && nextAppState === 'active') {
+        exitWarningShownRef.current = false;
         if (backgroundTimestamp.current) {
           const elapsed = (Date.now() - backgroundTimestamp.current) / 1000;
           backgroundTimestamp.current = null;
@@ -235,10 +249,9 @@ export default function TimerScreen() {
             setIsPaused(false);
             setTimeLeft(selectedMinutes * TIME_MULTIPLIER);
             setDeadAnimalName(dying);
+            setDeathCause('timeout');
             setShowEggDeathModal(true);
             Vibration.vibrate([0, 300, 100, 300, 100, 300]);
-          } else {
-            showExitWarning();
           }
         }
       }
@@ -288,7 +301,7 @@ export default function TimerScreen() {
       `If you leave now, ${animalName} will never hatch. This endangered creature is counting on you to stay focused. Every second matters.\n\nYou will lose ALL progress and earn ZERO eco-credits.`,
       [
         {
-          text: "I'll stay! 🛡️",
+          text: "I'll stay!",
           style: 'cancel',
           onPress: () => {
             setIsPaused(false);
@@ -298,8 +311,16 @@ export default function TimerScreen() {
           text: 'Abandon Egg',
           style: 'destructive',
           onPress: () => {
-            resetTimer();
-            setSelectedAnimalId(null);
+            const dying = ENDANGERED_ANIMALS.find(a => a.id === selectedAnimalId)?.name || 'Your animal';
+            if (intervalRef.current) clearInterval(intervalRef.current);
+            isRunningRef.current = false;
+            setIsRunning(false);
+            setIsPaused(false);
+            setTimeLeft(selectedMinutes * TIME_MULTIPLIER);
+            setDeadAnimalName(dying);
+            setDeathCause('abandoned');
+            setShowEggDeathModal(true);
+            Vibration.vibrate([0, 300, 100, 300]);
             if (onConfirm) onConfirm();
           },
         },
@@ -519,7 +540,11 @@ export default function TimerScreen() {
               style={styles.profileButton}
               onPress={() => navigation.navigate('Profile')}
             >
-              <Text style={styles.profileButtonEmoji}>👤</Text>
+              {profilePic ? (
+                <Image source={{ uri: profilePic }} style={styles.profileButtonImage} />
+              ) : (
+                <Text style={styles.profileButtonEmoji}>👤</Text>
+              )}
             </TouchableOpacity>
           </View>
         </View>
@@ -664,7 +689,7 @@ export default function TimerScreen() {
                 end={{ x: 1, y: 0 }}
                 style={styles.startButton}
               >
-                <Text style={styles.startButtonText}>Start Studying 🚀</Text>
+                <Text style={styles.startButtonText}>Start Studying</Text>
               </ExpoLinearGradient>
             </TouchableOpacity>
           ) : (
@@ -707,7 +732,7 @@ export default function TimerScreen() {
           <View style={styles.animalModalContent}>
             <Text style={styles.animalModalTitle}>🥚 Choose Your Egg!</Text>
             <Text style={styles.animalModalSubtitle}>
-              It's a surprise! Complete your study session to discover which endangered animal hatches! 🎁✨
+              It's a surprise! Complete your study session to discover which endangered animal hatches! ✨
             </Text>
 
             <ScrollView style={styles.animalGrid} showsVerticalScrollIndicator={false}>
@@ -760,7 +785,7 @@ export default function TimerScreen() {
             {selectedAnimalId && (
               <View style={styles.selectedAnimalPreview}>
                 <Text style={styles.selectedAnimalText}>
-                  🎁 Egg selected! What will hatch? Study to find out!
+                  Egg selected! What will hatch? Study to find out!
                 </Text>
               </View>
             )}
@@ -789,7 +814,7 @@ export default function TimerScreen() {
                     !selectedAnimalId && styles.animalModalStartDisabled,
                   ]}
                 >
-                  <Text style={styles.animalModalStartText}>Start Hatching! 🚀</Text>
+                  <Text style={styles.animalModalStartText}>Start Hatching!</Text>
                 </ExpoLinearGradient>
               </TouchableOpacity>
             </View>
@@ -1000,35 +1025,43 @@ export default function TimerScreen() {
       <Modal visible={showEggDeathModal} transparent animationType="fade">
         <View style={styles.eggDeathOverlay}>
           <ExpoLinearGradient
-            colors={['#2F4A3E', '#3B5466']}
+            colors={deathCause === 'abandoned' ? ['#F7FAF8', '#EDF2EE'] : ['#2F4A3E', '#3B5466']}
             start={{ x: 0, y: 0 }}
             end={{ x: 0, y: 1 }}
             style={styles.eggDeathContent}
           >
-            <Text style={styles.eggDeathIcon}>💔</Text>
+            <Text style={styles.eggDeathIcon}>{deathCause === 'abandoned' ? '🪦' : '💔'}</Text>
 
-            <Text style={styles.eggDeathTitle}>
-              {deadAnimalName} couldn't hatch...
+            <Text style={[styles.eggDeathTitle, deathCause === 'abandoned' && { color: '#2C3E3A' }]}>
+              {deathCause === 'abandoned'
+                ? `You abandoned ${deadAnimalName}.`
+                : `${deadAnimalName} couldn't hatch...`}
             </Text>
 
-            <View style={styles.eggDeathCracked}>
-              <Text style={styles.eggDeathCrackedEmoji}>🥚</Text>
-              <View style={styles.eggDeathCrack}>
-                <Text style={styles.eggDeathCrackEmoji}>💀</Text>
+            {deathCause !== 'abandoned' && (
+              <View style={styles.eggDeathCracked}>
+                <Text style={styles.eggDeathCrackedEmoji}>🥚</Text>
+                <View style={styles.eggDeathCrack}>
+                  <Text style={styles.eggDeathCrackEmoji}>💀</Text>
+                </View>
               </View>
-            </View>
+            )}
 
-            <Text style={styles.eggDeathMessage}>
-              You left for too long and your egg went cold. {deadAnimalName} was depending on you to stay focused, but the warmth of your study session faded away.
+            <Text style={[styles.eggDeathMessage, deathCause === 'abandoned' && { color: '#4A5E56' }]}>
+              {deathCause === 'abandoned'
+                ? `You chose to walk away. ${deadAnimalName} — an endangered creature that trusted you — sat in silence as its egg turned cold. There was no one else coming to help. You were its only chance.`
+                : `You left for too long and your egg went cold. ${deadAnimalName} was depending on you to stay focused, but the warmth of your study session faded away.`}
             </Text>
 
-            <Text style={styles.eggDeathSubMessage}>
-              This endangered species needed your help. Don't let it happen again.
+            <Text style={[styles.eggDeathSubMessage, deathCause === 'abandoned' && { color: '#5F8C87' }]}>
+              {deathCause === 'abandoned'
+                ? `Every study session is a lifeline for an endangered species. ${deadAnimalName} will never know what it felt like to hatch. Will the next one?`
+                : 'This endangered species needed your help. Don\'t let it happen again.'}
             </Text>
 
             <View style={styles.eggDeathStats}>
-              <Text style={styles.eggDeathStatsText}>0 eco-credits earned</Text>
-              <Text style={styles.eggDeathStatsText}>0 progress saved</Text>
+              <Text style={[styles.eggDeathStatsText, deathCause === 'abandoned' && { color: '#7C8F86' }]}>0 eco-credits earned</Text>
+              <Text style={[styles.eggDeathStatsText, deathCause === 'abandoned' && { color: '#7C8F86' }]}>0 progress saved</Text>
             </View>
 
             <TouchableOpacity
@@ -1152,6 +1185,11 @@ const styles = StyleSheet.create({
   },
   profileButtonEmoji: {
     fontSize: 22,
+  },
+  profileButtonImage: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
   },
   testModeBanner: {
     backgroundColor: colors.warning,

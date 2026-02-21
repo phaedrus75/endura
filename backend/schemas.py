@@ -304,4 +304,5 @@ class UserStats(BaseModel):
     animals_hatched: int
     tasks_completed: int
     weekly_study_minutes: list
+    monthly_study_minutes: list
     study_minutes_by_subject: dict  # {subject: minutes}

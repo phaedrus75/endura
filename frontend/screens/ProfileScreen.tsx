@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback } from 'react';
 import {
   View,
   Text,
@@ -19,7 +19,6 @@ import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { LinearGradient as ExpoLinearGradient } from 'expo-linear-gradient';
 import Svg, { Circle, Rect, G, Text as SvgText, Path, Defs, LinearGradient, Stop } from 'react-native-svg';
 import * as ImagePicker from 'expo-image-picker';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { colors, shadows, spacing, borderRadius } from '../theme/colors';
 import { useAuth } from '../contexts/AuthContext';
 import {
@@ -29,8 +28,6 @@ import {
   LeaderboardEntry,
   Friend,
 } from '../services/api';
-
-const PROFILE_PIC_KEY = 'user_profile_picture';
 
 const { width } = Dimensions.get('window');
 const CHART_WIDTH = width - spacing.lg * 2;
@@ -154,20 +151,13 @@ const ProgressBar = ({ value, maxValue, label, color }: { value: number; maxValu
 
 export default function ProfileScreen() {
   const navigation = useNavigation<any>();
-  const { user, logout, refreshUser } = useAuth();
+  const { user, logout, refreshUser, profilePic, setProfilePic } = useAuth();
   const [stats, setStats] = useState<UserStats | null>(null);
   const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
   const [friends, setFriends] = useState<Friend[]>([]);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [showFriendModal, setShowFriendModal] = useState(false);
   const [friendEmail, setFriendEmail] = useState('');
-  const [profilePic, setProfilePic] = useState<string | null>(null);
-
-  useEffect(() => {
-    AsyncStorage.getItem(PROFILE_PIC_KEY).then(uri => {
-      if (uri) setProfilePic(uri);
-    });
-  }, []);
 
   const pickImage = async (source: 'camera' | 'gallery') => {
     if (source === 'camera') {
@@ -182,9 +172,7 @@ export default function ProfileScreen() {
         quality: 0.7,
       });
       if (!result.canceled && result.assets[0]) {
-        const uri = result.assets[0].uri;
-        setProfilePic(uri);
-        await AsyncStorage.setItem(PROFILE_PIC_KEY, uri);
+        await setProfilePic(result.assets[0].uri);
       }
     } else {
       const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -199,9 +187,7 @@ export default function ProfileScreen() {
         quality: 0.7,
       });
       if (!result.canceled && result.assets[0]) {
-        const uri = result.assets[0].uri;
-        setProfilePic(uri);
-        await AsyncStorage.setItem(PROFILE_PIC_KEY, uri);
+        await setProfilePic(result.assets[0].uri);
       }
     }
   };
@@ -221,8 +207,7 @@ export default function ProfileScreen() {
           if (buttonIndex === 0) pickImage('camera');
           else if (buttonIndex === 1) pickImage('gallery');
           else if (buttonIndex === 2 && profilePic) {
-            setProfilePic(null);
-            await AsyncStorage.removeItem(PROFILE_PIC_KEY);
+            await setProfilePic(null);
           }
         },
       );
@@ -235,10 +220,7 @@ export default function ProfileScreen() {
         buttons.push({
           text: 'Remove Photo',
           style: 'destructive',
-          onPress: async () => {
-            setProfilePic(null);
-            await AsyncStorage.removeItem(PROFILE_PIC_KEY);
-          },
+          onPress: () => setProfilePic(null),
         });
       }
       buttons.push({ text: 'Cancel', style: 'cancel' });
