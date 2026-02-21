@@ -57,15 +57,10 @@ try:
             if result.fetchone() is None:
                 conn.execute(text(sql))
                 conn.commit()
-    # One-time: link existing donations to popsie
+    # One-time: link existing donations to user_id=1 (popsie)
     try:
-        result = conn.execute(text(
-            "UPDATE donations SET user_id = ("
-            "  SELECT id FROM users WHERE LOWER(email) = 'aseem.munshi@gmail.com' LIMIT 1"
-            ") WHERE user_id IS NULL"
-        ))
-        if result.rowcount > 0:
-            conn.commit()
+        conn.execute(text("UPDATE donations SET user_id = 1 WHERE user_id IS NULL"))
+        conn.commit()
     except Exception:
         pass
 except Exception:
@@ -94,7 +89,7 @@ def health_check():
     return {
         "status": "healthy",
         "app": "Endura API",
-        "version": "1.0.33",
+        "version": "1.0.34",
     }
 
 @app.get("/health")
@@ -1143,9 +1138,6 @@ def get_community_donation_stats(db: Session = Depends(get_db)):
     linked = db.query(models.Donation).filter(models.Donation.user_id.isnot(None)).count()
     unlinked = db.query(models.Donation).filter(models.Donation.user_id.is_(None)).count()
 
-    users = db.query(models.User).limit(10).all()
-    user_emails = [{"id": u.id, "email": u.email, "username": u.username} for u in users]
-
     return {
         "total_raised": float(total_raised),
         "total_donors": total_donors,
@@ -1155,7 +1147,6 @@ def get_community_donation_stats(db: Session = Depends(get_db)):
         "recent_donations": recent_list,
         "linked_to_users": linked,
         "unlinked": unlinked,
-        "_users": user_emails,
     }
 
 
