@@ -618,7 +618,7 @@ export default function CollectionScreen() {
               <Text style={styles.sanctuaryCaption}>
                 {myAnimals.length === 1
                   ? 'Your first friend is settling in!'
-                  : `${myAnimals.length} friends roaming happily in your sanctuary`}
+                  : `${myAnimals.length} friends roaming happily in my sanctuary`}
               </Text>
 
               {/* Shop Entry */}
@@ -919,7 +919,7 @@ export default function CollectionScreen() {
               style={[styles.sanctuaryModalHeader, { backgroundColor: '#FFFFFF' }]}
             >
               <View>
-                <Text style={styles.sanctuaryModalTitle}>🌿 Your Sanctuary</Text>
+                <Text style={styles.sanctuaryModalTitle}>🌿 My Sanctuary</Text>
                 <Text style={styles.sanctuaryModalSub}>
                   {myAnimals.length} {myAnimals.length === 1 ? 'friend' : 'friends'} living here
                 </Text>

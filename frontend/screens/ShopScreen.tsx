@@ -46,7 +46,7 @@ const SHOP_ITEMS: ShopItem[] = [
   { id: 'acc_bow', name: 'Bow Tie', imageKey: 'bow', description: 'A classy white bow tie for formal occasions', price: 55, category: 'accessories', rarity: 'rare' },
 
   // Decorations
-  { id: 'dec_daisy', name: 'Daisy Patch', imageKey: 'daisy', description: 'A cheerful bunch of daisies to brighten your sanctuary', price: 30, category: 'decorations', rarity: 'common' },
+  { id: 'dec_daisy', name: 'Daisy Patch', imageKey: 'daisy', description: 'A cheerful bunch of daisies to brighten my sanctuary', price: 30, category: 'decorations', rarity: 'common' },
   { id: 'dec_mushroom', name: 'Mushroom', imageKey: 'mushroom', description: 'A whimsical fairy-tale mushroom', price: 40, category: 'decorations', rarity: 'common' },
   { id: 'dec_tree', name: 'Tree', imageKey: 'tree', description: 'A shady tree for animals to rest under', price: 55, category: 'decorations', rarity: 'rare' },
   { id: 'dec_tulips', name: 'Tulips', imageKey: 'tulips', description: 'A vibrant cluster of colourful tulips', price: 50, category: 'decorations', rarity: 'rare' },
@@ -136,7 +136,7 @@ export default function ShopScreen() {
       setSelectedItem(null);
       Alert.alert(
         'Purchased!',
-        `${item.name} has been added to your sanctuary! Visit your Collection to see it.`
+        `${item.name} has been added to my sanctuary! Visit Collection to see it.`
       );
     } catch (e: any) {
       const updated = { ...purchasedIds, [item.id]: currentCount + 1 };
@@ -144,7 +144,7 @@ export default function ShopScreen() {
       await AsyncStorage.setItem(storageKey, JSON.stringify(updated));
       setShowPreview(false);
       setSelectedItem(null);
-      Alert.alert('Purchased!', `${item.name} has been added to your sanctuary!`);
+      Alert.alert('Purchased!', `${item.name} has been added to my sanctuary!`);
     }
   };
 

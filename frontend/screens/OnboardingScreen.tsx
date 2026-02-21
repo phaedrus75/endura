@@ -48,7 +48,7 @@ const onboardingSteps: OnboardingStep[] = [
   {
     emoji: '🐣',
     title: 'Hatch & Collect',
-    subtitle: 'Build your sanctuary',
+    subtitle: 'Build my sanctuary',
     body: 'Your eco-credits fill an egg. When it hatches, you discover a real endangered animal — from Red Pandas to Snow Leopards.\n\nCollect all 30 species and build your own sanctuary.',
     gradient: ['#E7EFEA', '#E2E8D8'],
   },
