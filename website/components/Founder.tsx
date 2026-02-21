@@ -2,12 +2,6 @@
 
 import { motion } from "framer-motion";
 
-const highlights = [
-  { icon: "🌍", stat: "170+", label: "Active users across 3 continents" },
-  { icon: "🏆", stat: "1st", label: "Place — IE Sustainability Datathon" },
-  { icon: "🎓", stat: "IB", label: "Diploma student, Southbank London" },
-];
-
 const credentials = [
   "Founder & CEO",
   "IB Diploma Student",
@@ -24,7 +18,7 @@ export default function Founder() {
       className="py-24 sm:py-32 bg-cream"
     >
       <div className="max-w-6xl mx-auto px-6">
-        <div className="flex flex-col lg:flex-row items-center gap-12 lg:gap-20">
+        <div className="flex flex-col lg:flex-row items-center gap-12 lg:gap-14">
           {/* Photo */}
           <motion.div
             initial={{ opacity: 0, x: -40 }}
@@ -40,30 +34,9 @@ export default function Founder() {
                   <span className="text-sm font-medium">Photo coming soon</span>
                 </div>
               </div>
-              <div className="absolute -bottom-3 -right-3 bg-forest text-white w-16 h-16 rounded-2xl flex items-center justify-center shadow-lg text-2xl rotate-6">
-                16
-              </div>
               <div className="absolute -top-3 -left-3 text-3xl animate-float">
                 🦁
               </div>
-            </div>
-
-            {/* Impact stats below photo */}
-            <div className="mt-8 grid grid-cols-3 gap-3">
-              {highlights.map((h) => (
-                <motion.div
-                  key={h.label}
-                  initial={{ opacity: 0, y: 10 }}
-                  whileInView={{ opacity: 1, y: 0 }}
-                  viewport={{ once: true }}
-                  transition={{ delay: 0.3, duration: 0.5 }}
-                  className="text-center"
-                >
-                  <span className="text-xl">{h.icon}</span>
-                  <p className="text-lg font-bold text-forest-dark mt-1">{h.stat}</p>
-                  <p className="text-[11px] text-forest-dark/50 leading-tight">{h.label}</p>
-                </motion.div>
-              ))}
             </div>
           </motion.div>
 
