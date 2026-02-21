@@ -83,7 +83,7 @@ def health_check():
     return {
         "status": "healthy",
         "app": "Endura API",
-        "version": "1.0.42",
+        "version": "1.0.43",
     }
 
 @app.get("/health")
@@ -171,6 +171,7 @@ def seed_check():
             else:
                 seen_names.add(animal.name)
         if removed > 0:
+            db.commit()
             print(f"[STARTUP] Removed {removed} duplicate/extra animals")
 
         added = 0
@@ -179,7 +180,7 @@ def seed_check():
             if not exists:
                 db.add(models.Animal(**animal_data))
                 added += 1
-        if removed > 0 or added > 0:
+        if added > 0:
             db.commit()
 
             # Re-run image_url for newly added animals
