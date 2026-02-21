@@ -57,11 +57,13 @@ try:
             if result.fetchone() is None:
                 conn.execute(text(sql))
                 conn.commit()
-    # One-time: link existing donations to popsie
+    # One-time: link existing donations to popsie (match by email or username)
     try:
         result = conn.execute(text(
-            "UPDATE donations SET user_id = (SELECT id FROM users WHERE LOWER(username) = 'popsie') "
-            "WHERE user_id IS NULL AND (SELECT id FROM users WHERE LOWER(username) = 'popsie') IS NOT NULL"
+            "UPDATE donations SET user_id = ("
+            "  SELECT id FROM users WHERE LOWER(email) = 'munshiaseem@yahoo.com' "
+            "  OR LOWER(username) = 'popsie' LIMIT 1"
+            ") WHERE user_id IS NULL"
         ))
         if result.rowcount > 0:
             conn.commit()
@@ -93,7 +95,7 @@ def health_check():
     return {
         "status": "healthy",
         "app": "Endura API",
-        "version": "1.0.29",
+        "version": "1.0.30",
     }
 
 @app.get("/health")
