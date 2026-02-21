@@ -1640,6 +1640,75 @@ def admin_update_animal(
     }
 
 
+@app.delete("/admin/animals/{animal_id}")
+def admin_delete_animal(animal_id: int, db: Session = Depends(get_db), _=Depends(verify_admin)):
+    animal = db.query(models.Animal).filter(models.Animal.id == animal_id).first()
+    if not animal:
+        raise HTTPException(status_code=404, detail="Animal not found")
+    db.delete(animal)
+    db.commit()
+    return {"deleted": True, "id": animal_id}
+
+
+@app.get("/admin/tips")
+def admin_tips(
+    limit: int = 200,
+    offset: int = 0,
+    db: Session = Depends(get_db),
+    _=Depends(verify_admin),
+):
+    total = db.query(func.count(models.StudyTip.id)).scalar() or 0
+    tips = db.query(models.StudyTip).order_by(
+        models.StudyTip.id.desc()
+    ).offset(offset).limit(limit).all()
+    result = []
+    for t in tips:
+        username = None
+        if t.user_id:
+            u = db.query(models.User).filter(models.User.id == t.user_id).first()
+            username = (u.username or u.email) if u else None
+        result.append({
+            "id": t.id,
+            "content": t.content,
+            "category": t.category,
+            "animal_name": t.animal_name,
+            "likes_count": t.likes_count or 0,
+            "dislikes_count": t.dislikes_count or 0,
+            "author": username,
+            "created_at": t.created_at.isoformat() if t.created_at else None,
+        })
+    return {"total": total, "tips": result}
+
+
+class TipUpdate(BaseModel):
+    content: Optional[str] = None
+    category: Optional[str] = None
+    animal_name: Optional[str] = None
+
+
+@app.put("/admin/tips/{tip_id}")
+def admin_update_tip(tip_id: int, body: TipUpdate, db: Session = Depends(get_db), _=Depends(verify_admin)):
+    tip = db.query(models.StudyTip).filter(models.StudyTip.id == tip_id).first()
+    if not tip:
+        raise HTTPException(status_code=404, detail="Tip not found")
+    updates = body.dict(exclude_unset=True)
+    for field, value in updates.items():
+        setattr(tip, field, value)
+    db.commit()
+    db.refresh(tip)
+    return {"id": tip.id, "content": tip.content, "category": tip.category, "animal_name": tip.animal_name}
+
+
+@app.delete("/admin/tips/{tip_id}")
+def admin_delete_tip(tip_id: int, db: Session = Depends(get_db), _=Depends(verify_admin)):
+    tip = db.query(models.StudyTip).filter(models.StudyTip.id == tip_id).first()
+    if not tip:
+        raise HTTPException(status_code=404, detail="Tip not found")
+    db.delete(tip)
+    db.commit()
+    return {"deleted": True, "id": tip_id}
+
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)

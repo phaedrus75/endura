@@ -193,6 +193,38 @@
             border-radius: 10px; font-size: 14px; font-weight: 600; cursor: pointer; color: var(--text-muted);
         }
         .save-success { color: var(--accent); font-size: 13px; font-weight: 600; margin-top: 10px; display: none; }
+        .btn-delete {
+            padding: 12px; background: #fff; border: 1px solid var(--red);
+            border-radius: 10px; font-size: 13px; font-weight: 600; cursor: pointer; color: var(--red);
+        }
+        .btn-delete:hover { background: var(--red); color: #fff; }
+
+        /* ---- Sub-tabs ---- */
+        .sub-tabs { display: flex; gap: 4px; margin-bottom: 20px; background: var(--bg); border-radius: 10px; padding: 4px; }
+        .sub-tab {
+            flex: 1; padding: 10px 16px; border-radius: 8px; border: none;
+            background: transparent; font-size: 13px; font-weight: 600;
+            cursor: pointer; color: var(--text-muted); transition: all .15s; text-align: center;
+        }
+        .sub-tab.active { background: var(--card); color: var(--text); box-shadow: 0 1px 3px rgba(0,0,0,.06); }
+        .sub-tab:hover:not(.active) { color: var(--text); }
+        .sub-content { display: none; }
+        .sub-content.active { display: block; }
+
+        /* ---- Tips table ---- */
+        .tip-content { max-width: 400px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .tip-category { display: inline-block; }
+
+        /* ---- Shop grid ---- */
+        .shop-card {
+            background: var(--bg); border-radius: 12px; padding: 16px;
+            display: flex; align-items: center; gap: 12px; cursor: pointer;
+            border: 2px solid transparent; transition: all .15s;
+        }
+        .shop-card:hover { border-color: var(--forest-light); transform: translateY(-2px); }
+        .shop-card .shop-icon { font-size: 28px; width: 44px; height: 44px; border-radius: 10px; display: flex; align-items: center; justify-content: center; background: var(--card); }
+        .shop-card .shop-name { font-weight: 600; font-size: 14px; }
+        .shop-card .shop-meta { font-size: 12px; color: var(--text-muted); }
 
         /* ---- Activity Feed ---- */
         .feed-item {
@@ -363,9 +395,47 @@
         <!-- Content Page -->
         <div class="page" id="page-content">
             <h1 class="page-title">Content</h1>
-            <div class="table-card">
-                <h3>Animals</h3>
-                <div class="animal-grid" id="animalGrid"></div>
+            <div class="sub-tabs">
+                <button class="sub-tab active" data-subtab="animals" onclick="switchSubTab('animals')">Animals</button>
+                <button class="sub-tab" data-subtab="tips" onclick="switchSubTab('tips')">Study Tips</button>
+                <button class="sub-tab" data-subtab="shop" onclick="switchSubTab('shop')">Shop</button>
+            </div>
+
+            <div class="sub-content active" id="subtab-animals">
+                <div class="table-card">
+                    <div class="section-header" style="margin-bottom:14px">
+                        <h3 style="margin:0">Animals <span id="animalCount" style="color:var(--text-muted);font-weight:500"></span></h3>
+                    </div>
+                    <div class="animal-grid" id="animalGrid"></div>
+                </div>
+            </div>
+
+            <div class="sub-content" id="subtab-tips">
+                <div class="table-card">
+                    <div class="section-header" style="margin-bottom:14px">
+                        <h3 style="margin:0">Study Tips <span id="tipCount" style="color:var(--text-muted);font-weight:500"></span></h3>
+                    </div>
+                    <div style="overflow-x:auto">
+                        <table>
+                            <thead><tr>
+                                <th>Tip</th><th>Category</th><th>Animal</th>
+                                <th>Likes</th><th>Author</th><th>Actions</th>
+                            </tr></thead>
+                            <tbody id="tipsBody"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <div class="sub-content" id="subtab-shop">
+                <div class="table-card">
+                    <h3>Accessories</h3>
+                    <div class="animal-grid" id="shopAccessoriesGrid"></div>
+                </div>
+                <div class="table-card" style="margin-top:16px">
+                    <h3>Decorations</h3>
+                    <div class="animal-grid" id="shopDecorationsGrid"></div>
+                </div>
             </div>
         </div>
 
@@ -425,8 +495,75 @@
             <textarea id="animalEditDesc"></textarea>
             <div class="save-success" id="animalSaveSuccess">Saved successfully</div>
             <div class="btn-row">
+                <button type="button" class="btn-delete" onclick="deleteAnimal()">Delete</button>
                 <button type="button" class="btn-cancel" onclick="closeAnimalModal()">Cancel</button>
                 <button type="submit" class="btn-save">Save Changes</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Tip Edit Modal -->
+<div class="modal-overlay" id="tipModal">
+    <div class="modal-box">
+        <div class="modal-header">
+            <h2 id="tipModalTitle">Edit Tip</h2>
+            <button class="modal-close" onclick="closeTipModal()">&times;</button>
+        </div>
+        <form class="animal-form" id="tipEditForm">
+            <input type="hidden" id="tipEditId">
+            <label>Content</label>
+            <textarea id="tipEditContent" required></textarea>
+            <label>Category</label>
+            <select id="tipEditCategory">
+                <option value="general">General</option>
+                <option value="focus">Focus</option>
+                <option value="motivation">Motivation</option>
+                <option value="productivity">Productivity</option>
+                <option value="wellness">Wellness</option>
+            </select>
+            <label>Animal Name</label>
+            <input type="text" id="tipEditAnimal" placeholder="Optional — link to animal">
+            <div class="save-success" id="tipSaveSuccess">Saved successfully</div>
+            <div class="btn-row">
+                <button type="button" class="btn-delete" onclick="deleteTip()">Delete</button>
+                <button type="button" class="btn-cancel" onclick="closeTipModal()">Cancel</button>
+                <button type="submit" class="btn-save">Save Changes</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Shop Edit Modal -->
+<div class="modal-overlay" id="shopModal">
+    <div class="modal-box">
+        <div class="modal-header">
+            <h2 id="shopModalTitle">Shop Item</h2>
+            <button class="modal-close" onclick="closeShopModal()">&times;</button>
+        </div>
+        <form class="animal-form" id="shopEditForm">
+            <input type="hidden" id="shopEditId">
+            <label>Name</label>
+            <input type="text" id="shopEditName" required>
+            <label>Description</label>
+            <textarea id="shopEditDesc"></textarea>
+            <label>Price (Coins)</label>
+            <input type="number" id="shopEditPrice" min="0">
+            <label>Category</label>
+            <select id="shopEditCategory">
+                <option value="accessories">Accessories</option>
+                <option value="decorations">Decorations</option>
+            </select>
+            <label>Rarity</label>
+            <select id="shopEditRarity">
+                <option value="common">Common</option>
+                <option value="rare">Rare</option>
+                <option value="epic">Epic</option>
+                <option value="legendary">Legendary</option>
+            </select>
+            <div class="save-success" id="shopSaveSuccess">Note: Shop items are defined in the app code. Edit here for reference only.</div>
+            <div class="btn-row">
+                <button type="button" class="btn-cancel" onclick="closeShopModal()">Cancel</button>
             </div>
         </form>
     </div>
@@ -673,7 +810,15 @@ async function loadDonations() {
     } catch (e) { console.error('Donations load failed', e); }
 }
 
-// ----- Content -----
+// ----- Content Sub-tabs -----
+function switchSubTab(name) {
+    document.querySelectorAll('.sub-tab').forEach(t => t.classList.toggle('active', t.dataset.subtab === name));
+    document.querySelectorAll('.sub-content').forEach(c => c.classList.toggle('active', c.id === 'subtab-' + name));
+    if (name === 'tips' && allTips.length === 0) loadTips();
+    if (name === 'shop') renderShopGrids();
+}
+
+// ----- Content: Animals -----
 let allAnimals = [];
 
 async function loadContent() {
@@ -684,6 +829,7 @@ async function loadContent() {
 }
 
 function renderAnimalGrid() {
+    document.getElementById('animalCount').textContent = `(${allAnimals.length})`;
     const grid = document.getElementById('animalGrid');
     grid.innerHTML = allAnimals.map(a => {
         const rarityColors = { common: 'badge-green', rare: 'badge-blue', epic: 'badge-purple', legendary: 'badge-amber' };
@@ -763,6 +909,167 @@ document.getElementById('animalEditForm').addEventListener('submit', async e => 
         alert('Failed to save: ' + err.message);
     }
 });
+
+async function deleteAnimal() {
+    const id = document.getElementById('animalEditId').value;
+    const name = document.getElementById('animalEditName').value;
+    if (!confirm(`Delete "${name}"? This cannot be undone.`)) return;
+    try {
+        const res = await fetch(API_URL + '/admin/animals/' + id, {
+            method: 'DELETE',
+            headers: { 'X-Admin-Key': API_KEY },
+        });
+        if (!res.ok) throw new Error(res.status);
+        allAnimals = allAnimals.filter(a => a.id !== parseInt(id));
+        renderAnimalGrid();
+        closeAnimalModal();
+    } catch (err) {
+        alert('Failed to delete: ' + err.message);
+    }
+}
+
+// ----- Content: Study Tips -----
+let allTips = [];
+
+async function loadTips() {
+    try {
+        const d = await adminFetch('/admin/tips');
+        allTips = d.tips || [];
+        renderTipsTable();
+    } catch (e) { console.error('Tips load failed', e); }
+}
+
+function renderTipsTable() {
+    document.getElementById('tipCount').textContent = `(${allTips.length})`;
+    const body = document.getElementById('tipsBody');
+    if (!allTips.length) { body.innerHTML = '<tr><td colspan="6" class="empty">No study tips yet</td></tr>'; return; }
+    body.innerHTML = allTips.map(t => `
+        <tr style="cursor:pointer" onclick="openTipDetail(${t.id})">
+            <td class="tip-content" title="${esc(t.content)}">${esc(t.content)}</td>
+            <td><span class="badge badge-blue tip-category">${esc(t.category || 'general')}</span></td>
+            <td>${esc(t.animal_name || '—')}</td>
+            <td>👍 ${t.likes_count} / 👎 ${t.dislikes_count}</td>
+            <td>${esc(t.author || '—')}</td>
+            <td><button class="btn-delete" style="padding:6px 12px;font-size:12px" onclick="event.stopPropagation();deleteTipDirect(${t.id})">Delete</button></td>
+        </tr>
+    `).join('');
+}
+
+function openTipDetail(id) {
+    const t = allTips.find(x => x.id === id);
+    if (!t) return;
+    document.getElementById('tipEditId').value = t.id;
+    document.getElementById('tipModalTitle').textContent = 'Edit Tip #' + t.id;
+    document.getElementById('tipEditContent').value = t.content || '';
+    document.getElementById('tipEditCategory').value = t.category || 'general';
+    document.getElementById('tipEditAnimal').value = t.animal_name || '';
+    document.getElementById('tipSaveSuccess').style.display = 'none';
+    document.getElementById('tipModal').classList.add('active');
+}
+
+function closeTipModal() { document.getElementById('tipModal').classList.remove('active'); }
+document.getElementById('tipModal').addEventListener('click', e => { if (e.target.id === 'tipModal') closeTipModal(); });
+
+document.getElementById('tipEditForm').addEventListener('submit', async e => {
+    e.preventDefault();
+    const id = document.getElementById('tipEditId').value;
+    const body = {
+        content: document.getElementById('tipEditContent').value,
+        category: document.getElementById('tipEditCategory').value,
+        animal_name: document.getElementById('tipEditAnimal').value || null,
+    };
+    try {
+        const res = await fetch(API_URL + '/admin/tips/' + id, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json', 'X-Admin-Key': API_KEY },
+            body: JSON.stringify(body),
+        });
+        if (!res.ok) throw new Error(res.status);
+        const updated = await res.json();
+        const idx = allTips.findIndex(t => t.id === updated.id);
+        if (idx !== -1) allTips[idx] = { ...allTips[idx], ...updated };
+        renderTipsTable();
+        document.getElementById('tipSaveSuccess').textContent = 'Saved successfully';
+        document.getElementById('tipSaveSuccess').style.display = 'block';
+        setTimeout(() => { document.getElementById('tipSaveSuccess').style.display = 'none'; }, 2000);
+    } catch (err) {
+        alert('Failed to save: ' + err.message);
+    }
+});
+
+async function deleteTip() {
+    const id = document.getElementById('tipEditId').value;
+    if (!confirm('Delete this study tip? This cannot be undone.')) return;
+    await deleteTipById(id);
+    closeTipModal();
+}
+
+async function deleteTipDirect(id) {
+    if (!confirm('Delete this study tip? This cannot be undone.')) return;
+    await deleteTipById(id);
+}
+
+async function deleteTipById(id) {
+    try {
+        const res = await fetch(API_URL + '/admin/tips/' + id, {
+            method: 'DELETE',
+            headers: { 'X-Admin-Key': API_KEY },
+        });
+        if (!res.ok) throw new Error(res.status);
+        allTips = allTips.filter(t => t.id !== parseInt(id));
+        renderTipsTable();
+    } catch (err) {
+        alert('Failed to delete: ' + err.message);
+    }
+}
+
+// ----- Content: Shop -----
+const SHOP_ITEMS = [
+    { id: 'acc_tophat', name: 'Top Hat', emoji: '🎩', description: 'A dapper top hat for your most distinguished animal', price: 40, category: 'accessories', rarity: 'common' },
+    { id: 'acc_sunnies', name: 'Sunnies', emoji: '🕶️', description: 'Cool shades for the coolest creatures', price: 35, category: 'accessories', rarity: 'common' },
+    { id: 'acc_crown', name: 'Crown', emoji: '👑', description: 'A royal crown fit for the king of the sanctuary', price: 80, category: 'accessories', rarity: 'epic' },
+    { id: 'acc_gradcap', name: 'Graduation Cap', emoji: '🎓', description: 'Celebrate your study achievements in style', price: 60, category: 'accessories', rarity: 'rare' },
+    { id: 'acc_eyemask', name: 'Eye Mask', emoji: '😴', description: 'For animals that deserve a cozy rest after your study session', price: 45, category: 'accessories', rarity: 'common' },
+    { id: 'acc_partyhat', name: 'Party Hat', emoji: '🥳', description: 'A festive party hat for celebration time', price: 50, category: 'accessories', rarity: 'rare' },
+    { id: 'acc_halo', name: 'Halo', emoji: '😇', description: 'A golden halo for your most angelic animal', price: 90, category: 'accessories', rarity: 'epic' },
+    { id: 'acc_bow', name: 'Bow Tie', emoji: '🎀', description: 'A classy white bow tie for formal occasions', price: 55, category: 'accessories', rarity: 'rare' },
+    { id: 'dec_daisy', name: 'Daisy Patch', emoji: '🌼', description: 'A cheerful bunch of daisies to brighten your sanctuary', price: 30, category: 'decorations', rarity: 'common' },
+    { id: 'dec_mushroom', name: 'Mushroom', emoji: '🍄', description: 'A whimsical fairy-tale mushroom', price: 40, category: 'decorations', rarity: 'common' },
+    { id: 'dec_tree', name: 'Tree', emoji: '🌳', description: 'A shady tree for animals to rest under', price: 55, category: 'decorations', rarity: 'rare' },
+    { id: 'dec_tulips', name: 'Tulips', emoji: '🌷', description: 'A vibrant cluster of colourful tulips', price: 50, category: 'decorations', rarity: 'rare' },
+    { id: 'dec_stones', name: 'Zen Stones', emoji: '🪨', description: 'A calming stack of smooth zen stones', price: 45, category: 'decorations', rarity: 'common' },
+    { id: 'dec_bamboo', name: 'Bamboo', emoji: '🎋', description: 'Tall green bamboo stalks swaying gently', price: 65, category: 'decorations', rarity: 'rare' },
+];
+
+function renderShopGrids() {
+    const rarityColors = { common: 'badge-green', rare: 'badge-blue', epic: 'badge-purple', legendary: 'badge-amber' };
+    const makeCard = item => `
+        <div class="shop-card" onclick="openShopDetail('${item.id}')">
+            <div class="shop-icon">${item.emoji}</div>
+            <div>
+                <div class="shop-name">${esc(item.name)}</div>
+                <div class="shop-meta">${item.price} coins &middot; <span class="badge ${rarityColors[item.rarity]||'badge-green'}">${item.rarity}</span></div>
+            </div>
+        </div>`;
+    document.getElementById('shopAccessoriesGrid').innerHTML = SHOP_ITEMS.filter(i => i.category === 'accessories').map(makeCard).join('');
+    document.getElementById('shopDecorationsGrid').innerHTML = SHOP_ITEMS.filter(i => i.category === 'decorations').map(makeCard).join('');
+}
+
+function openShopDetail(id) {
+    const item = SHOP_ITEMS.find(i => i.id === id);
+    if (!item) return;
+    document.getElementById('shopEditId').value = item.id;
+    document.getElementById('shopModalTitle').textContent = item.emoji + ' ' + item.name;
+    document.getElementById('shopEditName').value = item.name;
+    document.getElementById('shopEditDesc').value = item.description;
+    document.getElementById('shopEditPrice').value = item.price;
+    document.getElementById('shopEditCategory').value = item.category;
+    document.getElementById('shopEditRarity').value = item.rarity;
+    document.getElementById('shopSaveSuccess').style.display = 'block';
+    document.getElementById('shopModal').classList.add('active');
+}
+function closeShopModal() { document.getElementById('shopModal').classList.remove('active'); }
+document.getElementById('shopModal').addEventListener('click', e => { if (e.target.id === 'shopModal') closeShopModal(); });
 
 const ANIMAL_EMOJIS = {
     'Red Panda':'🐼','Sea Turtle':'🐢','Penguin':'🐧','Koala':'🐨','Flamingo':'🦩',

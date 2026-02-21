@@ -26,8 +26,7 @@ interface OnboardingStep {
   useLottie?: boolean;
   title: string;
   subtitle: string;
-  description: string;
-  highlights?: string[];
+  body: string;
   gradient: [string, string];
 }
 
@@ -36,54 +35,42 @@ const onboardingSteps: OnboardingStep[] = [
     useLottie: true,
     title: 'Welcome to Endura',
     subtitle: 'Study with purpose',
-    description:
-      'Every minute you study helps protect endangered species. Earn eco-credits, hatch animals, and make a real difference.',
-    highlights: ['🥚 Hatch endangered animals', '🌍 Donate to conservation', '🏆 Compete with friends'],
+    body: 'Every minute you study helps protect endangered species.\n\nEarn eco-credits, hatch animals, and make a real difference in wildlife conservation.',
     gradient: ['#E7EFEA', '#DCEAE3'],
   },
   {
     emoji: '⏱️',
     title: 'Focus Timer',
     subtitle: 'Study smarter',
-    description:
-      'Start a study session with our built-in timer. Stay focused, earn eco-credits, and watch your streak grow day by day.',
-    highlights: ['📚 Track study hours & subjects', '🔥 Build daily streaks', '🪙 Earn eco-credits per minute'],
+    body: 'Start a focus session and watch your eco-credits grow with every minute. Track your subjects, build daily streaks, and develop a study habit that lasts.',
     gradient: ['#E7EFEA', '#D6E5EC'],
   },
   {
     emoji: '🐣',
     title: 'Hatch & Collect',
     subtitle: 'Build your sanctuary',
-    description:
-      'Your eco-credits fill an egg. When it hatches, you discover an endangered animal — from Red Pandas to Sunda Island Tigers. Collect all 30!',
-    highlights: ['🦁 30 real endangered species', '✨ Common to Legendary rarity', '🏡 Your own animal sanctuary'],
+    body: 'Your eco-credits fill an egg. When it hatches, you discover a real endangered animal — from Red Pandas to Snow Leopards.\n\nCollect all 30 species and build your own sanctuary.',
     gradient: ['#E7EFEA', '#E2E8D8'],
   },
   {
     emoji: '💚',
     title: 'Take Action',
     subtitle: 'Real-world impact',
-    description:
-      'Donate directly to wildlife conservation through our partnership with Every.org. Track your impact and see how the whole community is helping.',
-    highlights: ['🤝 One-tap donations', '📊 Community donation tracker', '🏅 Conservation Champions board'],
+    body: 'Donate directly to wildlife conservation through our partnership with Every.org.\n\nTrack how much you and the whole community have contributed to protecting these beautiful creatures.',
     gradient: ['#E7EFEA', '#D8E8E0'],
   },
   {
     emoji: '👥',
     title: 'Friends & Leaderboard',
     subtitle: 'Better together',
-    description:
-      'Add friends, compare study stats, and climb the leaderboard. Share study tips, react to achievements, and motivate each other.',
-    highlights: ['📈 Study leaderboard', '💬 Activity feed & reactions', '🎯 Study groups & challenges'],
+    body: 'Add friends, compare study stats, and climb the leaderboard together. Join study groups, share tips, and motivate each other to keep going.',
     gradient: ['#E7EFEA', '#D6DEE8'],
   },
   {
     emoji: '🏅',
     title: 'Badges & Progress',
     subtitle: 'Every session counts',
-    description:
-      'Earn 50+ badges across categories — streaks, study milestones, animals collected, and more. Track your weekly and monthly progress with detailed charts.',
-    highlights: ['🥇 50+ unique badges', '📊 Weekly & monthly charts', '🎓 Study by subject tracking'],
+    body: 'Earn 50+ badges for streaks, study milestones, and animals collected. See your growth with weekly and monthly progress charts.',
     gradient: ['#E7EFEA', '#E0E4E8'],
   },
 ];
@@ -252,18 +239,7 @@ export default function OnboardingScreen() {
             {/* Text */}
             <Text style={styles.stepSubtitle}>{step.subtitle}</Text>
             <Text style={styles.stepTitle}>{step.title}</Text>
-            <Text style={styles.stepDescription}>{step.description}</Text>
-
-            {/* Highlight pills */}
-            {step.highlights && (
-              <View style={styles.highlightsWrap}>
-                {step.highlights.map((h, i) => (
-                  <View key={i} style={styles.highlightPill}>
-                    <Text style={styles.highlightText}>{h}</Text>
-                  </View>
-                ))}
-              </View>
-            )}
+            <Text style={styles.stepBody}>{step.body}</Text>
           </Animated.View>
 
           {/* Bottom buttons */}
@@ -368,31 +344,12 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginBottom: spacing.md,
   },
-  stepDescription: {
+  stepBody: {
     fontSize: 16,
     color: colors.textSecondary,
     textAlign: 'center',
-    lineHeight: 24,
-    marginBottom: spacing.lg,
-    paddingHorizontal: spacing.sm,
-  },
-
-  // Highlights
-  highlightsWrap: {
-    width: '100%',
-    gap: 8,
-  },
-  highlightPill: {
-    backgroundColor: 'rgba(255,255,255,0.7)',
-    paddingVertical: 12,
-    paddingHorizontal: 18,
-    borderRadius: borderRadius.md,
-    ...shadows.small,
-  },
-  highlightText: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: colors.textPrimary,
+    lineHeight: 26,
+    paddingHorizontal: spacing.md,
   },
 
   // Bottom

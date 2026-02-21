@@ -3,7 +3,7 @@ import * as SecureStore from 'expo-secure-store';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { authAPI, User } from '../services/api';
 
-const PROFILE_PIC_KEY = 'user_profile_picture';
+const PROFILE_PIC_PREFIX = 'user_profile_picture_';
 
 interface AuthContextType {
   user: User | null;
@@ -24,17 +24,30 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [isLoading, setIsLoading] = useState(true);
   const [profilePicState, setProfilePicState] = useState<string | null>(null);
 
+  const profilePicKey = (userId: number) => `${PROFILE_PIC_PREFIX}${userId}`;
+
+  const loadProfilePicForUser = async (userData: User) => {
+    try {
+      const uri = await AsyncStorage.getItem(profilePicKey(userData.id));
+      setProfilePicState(uri);
+    } catch {
+      setProfilePicState(null);
+    }
+  };
+
   const checkAuth = async () => {
     try {
       const token = await SecureStore.getItemAsync('authToken');
       if (token) {
         const userData = await authAPI.getMe();
         setUser(userData);
+        await loadProfilePicForUser(userData);
       }
     } catch (error) {
       console.log('Auth check failed:', error);
       await SecureStore.deleteItemAsync('authToken');
       setUser(null);
+      setProfilePicState(null);
     } finally {
       setIsLoading(false);
     }
@@ -42,17 +55,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     checkAuth();
-    AsyncStorage.getItem(PROFILE_PIC_KEY).then(uri => {
-      if (uri) setProfilePicState(uri);
-    });
   }, []);
 
   const handleSetProfilePic = async (uri: string | null) => {
     setProfilePicState(uri);
+    if (!user) return;
     if (uri) {
-      await AsyncStorage.setItem(PROFILE_PIC_KEY, uri);
+      await AsyncStorage.setItem(profilePicKey(user.id), uri);
     } else {
-      await AsyncStorage.removeItem(PROFILE_PIC_KEY);
+      await AsyncStorage.removeItem(profilePicKey(user.id));
     }
   };
 
@@ -60,17 +71,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     await authAPI.login(email, password);
     const userData = await authAPI.getMe();
     setUser(userData);
+    await loadProfilePicForUser(userData);
   };
 
   const register = async (email: string, password: string) => {
     await authAPI.register(email, password);
     const userData = await authAPI.getMe();
     setUser(userData);
+    await loadProfilePicForUser(userData);
   };
 
   const logout = async () => {
     await authAPI.logout();
     setUser(null);
+    setProfilePicState(null);
   };
 
   const refreshUser = async () => {
