@@ -72,22 +72,24 @@ const RARITY_COLORS: Record<string, string> = {
   legendary: '#2F4A3E',
 };
 
-const STORAGE_KEY = 'endura_purchased_items';
+const STORAGE_KEY_PREFIX = 'endura_purchased_items_';
 
 export default function ShopScreen() {
   const navigation = useNavigation<any>();
-  const { refreshUser } = useAuth();
+  const { refreshUser, user } = useAuth();
   const [stats, setStats] = useState<UserStats | null>(null);
   const [activeCategory, setActiveCategory] = useState<ShopCategory>('accessories');
   const [purchasedIds, setPurchasedIds] = useState<Record<string, number>>({});
   const [selectedItem, setSelectedItem] = useState<ShopItem | null>(null);
   const [showPreview, setShowPreview] = useState(false);
 
+  const storageKey = `${STORAGE_KEY_PREFIX}${user?.id || 'anon'}`;
+
   const loadData = async () => {
     try {
       const [statsData, storedPurchases] = await Promise.all([
         statsAPI.getStats(),
-        AsyncStorage.getItem(STORAGE_KEY),
+        AsyncStorage.getItem(storageKey),
       ]);
       setStats(statsData);
       if (storedPurchases) {
@@ -97,13 +99,15 @@ export default function ShopScreen() {
           migrated[key] = typeof val === 'number' ? (val as number) : (val ? 1 : 0);
         }
         setPurchasedIds(migrated);
+      } else {
+        setPurchasedIds({});
       }
     } catch (e) {
       console.error('Failed to load shop data:', e);
     }
   };
 
-  useFocusEffect(useCallback(() => { loadData(); }, []));
+  useFocusEffect(useCallback(() => { loadData(); }, [storageKey]));
 
   const purchaseItem = async (item: ShopItem) => {
     const coins = stats?.current_coins || 0;
@@ -123,7 +127,7 @@ export default function ShopScreen() {
     try {
       const updated = { ...purchasedIds, [item.id]: currentCount + 1 };
       setPurchasedIds(updated);
-      await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
+      await AsyncStorage.setItem(storageKey, JSON.stringify(updated));
       await refreshUser();
       const newStats = await statsAPI.getStats();
       setStats(newStats);
@@ -137,7 +141,7 @@ export default function ShopScreen() {
     } catch (e: any) {
       const updated = { ...purchasedIds, [item.id]: currentCount + 1 };
       setPurchasedIds(updated);
-      await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
+      await AsyncStorage.setItem(storageKey, JSON.stringify(updated));
       setShowPreview(false);
       setSelectedItem(null);
       Alert.alert('Purchased!', `${item.name} has been added to your sanctuary!`);

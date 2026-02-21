@@ -166,7 +166,7 @@ export default function HomeScreen() {
   useEffect(() => {
     const loadSubjects = async () => {
       try {
-        const stored = await AsyncStorage.getItem('customSubjects');
+        const stored = await AsyncStorage.getItem(`customSubjects_${user?.id || 'anon'}`);
         if (stored) {
           setSubjects(JSON.parse(stored));
         }
@@ -175,11 +175,11 @@ export default function HomeScreen() {
       }
     };
     loadSubjects();
-  }, []);
+  }, [user?.id]);
 
   const saveSubjects = async (newSubjects: string[]) => {
     try {
-      await AsyncStorage.setItem('customSubjects', JSON.stringify(newSubjects));
+      await AsyncStorage.setItem(`customSubjects_${user?.id || 'anon'}`, JSON.stringify(newSubjects));
       setSubjects(newSubjects);
     } catch (e) {
       console.log('Failed to save subjects');

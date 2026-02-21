@@ -174,8 +174,8 @@ const generatePositions = (count: number, containerW: number, containerH: number
   return positions;
 };
 
-const PURCHASED_ITEMS_KEY = 'endura_purchased_items';
-const ASSIGNMENTS_KEY = 'endura_item_assignments';
+const PURCHASED_ITEMS_PREFIX = 'endura_purchased_items_';
+const ASSIGNMENTS_PREFIX = 'endura_item_assignments_';
 
 interface ItemAssignment {
   itemId: string;
@@ -302,7 +302,9 @@ const SHOP_IMAGES: Record<string, any> = {
 
 export default function CollectionScreen() {
   const navigation = useNavigation<any>();
-  const { profilePic } = useAuth();
+  const { profilePic, user } = useAuth();
+  const purchasedKey = `${PURCHASED_ITEMS_PREFIX}${user?.id || 'anon'}`;
+  const assignmentsKey = `${ASSIGNMENTS_PREFIX}${user?.id || 'anon'}`;
   const [myAnimals, setMyAnimals] = useState<UserAnimal[]>([]);
   const [allAnimals, setAllAnimals] = useState<Animal[]>([]);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -322,7 +324,7 @@ export default function CollectionScreen() {
 
   const loadPurchases = async () => {
     try {
-      const raw = await AsyncStorage.getItem(PURCHASED_ITEMS_KEY);
+      const raw = await AsyncStorage.getItem(purchasedKey);
       if (raw) {
         const parsed = JSON.parse(raw);
         const migrated: Record<string, number> = {};
@@ -330,13 +332,15 @@ export default function CollectionScreen() {
           migrated[key] = typeof val === 'number' ? (val as number) : (val ? 1 : 0);
         }
         setPurchasedItems(migrated);
+      } else {
+        setPurchasedItems({});
       }
     } catch (e) {}
   };
 
   const loadAssignments = async () => {
     try {
-      const raw = await AsyncStorage.getItem(ASSIGNMENTS_KEY);
+      const raw = await AsyncStorage.getItem(assignmentsKey);
       if (raw) {
         const parsed = JSON.parse(raw);
         const valid = Array.isArray(parsed)
@@ -345,11 +349,14 @@ export default function CollectionScreen() {
         itemAssignmentsRef.current = valid;
         setItemAssignments(valid);
         if (valid.length !== parsed.length) {
-          await AsyncStorage.setItem(ASSIGNMENTS_KEY, JSON.stringify(valid));
+          await AsyncStorage.setItem(assignmentsKey, JSON.stringify(valid));
         }
+      } else {
+        itemAssignmentsRef.current = [];
+        setItemAssignments([]);
       }
     } catch (e) {
-      await AsyncStorage.removeItem(ASSIGNMENTS_KEY);
+      await AsyncStorage.removeItem(assignmentsKey);
     }
   };
 
@@ -358,14 +365,14 @@ export default function CollectionScreen() {
     const updated = [...filtered, { itemId, x, y }];
     itemAssignmentsRef.current = updated;
     setItemAssignments(updated);
-    await AsyncStorage.setItem(ASSIGNMENTS_KEY, JSON.stringify(updated));
-  }, []);
+    await AsyncStorage.setItem(assignmentsKey, JSON.stringify(updated));
+  }, [assignmentsKey]);
 
   const removeAssignment = async (itemId: string) => {
     const updated = itemAssignmentsRef.current.filter(a => a.itemId !== itemId);
     itemAssignmentsRef.current = updated;
     setItemAssignments(updated);
-    await AsyncStorage.setItem(ASSIGNMENTS_KEY, JSON.stringify(updated));
+    await AsyncStorage.setItem(assignmentsKey, JSON.stringify(updated));
   };
 
   const ownedDecorationItems = Object.keys(purchasedItems)

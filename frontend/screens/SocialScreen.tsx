@@ -300,7 +300,7 @@ export default function SocialScreen() {
 
   const loadSavedTips = async () => {
     try {
-      const raw = await AsyncStorage.getItem('savedTipIds');
+      const raw = await AsyncStorage.getItem(`savedTipIds_${user?.id || 'anon'}`);
       if (raw) {
         const ids: number[] = JSON.parse(raw);
         if (ids.length > 0) {

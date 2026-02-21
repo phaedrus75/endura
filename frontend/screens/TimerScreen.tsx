@@ -129,7 +129,7 @@ const CircularProgress = ({ progress, size = 260, strokeWidth = 14, children }: 
 };
 
 export default function TimerScreen() {
-  const { refreshUser, profilePic } = useAuth();
+  const { refreshUser, profilePic, user } = useAuth();
   const navigation = useNavigation();
   const [selectedMinutes, setSelectedMinutes] = useState(25);
   const [timeLeft, setTimeLeft] = useState(25 * TIME_MULTIPLIER);
@@ -168,23 +168,25 @@ export default function TimerScreen() {
   useEffect(() => {
     const loadUnlockedAnimals = async () => {
       try {
-        const stored = await AsyncStorage.getItem('unlockedAnimals');
+        const stored = await AsyncStorage.getItem(`unlockedAnimals_${user?.id || 'anon'}`);
         if (stored) {
           setUnlockedAnimals(JSON.parse(stored));
+        } else {
+          setUnlockedAnimals([]);
         }
       } catch (e) {
         console.log('Failed to load unlocked animals');
       }
     };
     loadUnlockedAnimals();
-  }, []);
+  }, [user?.id]);
 
   // Reload subjects every time the Timer tab is focused
   useFocusEffect(
     useCallback(() => {
       const loadSubjects = async () => {
         try {
-          const stored = await AsyncStorage.getItem('customSubjects');
+          const stored = await AsyncStorage.getItem(`customSubjects_${user?.id || 'anon'}`);
           if (stored) {
             setSubjects(JSON.parse(stored));
           }
@@ -193,13 +195,13 @@ export default function TimerScreen() {
         }
       };
       loadSubjects();
-    }, [])
+    }, [user?.id])
   );
 
   // Save unlocked animals
   const saveUnlockedAnimals = async (animals: number[]) => {
     try {
-      await AsyncStorage.setItem('unlockedAnimals', JSON.stringify(animals));
+      await AsyncStorage.setItem(`unlockedAnimals_${user?.id || 'anon'}`, JSON.stringify(animals));
       setUnlockedAnimals(animals);
     } catch (e) {
       console.log('Failed to save unlocked animals');

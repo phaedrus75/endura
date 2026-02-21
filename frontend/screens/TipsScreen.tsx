@@ -22,6 +22,7 @@ import { colors, shadows, spacing } from '../theme/colors';
 import { tipsAPI, socialAPI, groupsAPI, StudyTip, Friend, StudyGroup } from '../services/api';
 import { animalImages, ANIMAL_NAMES_IN_ORDER } from '../assets/animals';
 import { Analytics } from '../services/analytics';
+import { useAuth } from '../contexts/AuthContext';
 
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -185,6 +186,7 @@ const TipCard = React.memo(({
 });
 
 export default function TipsScreen() {
+  const { user } = useAuth();
   const navigation = useNavigation<any>();
   const [tips, setTips] = useState<StudyTip[]>([]);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -204,9 +206,10 @@ export default function TipsScreen() {
   useEffect(() => {
     const load = async () => {
       try {
+        const uid = user?.id || 'anon';
         const [savedRaw, seenRaw] = await Promise.all([
-          AsyncStorage.getItem('savedTipIds'),
-          AsyncStorage.getItem('seenTipIds'),
+          AsyncStorage.getItem(`savedTipIds_${uid}`),
+          AsyncStorage.getItem(`seenTipIds_${uid}`),
         ]);
         if (savedRaw) {
           const arr: number[] = JSON.parse(savedRaw);
@@ -223,11 +226,11 @@ export default function TipsScreen() {
   }, []);
 
   const persistSaved = async (map: Record<number, boolean>) => {
-    await AsyncStorage.setItem('savedTipIds', JSON.stringify(Object.keys(map).filter(k => map[Number(k)]).map(Number)));
+    await AsyncStorage.setItem(`savedTipIds_${user?.id || 'anon'}`, JSON.stringify(Object.keys(map).filter(k => map[Number(k)]).map(Number)));
   };
 
   const persistSeen = async (ids: Set<number>) => {
-    await AsyncStorage.setItem('seenTipIds', JSON.stringify([...ids]));
+    await AsyncStorage.setItem(`seenTipIds_${user?.id || 'anon'}`, JSON.stringify([...ids]));
   };
 
   const loadTips = useCallback(async () => {
