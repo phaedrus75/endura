@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import {
   View,
   Text,
@@ -8,66 +8,113 @@ import {
   Dimensions,
   Alert,
   ActivityIndicator,
+  Animated,
+  ScrollView,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import Svg, { Path, Ellipse, Circle, Defs, LinearGradient, Stop } from 'react-native-svg';
+import { LinearGradient } from 'expo-linear-gradient';
 import LottieView from 'lottie-react-native';
 import { colors, shadows, spacing, borderRadius } from '../theme/colors';
 import { useAuth } from '../contexts/AuthContext';
 import * as SecureStore from 'expo-secure-store';
 import { API_URL } from '../services/api';
 
-const { width } = Dimensions.get('window');
+const { width, height } = Dimensions.get('window');
 
-const onboardingSteps = [
+interface OnboardingStep {
+  emoji?: string;
+  useLottie?: boolean;
+  title: string;
+  subtitle: string;
+  description: string;
+  highlights?: string[];
+  gradient: [string, string];
+}
+
+const onboardingSteps: OnboardingStep[] = [
   {
-    useLottie: true, // Use Lottie animation for the egg
+    useLottie: true,
     title: 'Welcome to Endura',
-    description: 'Turn your study sessions into a game. Earn eco-credits, hatch eggs, and build a collection of endangered animals!',
+    subtitle: 'Study with purpose',
+    description:
+      'Every minute you study helps protect endangered species. Earn eco-credits, hatch animals, and make a real difference.',
+    highlights: ['🥚 Hatch endangered animals', '🌍 Donate to conservation', '🏆 Compete with friends'],
+    gradient: ['#E7EFEA', '#DCEAE3'],
   },
   {
     emoji: '⏱️',
-    title: 'Study Timer',
-    description: 'Set a timer for your study sessions. Complete the timer to earn eco-credits. Longer sessions = more eco-credits!',
+    title: 'Focus Timer',
+    subtitle: 'Study smarter',
+    description:
+      'Start a study session with our built-in timer. Stay focused, earn eco-credits, and watch your streak grow day by day.',
+    highlights: ['📚 Track study hours & subjects', '🔥 Build daily streaks', '🪙 Earn eco-credits per minute'],
+    gradient: ['#E7EFEA', '#D6E5EC'],
   },
   {
-    emoji: '🦁',
-    title: 'Hatch Animals',
-    description: 'Your eco-credits automatically contribute to hatching eggs. Each egg reveals an endangered animal for your collection.',
+    emoji: '🐣',
+    title: 'Hatch & Collect',
+    subtitle: 'Build your sanctuary',
+    description:
+      'Your eco-credits fill an egg. When it hatches, you discover an endangered animal — from Red Pandas to Sunda Island Tigers. Collect all 30!',
+    highlights: ['🦁 30 real endangered species', '✨ Common to Legendary rarity', '🏡 Your own animal sanctuary'],
+    gradient: ['#E7EFEA', '#E2E8D8'],
   },
   {
-    emoji: '🏆',
-    title: 'Compete & Connect',
-    description: 'Add friends, climb the leaderboard, and motivate each other to study more!',
+    emoji: '💚',
+    title: 'Take Action',
+    subtitle: 'Real-world impact',
+    description:
+      'Donate directly to wildlife conservation through our partnership with Every.org. Track your impact and see how the whole community is helping.',
+    highlights: ['🤝 One-tap donations', '📊 Community donation tracker', '🏅 Conservation Champions board'],
+    gradient: ['#E7EFEA', '#D8E8E0'],
+  },
+  {
+    emoji: '👥',
+    title: 'Friends & Leaderboard',
+    subtitle: 'Better together',
+    description:
+      'Add friends, compare study stats, and climb the leaderboard. Share study tips, react to achievements, and motivate each other.',
+    highlights: ['📈 Study leaderboard', '💬 Activity feed & reactions', '🎯 Study groups & challenges'],
+    gradient: ['#E7EFEA', '#D6DEE8'],
+  },
+  {
+    emoji: '🏅',
+    title: 'Badges & Progress',
+    subtitle: 'Every session counts',
+    description:
+      'Earn 50+ badges across categories — streaks, study milestones, animals collected, and more. Track your weekly and monthly progress with detailed charts.',
+    highlights: ['🥇 50+ unique badges', '📊 Weekly & monthly charts', '🎓 Study by subject tracking'],
+    gradient: ['#E7EFEA', '#E0E4E8'],
   },
 ];
-
-// Decorative grass for bottom of screen
-const GrassDecoration = () => (
-  <View style={styles.grassContainer}>
-    <Svg width={width} height={120} viewBox={`0 0 ${width} 120`}>
-      <Defs>
-        <LinearGradient id="grassGrad" x1="0%" y1="0%" x2="0%" y2="100%">
-          <Stop offset="0%" stopColor={colors.grass} />
-          <Stop offset="100%" stopColor={colors.grassDark} />
-        </LinearGradient>
-      </Defs>
-      <Ellipse cx={width * 0.5} cy={140} rx={width * 0.8} ry={100} fill="url(#grassGrad)" />
-    </Svg>
-  </View>
-);
 
 export default function OnboardingScreen() {
   const [currentStep, setCurrentStep] = useState(0);
   const [username, setUsername] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const fadeAnim = useRef(new Animated.Value(1)).current;
+  const slideAnim = useRef(new Animated.Value(0)).current;
   const { refreshUser } = useAuth();
 
   const isLastStep = currentStep === onboardingSteps.length;
 
+  const animateTransition = (next: number) => {
+    Animated.parallel([
+      Animated.timing(fadeAnim, { toValue: 0, duration: 150, useNativeDriver: true }),
+      Animated.timing(slideAnim, { toValue: -30, duration: 150, useNativeDriver: true }),
+    ]).start(() => {
+      setCurrentStep(next);
+      slideAnim.setValue(30);
+      Animated.parallel([
+        Animated.timing(fadeAnim, { toValue: 1, duration: 250, useNativeDriver: true }),
+        Animated.timing(slideAnim, { toValue: 0, duration: 250, useNativeDriver: true }),
+      ]).start();
+    });
+  };
+
   const handleNext = () => {
     if (currentStep < onboardingSteps.length) {
-      setCurrentStep(currentStep + 1);
+      animateTransition(currentStep + 1);
     }
   };
 
@@ -84,9 +131,7 @@ export default function OnboardingScreen() {
         `${API_URL}/user/username?username=${encodeURIComponent(username.trim())}`,
         {
           method: 'POST',
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
+          headers: { Authorization: `Bearer ${token}` },
         }
       );
 
@@ -97,8 +142,7 @@ export default function OnboardingScreen() {
 
       await refreshUser();
     } catch (error: any) {
-      const message = error?.message || 'Something went wrong';
-      Alert.alert('Error', message);
+      Alert.alert('Error', error?.message || 'Something went wrong');
     } finally {
       setIsLoading(false);
     }
@@ -106,146 +150,220 @@ export default function OnboardingScreen() {
 
   if (isLastStep) {
     return (
-      <SafeAreaView style={styles.container}>
-        <View style={styles.content}>
-          <View style={styles.iconContainer}>
-            <Text style={styles.stepEmoji}>👤</Text>
-          </View>
-          
-          <Text style={styles.stepTitle}>Choose Your Username</Text>
-          <Text style={styles.stepDescription}>
-            This is how you'll appear to friends on the leaderboard
-          </Text>
-
-          <View style={styles.usernameContainer}>
-            <TextInput
-              style={styles.usernameInput}
-              placeholder="Enter username"
-              placeholderTextColor={colors.textMuted}
-              value={username}
-              onChangeText={setUsername}
-              autoCapitalize="none"
-              autoCorrect={false}
-              maxLength={20}
-            />
-          </View>
-
-          <TouchableOpacity
-            style={[styles.primaryButton, isLoading && styles.buttonDisabled]}
-            onPress={handleComplete}
-            disabled={isLoading}
+      <LinearGradient colors={['#E7EFEA', '#DCEAE3']} style={styles.container}>
+        <SafeAreaView style={styles.safeArea}>
+          <ScrollView
+            contentContainerStyle={styles.usernameContent}
+            keyboardShouldPersistTaps="handled"
           >
-            {isLoading ? (
-              <ActivityIndicator color={colors.textOnPrimary} />
-            ) : (
-              <Text style={styles.primaryButtonText}>Start Studying! 🚀</Text>
-            )}
-          </TouchableOpacity>
-        </View>
-        <GrassDecoration />
-      </SafeAreaView>
+            <View style={styles.usernameIconWrap}>
+              <LinearGradient
+                colors={[colors.primary, colors.primaryDark]}
+                style={styles.usernameIconCircle}
+              >
+                <Text style={styles.usernameEmoji}>🌿</Text>
+              </LinearGradient>
+            </View>
+
+            <Text style={styles.stepTitle}>Choose Your Username</Text>
+            <Text style={styles.usernameSubtitle}>
+              This is how friends will see you on the leaderboard
+            </Text>
+
+            <View style={styles.usernameInputWrap}>
+              <TextInput
+                style={styles.usernameInput}
+                placeholder="Enter username"
+                placeholderTextColor={colors.textMuted}
+                value={username}
+                onChangeText={setUsername}
+                autoCapitalize="none"
+                autoCorrect={false}
+                maxLength={20}
+              />
+            </View>
+
+            <TouchableOpacity
+              style={[styles.primaryButton, isLoading && styles.buttonDisabled]}
+              onPress={handleComplete}
+              disabled={isLoading}
+              activeOpacity={0.8}
+            >
+              <LinearGradient
+                colors={[colors.primary, colors.primaryDark]}
+                style={styles.buttonGradient}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 0 }}
+              >
+                {isLoading ? (
+                  <ActivityIndicator color="#fff" />
+                ) : (
+                  <Text style={styles.primaryButtonText}>Start My Journey</Text>
+                )}
+              </LinearGradient>
+            </TouchableOpacity>
+          </ScrollView>
+        </SafeAreaView>
+      </LinearGradient>
     );
   }
 
   const step = onboardingSteps[currentStep];
 
   return (
-    <SafeAreaView style={styles.container}>
-      <View style={styles.content}>
-        {/* Progress dots */}
-        <View style={styles.progressContainer}>
-          {onboardingSteps.map((_, index) => (
-            <View
-              key={index}
-              style={[
-                styles.progressDot,
-                index === currentStep && styles.progressDotActive,
-                index < currentStep && styles.progressDotComplete,
-              ]}
-            />
-          ))}
+    <LinearGradient colors={step.gradient} style={styles.container}>
+      <SafeAreaView style={styles.safeArea}>
+        <View style={styles.content}>
+          {/* Progress bar */}
+          <View style={styles.progressBar}>
+            {onboardingSteps.map((_, index) => (
+              <View
+                key={index}
+                style={[
+                  styles.progressSegment,
+                  index <= currentStep && styles.progressSegmentActive,
+                ]}
+              />
+            ))}
+          </View>
+
+          <Animated.View
+            style={[
+              styles.stepContent,
+              { opacity: fadeAnim, transform: [{ translateY: slideAnim }] },
+            ]}
+          >
+            {/* Icon */}
+            <View style={styles.iconArea}>
+              {step.useLottie ? (
+                <LottieView
+                  source={require('../assets/egg-animation.json')}
+                  autoPlay
+                  loop
+                  style={{ width: 200, height: 200 }}
+                />
+              ) : (
+                <View style={styles.emojiCircle}>
+                  <Text style={styles.stepEmoji}>{step.emoji}</Text>
+                </View>
+              )}
+            </View>
+
+            {/* Text */}
+            <Text style={styles.stepSubtitle}>{step.subtitle}</Text>
+            <Text style={styles.stepTitle}>{step.title}</Text>
+            <Text style={styles.stepDescription}>{step.description}</Text>
+
+            {/* Highlight pills */}
+            {step.highlights && (
+              <View style={styles.highlightsWrap}>
+                {step.highlights.map((h, i) => (
+                  <View key={i} style={styles.highlightPill}>
+                    <Text style={styles.highlightText}>{h}</Text>
+                  </View>
+                ))}
+              </View>
+            )}
+          </Animated.View>
+
+          {/* Bottom buttons */}
+          <View style={styles.bottomButtons}>
+            <TouchableOpacity
+              style={styles.primaryButton}
+              onPress={handleNext}
+              activeOpacity={0.8}
+            >
+              <LinearGradient
+                colors={[colors.primary, colors.primaryDark]}
+                style={styles.buttonGradient}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 0 }}
+              >
+                <Text style={styles.primaryButtonText}>
+                  {currentStep === onboardingSteps.length - 1 ? "Let's Go!" : 'Next'}
+                </Text>
+              </LinearGradient>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.skipButton}
+              onPress={() => animateTransition(onboardingSteps.length)}
+            >
+              <Text style={styles.skipButtonText}>Skip</Text>
+            </TouchableOpacity>
+          </View>
         </View>
-
-        <View style={styles.iconContainer}>
-          {step.useLottie ? (
-            <LottieView
-              source={require('../assets/egg-animation.json')}
-              autoPlay
-              loop
-              style={{ width: 180, height: 180 }}
-            />
-          ) : (
-            <Text style={styles.stepEmoji}>{step.emoji}</Text>
-          )}
-        </View>
-        
-        <Text style={styles.stepTitle}>{step.title}</Text>
-        <Text style={styles.stepDescription}>{step.description}</Text>
-
-        <TouchableOpacity style={styles.primaryButton} onPress={handleNext}>
-          <Text style={styles.primaryButtonText}>
-            {currentStep === onboardingSteps.length - 1 ? 'Get Started' : 'Next'}
-          </Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={styles.skipButton}
-          onPress={() => setCurrentStep(onboardingSteps.length)}
-        >
-          <Text style={styles.skipButtonText}>Skip</Text>
-        </TouchableOpacity>
-      </View>
-      <GrassDecoration />
-    </SafeAreaView>
+      </SafeAreaView>
+    </LinearGradient>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: colors.background,
+  },
+  safeArea: {
+    flex: 1,
   },
   content: {
     flex: 1,
+    paddingHorizontal: spacing.xl,
+    paddingTop: spacing.md,
+  },
+
+  // Progress bar
+  progressBar: {
+    flexDirection: 'row',
+    gap: 6,
+    marginBottom: spacing.lg,
+  },
+  progressSegment: {
+    flex: 1,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: 'rgba(95,140,135,0.15)',
+  },
+  progressSegmentActive: {
+    backgroundColor: colors.primary,
+  },
+
+  // Step content
+  stepContent: {
+    flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    padding: spacing.xl,
-    paddingBottom: 120,
   },
-  progressContainer: {
-    flexDirection: 'row',
-    marginBottom: spacing.xxl,
+
+  // Icon
+  iconArea: {
+    marginBottom: spacing.lg,
+    alignItems: 'center',
   },
-  progressDot: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    backgroundColor: colors.surfaceAlt,
-    marginHorizontal: 6,
-  },
-  progressDotActive: {
-    backgroundColor: colors.primary,
-    width: 28,
-  },
-  progressDotComplete: {
-    backgroundColor: colors.primaryLight,
-  },
-  iconContainer: {
+  emojiCircle: {
     width: 140,
     height: 140,
     borderRadius: 70,
-    backgroundColor: colors.surface,
+    backgroundColor: 'rgba(255,255,255,0.7)',
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: spacing.xl,
     ...shadows.medium,
   },
   stepEmoji: {
-    fontSize: 72,
+    fontSize: 64,
+  },
+
+  // Text
+  stepSubtitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: colors.primary,
+    textTransform: 'uppercase',
+    letterSpacing: 1.5,
+    marginBottom: spacing.xs,
   },
   stepTitle: {
-    fontSize: 28,
-    fontWeight: '700',
+    fontSize: 30,
+    fontWeight: '800',
     color: colors.textPrimary,
     textAlign: 'center',
     marginBottom: spacing.md,
@@ -255,39 +373,97 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     textAlign: 'center',
     lineHeight: 24,
-    marginBottom: spacing.xxl,
-    paddingHorizontal: spacing.md,
+    marginBottom: spacing.lg,
+    paddingHorizontal: spacing.sm,
+  },
+
+  // Highlights
+  highlightsWrap: {
+    width: '100%',
+    gap: 8,
+  },
+  highlightPill: {
+    backgroundColor: 'rgba(255,255,255,0.7)',
+    paddingVertical: 12,
+    paddingHorizontal: 18,
+    borderRadius: borderRadius.md,
+    ...shadows.small,
+  },
+  highlightText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: colors.textPrimary,
+  },
+
+  // Bottom
+  bottomButtons: {
+    paddingBottom: spacing.lg,
+    alignItems: 'center',
   },
   primaryButton: {
-    backgroundColor: colors.primary,
-    paddingVertical: spacing.md + 2,
-    paddingHorizontal: spacing.xxl,
+    width: '100%',
     borderRadius: borderRadius.lg,
-    marginBottom: spacing.md,
+    overflow: 'hidden',
     ...shadows.medium,
+  },
+  buttonGradient: {
+    paddingVertical: 16,
+    alignItems: 'center',
+    borderRadius: borderRadius.lg,
   },
   buttonDisabled: {
     opacity: 0.7,
   },
   primaryButtonText: {
-    color: colors.textOnPrimary,
-    fontSize: 16,
+    color: '#fff',
+    fontSize: 17,
     fontWeight: '700',
   },
   skipButton: {
     padding: spacing.md,
+    marginTop: spacing.xs,
   },
   skipButtonText: {
     color: colors.textMuted,
     fontSize: 14,
     fontWeight: '500',
   },
-  usernameContainer: {
+
+  // Username step
+  usernameContent: {
+    flexGrow: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: spacing.xl,
+    paddingBottom: spacing.xxl,
+  },
+  usernameIconWrap: {
+    marginBottom: spacing.xl,
+  },
+  usernameIconCircle: {
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    justifyContent: 'center',
+    alignItems: 'center',
+    ...shadows.medium,
+  },
+  usernameEmoji: {
+    fontSize: 48,
+  },
+  usernameSubtitle: {
+    fontSize: 15,
+    color: colors.textSecondary,
+    textAlign: 'center',
+    marginBottom: spacing.xl,
+    paddingHorizontal: spacing.md,
+  },
+  usernameInputWrap: {
     width: '100%',
     marginBottom: spacing.xl,
   },
   usernameInput: {
-    backgroundColor: colors.surface,
+    backgroundColor: '#fff',
     borderRadius: borderRadius.lg,
     padding: spacing.lg,
     fontSize: 18,
@@ -296,11 +472,5 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderColor: colors.primary,
     ...shadows.small,
-  },
-  grassContainer: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
   },
 });
