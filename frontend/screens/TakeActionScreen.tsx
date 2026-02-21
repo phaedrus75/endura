@@ -187,17 +187,34 @@ export default function TakeActionScreen() {
 
   const handleDonate = async () => {
     const donationId = user?.id ? `endura-u${user.id}-${Date.now()}` : `endura-${Date.now()}`;
-    const donateUrl = `${EVERY_ORG_WWF_BASE}?amount=${selectedAmount}&frequency=ONCE&webhook_token=${EVERY_ORG_WEBHOOK_TOKEN}&partner_donation_id=${donationId}#donate`;
+    const donateUrl = `${EVERY_ORG_WWF_BASE}?amount=0&frequency=ONCE&webhook_token=${EVERY_ORG_WEBHOOK_TOKEN}&partner_donation_id=${donationId}#donate`;
     try {
       await WebBrowser.openBrowserAsync(donateUrl, {
         presentationStyle: WebBrowser.WebBrowserPresentationStyle.FORM_SHEET,
         controlsColor: '#2F4A3E',
       });
+
+      // Poll for webhook confirmation (up to 30s)
+      let confirmed = false;
+      for (let i = 0; i < 10; i++) {
+        await new Promise(r => setTimeout(r, 3000));
+        try {
+          const result = await donationsAPI.checkDonation(donationId);
+          if (result.confirmed) {
+            confirmed = true;
+            break;
+          }
+        } catch {}
+      }
+
       fetchCommunityStats();
       fetchPersonalStats();
-      setShowThankYou(true);
-      thankYouScale.setValue(0);
-      Animated.spring(thankYouScale, { toValue: 1, friction: 4, tension: 50, useNativeDriver: true }).start();
+
+      if (confirmed) {
+        setShowThankYou(true);
+        thankYouScale.setValue(0);
+        Animated.spring(thankYouScale, { toValue: 1, friction: 4, tension: 50, useNativeDriver: true }).start();
+      }
     } catch (e: any) {
       Alert.alert('Error', e.message || 'Could not open donation page');
     }

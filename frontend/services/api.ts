@@ -471,6 +471,8 @@ export const donationsAPI = {
     ),
   getLeaderboard: () =>
     apiFetch<DonationLeaderboardEntry[]>('/donations/leaderboard'),
+  checkDonation: (partnerId: string) =>
+    apiFetch<{ confirmed: boolean; amount?: number; nonprofit?: string }>(`/donations/check/${partnerId}`),
 };
 
 export const setApiUrl = (url: string) => {

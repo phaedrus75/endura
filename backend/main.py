@@ -1043,6 +1043,16 @@ async def every_org_webhook(request: dict, db: Session = Depends(get_db)):
 
 
 
+@app.get("/donations/check/{partner_id}")
+def check_donation(partner_id: str, db: Session = Depends(get_db)):
+    donation = db.query(models.Donation).filter(
+        models.Donation.partner_donation_id == partner_id
+    ).first()
+    if donation:
+        return {"confirmed": True, "amount": donation.amount, "nonprofit": donation.nonprofit_name}
+    return {"confirmed": False}
+
+
 @app.get("/donations/community-stats")
 def get_community_donation_stats(db: Session = Depends(get_db)):
     """Public endpoint: community donation totals for the Take Action screen."""
