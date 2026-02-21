@@ -22,6 +22,7 @@ import { animalImages } from '../assets/animals';
 import { API_URL } from '../services/api';
 
 const EVERY_ORG_WWF_BASE = 'https://www.every.org/wwf/donate';
+const EVERY_ORG_API_KEY = 'pk_live_8913a39d0db6790bf98977221209232b';
 
 interface CommunityStats {
   total_raised: number;
@@ -35,6 +36,7 @@ interface CommunityStats {
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
 const DONATION_AMOUNTS = [
+  { amount: 0.5, label: '$0.50', nudge: 'A small step for wildlife' },
   { amount: 2, label: '$2', nudge: 'A coffee for conservation' },
   { amount: 5, label: '$5', nudge: 'Protect 1 acre of habitat', popular: true },
   { amount: 10, label: '$10', nudge: 'Feed a rescued animal for a week' },
@@ -92,7 +94,7 @@ const animalImageMap: Record<string, any> = {
 export default function TakeActionScreen() {
   const navigation = useNavigation<any>();
   const { user, profilePic } = useAuth();
-  const [selectedAmount, setSelectedAmount] = useState(5);
+  const [selectedAmount, setSelectedAmount] = useState(0.5);
   const [showThankYou, setShowThankYou] = useState(false);
   const [storyIndex, setStoryIndex] = useState(0);
   const [communityStats, setCommunityStats] = useState<CommunityStats | null>(null);
@@ -165,7 +167,7 @@ export default function TakeActionScreen() {
   }, []);
 
   const handleDonate = async () => {
-    const donateUrl = `${EVERY_ORG_WWF_BASE}?amount=${selectedAmount}&frequency=ONCE&utm_source=endura&utm_medium=app`;
+    const donateUrl = `${EVERY_ORG_WWF_BASE}?amount=${selectedAmount}&frequency=ONCE&partner_id=${EVERY_ORG_API_KEY}&utm_source=endura&utm_medium=app`;
     try {
       await WebBrowser.openBrowserAsync(donateUrl, {
         presentationStyle: WebBrowser.WebBrowserPresentationStyle.FORM_SHEET,

@@ -1004,21 +1004,59 @@ async def create_payment_intent(req: DonationRequest):
 
 # ============ Every.org Donation Webhook ============
 
+import json as _json
+
+_last_webhook_payloads = []
+
 @app.post("/webhook/every-org")
 async def every_org_webhook(request: dict, db: Session = Depends(get_db)):
     """Receive donation notifications from Every.org and store them."""
     try:
-        charge_id = request.get("chargeId", "unknown")
-        amount = float(request.get("amount", "0"))
-        net_amount = float(request.get("netAmount", "0")) if request.get("netAmount") else None
-        currency = request.get("currency", "USD")
-        frequency = request.get("frequency", "One-time")
-        donor_first = request.get("firstName")
-        donor_last = request.get("lastName")
-        donor_email = request.get("email")
-        nonprofit = request.get("toNonprofit", {})
-        nonprofit_name = nonprofit.get("name", "WWF")
-        donation_date = request.get("donationDate", "")
+        print(f"[WEBHOOK RAW] {_json.dumps(request, default=str)}")
+        _last_webhook_payloads.append(request)
+        if len(_last_webhook_payloads) > 10:
+            _last_webhook_payloads.pop(0)
+
+        charge_id = (
+            request.get("chargeId")
+            or request.get("charge_id")
+            or request.get("id")
+            or f"unknown-{len(_last_webhook_payloads)}"
+        )
+        amount = float(
+            request.get("amount")
+            or request.get("donationAmount")
+            or request.get("data", {}).get("amount")
+            or 0
+        )
+        net_amount_raw = (
+            request.get("netAmount")
+            or request.get("net_amount")
+            or request.get("data", {}).get("netAmount")
+        )
+        net_amount = float(net_amount_raw) if net_amount_raw else None
+        currency = request.get("currency") or request.get("data", {}).get("currency") or "USD"
+        frequency = request.get("frequency") or request.get("data", {}).get("frequency") or "One-time"
+        donor_first = (
+            request.get("firstName")
+            or request.get("first_name")
+            or request.get("data", {}).get("firstName")
+            or request.get("donor", {}).get("firstName")
+        )
+        donor_last = (
+            request.get("lastName")
+            or request.get("last_name")
+            or request.get("data", {}).get("lastName")
+            or request.get("donor", {}).get("lastName")
+        )
+        donor_email = (
+            request.get("email")
+            or request.get("data", {}).get("email")
+            or request.get("donor", {}).get("email")
+        )
+        nonprofit = request.get("toNonprofit") or request.get("nonprofit") or request.get("data", {}).get("toNonprofit") or {}
+        nonprofit_name = nonprofit.get("name", "WWF") if isinstance(nonprofit, dict) else "WWF"
+        donation_date = request.get("donationDate") or request.get("donation_date") or request.get("data", {}).get("donationDate") or ""
 
         existing = db.query(models.Donation).filter(
             models.Donation.charge_id == charge_id
@@ -1049,6 +1087,12 @@ async def every_org_webhook(request: dict, db: Session = Depends(get_db)):
         import traceback
         traceback.print_exc()
         return {"status": "error", "detail": str(e)}
+
+
+@app.get("/webhook/every-org/debug")
+def debug_webhook_payloads():
+    """Temporary: view the last raw webhook payloads to debug field mapping."""
+    return {"count": len(_last_webhook_payloads), "payloads": _last_webhook_payloads}
 
 
 @app.get("/donations/community-stats")
