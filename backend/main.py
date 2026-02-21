@@ -89,12 +89,33 @@ def health_check():
     return {
         "status": "healthy",
         "app": "Endura API",
-        "version": "1.0.34",
+        "version": "1.0.35",
     }
 
 @app.get("/health")
 def health():
     return {"status": "ok"}
+
+@app.get("/admin/fix-donations")
+def fix_donations(db: Session = Depends(get_db)):
+    """One-time: link unlinked donations to user_id=1 (popsie)."""
+    try:
+        from sqlalchemy import inspect
+        inspector = inspect(db.bind)
+        cols = [c["name"] for c in inspector.get_columns("donations")]
+        if "user_id" not in cols:
+            db.execute(text("ALTER TABLE donations ADD COLUMN user_id INTEGER REFERENCES users(id)"))
+            db.commit()
+            cols.append("user_id")
+        if "partner_donation_id" not in cols:
+            db.execute(text("ALTER TABLE donations ADD COLUMN partner_donation_id VARCHAR"))
+            db.commit()
+
+        result = db.execute(text("UPDATE donations SET user_id = 1 WHERE user_id IS NULL"))
+        db.commit()
+        return {"status": "done", "rows_updated": result.rowcount, "columns": cols}
+    except Exception as e:
+        return {"status": "error", "detail": str(e)}
 
 
 # ============ Startup: Seed Animals ============
