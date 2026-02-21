@@ -95,7 +95,7 @@ def health_check():
     return {
         "status": "healthy",
         "app": "Endura API",
-        "version": "1.0.30",
+        "version": "1.0.31",
     }
 
 @app.get("/health")
@@ -1144,6 +1144,9 @@ def get_community_donation_stats(db: Session = Depends(get_db)):
     linked = db.query(models.Donation).filter(models.Donation.user_id.isnot(None)).count()
     unlinked = db.query(models.Donation).filter(models.Donation.user_id.is_(None)).count()
 
+    users = db.query(models.User).all()
+    user_list = [{"id": u.id, "email": u.email, "username": u.username} for u in users[:10]]
+
     return {
         "total_raised": float(total_raised),
         "total_donors": total_donors,
@@ -1153,6 +1156,7 @@ def get_community_donation_stats(db: Session = Depends(get_db)):
         "recent_donations": recent_list,
         "linked_to_users": linked,
         "unlinked": unlinked,
+        "_debug_users": user_list,
     }
 
 
