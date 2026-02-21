@@ -83,7 +83,7 @@ def health_check():
     return {
         "status": "healthy",
         "app": "Endura API",
-        "version": "1.0.40",
+        "version": "1.0.41",
     }
 
 @app.get("/health")
@@ -102,6 +102,29 @@ def seed_check():
         animal_count = db.query(models.Animal).count()
         tip_count = db.query(models.StudyTip).count()
         print(f"[STARTUP] Animals: {animal_count}, Tips: {tip_count}")
+
+        # Populate image_url for animals that have hosted images (runs every startup)
+        IMAGE_BASE = "https://www.endura.eco/animals"
+        AVAILABLE_IMAGES = {
+            "african forest elephant", "amur leopard", "avahi", "axolotl",
+            "blue whale", "calamian deer", "chinchilla", "gray bat",
+            "grey parrot", "grizzly bear", "hawksbill turtle", "javan rhino",
+            "koala", "langur monkey", "mexican bobcat", "monarch butterfly",
+            "mountain gorilla", "mountain zebra", "otter",
+            "pacific pocket mouse", "panda", "pangolin", "polar bear",
+            "red panda", "red wolf", "seal", "sunda island tiger",
+            "tapanuli orangutan", "wallaby", "wombat",
+        }
+        img_updated = 0
+        for animal in db.query(models.Animal).filter(models.Animal.image_url.is_(None)).all():
+            slug = animal.name.lower()
+            if slug in AVAILABLE_IMAGES:
+                animal.image_url = f"{IMAGE_BASE}/{slug.replace(' ', '%20')}.png"
+                img_updated += 1
+        if img_updated:
+            db.commit()
+            print(f"[STARTUP] Set image_url for {img_updated} animals")
+
         if animal_count >= 30 and tip_count >= 100:
             print("[STARTUP] Database already seeded, skipping")
             return
@@ -163,27 +186,6 @@ def seed_check():
                 db.add(models.Animal(**animal_data))
                 added += 1
         print(f"[STARTUP] Added {added} new animals")
-
-        # Populate image_url for animals that have hosted images
-        IMAGE_BASE = "https://www.endura.eco/animals"
-        AVAILABLE_IMAGES = {
-            "african forest elephant", "amur leopard", "avahi", "axolotl",
-            "blue whale", "calamian deer", "chinchilla", "gray bat",
-            "grey parrot", "grizzly bear", "hawksbill turtle", "javan rhino",
-            "koala", "langur monkey", "mexican bobcat", "monarch butterfly",
-            "mountain gorilla", "mountain zebra", "otter",
-            "pacific pocket mouse", "panda", "pangolin", "polar bear",
-            "red panda", "red wolf", "seal", "sunda island tiger",
-            "tapanuli orangutan", "wallaby", "wombat",
-        }
-        img_updated = 0
-        for animal in db.query(models.Animal).filter(models.Animal.image_url.is_(None)).all():
-            slug = animal.name.lower()
-            if slug in AVAILABLE_IMAGES:
-                animal.image_url = f"{IMAGE_BASE}/{slug.replace(' ', '%20')}.png"
-                img_updated += 1
-        if img_updated:
-            print(f"[STARTUP] Set image_url for {img_updated} animals")
 
         # 30 animals cycled: each animal appears ~3-4 times, never adjacent
         animals_cycle = [
