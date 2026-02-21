@@ -36,7 +36,7 @@ interface CommunityStats {
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
 const DONATION_AMOUNTS = [
-  { amount: 0.5, label: '$0.50', nudge: 'A small step for wildlife' },
+  { amount: 1, label: '$1', nudge: 'A small step for wildlife' },
   { amount: 2, label: '$2', nudge: 'A coffee for conservation' },
   { amount: 5, label: '$5', nudge: 'Protect 1 acre of habitat', popular: true },
   { amount: 10, label: '$10', nudge: 'Feed a rescued animal for a week' },
@@ -94,7 +94,7 @@ const animalImageMap: Record<string, any> = {
 export default function TakeActionScreen() {
   const navigation = useNavigation<any>();
   const { user, profilePic } = useAuth();
-  const [selectedAmount, setSelectedAmount] = useState(0.5);
+  const [selectedAmount, setSelectedAmount] = useState(1);
   const [showThankYou, setShowThankYou] = useState(false);
   const [storyIndex, setStoryIndex] = useState(0);
   const [communityStats, setCommunityStats] = useState<CommunityStats | null>(null);

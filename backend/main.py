@@ -14,6 +14,7 @@ from auth import (
     get_current_user, ACCESS_TOKEN_EXPIRE_MINUTES
 )
 import os
+import json as _json
 import stripe
 
 stripe.api_key = os.environ.get("STRIPE_SECRET_KEY")
@@ -1003,8 +1004,6 @@ async def create_payment_intent(req: DonationRequest):
 
 
 # ============ Every.org Donation Webhook ============
-
-import json as _json
 
 _last_webhook_payloads = []
 
