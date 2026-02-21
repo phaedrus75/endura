@@ -83,7 +83,7 @@ def health_check():
     return {
         "status": "healthy",
         "app": "Endura API",
-        "version": "1.0.44",
+        "version": "1.0.45",
     }
 
 @app.get("/health")
@@ -125,90 +125,10 @@ def seed_check():
             db.commit()
             print(f"[STARTUP] Set image_url for {img_updated} animals")
 
-        # Canonical animal list — always ensure DB matches this set
-        animals = [
-            {"name": "Sunda Island Tiger", "species": "Panthera tigris sondaica", "rarity": "legendary", "conservation_status": "Critically Endangered", "description": "The smallest tiger subspecies, found only in Sumatra"},
-            {"name": "Javan Rhino", "species": "Rhinoceros sondaicus", "rarity": "legendary", "conservation_status": "Critically Endangered", "description": "One of the rarest large mammals on Earth"},
-            {"name": "Amur Leopard", "species": "Panthera pardus orientalis", "rarity": "legendary", "conservation_status": "Critically Endangered", "description": "Rarest big cat on Earth with fewer than 100 left"},
-            {"name": "Mountain Gorilla", "species": "Gorilla beringei beringei", "rarity": "legendary", "conservation_status": "Endangered", "description": "Gentle giant of the African mountains"},
-            {"name": "Tapanuli Orangutan", "species": "Pongo tapanuliensis", "rarity": "legendary", "conservation_status": "Critically Endangered", "description": "The rarest great ape species discovered in 2017"},
-            {"name": "Polar Bear", "species": "Ursus maritimus", "rarity": "epic", "conservation_status": "Vulnerable", "description": "Arctic ice explorer threatened by climate change"},
-            {"name": "African Forest Elephant", "species": "Loxodonta cyclotis", "rarity": "epic", "conservation_status": "Critically Endangered", "description": "Smaller forest-dwelling elephant of Central Africa"},
-            {"name": "Hawksbill Turtle", "species": "Eretmochelys imbricata", "rarity": "epic", "conservation_status": "Critically Endangered", "description": "Beautiful sea turtle with a distinctive beak"},
-            {"name": "Calamian Deer", "species": "Axis calamianensis", "rarity": "epic", "conservation_status": "Endangered", "description": "Endemic deer of the Calamian Islands in the Philippines"},
-            {"name": "Axolotl", "species": "Ambystoma mexicanum", "rarity": "epic", "conservation_status": "Critically Endangered", "description": "Smiling water monster that never grows up"},
-            {"name": "Red Wolf", "species": "Canis rufus", "rarity": "rare", "conservation_status": "Critically Endangered", "description": "America's most endangered wolf species"},
-            {"name": "Monarch Butterfly", "species": "Danaus plexippus", "rarity": "rare", "conservation_status": "Endangered", "description": "Famous for its incredible migration journey"},
-            {"name": "Red Panda", "species": "Ailurus fulgens", "rarity": "rare", "conservation_status": "Endangered", "description": "Fluffy forest dweller from the Himalayas"},
-            {"name": "Panda", "species": "Ailuropoda melanoleuca", "rarity": "rare", "conservation_status": "Vulnerable", "description": "Bamboo-munching gentle giant of China"},
-            {"name": "Mexican Bobcat", "species": "Lynx rufus escuinapae", "rarity": "rare", "conservation_status": "Endangered", "description": "Elusive wild cat of Mexican forests"},
-            {"name": "Chinchilla", "species": "Chinchilla lanigera", "rarity": "common", "conservation_status": "Endangered", "description": "Soft-furred rodent from the Andes mountains"},
-            {"name": "Otter", "species": "Lontra felina", "rarity": "common", "conservation_status": "Endangered", "description": "Playful marine otter of South America"},
-            {"name": "Koala", "species": "Phascolarctos cinereus", "rarity": "common", "conservation_status": "Vulnerable", "description": "Eucalyptus-loving tree hugger of Australia"},
-            {"name": "Langur Monkey", "species": "Trachypithecus poliocephalus", "rarity": "common", "conservation_status": "Critically Endangered", "description": "Golden-headed langur of Vietnam"},
-            {"name": "Pacific Pocket Mouse", "species": "Chaetodipus fallax fallax", "rarity": "common", "conservation_status": "Endangered", "description": "Tiny mouse once thought extinct"},
-            {"name": "Wallaby", "species": "Petrogale lateralis", "rarity": "common", "conservation_status": "Near Threatened", "description": "Small kangaroo relative from Australia"},
-            {"name": "Avahi", "species": "Avahi laniger", "rarity": "rare", "conservation_status": "Vulnerable", "description": "Woolly lemur of Madagascar's rainforests, active at night"},
-            {"name": "Blue Whale", "species": "Balaenoptera musculus", "rarity": "legendary", "conservation_status": "Endangered", "description": "The largest animal ever to have lived on Earth"},
-            {"name": "Gray Bat", "species": "Myotis grisescens", "rarity": "common", "conservation_status": "Vulnerable", "description": "Cave-dwelling bat of the southeastern United States"},
-            {"name": "Grey Parrot", "species": "Psittacus erithacus", "rarity": "rare", "conservation_status": "Endangered", "description": "Highly intelligent parrot known for remarkable speech ability"},
-            {"name": "Grizzly Bear", "species": "Ursus arctos horribilis", "rarity": "epic", "conservation_status": "Threatened", "description": "Powerful North American bear and icon of the wilderness"},
-            {"name": "Mountain Zebra", "species": "Equus zebra", "rarity": "rare", "conservation_status": "Vulnerable", "description": "Striped equine of southern Africa's mountain slopes"},
-            {"name": "Pangolin", "species": "Manis javanica", "rarity": "epic", "conservation_status": "Critically Endangered", "description": "The world's most trafficked mammal, covered in protective scales"},
-            {"name": "Seal", "species": "Monachus monachus", "rarity": "epic", "conservation_status": "Endangered", "description": "Mediterranean monk seal, one of the rarest marine mammals"},
-            {"name": "Wombat", "species": "Lasiorhinus krefftii", "rarity": "rare", "conservation_status": "Critically Endangered", "description": "Burrowing marsupial of northern Australia, extremely rare"},
-        ]
-        
-        # Clean up: remove duplicates and reassign references to the kept copy
-        canonical_names = [a["name"] for a in animals]
-        all_db_animals = db.query(models.Animal).all()
-        keep_ids = {}
-        dupes = []
-        for animal in all_db_animals:
-            if animal.name not in canonical_names:
-                dupes.append(animal)
-            elif animal.name not in keep_ids:
-                keep_ids[animal.name] = animal.id
-            else:
-                dupes.append(animal)
-
-        removed = 0
-        for dupe in dupes:
-            keep_id = keep_ids.get(dupe.name)
-            if keep_id:
-                db.execute(text(f"UPDATE user_animals SET animal_id = {keep_id} WHERE animal_id = {dupe.id}"))
-                db.execute(text(f"UPDATE eggs SET animal_id = {keep_id} WHERE animal_id = {dupe.id}"))
-            else:
-                db.execute(text(f"DELETE FROM user_animals WHERE animal_id = {dupe.id}"))
-                db.execute(text(f"DELETE FROM eggs WHERE animal_id = {dupe.id}"))
-            db.delete(dupe)
-            removed += 1
-        if removed > 0:
-            db.commit()
-            print(f"[STARTUP] Removed {removed} duplicate/extra animals, reassigned references")
-
-        added = 0
-        for animal_data in animals:
-            exists = db.query(models.Animal).filter(models.Animal.name == animal_data["name"]).first()
-            if not exists:
-                db.add(models.Animal(**animal_data))
-                added += 1
-        if added > 0:
-            db.commit()
-
-            # Re-run image_url for newly added animals
-            for animal in db.query(models.Animal).filter(models.Animal.image_url.is_(None)).all():
-                slug = animal.name.lower()
-                if slug in AVAILABLE_IMAGES:
-                    animal.image_url = f"{IMAGE_BASE}/{slug.replace(' ', '%20')}.png"
-            db.commit()
-
-        print(f"[STARTUP] Animals cleanup: removed {removed}, added {added}")
-
-        if tip_count >= 100:
-            print("[STARTUP] Tips already seeded, skipping")
+        if animal_count >= 30 and tip_count >= 100:
+            print("[STARTUP] Database already seeded, skipping")
             return
-        print("[STARTUP] Seeding tips...")
+        print("[STARTUP] Seeding missing data...")
 
         # 30 animals cycled: each animal appears ~3-4 times, never adjacent
         animals_cycle = [
