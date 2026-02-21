@@ -320,6 +320,7 @@
             <a data-page="donations"><span class="icon">💚</span> Donations</a>
             <a data-page="content"><span class="icon">🦁</span> Content</a>
             <a data-page="activity"><span class="icon">⚡</span> Activity</a>
+            <a data-page="analytics"><span class="icon">📈</span> Analytics</a>
         </nav>
         <div class="api-cfg">
             <label>API Connection</label>
@@ -444,6 +445,62 @@
             <h1 class="page-title">Activity Feed</h1>
             <div class="table-card">
                 <div id="feedList"></div>
+            </div>
+        </div>
+
+        <!-- Analytics (PostHog) Page -->
+        <div class="page" id="page-analytics">
+            <h1 class="page-title">Product Analytics</h1>
+
+            <div id="phSetup" class="table-card" style="margin-bottom:20px">
+                <h3>PostHog Connection</h3>
+                <p style="font-size:13px;color:var(--text-muted);margin:8px 0 14px">
+                    Enter your <strong>Personal API Key</strong> from
+                    <a href="https://us.posthog.com/settings/user-api-keys" target="_blank" style="color:var(--forest)">PostHog Settings → Personal API Keys</a>.
+                    Create one with <em>insight:read</em>, <em>query:read</em>, and <em>person:read</em> scopes.
+                </p>
+                <div style="display:flex;gap:10px;align-items:flex-end">
+                    <div style="flex:1">
+                        <label style="font-size:11px;font-weight:600;color:var(--text-muted);text-transform:uppercase;display:block;margin-bottom:4px">Personal API Key</label>
+                        <input type="password" id="phApiKey" placeholder="phx_..." style="width:100%;padding:10px 12px;border:1px solid var(--border);border-radius:10px;font-size:13px;font-family:monospace">
+                    </div>
+                    <button onclick="connectPostHog()" style="padding:10px 20px;background:var(--forest);color:#fff;border:none;border-radius:10px;font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap">Connect</button>
+                </div>
+                <div id="phStatus" style="margin-top:10px;font-size:13px;display:none"></div>
+            </div>
+
+            <div id="phDashboard" style="display:none">
+                <div class="kpi-grid" style="margin-bottom:20px">
+                    <div class="kpi"><div class="kpi-value" id="ph-events-today">—</div><div class="kpi-label">Events Today</div></div>
+                    <div class="kpi"><div class="kpi-value" id="ph-events-week">—</div><div class="kpi-label">Events (7d)</div></div>
+                    <div class="kpi"><div class="kpi-value" id="ph-persons">—</div><div class="kpi-label">Identified Users</div></div>
+                    <div class="kpi"><div class="kpi-value" id="ph-events-total">—</div><div class="kpi-label">Events (30d)</div></div>
+                </div>
+
+                <div class="table-card" style="margin-bottom:20px">
+                    <h3>Top Events <span style="font-weight:400;color:var(--text-muted);font-size:13px">(last 7 days)</span></h3>
+                    <div style="overflow-x:auto">
+                        <table>
+                            <thead><tr><th>Event</th><th>Count</th><th>Bar</th></tr></thead>
+                            <tbody id="phTopEvents"></tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <div class="table-card" style="margin-bottom:20px">
+                    <h3>Daily Active Users <span style="font-weight:400;color:var(--text-muted);font-size:13px">(last 30 days)</span></h3>
+                    <canvas id="phDauChart" height="100"></canvas>
+                </div>
+
+                <div class="table-card">
+                    <h3>Recent Events <span style="font-weight:400;color:var(--text-muted);font-size:13px">(last 50)</span></h3>
+                    <div style="overflow-x:auto">
+                        <table>
+                            <thead><tr><th>Time</th><th>Event</th><th>User</th><th>Properties</th></tr></thead>
+                            <tbody id="phRecentEvents"></tbody>
+                        </table>
+                    </div>
+                </div>
             </div>
         </div>
     </div>
@@ -638,6 +695,7 @@ document.querySelectorAll('.sidebar nav a').forEach(link => {
         else if (link.dataset.page === 'donations') loadDonations();
         else if (link.dataset.page === 'content') loadContent();
         else if (link.dataset.page === 'activity') loadActivity();
+        else if (link.dataset.page === 'analytics') initAnalytics();
     });
 });
 
@@ -1121,6 +1179,186 @@ function timeAgo(iso) {
     const days = Math.floor(hrs / 24);
     if (days < 30) return days + 'd ago';
     return new Date(iso).toLocaleDateString();
+}
+
+// ----- PostHog Analytics -----
+const PH_HOST = 'https://us.posthog.com';
+let PH_KEY = '';
+let phProjectId = null;
+let phDauChart = null;
+
+function initAnalytics() {
+    const saved = localStorage.getItem('phPersonalKey');
+    if (saved) {
+        PH_KEY = saved;
+        document.getElementById('phApiKey').value = '••••••••';
+        loadPostHogData();
+    }
+}
+
+async function phFetch(path) {
+    const res = await fetch(PH_HOST + path, {
+        headers: { 'Authorization': 'Bearer ' + PH_KEY }
+    });
+    if (!res.ok) throw new Error(res.status);
+    return res.json();
+}
+
+async function connectPostHog() {
+    const input = document.getElementById('phApiKey').value.trim();
+    if (!input || input === '••••••••') {
+        if (PH_KEY) { loadPostHogData(); return; }
+        showPhStatus('Please enter a Personal API Key', 'red');
+        return;
+    }
+    PH_KEY = input;
+    showPhStatus('Connecting...', 'var(--text-muted)');
+    try {
+        const data = await phFetch('/api/projects/');
+        if (data.results && data.results.length > 0) {
+            phProjectId = data.results[0].id;
+            localStorage.setItem('phPersonalKey', PH_KEY);
+            showPhStatus('Connected to project: ' + esc(data.results[0].name), 'var(--accent)');
+            loadPostHogData();
+        } else {
+            showPhStatus('No projects found', 'var(--red)');
+        }
+    } catch (e) {
+        showPhStatus('Failed to connect: ' + e.message + '. Check your key has correct scopes.', 'var(--red)');
+    }
+}
+
+function showPhStatus(msg, color) {
+    const el = document.getElementById('phStatus');
+    el.textContent = msg;
+    el.style.color = color;
+    el.style.display = 'block';
+}
+
+async function loadPostHogData() {
+    try {
+        if (!phProjectId) {
+            const data = await phFetch('/api/projects/');
+            if (data.results && data.results.length > 0) phProjectId = data.results[0].id;
+            else return;
+        }
+        document.getElementById('phDashboard').style.display = 'block';
+        showPhStatus('Connected', 'var(--accent)');
+
+        const now = new Date();
+        const day1 = new Date(now); day1.setDate(day1.getDate() - 1);
+        const day7 = new Date(now); day7.setDate(day7.getDate() - 7);
+        const day30 = new Date(now); day30.setDate(day30.getDate() - 30);
+        const fmt = d => d.toISOString().split('T')[0];
+
+        // Parallel queries
+        const [eventsToday, events7d, events30d, topEvents, recentEvents, persons] = await Promise.all([
+            phQuery(`SELECT count() FROM events WHERE timestamp > '${fmt(day1)}'`),
+            phQuery(`SELECT count() FROM events WHERE timestamp > '${fmt(day7)}'`),
+            phQuery(`SELECT count() FROM events WHERE timestamp > '${fmt(day30)}'`),
+            phQuery(`SELECT event, count() as cnt FROM events WHERE timestamp > '${fmt(day7)}' AND event NOT LIKE '$%' GROUP BY event ORDER BY cnt DESC LIMIT 15`),
+            phQuery(`SELECT timestamp, event, distinct_id, properties FROM events WHERE event NOT LIKE '$%' ORDER BY timestamp DESC LIMIT 50`),
+            phQuery(`SELECT count() FROM persons`),
+        ]);
+
+        document.getElementById('ph-events-today').textContent = formatNum(extractCount(eventsToday));
+        document.getElementById('ph-events-week').textContent = formatNum(extractCount(events7d));
+        document.getElementById('ph-events-total').textContent = formatNum(extractCount(events30d));
+        document.getElementById('ph-persons').textContent = formatNum(extractCount(persons));
+
+        renderTopEvents(topEvents);
+        renderRecentEvents(recentEvents);
+
+        // DAU chart
+        const dauData = await phQuery(`SELECT toDate(timestamp) as day, count(DISTINCT distinct_id) as users FROM events WHERE timestamp > '${fmt(day30)}' GROUP BY day ORDER BY day`);
+        renderDauChart(dauData);
+
+    } catch (e) {
+        console.error('PostHog load failed', e);
+        showPhStatus('Error loading data: ' + e.message, 'var(--red)');
+    }
+}
+
+async function phQuery(sql) {
+    const res = await fetch(PH_HOST + '/api/projects/' + phProjectId + '/query/', {
+        method: 'POST',
+        headers: { 'Authorization': 'Bearer ' + PH_KEY, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query: { kind: 'HogQLQuery', query: sql } }),
+    });
+    if (!res.ok) throw new Error('Query failed: ' + res.status);
+    return res.json();
+}
+
+function extractCount(result) {
+    try { return result.results[0][0]; } catch { return 0; }
+}
+
+function formatNum(n) {
+    if (n >= 1000000) return (n / 1000000).toFixed(1) + 'M';
+    if (n >= 1000) return (n / 1000).toFixed(1) + 'K';
+    return String(n);
+}
+
+function renderTopEvents(data) {
+    const body = document.getElementById('phTopEvents');
+    if (!data.results || !data.results.length) { body.innerHTML = '<tr><td colspan="3" class="empty">No events yet</td></tr>'; return; }
+    const max = data.results[0][1];
+    body.innerHTML = data.results.map(r => {
+        const pct = Math.round((r[1] / max) * 100);
+        return `<tr>
+            <td><strong>${esc(r[0])}</strong></td>
+            <td>${r[1].toLocaleString()}</td>
+            <td style="width:40%"><div style="background:linear-gradient(90deg,var(--forest-light),var(--forest));height:20px;border-radius:6px;width:${pct}%"></div></td>
+        </tr>`;
+    }).join('');
+}
+
+function renderRecentEvents(data) {
+    const body = document.getElementById('phRecentEvents');
+    if (!data.results || !data.results.length) { body.innerHTML = '<tr><td colspan="4" class="empty">No events yet</td></tr>'; return; }
+    body.innerHTML = data.results.slice(0, 50).map(r => {
+        const ts = r[0] ? timeAgo(r[0]) : '—';
+        let props = '';
+        try {
+            const p = typeof r[3] === 'string' ? JSON.parse(r[3]) : r[3];
+            if (p) {
+                const keys = Object.keys(p).filter(k => !k.startsWith('$')).slice(0, 3);
+                props = keys.map(k => `<span class="badge badge-blue" style="margin-right:4px">${esc(k)}: ${esc(String(p[k]).substring(0, 30))}</span>`).join('');
+            }
+        } catch {}
+        return `<tr>
+            <td style="white-space:nowrap">${ts}</td>
+            <td><strong>${esc(r[1])}</strong></td>
+            <td style="font-size:12px;color:var(--text-muted)">${esc(String(r[2] || '—').substring(0, 20))}</td>
+            <td>${props || '—'}</td>
+        </tr>`;
+    }).join('');
+}
+
+function renderDauChart(data) {
+    if (!data.results || !data.results.length) return;
+    const ctx = document.getElementById('phDauChart').getContext('2d');
+    if (phDauChart) phDauChart.destroy();
+    phDauChart = new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels: data.results.map(r => r[0]),
+            datasets: [{
+                label: 'Daily Active Users',
+                data: data.results.map(r => r[1]),
+                backgroundColor: 'rgba(107,155,122,0.6)',
+                borderRadius: 4,
+            }],
+        },
+        options: {
+            responsive: true,
+            plugins: { legend: { display: false } },
+            scales: {
+                x: { grid: { display: false }, ticks: { maxTicksLimit: 10, font: { size: 11 } } },
+                y: { beginAtZero: true, ticks: { font: { size: 11 } } },
+            },
+        },
+    });
 }
 </script>
 </body>
