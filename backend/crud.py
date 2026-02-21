@@ -395,14 +395,20 @@ def get_leaderboard(db: Session, user_id: int, limit: int = 20) -> List[dict]:
         animals_count = db.query(models.UserAnimal).filter(
             models.UserAnimal.user_id == user.id
         ).count()
-        
+
+        from sqlalchemy import func
+        total_donated = db.query(
+            func.coalesce(func.sum(models.Donation.amount), 0)
+        ).filter(models.Donation.user_id == user.id).scalar()
+
         leaderboard.append({
             "rank": rank,
             "user_id": user.id,
             "username": user.username or user.email.split("@")[0],
             "total_study_minutes": user.total_study_minutes,
             "current_streak": user.current_streak,
-            "animals_count": animals_count
+            "animals_count": animals_count,
+            "total_donated": float(total_donated),
         })
     
     return leaderboard

@@ -24,8 +24,10 @@ import { useAuth } from '../contexts/AuthContext';
 import {
   statsAPI,
   socialAPI,
+  donationsAPI,
   UserStats,
   LeaderboardEntry,
+  DonationLeaderboardEntry,
   Friend,
 } from '../services/api';
 
@@ -158,6 +160,8 @@ export default function ProfileScreen() {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [showFriendModal, setShowFriendModal] = useState(false);
   const [friendEmail, setFriendEmail] = useState('');
+  const [personalDonation, setPersonalDonation] = useState<{ total: number; count: number }>({ total: 0, count: 0 });
+  const [donationLeaderboard, setDonationLeaderboard] = useState<DonationLeaderboardEntry[]>([]);
 
   const pickImage = async (source: 'camera' | 'gallery') => {
     if (source === 'camera') {
@@ -238,8 +242,19 @@ export default function ProfileScreen() {
       setStats(statsData);
       setLeaderboard(leaderboardData);
       setFriends(friendsData);
+
+      if (user?.id) {
+        const [donationData, donLb] = await Promise.all([
+          donationsAPI.getUserStats(user.id).catch(() => null),
+          donationsAPI.getLeaderboard().catch(() => []),
+        ]);
+        if (donationData) {
+          setPersonalDonation({ total: donationData.total_donated, count: donationData.donation_count });
+        }
+        setDonationLeaderboard(donLb);
+      }
     } catch (error) {
-      console.error('Failed to load profile data:', error);
+      if (__DEV__) console.error('Failed to load profile data:', error);
     }
   };
 
@@ -406,6 +421,31 @@ export default function ProfileScreen() {
           </ExpoLinearGradient>
         </View>
 
+        {/* Donation Impact Card */}
+        <ExpoLinearGradient
+          colors={['#E7EFEA', '#D4E8DE']}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 0 }}
+          style={styles.donationCard}
+        >
+          <Text style={styles.donationCardIcon}>💚</Text>
+          <View style={styles.donationCardInfo}>
+            <Text style={styles.donationCardAmount}>${personalDonation.total.toFixed(0)} donated</Text>
+            <Text style={styles.donationCardSub}>
+              {personalDonation.count > 0
+                ? `${personalDonation.count} donation${personalDonation.count !== 1 ? 's' : ''} to WWF`
+                : 'Make your first donation!'}
+            </Text>
+          </View>
+          <TouchableOpacity
+            style={styles.donationCardBtn}
+            onPress={() => navigation.navigate('TakeAction')}
+            activeOpacity={0.8}
+          >
+            <Text style={styles.donationCardBtnText}>Donate</Text>
+          </TouchableOpacity>
+        </ExpoLinearGradient>
+
         {/* Leaderboard */}
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
@@ -451,7 +491,7 @@ export default function ProfileScreen() {
                       {' (You)'}
                     </Text>
                     <Text style={styles.leaderboardStats}>
-                      {formatTime(entry.total_study_minutes)} • 🔥 {entry.current_streak} • 🦁 {entry.animals_count}
+                      {formatTime(entry.total_study_minutes)} • 🔥 {entry.current_streak} • 🦁 {entry.animals_count}{entry.total_donated > 0 ? ` • 💚 $${entry.total_donated.toFixed(0)}` : ''}
                     </Text>
                   </View>
                 </ExpoLinearGradient>
@@ -468,7 +508,7 @@ export default function ProfileScreen() {
                       {entry.username || 'Anonymous'}
                     </Text>
                     <Text style={styles.leaderboardStats}>
-                      {formatTime(entry.total_study_minutes)} • 🔥 {entry.current_streak} • 🦁 {entry.animals_count}
+                      {formatTime(entry.total_study_minutes)} • 🔥 {entry.current_streak} • 🦁 {entry.animals_count}{entry.total_donated > 0 ? ` • 💚 $${entry.total_donated.toFixed(0)}` : ''}
                     </Text>
                   </View>
                 </View>
@@ -476,6 +516,46 @@ export default function ProfileScreen() {
             })
           )}
         </View>
+
+        {/* Donation Leaderboard */}
+        {donationLeaderboard.length > 0 && (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>🌍 Conservation Champions</Text>
+            {donationLeaderboard.map((entry) => (
+              entry.is_current_user ? (
+                <ExpoLinearGradient
+                  key={entry.user_id}
+                  colors={['rgba(231, 239, 234, 0.3)', 'rgba(168, 200, 216, 0.3)']}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 0, y: 1 }}
+                  style={styles.leaderboardRowMe}
+                >
+                  <Text style={styles.leaderboardRank}>
+                    {entry.rank === 1 ? '🥇' : entry.rank === 2 ? '🥈' : entry.rank === 3 ? '🥉' : `${entry.rank}`}
+                  </Text>
+                  <View style={styles.leaderboardInfo}>
+                    <Text style={styles.leaderboardName}>{entry.username} (You)</Text>
+                    <Text style={styles.leaderboardStats}>
+                      ${entry.total_donated.toFixed(0)} donated • {entry.donation_count} donation{entry.donation_count !== 1 ? 's' : ''}
+                    </Text>
+                  </View>
+                </ExpoLinearGradient>
+              ) : (
+                <View key={entry.user_id} style={styles.leaderboardRow}>
+                  <Text style={styles.leaderboardRank}>
+                    {entry.rank === 1 ? '🥇' : entry.rank === 2 ? '🥈' : entry.rank === 3 ? '🥉' : `${entry.rank}`}
+                  </Text>
+                  <View style={styles.leaderboardInfo}>
+                    <Text style={styles.leaderboardName}>{entry.username}</Text>
+                    <Text style={styles.leaderboardStats}>
+                      ${entry.total_donated.toFixed(0)} donated • {entry.donation_count} donation{entry.donation_count !== 1 ? 's' : ''}
+                    </Text>
+                  </View>
+                </View>
+              )
+            ))}
+          </View>
+        )}
 
         {/* Friends List */}
         {friends.length > 0 && (
@@ -705,6 +785,43 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     textAlign: 'center',
     fontWeight: '500',
+  },
+  donationCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: borderRadius.lg,
+    padding: spacing.md,
+    marginBottom: spacing.xl,
+    ...shadows.small,
+  },
+  donationCardIcon: {
+    fontSize: 28,
+    marginRight: spacing.md,
+  },
+  donationCardInfo: {
+    flex: 1,
+  },
+  donationCardAmount: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#2F4A3E',
+  },
+  donationCardSub: {
+    fontSize: 12,
+    color: '#3B5F50',
+    fontWeight: '500',
+    marginTop: 2,
+  },
+  donationCardBtn: {
+    backgroundColor: '#2F4A3E',
+    borderRadius: borderRadius.full,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+  },
+  donationCardBtnText: {
+    color: '#FFFFFF',
+    fontWeight: '700',
+    fontSize: 13,
   },
   section: {
     marginBottom: spacing.xl,

@@ -217,6 +217,7 @@ class LeaderboardEntry(BaseModel):
     total_study_minutes: int
     current_streak: int
     animals_count: int
+    total_donated: float = 0.0
 
 
 # ============ Study Pact Schemas ============

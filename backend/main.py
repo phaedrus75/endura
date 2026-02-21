@@ -83,7 +83,7 @@ def health_check():
     return {
         "status": "healthy",
         "app": "Endura API",
-        "version": "1.0.36",
+        "version": "1.0.37",
     }
 
 @app.get("/health")
@@ -700,26 +700,6 @@ def get_friends(
     return result
 
 
-@app.get("/users/all")
-def get_all_users(
-    current_user: models.User = Depends(get_current_user),
-    db: Session = Depends(get_db)
-):
-    """Dev/test helper: list every user except the caller."""
-    users = db.query(models.User).filter(models.User.id != current_user.id).all()
-    results = []
-    for u in users:
-        animals_count = db.query(models.UserAnimal).filter(models.UserAnimal.user_id == u.id).count()
-        results.append({
-            "id": u.id,
-            "username": u.username,
-            "email": u.email,
-            "total_study_minutes": u.total_study_minutes,
-            "current_streak": u.current_streak,
-            "animals_count": animals_count,
-        })
-    return results
-
 
 @app.get("/leaderboard", response_model=List[schemas.LeaderboardEntry])
 def get_leaderboard(
@@ -1174,6 +1154,44 @@ def get_user_donation_stats(user_id: int, db: Session = Depends(get_db), current
         "donation_count": user_count,
         "history": history,
     }
+
+
+@app.get("/donations/leaderboard")
+def get_donation_leaderboard(
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user)
+):
+    """Donation leaderboard: all users who have donated, ranked by total."""
+    from sqlalchemy import func
+
+    results = (
+        db.query(
+            models.Donation.user_id,
+            func.sum(models.Donation.amount).label("total"),
+            func.count(models.Donation.id).label("count"),
+        )
+        .filter(models.Donation.user_id.isnot(None), models.Donation.amount > 0)
+        .group_by(models.Donation.user_id)
+        .order_by(func.sum(models.Donation.amount).desc())
+        .limit(50)
+        .all()
+    )
+
+    leaderboard = []
+    for rank, row in enumerate(results, 1):
+        user = db.query(models.User).filter(models.User.id == row.user_id).first()
+        if not user:
+            continue
+        leaderboard.append({
+            "rank": rank,
+            "user_id": user.id,
+            "username": user.username or user.email.split("@")[0],
+            "total_donated": float(row.total),
+            "donation_count": int(row.count),
+            "is_current_user": user.id == current_user.id,
+        })
+
+    return leaderboard
 
 
 ##############################################################################

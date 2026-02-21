@@ -103,6 +103,16 @@ export interface LeaderboardEntry {
   total_study_minutes: number;
   current_streak: number;
   animals_count: number;
+  total_donated: number;
+}
+
+export interface DonationLeaderboardEntry {
+  rank: number;
+  user_id: number;
+  username: string;
+  total_donated: number;
+  donation_count: number;
+  is_current_user: boolean;
 }
 
 export interface BadgeInfo {
@@ -372,7 +382,6 @@ export const socialAPI = {
   
   getFriends: () => apiFetch<Friend[]>('/friends'),
   getPendingRequests: () => apiFetch<{ id: number; user_id: number; username: string | null; email: string }[]>('/friends/pending'),
-  getAllUsers: () => apiFetch<Friend[]>('/users/all'),
 
   getLeaderboard: () => apiFetch<LeaderboardEntry[]>('/leaderboard'),
 };
@@ -460,6 +469,8 @@ export const donationsAPI = {
     apiFetch<{ total_donated: number; donation_count: number; history: { amount: number; currency: string; nonprofit: string; date: string }[] }>(
       `/donations/user/${userId}`
     ),
+  getLeaderboard: () =>
+    apiFetch<DonationLeaderboardEntry[]>('/donations/leaderboard'),
 };
 
 export const setApiUrl = (url: string) => {
