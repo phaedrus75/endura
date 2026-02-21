@@ -1005,32 +1005,93 @@ async def create_payment_intent(req: DonationRequest):
 # ============ Every.org Donation Webhook ============
 
 @app.post("/webhook/every-org")
-async def every_org_webhook(request: dict):
-    """Receive donation notifications from Every.org."""
+async def every_org_webhook(request: dict, db: Session = Depends(get_db)):
+    """Receive donation notifications from Every.org and store them."""
     try:
         charge_id = request.get("chargeId", "unknown")
-        amount = request.get("amount", "0")
+        amount = float(request.get("amount", "0"))
+        net_amount = float(request.get("netAmount", "0")) if request.get("netAmount") else None
         currency = request.get("currency", "USD")
         frequency = request.get("frequency", "One-time")
-        donor_first = request.get("firstName", "Anonymous")
-        donor_last = request.get("lastName", "")
+        donor_first = request.get("firstName")
+        donor_last = request.get("lastName")
+        donor_email = request.get("email")
         nonprofit = request.get("toNonprofit", {})
         nonprofit_name = nonprofit.get("name", "WWF")
         donation_date = request.get("donationDate", "")
 
-        print(f"[DONATION] ${amount} {currency} ({frequency}) from {donor_first} {donor_last} to {nonprofit_name} | chargeId={charge_id} | date={donation_date}")
+        existing = db.query(models.Donation).filter(
+            models.Donation.charge_id == charge_id
+        ).first()
+
+        if not existing:
+            donation = models.Donation(
+                charge_id=charge_id,
+                amount=amount,
+                net_amount=net_amount,
+                currency=currency,
+                frequency=frequency,
+                donor_first_name=donor_first,
+                donor_last_name=donor_last,
+                donor_email=donor_email,
+                nonprofit_name=nonprofit_name,
+                donation_date=donation_date,
+            )
+            db.add(donation)
+            db.commit()
+            print(f"[DONATION] Stored ${amount} {currency} ({frequency}) from {donor_first or 'Anonymous'} | chargeId={charge_id}")
+        else:
+            print(f"[DONATION] Duplicate chargeId={charge_id}, skipping")
 
         return {"status": "received", "chargeId": charge_id}
     except Exception as e:
         print(f"[WEBHOOK ERROR] {e}")
+        import traceback
+        traceback.print_exc()
         return {"status": "error", "detail": str(e)}
 
 
-# ============ Health Check ============
+@app.get("/donations/community-stats")
+def get_community_donation_stats(db: Session = Depends(get_db)):
+    """Public endpoint: community donation totals for the Take Action screen."""
+    from sqlalchemy import func
+    from datetime import datetime, timedelta
 
-@app.get("/health")
-def health_check():
-    return {"status": "healthy", "app": "Endura"}
+    total_raised = db.query(func.coalesce(func.sum(models.Donation.amount), 0)).scalar()
+    total_donors = db.query(models.Donation).distinct(models.Donation.donor_email).count()
+    total_donations = db.query(models.Donation).count()
+
+    month_ago = datetime.utcnow() - timedelta(days=30)
+    this_month = db.query(
+        func.coalesce(func.sum(models.Donation.amount), 0)
+    ).filter(models.Donation.created_at >= month_ago).scalar()
+
+    this_month_count = db.query(models.Donation).filter(
+        models.Donation.created_at >= month_ago
+    ).count()
+
+    recent = db.query(models.Donation).order_by(
+        models.Donation.created_at.desc()
+    ).limit(5).all()
+
+    recent_list = []
+    for d in recent:
+        name = d.donor_first_name or "Anonymous"
+        recent_list.append({
+            "name": name,
+            "amount": d.amount,
+            "currency": d.currency,
+            "date": d.created_at.isoformat() if d.created_at else "",
+        })
+
+    return {
+        "total_raised": float(total_raised),
+        "total_donors": total_donors,
+        "total_donations": total_donations,
+        "this_month_raised": float(this_month),
+        "this_month_count": this_month_count,
+        "recent_donations": recent_list,
+    }
 
 
 if __name__ == "__main__":

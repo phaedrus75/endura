@@ -261,3 +261,21 @@ class FeedReaction(Base):
 
     event = relationship("ActivityEvent", back_populates="reactions")
     user = relationship("User")
+
+
+class Donation(Base):
+    """Donations received via Every.org webhook"""
+    __tablename__ = "donations"
+
+    id = Column(Integer, primary_key=True, index=True)
+    charge_id = Column(String, unique=True, nullable=False)
+    amount = Column(Float, nullable=False)
+    net_amount = Column(Float, nullable=True)
+    currency = Column(String, default="USD")
+    frequency = Column(String, default="One-time")
+    donor_first_name = Column(String, nullable=True)
+    donor_last_name = Column(String, nullable=True)
+    donor_email = Column(String, nullable=True)
+    nonprofit_name = Column(String, default="WWF")
+    donation_date = Column(String, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)

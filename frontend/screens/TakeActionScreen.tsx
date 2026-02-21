@@ -19,8 +19,18 @@ import * as WebBrowser from 'expo-web-browser';
 import { colors, shadows, spacing, borderRadius } from '../theme/colors';
 import { useAuth } from '../contexts/AuthContext';
 import { animalImages } from '../assets/animals';
+import { API_URL } from '../services/api';
 
 const EVERY_ORG_WWF_BASE = 'https://www.every.org/wwf/donate';
+
+interface CommunityStats {
+  total_raised: number;
+  total_donors: number;
+  total_donations: number;
+  this_month_raised: number;
+  this_month_count: number;
+  recent_donations: { name: string; amount: number; currency: string; date: string }[];
+}
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -65,12 +75,11 @@ const ENDANGERED_STORIES = [
   },
 ];
 
-const COMMUNITY_MESSAGES = [
-  '🌱 Sarah just donated $10 — "For the orangutans!"',
-  '💚 1,247 Endura users have donated this month',
-  '🐢 Together we\'ve raised enough to protect 50 acres this year',
-  '🔥 Donations are up 23% this week — keep the momentum!',
-  '🐘 Every dollar counts. 94% goes directly to conservation.',
+const FALLBACK_MESSAGES = [
+  '💚 Be the first to donate through Endura!',
+  '🐢 Every dollar goes directly to WWF conservation',
+  '🐘 94% of every dollar funds real-world impact',
+  '🌱 Your donation protects endangered species worldwide',
 ];
 
 const animalImageMap: Record<string, any> = {
@@ -85,9 +94,9 @@ export default function TakeActionScreen() {
   const { user, profilePic } = useAuth();
   const [selectedAmount, setSelectedAmount] = useState(5);
   const [showThankYou, setShowThankYou] = useState(false);
-  const [totalDonated, setTotalDonated] = useState(0);
   const [storyIndex, setStoryIndex] = useState(0);
-  // Animations
+  const [communityStats, setCommunityStats] = useState<CommunityStats | null>(null);
+
   const potFill = useRef(new Animated.Value(0.15)).current;
   const coinAnim = useRef(new Animated.Value(0)).current;
   const coinOpacity = useRef(new Animated.Value(0)).current;
@@ -95,7 +104,37 @@ export default function TakeActionScreen() {
   const thankYouScale = useRef(new Animated.Value(0)).current;
   const nudgeFade = useRef(new Animated.Value(1)).current;
   const communityIdx = useRef(0);
-  const [communityMsg, setCommunityMsg] = useState(COMMUNITY_MESSAGES[0]);
+  const [communityMsg, setCommunityMsg] = useState(FALLBACK_MESSAGES[0]);
+
+  const fetchCommunityStats = async () => {
+    try {
+      const res = await fetch(`${API_URL}/donations/community-stats`);
+      if (res.ok) {
+        const data: CommunityStats = await res.json();
+        setCommunityStats(data);
+        const goalProgress = Math.min(0.15 + (data.total_raised / 10000) * 0.85, 1);
+        Animated.spring(potFill, { toValue: goalProgress, friction: 6, useNativeDriver: false }).start();
+      }
+    } catch (e) {
+      console.log('Could not fetch community stats:', e);
+    }
+  };
+
+  const buildTickerMessages = useCallback((): string[] => {
+    if (!communityStats || communityStats.total_donations === 0) return FALLBACK_MESSAGES;
+    const msgs: string[] = [];
+    if (communityStats.recent_donations.length > 0) {
+      const recent = communityStats.recent_donations[0];
+      msgs.push(`🌱 ${recent.name} just donated $${recent.amount}`);
+    }
+    msgs.push(`💚 ${communityStats.this_month_count} donations this month`);
+    msgs.push(`🐢 $${communityStats.total_raised.toFixed(0)} raised for conservation`);
+    msgs.push(`🐘 ${communityStats.total_donors} donors and counting`);
+    msgs.push(`🔥 94% of every dollar goes directly to WWF`);
+    return msgs;
+  }, [communityStats]);
+
+  useEffect(() => { fetchCommunityStats(); }, []);
 
   useEffect(() => {
     Animated.loop(
@@ -109,13 +148,14 @@ export default function TakeActionScreen() {
   useEffect(() => {
     const interval = setInterval(() => {
       Animated.timing(nudgeFade, { toValue: 0, duration: 300, useNativeDriver: true }).start(() => {
-        communityIdx.current = (communityIdx.current + 1) % COMMUNITY_MESSAGES.length;
-        setCommunityMsg(COMMUNITY_MESSAGES[communityIdx.current]);
+        const msgs = buildTickerMessages();
+        communityIdx.current = (communityIdx.current + 1) % msgs.length;
+        setCommunityMsg(msgs[communityIdx.current]);
         Animated.timing(nudgeFade, { toValue: 1, duration: 300, useNativeDriver: true }).start();
       });
     }, 4000);
     return () => clearInterval(interval);
-  }, []);
+  }, [buildTickerMessages]);
 
   useEffect(() => {
     const storyTimer = setInterval(() => {
@@ -131,6 +171,10 @@ export default function TakeActionScreen() {
         presentationStyle: WebBrowser.WebBrowserPresentationStyle.FORM_SHEET,
         controlsColor: '#2F4A3E',
       });
+      fetchCommunityStats();
+      setShowThankYou(true);
+      thankYouScale.setValue(0);
+      Animated.spring(thankYouScale, { toValue: 1, friction: 4, tension: 50, useNativeDriver: true }).start();
     } catch (e: any) {
       Alert.alert('Error', e.message || 'Could not open donation page');
     }
@@ -279,8 +323,14 @@ export default function TakeActionScreen() {
               🪙
             </Animated.Text>
           </View>
-          <Text style={styles.potAmount}>${totalDonated} raised by you</Text>
-          <Text style={styles.potGoal}>Community goal: $10,000 this month</Text>
+          <Text style={styles.potAmount}>
+            ${communityStats ? communityStats.total_raised.toFixed(0) : '0'} raised by our community
+          </Text>
+          <Text style={styles.potGoal}>
+            {communityStats && communityStats.this_month_count > 0
+              ? `${communityStats.this_month_count} donations this month · $${communityStats.this_month_raised.toFixed(0)} raised`
+              : 'Community goal: $10,000 this month'}
+          </Text>
         </View>
 
         {/* Endangered Animal Story Card */}
@@ -342,8 +392,13 @@ export default function TakeActionScreen() {
               <Text style={styles.thankYouEmoji}>💚</Text>
               <Text style={styles.thankYouTitle}>Thank You!</Text>
               <Text style={styles.thankYouBody}>
-                Your ${selectedAmount} donation is making a real difference for endangered species around the world.
+                Your donation is making a real difference for endangered species around the world.
               </Text>
+              {communityStats && communityStats.total_donations > 0 && (
+                <Text style={styles.thankYouStats}>
+                  Together, {communityStats.total_donors} donor{communityStats.total_donors !== 1 ? 's' : ''} have raised ${communityStats.total_raised.toFixed(0)} for conservation 🌿
+                </Text>
+              )}
               <Text style={styles.thankYouImpact}>
                 You're not just studying — you're saving lives. 🌿
               </Text>
@@ -807,6 +862,14 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     fontWeight: '500',
     marginBottom: 8,
+  },
+  thankYouStats: {
+    fontSize: 13,
+    color: '#5E7F6E',
+    textAlign: 'center',
+    fontWeight: '600',
+    marginBottom: 8,
+    paddingHorizontal: 12,
   },
   thankYouImpact: {
     fontSize: 14,
