@@ -286,30 +286,33 @@ def seed_animals():
         ]
 
         existing_tips = db.query(models.StudyTip).count()
-        print(f"[STARTUP] Found {existing_tips} existing tips, replacing with 100 new ones")
-        try:
-            db.execute(text("DELETE FROM tip_views"))
-            db.execute(text("DELETE FROM study_tips"))
-            db.commit()
-            print(f"[STARTUP] Cleared all old tips and tip views via raw SQL")
-        except Exception as del_err:
-            print(f"[STARTUP] Raw delete failed: {del_err}, trying TRUNCATE CASCADE")
-            db.rollback()
+        if existing_tips >= 100:
+            print(f"[STARTUP] Found {existing_tips} tips already seeded, skipping re-seed")
+        else:
+            print(f"[STARTUP] Found {existing_tips} tips, seeding 100 new ones")
             try:
-                db.execute(text("TRUNCATE TABLE tip_views, study_tips RESTART IDENTITY CASCADE"))
+                db.execute(text("DELETE FROM tip_views"))
+                db.execute(text("DELETE FROM study_tips"))
                 db.commit()
-                print("[STARTUP] Truncated tips tables with CASCADE")
-            except Exception as trunc_err:
-                print(f"[STARTUP] TRUNCATE also failed: {trunc_err}")
+                print(f"[STARTUP] Cleared old tips via raw SQL")
+            except Exception as del_err:
+                print(f"[STARTUP] Raw delete failed: {del_err}, trying TRUNCATE CASCADE")
                 db.rollback()
+                try:
+                    db.execute(text("TRUNCATE TABLE tip_views, study_tips RESTART IDENTITY CASCADE"))
+                    db.commit()
+                    print("[STARTUP] Truncated tips tables with CASCADE")
+                except Exception as trunc_err:
+                    print(f"[STARTUP] TRUNCATE also failed: {trunc_err}")
+                    db.rollback()
 
-        for tip_data in tips:
-            db.add(models.StudyTip(**tip_data))
+            for tip_data in tips:
+                db.add(models.StudyTip(**tip_data))
 
-        db.commit()
-        final_count = db.query(models.StudyTip).count()
-        sample = db.query(models.StudyTip).first()
-        print(f"Successfully seeded {final_count} tips! Sample animal: {getattr(sample, 'animal_name', 'N/A')}")
+            db.commit()
+            final_count = db.query(models.StudyTip).count()
+            sample = db.query(models.StudyTip).first()
+            print(f"[STARTUP] Seeded {final_count} tips. Sample animal: {getattr(sample, 'animal_name', 'N/A')}")
     except Exception as e:
         import traceback
         print(f"Warning: Could not seed database on startup: {e}")
