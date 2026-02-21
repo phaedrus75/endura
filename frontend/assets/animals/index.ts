@@ -34,9 +34,24 @@ export const animalImages: { [key: string]: any } = {
   'Wombat': require('./wombat.png'),
 };
 
-// Get animal image by name, with fallback
+const nameFallbacks: { [key: string]: string } = {
+  'Gorilla': 'Mountain Gorilla',
+  'Giant Panda': 'Panda',
+  'Elephant': 'African Forest Elephant',
+  'Tiger': 'Sunda Island Tiger',
+  'Orangutan': 'Tapanuli Orangutan',
+  'Snow Leopard': 'Amur Leopard',
+  'Rhinoceros': 'Javan Rhino',
+  'Sumatran Rhino': 'Javan Rhino',
+  'Cheetah': 'Mexican Bobcat',
+  'Vaquita': 'Blue Whale',
+  'Kakapo': 'Grey Parrot',
+  'Flamingo': 'Monarch Butterfly',
+};
+
+// Get animal image by name, with fallback for legacy DB names
 export const getAnimalImage = (name: string): any => {
-  return animalImages[name] || null;
+  return animalImages[name] || animalImages[nameFallbacks[name]] || null;
 };
 
 // List of all animal names in unlock order

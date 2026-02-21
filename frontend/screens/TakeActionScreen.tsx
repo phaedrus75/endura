@@ -18,7 +18,7 @@ import { useNavigation } from '@react-navigation/native';
 import * as WebBrowser from 'expo-web-browser';
 import { colors, shadows, spacing, borderRadius } from '../theme/colors';
 import { useAuth } from '../contexts/AuthContext';
-import { animalImages } from '../assets/animals';
+import { animalImages, getAnimalImage } from '../assets/animals';
 import { API_URL, donationsAPI } from '../services/api';
 
 const EVERY_ORG_WWF_BASE = 'https://www.every.org/wwf';
@@ -481,7 +481,7 @@ export default function TakeActionScreen() {
               </Text>
               <View style={styles.thankYouAnimals}>
                 {['Sumatran Orangutan', 'Amur Leopard', 'Hawksbill Sea Turtle'].map((name) => {
-                  const img = animalImages[name];
+                  const img = getAnimalImage(name);
                   return img ? (
                     <Image key={name} source={img} style={styles.thankYouAnimalImg} resizeMode="contain" />
                   ) : null;

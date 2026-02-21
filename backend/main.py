@@ -83,7 +83,7 @@ def health_check():
     return {
         "status": "healthy",
         "app": "Endura API",
-        "version": "1.0.41",
+        "version": "1.0.42",
     }
 
 @app.get("/health")
@@ -125,13 +125,7 @@ def seed_check():
             db.commit()
             print(f"[STARTUP] Set image_url for {img_updated} animals")
 
-        if animal_count >= 30 and tip_count >= 100:
-            print("[STARTUP] Database already seeded, skipping")
-            return
-        print("[STARTUP] Seeding missing data...")
-        existing_count = animal_count
-        
-        # 30 Endangered animals to seed (in unlock order)
+        # Canonical animal list — always ensure DB matches this set
         animals = [
             {"name": "Sunda Island Tiger", "species": "Panthera tigris sondaica", "rarity": "legendary", "conservation_status": "Critically Endangered", "description": "The smallest tiger subspecies, found only in Sumatra"},
             {"name": "Javan Rhino", "species": "Rhinoceros sondaicus", "rarity": "legendary", "conservation_status": "Critically Endangered", "description": "One of the rarest large mammals on Earth"},
@@ -185,7 +179,22 @@ def seed_check():
             if not exists:
                 db.add(models.Animal(**animal_data))
                 added += 1
-        print(f"[STARTUP] Added {added} new animals")
+        if removed > 0 or added > 0:
+            db.commit()
+
+            # Re-run image_url for newly added animals
+            for animal in db.query(models.Animal).filter(models.Animal.image_url.is_(None)).all():
+                slug = animal.name.lower()
+                if slug in AVAILABLE_IMAGES:
+                    animal.image_url = f"{IMAGE_BASE}/{slug.replace(' ', '%20')}.png"
+            db.commit()
+
+        print(f"[STARTUP] Animals cleanup: removed {removed}, added {added}")
+
+        if tip_count >= 100:
+            print("[STARTUP] Tips already seeded, skipping")
+            return
+        print("[STARTUP] Seeding tips...")
 
         # 30 animals cycled: each animal appears ~3-4 times, never adjacent
         animals_cycle = [

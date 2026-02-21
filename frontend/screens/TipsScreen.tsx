@@ -20,7 +20,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { LinearGradient } from 'expo-linear-gradient';
 import { colors, shadows, spacing } from '../theme/colors';
 import { tipsAPI, socialAPI, groupsAPI, StudyTip, Friend, StudyGroup } from '../services/api';
-import { animalImages, ANIMAL_NAMES_IN_ORDER } from '../assets/animals';
+import { animalImages, getAnimalImage, ANIMAL_NAMES_IN_ORDER } from '../assets/animals';
 import { Analytics } from '../services/analytics';
 import { useAuth } from '../contexts/AuthContext';
 
@@ -80,7 +80,7 @@ const TipCard = React.memo(({
   const fallbackAnimal = ANIMAL_NAMES_IN_ORDER[item.id % ANIMAL_NAMES_IN_ORDER.length];
   const animalName = item.animal_name || fallbackAnimal;
   const animalColor = ANIMAL_COLORS[animalName] || { bg: '#E7EFEA', accent: '#5F8C87' };
-  const animalImg = animalImages[animalName] || null;
+  const animalImg = getAnimalImage(animalName) || null;
   const saveScale = useRef(new Animated.Value(1)).current;
   const upScale = useRef(new Animated.Value(1)).current;
   const downScale = useRef(new Animated.Value(1)).current;

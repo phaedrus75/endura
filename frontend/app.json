@@ -9,7 +9,7 @@
     "splash": {
       "image": "./assets/splash.png",
       "resizeMode": "contain",
-      "backgroundColor": "#F0F4F1"
+      "backgroundColor": "#B5CFB7"
     },
     "ios": {
       "supportsTablet": true,
@@ -22,7 +22,7 @@
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#F0F4F1"
+        "backgroundColor": "#B5CFB7"
       },
       "package": "com.endura.study",
       "versionCode": 1
