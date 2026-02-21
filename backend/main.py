@@ -57,6 +57,16 @@ try:
             if result.fetchone() is None:
                 conn.execute(text(sql))
                 conn.commit()
+    # One-time: link existing donations to popsie
+    try:
+        result = conn.execute(text(
+            "UPDATE donations SET user_id = (SELECT id FROM users WHERE username = 'popsie') "
+            "WHERE user_id IS NULL AND (SELECT id FROM users WHERE username = 'popsie') IS NOT NULL"
+        ))
+        if result.rowcount > 0:
+            conn.commit()
+    except Exception:
+        pass
 except Exception:
     pass
 
@@ -83,7 +93,7 @@ def health_check():
     return {
         "status": "healthy",
         "app": "Endura API",
-        "version": "1.0.27",
+        "version": "1.0.28",
     }
 
 @app.get("/health")
