@@ -101,23 +101,19 @@ def debug_tips_count(db: Session = Depends(get_db)):
 
 # ============ Startup: Seed Animals ============
 
-import threading
-
 @app.on_event("startup")
-def seed_animals():
-    """Seed animals on startup in background thread so healthcheck passes quickly"""
-    print("[STARTUP] Launching seed in background thread...")
-    threading.Thread(target=_do_seed, daemon=True).start()
-
-def _do_seed():
-    print("[STARTUP] Beginning seed_animals...")
+def seed_check():
+    """Quick check: only seed if data is missing"""
     try:
         db = next(get_db())
-        print("[STARTUP] Got database connection")
-        
-        # Count existing animals
-        existing_count = db.query(models.Animal).count()
-        print(f"[STARTUP] Found {existing_count} animals in database")
+        animal_count = db.query(models.Animal).count()
+        tip_count = db.query(models.StudyTip).count()
+        print(f"[STARTUP] Animals: {animal_count}, Tips: {tip_count}")
+        if animal_count >= 30 and tip_count >= 100:
+            print("[STARTUP] Database already seeded, skipping")
+            return
+        print("[STARTUP] Seeding missing data...")
+        existing_count = animal_count
         
         # 30 Endangered animals to seed (in unlock order)
         animals = [
