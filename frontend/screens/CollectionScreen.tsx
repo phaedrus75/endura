@@ -540,29 +540,6 @@ export default function CollectionScreen() {
           <Text style={styles.championsLinkArrow}>›</Text>
         </TouchableOpacity>
 
-        {/* Progress Card */}
-        <LinearGradient
-          colors={['#FFFFFF', '#E7EFEA']}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 0, y: 1 }}
-          style={styles.progressCard}
-        >
-          <View style={styles.progressLeft}>
-            <ProgressRing progress={collectionProgress} size={42} />
-            <View style={styles.progressTextContainer}>
-              <Text style={styles.progressPercent}>
-                {Math.round(collectionProgress * 100)}%
-              </Text>
-            </View>
-          </View>
-          <View style={styles.progressRight}>
-            <Text style={styles.progressLabel}>Collection Progress</Text>
-            <Text style={styles.progressValue}>
-              {collectedIds.size} of {allAnimals.length} species
-            </Text>
-          </View>
-        </LinearGradient>
-
         {/* Animal Sanctuary */}
         {myAnimals.length > 0 && (() => {
           const previewW = SCREEN_WIDTH - spacing.lg * 2;
@@ -653,6 +630,29 @@ export default function CollectionScreen() {
             </View>
           );
         })()}
+
+        {/* Progress Card */}
+        <LinearGradient
+          colors={['#FFFFFF', '#E7EFEA']}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 0, y: 1 }}
+          style={styles.progressCard}
+        >
+          <View style={styles.progressLeft}>
+            <ProgressRing progress={collectionProgress} size={42} />
+            <View style={styles.progressTextContainer}>
+              <Text style={styles.progressPercent}>
+                {Math.round(collectionProgress * 100)}%
+              </Text>
+            </View>
+          </View>
+          <View style={styles.progressRight}>
+            <Text style={styles.progressLabel}>Collection Progress</Text>
+            <Text style={styles.progressValue}>
+              {collectedIds.size} of {allAnimals.length} species
+            </Text>
+          </View>
+        </LinearGradient>
 
         {/* My Animals */}
         <View style={styles.sectionHeader}>
@@ -1247,12 +1247,11 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#FFFFFF',
-    marginHorizontal: spacing.lg,
     marginTop: 8,
     marginBottom: spacing.sm,
     paddingVertical: 14,
     paddingHorizontal: 16,
-    borderRadius: 14,
+    borderRadius: 18,
     ...shadows.small,
   },
   championsLinkIcon: {
