@@ -60,8 +60,8 @@ try:
     # One-time: link existing donations to popsie
     try:
         result = conn.execute(text(
-            "UPDATE donations SET user_id = (SELECT id FROM users WHERE username = 'popsie') "
-            "WHERE user_id IS NULL AND (SELECT id FROM users WHERE username = 'popsie') IS NOT NULL"
+            "UPDATE donations SET user_id = (SELECT id FROM users WHERE LOWER(username) = 'popsie') "
+            "WHERE user_id IS NULL AND (SELECT id FROM users WHERE LOWER(username) = 'popsie') IS NOT NULL"
         ))
         if result.rowcount > 0:
             conn.commit()
@@ -93,7 +93,7 @@ def health_check():
     return {
         "status": "healthy",
         "app": "Endura API",
-        "version": "1.0.28",
+        "version": "1.0.29",
     }
 
 @app.get("/health")
@@ -1139,6 +1139,9 @@ def get_community_donation_stats(db: Session = Depends(get_db)):
             "date": d.created_at.isoformat() if d.created_at else "",
         })
 
+    linked = db.query(models.Donation).filter(models.Donation.user_id.isnot(None)).count()
+    unlinked = db.query(models.Donation).filter(models.Donation.user_id.is_(None)).count()
+
     return {
         "total_raised": float(total_raised),
         "total_donors": total_donors,
@@ -1146,6 +1149,8 @@ def get_community_donation_stats(db: Session = Depends(get_db)):
         "this_month_raised": float(this_month),
         "this_month_count": this_month_count,
         "recent_donations": recent_list,
+        "linked_to_users": linked,
+        "unlinked": unlinked,
     }
 
 
