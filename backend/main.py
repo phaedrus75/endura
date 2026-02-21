@@ -1,9 +1,9 @@
-from fastapi import FastAPI, Depends, HTTPException, status, Request
+from fastapi import FastAPI, Depends, HTTPException, status, Request, Header
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
-from sqlalchemy import text
-from datetime import timedelta
+from sqlalchemy import text, func
+from datetime import timedelta, datetime
 from typing import List, Optional
 from slowapi import Limiter
 from slowapi.util import get_remote_address
@@ -83,7 +83,7 @@ def health_check():
     return {
         "status": "healthy",
         "app": "Endura API",
-        "version": "1.0.37",
+        "version": "1.0.38",
     }
 
 @app.get("/health")
@@ -1293,6 +1293,292 @@ async def send_push_notification(
         resp = await client.post(EXPO_PUSH_URL, json=messages)
 
     return {"sent": len(messages), "response": resp.json()}
+
+
+# ============ Admin Dashboard API ============
+
+ADMIN_API_KEY = os.getenv("ADMIN_API_KEY", "endura-admin-2024")
+
+def verify_admin(x_admin_key: str = Header(...)):
+    if x_admin_key != ADMIN_API_KEY:
+        raise HTTPException(status_code=403, detail="Invalid admin key")
+
+
+@app.get("/admin/overview")
+def admin_overview(db: Session = Depends(get_db), _=Depends(verify_admin)):
+    now = datetime.utcnow()
+    week_ago = now - timedelta(days=7)
+    month_ago = now - timedelta(days=30)
+
+    total_users = db.query(func.count(models.User.id)).scalar() or 0
+    active_7d = db.query(func.count(models.User.id)).filter(
+        models.User.last_study_date >= week_ago
+    ).scalar() or 0
+    signups_7d = db.query(func.count(models.User.id)).filter(
+        models.User.created_at >= week_ago
+    ).scalar() or 0
+    signups_30d = db.query(func.count(models.User.id)).filter(
+        models.User.created_at >= month_ago
+    ).scalar() or 0
+    total_sessions = db.query(func.count(models.StudySession.id)).scalar() or 0
+    total_minutes = db.query(func.coalesce(func.sum(models.StudySession.duration_minutes), 0)).scalar()
+    total_animals_hatched = db.query(func.count(models.UserAnimal.id)).scalar() or 0
+
+    donation_row = db.query(
+        func.coalesce(func.sum(models.Donation.amount), 0),
+        func.count(models.Donation.id),
+    ).first()
+    total_donated = float(donation_row[0])
+    total_donation_count = donation_row[1]
+
+    daily_signups = []
+    for i in range(30):
+        day = now - timedelta(days=29 - i)
+        start = day.replace(hour=0, minute=0, second=0, microsecond=0)
+        end = start + timedelta(days=1)
+        count = db.query(func.count(models.User.id)).filter(
+            models.User.created_at >= start,
+            models.User.created_at < end,
+        ).scalar() or 0
+        daily_signups.append({"date": start.strftime("%Y-%m-%d"), "count": count})
+
+    daily_sessions = []
+    for i in range(30):
+        day = now - timedelta(days=29 - i)
+        start = day.replace(hour=0, minute=0, second=0, microsecond=0)
+        end = start + timedelta(days=1)
+        count = db.query(func.count(models.StudySession.id)).filter(
+            models.StudySession.started_at >= start,
+            models.StudySession.started_at < end,
+        ).scalar() or 0
+        mins = db.query(func.coalesce(func.sum(models.StudySession.duration_minutes), 0)).filter(
+            models.StudySession.started_at >= start,
+            models.StudySession.started_at < end,
+        ).scalar()
+        daily_sessions.append({"date": start.strftime("%Y-%m-%d"), "sessions": count, "minutes": int(mins)})
+
+    return {
+        "total_users": total_users,
+        "active_users_7d": active_7d,
+        "signups_7d": signups_7d,
+        "signups_30d": signups_30d,
+        "total_sessions": total_sessions,
+        "total_study_minutes": int(total_minutes),
+        "total_animals_hatched": total_animals_hatched,
+        "total_donated": total_donated,
+        "total_donation_count": total_donation_count,
+        "daily_signups": daily_signups,
+        "daily_sessions": daily_sessions,
+    }
+
+
+@app.get("/admin/users")
+def admin_users(
+    search: Optional[str] = None,
+    sort: str = "created_at",
+    order: str = "desc",
+    limit: int = 100,
+    offset: int = 0,
+    db: Session = Depends(get_db),
+    _=Depends(verify_admin),
+):
+    q = db.query(models.User)
+    if search:
+        pattern = f"%{search}%"
+        q = q.filter(
+            (models.User.username.ilike(pattern)) | (models.User.email.ilike(pattern))
+        )
+
+    sort_col = getattr(models.User, sort, models.User.created_at)
+    q = q.order_by(sort_col.desc() if order == "desc" else sort_col.asc())
+    total = q.count()
+    users = q.offset(offset).limit(limit).all()
+
+    result = []
+    for u in users:
+        animal_count = db.query(func.count(models.UserAnimal.id)).filter(
+            models.UserAnimal.user_id == u.id
+        ).scalar() or 0
+        donated = db.query(func.coalesce(func.sum(models.Donation.amount), 0)).filter(
+            models.Donation.user_id == u.id
+        ).scalar()
+        result.append({
+            "id": u.id,
+            "email": u.email,
+            "username": u.username,
+            "total_study_minutes": u.total_study_minutes or 0,
+            "total_sessions": u.total_sessions or 0,
+            "current_streak": u.current_streak or 0,
+            "longest_streak": u.longest_streak or 0,
+            "current_coins": u.current_coins or 0,
+            "total_coins": u.total_coins or 0,
+            "animals_hatched": animal_count,
+            "total_donated": float(donated),
+            "created_at": u.created_at.isoformat() if u.created_at else None,
+            "last_study_date": u.last_study_date.isoformat() if u.last_study_date else None,
+        })
+
+    return {"total": total, "users": result}
+
+
+@app.get("/admin/users/{user_id}")
+def admin_user_detail(user_id: int, db: Session = Depends(get_db), _=Depends(verify_admin)):
+    user = db.query(models.User).filter(models.User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    animals = db.query(models.UserAnimal).filter(models.UserAnimal.user_id == user_id).all()
+    animal_list = []
+    for ua in animals:
+        a = db.query(models.Animal).filter(models.Animal.id == ua.animal_id).first()
+        animal_list.append({
+            "name": a.name if a else "Unknown",
+            "species": a.species if a else "",
+            "nickname": ua.nickname,
+            "hatched_at": ua.hatched_at.isoformat() if ua.hatched_at else None,
+        })
+
+    badges = db.query(models.UserBadge).filter(models.UserBadge.user_id == user_id).all()
+    badge_list = [{"badge_id": b.badge_id, "earned_at": b.earned_at.isoformat() if b.earned_at else None} for b in badges]
+
+    sessions = db.query(models.StudySession).filter(
+        models.StudySession.user_id == user_id
+    ).order_by(models.StudySession.started_at.desc()).limit(20).all()
+    session_list = [{
+        "id": s.id,
+        "duration_minutes": s.duration_minutes,
+        "coins_earned": s.coins_earned,
+        "subject": s.subject,
+        "started_at": s.started_at.isoformat() if s.started_at else None,
+    } for s in sessions]
+
+    donations = db.query(models.Donation).filter(models.Donation.user_id == user_id).all()
+    donation_list = [{
+        "amount": d.amount,
+        "currency": d.currency,
+        "donation_date": d.donation_date,
+        "nonprofit_name": d.nonprofit_name,
+    } for d in donations]
+
+    return {
+        "id": user.id,
+        "email": user.email,
+        "username": user.username,
+        "total_study_minutes": user.total_study_minutes or 0,
+        "total_sessions": user.total_sessions or 0,
+        "current_streak": user.current_streak or 0,
+        "longest_streak": user.longest_streak or 0,
+        "current_coins": user.current_coins or 0,
+        "total_coins": user.total_coins or 0,
+        "created_at": user.created_at.isoformat() if user.created_at else None,
+        "last_study_date": user.last_study_date.isoformat() if user.last_study_date else None,
+        "animals": animal_list,
+        "badges": badge_list,
+        "recent_sessions": session_list,
+        "donations": donation_list,
+    }
+
+
+@app.get("/admin/donations")
+def admin_donations(
+    limit: int = 100,
+    offset: int = 0,
+    db: Session = Depends(get_db),
+    _=Depends(verify_admin),
+):
+    total = db.query(func.count(models.Donation.id)).scalar() or 0
+    donations = db.query(models.Donation).order_by(
+        models.Donation.created_at.desc()
+    ).offset(offset).limit(limit).all()
+
+    result = []
+    for d in donations:
+        username = None
+        if d.user_id:
+            u = db.query(models.User).filter(models.User.id == d.user_id).first()
+            username = u.username or u.email if u else None
+        result.append({
+            "id": d.id,
+            "amount": d.amount,
+            "net_amount": d.net_amount,
+            "currency": d.currency,
+            "frequency": d.frequency,
+            "donor_first_name": d.donor_first_name,
+            "donor_last_name": d.donor_last_name,
+            "donor_email": d.donor_email,
+            "nonprofit_name": d.nonprofit_name,
+            "donation_date": d.donation_date,
+            "linked_user": username,
+            "user_id": d.user_id,
+            "created_at": d.created_at.isoformat() if d.created_at else None,
+        })
+
+    agg = db.query(
+        func.coalesce(func.sum(models.Donation.amount), 0),
+        func.count(models.Donation.id),
+        func.count(func.distinct(models.Donation.user_id)),
+    ).first()
+
+    return {
+        "total": total,
+        "total_raised": float(agg[0]),
+        "total_count": agg[1],
+        "unique_donors": agg[2],
+        "donations": result,
+    }
+
+
+@app.get("/admin/sessions")
+def admin_sessions(
+    limit: int = 100,
+    offset: int = 0,
+    db: Session = Depends(get_db),
+    _=Depends(verify_admin),
+):
+    total = db.query(func.count(models.StudySession.id)).scalar() or 0
+    sessions = db.query(models.StudySession).order_by(
+        models.StudySession.started_at.desc()
+    ).offset(offset).limit(limit).all()
+
+    result = []
+    for s in sessions:
+        u = db.query(models.User).filter(models.User.id == s.user_id).first()
+        result.append({
+            "id": s.id,
+            "user_id": s.user_id,
+            "username": (u.username or u.email) if u else None,
+            "duration_minutes": s.duration_minutes,
+            "coins_earned": s.coins_earned,
+            "subject": s.subject,
+            "started_at": s.started_at.isoformat() if s.started_at else None,
+        })
+
+    return {"total": total, "sessions": result}
+
+
+@app.get("/admin/activity")
+def admin_activity(
+    limit: int = 50,
+    db: Session = Depends(get_db),
+    _=Depends(verify_admin),
+):
+    events = db.query(models.ActivityEvent).order_by(
+        models.ActivityEvent.created_at.desc()
+    ).limit(limit).all()
+
+    result = []
+    for e in events:
+        u = db.query(models.User).filter(models.User.id == e.user_id).first()
+        result.append({
+            "id": e.id,
+            "user_id": e.user_id,
+            "username": (u.username or u.email) if u else None,
+            "event_type": e.event_type,
+            "description": e.description,
+            "created_at": e.created_at.isoformat() if e.created_at else None,
+        })
+
+    return {"events": result}
 
 
 if __name__ == "__main__":

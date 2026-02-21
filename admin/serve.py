@@ -9,7 +9,7 @@ import http.server
 import socketserver
 import os
 
-PORT = 3000
+PORT = 3002
 DIRECTORY = os.path.dirname(os.path.abspath(__file__))
 
 class Handler(http.server.SimpleHTTPRequestHandler):
@@ -25,10 +25,9 @@ class Handler(http.server.SimpleHTTPRequestHandler):
 
 if __name__ == "__main__":
     with socketserver.TCPServer(("", PORT), Handler) as httpd:
-        print(f"🥚 Endura Admin Dashboard")
+        print(f"🌿 Endura Admin Dashboard")
         print(f"═══════════════════════════")
         print(f"Open: http://localhost:{PORT}")
-        print(f"Password: endura2024")
         print(f"═══════════════════════════")
         print(f"Press Ctrl+C to stop")
         try:
