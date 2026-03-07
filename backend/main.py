@@ -125,6 +125,33 @@ def seed_check():
             db.commit()
             print(f"[STARTUP] Set image_url for {img_updated} animals")
 
+        # Seed shop items if table is empty
+        shop_count = db.query(models.ShopItem).count()
+        if shop_count == 0:
+            print("[STARTUP] Seeding shop items...")
+            _shop_seed = [
+                {"item_key": "acc_tophat", "name": "Top Hat", "emoji": "🎩", "image_key": "tophat", "description": "A dapper top hat for your most distinguished animal", "price": 40, "category": "accessories", "rarity": "common"},
+                {"item_key": "acc_sunnies", "name": "Sunnies", "emoji": "🕶️", "image_key": "sunnies", "description": "Cool shades for the coolest creatures", "price": 35, "category": "accessories", "rarity": "common"},
+                {"item_key": "acc_crown", "name": "Crown", "emoji": "👑", "image_key": "crown", "description": "A royal crown fit for the king of the sanctuary", "price": 80, "category": "accessories", "rarity": "epic"},
+                {"item_key": "acc_gradcap", "name": "Graduation Cap", "emoji": "🎓", "image_key": "gradcap", "description": "Celebrate your study achievements in style", "price": 60, "category": "accessories", "rarity": "rare"},
+                {"item_key": "acc_eyemask", "name": "Eye Mask", "emoji": "😴", "image_key": "eyemask", "description": "For animals that deserve a cozy rest after your study session", "price": 45, "category": "accessories", "rarity": "common"},
+                {"item_key": "acc_partyhat", "name": "Party Hat", "emoji": "🥳", "image_key": "partyhat", "description": "A festive party hat for celebration time", "price": 50, "category": "accessories", "rarity": "rare"},
+                {"item_key": "acc_halo", "name": "Halo", "emoji": "😇", "image_key": "halo", "description": "A golden halo for your most angelic animal", "price": 90, "category": "accessories", "rarity": "epic"},
+                {"item_key": "acc_bow", "name": "Bow Tie", "emoji": "🎀", "image_key": "bow", "description": "A classy white bow tie for formal occasions", "price": 55, "category": "accessories", "rarity": "rare"},
+                {"item_key": "dec_daisy", "name": "Daisy Patch", "emoji": "🌼", "image_key": "daisy", "description": "A cheerful bunch of daisies to brighten my sanctuary", "price": 30, "category": "decorations", "rarity": "common"},
+                {"item_key": "dec_mushroom", "name": "Mushroom", "emoji": "🍄", "image_key": "mushroom", "description": "A whimsical fairy-tale mushroom", "price": 40, "category": "decorations", "rarity": "common"},
+                {"item_key": "dec_tree", "name": "Tree", "emoji": "🌳", "image_key": "tree", "description": "A shady tree for animals to rest under", "price": 55, "category": "decorations", "rarity": "rare"},
+                {"item_key": "dec_tulips", "name": "Tulips", "emoji": "🌷", "image_key": "tulips", "description": "A vibrant cluster of colourful tulips", "price": 50, "category": "decorations", "rarity": "rare"},
+                {"item_key": "dec_stones", "name": "Zen Stones", "emoji": "🪨", "image_key": "stones", "description": "A calming stack of smooth zen stones", "price": 45, "category": "decorations", "rarity": "common"},
+                {"item_key": "dec_bamboo", "name": "Bamboo", "emoji": "🎋", "image_key": "bamboo", "description": "Tall green bamboo stalks swaying gently", "price": 65, "category": "decorations", "rarity": "rare"},
+            ]
+            for s in _shop_seed:
+                db.add(models.ShopItem(**s))
+            db.commit()
+            print(f"[STARTUP] Seeded {len(_shop_seed)} shop items")
+        else:
+            print(f"[STARTUP] Shop items: {shop_count}")
+
         if animal_count >= 30 and tip_count >= 100:
             print("[STARTUP] Database already seeded, skipping")
             return
@@ -1724,6 +1751,108 @@ def admin_delete_tip(tip_id: int, db: Session = Depends(get_db), _=Depends(verif
     db.delete(tip)
     db.commit()
     return {"deleted": True, "id": tip_id}
+
+
+# ============ Admin Shop Item CRUD ============
+
+@app.get("/admin/shop")
+def admin_shop_items(db: Session = Depends(get_db), _=Depends(verify_admin)):
+    items = db.query(models.ShopItem).order_by(models.ShopItem.category, models.ShopItem.id).all()
+    return {"items": [{
+        "id": i.id,
+        "item_key": i.item_key,
+        "name": i.name,
+        "emoji": i.emoji,
+        "image_key": i.image_key,
+        "description": i.description,
+        "price": i.price,
+        "category": i.category,
+        "rarity": i.rarity,
+        "is_active": i.is_active,
+    } for i in items]}
+
+
+class ShopItemCreate(BaseModel):
+    item_key: str
+    name: str
+    emoji: Optional[str] = None
+    image_key: Optional[str] = None
+    description: Optional[str] = None
+    price: int = 0
+    category: str = "accessories"
+    rarity: str = "common"
+    is_active: bool = True
+
+
+class ShopItemUpdate(BaseModel):
+    name: Optional[str] = None
+    emoji: Optional[str] = None
+    image_key: Optional[str] = None
+    description: Optional[str] = None
+    price: Optional[int] = None
+    category: Optional[str] = None
+    rarity: Optional[str] = None
+    is_active: Optional[bool] = None
+
+
+@app.post("/admin/shop")
+def admin_create_shop_item(body: ShopItemCreate, db: Session = Depends(get_db), _=Depends(verify_admin)):
+    existing = db.query(models.ShopItem).filter(models.ShopItem.item_key == body.item_key).first()
+    if existing:
+        raise HTTPException(status_code=400, detail=f"Item key '{body.item_key}' already exists")
+    item = models.ShopItem(**body.dict())
+    db.add(item)
+    db.commit()
+    db.refresh(item)
+    return {
+        "id": item.id, "item_key": item.item_key, "name": item.name,
+        "emoji": item.emoji, "image_key": item.image_key,
+        "description": item.description, "price": item.price,
+        "category": item.category, "rarity": item.rarity, "is_active": item.is_active,
+    }
+
+
+@app.put("/admin/shop/{item_id}")
+def admin_update_shop_item(item_id: int, body: ShopItemUpdate, db: Session = Depends(get_db), _=Depends(verify_admin)):
+    item = db.query(models.ShopItem).filter(models.ShopItem.id == item_id).first()
+    if not item:
+        raise HTTPException(status_code=404, detail="Shop item not found")
+    for field, value in body.dict(exclude_unset=True).items():
+        setattr(item, field, value)
+    db.commit()
+    db.refresh(item)
+    return {
+        "id": item.id, "item_key": item.item_key, "name": item.name,
+        "emoji": item.emoji, "image_key": item.image_key,
+        "description": item.description, "price": item.price,
+        "category": item.category, "rarity": item.rarity, "is_active": item.is_active,
+    }
+
+
+@app.delete("/admin/shop/{item_id}")
+def admin_delete_shop_item(item_id: int, db: Session = Depends(get_db), _=Depends(verify_admin)):
+    item = db.query(models.ShopItem).filter(models.ShopItem.id == item_id).first()
+    if not item:
+        raise HTTPException(status_code=404, detail="Shop item not found")
+    db.delete(item)
+    db.commit()
+    return {"deleted": True, "id": item_id}
+
+
+# Public endpoint so the app can fetch shop items dynamically
+@app.get("/shop/items")
+def get_shop_items(db: Session = Depends(get_db)):
+    items = db.query(models.ShopItem).filter(models.ShopItem.is_active == True).order_by(models.ShopItem.category, models.ShopItem.id).all()
+    return [{
+        "id": i.item_key,
+        "name": i.name,
+        "emoji": i.emoji,
+        "imageKey": i.image_key,
+        "description": i.description,
+        "price": i.price,
+        "category": i.category,
+        "rarity": i.rarity,
+    } for i in items]
 
 
 if __name__ == "__main__":

@@ -269,6 +269,23 @@ class FeedReaction(Base):
     user = relationship("User")
 
 
+class ShopItem(Base):
+    """Shop items (accessories & decorations) manageable via admin"""
+    __tablename__ = "shop_items"
+
+    id = Column(Integer, primary_key=True, index=True)
+    item_key = Column(String, unique=True, nullable=False)
+    name = Column(String, nullable=False)
+    emoji = Column(String, nullable=True)
+    image_key = Column(String, nullable=True)
+    description = Column(Text, nullable=True)
+    price = Column(Integer, default=0)
+    category = Column(String, default="accessories")
+    rarity = Column(String, default="common")
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
 class Donation(Base):
     """Donations received via Every.org webhook"""
     __tablename__ = "donations"

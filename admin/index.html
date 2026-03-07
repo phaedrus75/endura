@@ -432,11 +432,17 @@
 
             <div class="sub-content" id="subtab-shop">
                 <div class="table-card">
-                    <h3>Accessories</h3>
+                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+                        <h3 style="margin:0">Accessories <span id="shopAccCount" style="color:var(--text-muted);font-weight:500"></span></h3>
+                        <button onclick="openCreateShop('accessories')" style="padding:8px 18px;background:linear-gradient(135deg,var(--forest-light),var(--forest));color:#fff;border:none;border-radius:10px;font-size:13px;font-weight:600;cursor:pointer">+ Add Accessory</button>
+                    </div>
                     <div class="animal-grid" id="shopAccessoriesGrid"></div>
                 </div>
                 <div class="table-card" style="margin-top:16px">
-                    <h3>Decorations</h3>
+                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+                        <h3 style="margin:0">Decorations <span id="shopDecCount" style="color:var(--text-muted);font-weight:500"></span></h3>
+                        <button onclick="openCreateShop('decorations')" style="padding:8px 18px;background:linear-gradient(135deg,var(--forest-light),var(--forest));color:#fff;border:none;border-radius:10px;font-size:13px;font-weight:600;cursor:pointer">+ Add Decoration</button>
+                    </div>
                     <div class="animal-grid" id="shopDecorationsGrid"></div>
                 </div>
             </div>
@@ -602,8 +608,14 @@
         </div>
         <form class="animal-form" id="shopEditForm">
             <input type="hidden" id="shopEditId">
+            <label>Item Key</label>
+            <input type="text" id="shopEditKey" required placeholder="e.g. acc_wizard_hat">
             <label>Name</label>
             <input type="text" id="shopEditName" required>
+            <label>Emoji</label>
+            <input type="text" id="shopEditEmoji" placeholder="🎩">
+            <label>Image Key</label>
+            <input type="text" id="shopEditImageKey" placeholder="e.g. tophat">
             <label>Description</label>
             <textarea id="shopEditDesc"></textarea>
             <label>Price (Coins)</label>
@@ -620,9 +632,11 @@
                 <option value="epic">Epic</option>
                 <option value="legendary">Legendary</option>
             </select>
-            <div class="save-success" id="shopSaveSuccess">Note: Shop items are defined in the app code. Edit here for reference only.</div>
+            <div class="save-success" id="shopSaveSuccess">Saved successfully</div>
             <div class="btn-row">
+                <button type="button" class="btn-delete" onclick="deleteShopItem()">Delete</button>
                 <button type="button" class="btn-cancel" onclick="closeShopModal()">Cancel</button>
+                <button type="submit" class="btn-save">Save Changes</button>
             </div>
         </form>
     </div>
@@ -875,7 +889,7 @@ function switchSubTab(name) {
     document.querySelectorAll('.sub-tab').forEach(t => t.classList.toggle('active', t.dataset.subtab === name));
     document.querySelectorAll('.sub-content').forEach(c => c.classList.toggle('active', c.id === 'subtab-' + name));
     if (name === 'tips' && allTips.length === 0) loadTips();
-    if (name === 'shop') renderShopGrids();
+    if (name === 'shop' && allShopItems.length === 0) loadShopItems();
 }
 
 // ----- Content: Animals -----
@@ -1133,53 +1147,137 @@ async function deleteTipById(id) {
     }
 }
 
-// ----- Content: Shop -----
-const SHOP_ITEMS = [
-    { id: 'acc_tophat', name: 'Top Hat', emoji: '🎩', description: 'A dapper top hat for your most distinguished animal', price: 40, category: 'accessories', rarity: 'common' },
-    { id: 'acc_sunnies', name: 'Sunnies', emoji: '🕶️', description: 'Cool shades for the coolest creatures', price: 35, category: 'accessories', rarity: 'common' },
-    { id: 'acc_crown', name: 'Crown', emoji: '👑', description: 'A royal crown fit for the king of the sanctuary', price: 80, category: 'accessories', rarity: 'epic' },
-    { id: 'acc_gradcap', name: 'Graduation Cap', emoji: '🎓', description: 'Celebrate your study achievements in style', price: 60, category: 'accessories', rarity: 'rare' },
-    { id: 'acc_eyemask', name: 'Eye Mask', emoji: '😴', description: 'For animals that deserve a cozy rest after your study session', price: 45, category: 'accessories', rarity: 'common' },
-    { id: 'acc_partyhat', name: 'Party Hat', emoji: '🥳', description: 'A festive party hat for celebration time', price: 50, category: 'accessories', rarity: 'rare' },
-    { id: 'acc_halo', name: 'Halo', emoji: '😇', description: 'A golden halo for your most angelic animal', price: 90, category: 'accessories', rarity: 'epic' },
-    { id: 'acc_bow', name: 'Bow Tie', emoji: '🎀', description: 'A classy white bow tie for formal occasions', price: 55, category: 'accessories', rarity: 'rare' },
-    { id: 'dec_daisy', name: 'Daisy Patch', emoji: '🌼', description: 'A cheerful bunch of daisies to brighten your sanctuary', price: 30, category: 'decorations', rarity: 'common' },
-    { id: 'dec_mushroom', name: 'Mushroom', emoji: '🍄', description: 'A whimsical fairy-tale mushroom', price: 40, category: 'decorations', rarity: 'common' },
-    { id: 'dec_tree', name: 'Tree', emoji: '🌳', description: 'A shady tree for animals to rest under', price: 55, category: 'decorations', rarity: 'rare' },
-    { id: 'dec_tulips', name: 'Tulips', emoji: '🌷', description: 'A vibrant cluster of colourful tulips', price: 50, category: 'decorations', rarity: 'rare' },
-    { id: 'dec_stones', name: 'Zen Stones', emoji: '🪨', description: 'A calming stack of smooth zen stones', price: 45, category: 'decorations', rarity: 'common' },
-    { id: 'dec_bamboo', name: 'Bamboo', emoji: '🎋', description: 'Tall green bamboo stalks swaying gently', price: 65, category: 'decorations', rarity: 'rare' },
-];
+// ----- Content: Shop (Backend CRUD) -----
+let allShopItems = [];
+
+async function loadShopItems() {
+    try {
+        const d = await adminFetch('/admin/shop');
+        allShopItems = d.items || [];
+        renderShopGrids();
+    } catch (e) { console.error('Shop load failed', e); }
+}
 
 function renderShopGrids() {
     const rarityColors = { common: 'badge-green', rare: 'badge-blue', epic: 'badge-purple', legendary: 'badge-amber' };
+    const accessories = allShopItems.filter(i => i.category === 'accessories');
+    const decorations = allShopItems.filter(i => i.category === 'decorations');
+    document.getElementById('shopAccCount').textContent = `(${accessories.length})`;
+    document.getElementById('shopDecCount').textContent = `(${decorations.length})`;
     const makeCard = item => `
-        <div class="shop-card" onclick="openShopDetail('${item.id}')">
-            <div class="shop-icon">${item.emoji}</div>
+        <div class="shop-card" onclick="openShopDetail(${item.id})">
+            <div class="shop-icon">${item.emoji || '🛍️'}</div>
             <div>
-                <div class="shop-name">${esc(item.name)}</div>
+                <div class="shop-name">${esc(item.name)}${!item.is_active ? ' <span class="badge badge-red">inactive</span>' : ''}</div>
                 <div class="shop-meta">${item.price} coins &middot; <span class="badge ${rarityColors[item.rarity]||'badge-green'}">${item.rarity}</span></div>
             </div>
         </div>`;
-    document.getElementById('shopAccessoriesGrid').innerHTML = SHOP_ITEMS.filter(i => i.category === 'accessories').map(makeCard).join('');
-    document.getElementById('shopDecorationsGrid').innerHTML = SHOP_ITEMS.filter(i => i.category === 'decorations').map(makeCard).join('');
+    document.getElementById('shopAccessoriesGrid').innerHTML = accessories.map(makeCard).join('') || '<div class="empty">No accessories</div>';
+    document.getElementById('shopDecorationsGrid').innerHTML = decorations.map(makeCard).join('') || '<div class="empty">No decorations</div>';
 }
 
 function openShopDetail(id) {
-    const item = SHOP_ITEMS.find(i => i.id === id);
+    const item = allShopItems.find(i => i.id === id);
     if (!item) return;
     document.getElementById('shopEditId').value = item.id;
-    document.getElementById('shopModalTitle').textContent = item.emoji + ' ' + item.name;
+    document.getElementById('shopModalTitle').textContent = (item.emoji || '🛍️') + ' ' + item.name;
+    document.getElementById('shopEditKey').value = item.item_key;
+    document.getElementById('shopEditKey').disabled = true;
     document.getElementById('shopEditName').value = item.name;
-    document.getElementById('shopEditDesc').value = item.description;
+    document.getElementById('shopEditEmoji').value = item.emoji || '';
+    document.getElementById('shopEditImageKey').value = item.image_key || '';
+    document.getElementById('shopEditDesc').value = item.description || '';
     document.getElementById('shopEditPrice').value = item.price;
     document.getElementById('shopEditCategory').value = item.category;
     document.getElementById('shopEditRarity').value = item.rarity;
-    document.getElementById('shopSaveSuccess').style.display = 'block';
+    document.getElementById('shopSaveSuccess').style.display = 'none';
     document.getElementById('shopModal').classList.add('active');
 }
-function closeShopModal() { document.getElementById('shopModal').classList.remove('active'); }
+
+function openCreateShop(category) {
+    document.getElementById('shopEditId').value = '';
+    document.getElementById('shopModalTitle').textContent = '➕ New Shop Item';
+    document.getElementById('shopEditKey').value = '';
+    document.getElementById('shopEditKey').disabled = false;
+    document.getElementById('shopEditName').value = '';
+    document.getElementById('shopEditEmoji').value = '';
+    document.getElementById('shopEditImageKey').value = '';
+    document.getElementById('shopEditDesc').value = '';
+    document.getElementById('shopEditPrice').value = '0';
+    document.getElementById('shopEditCategory').value = category || 'accessories';
+    document.getElementById('shopEditRarity').value = 'common';
+    document.getElementById('shopSaveSuccess').style.display = 'none';
+    document.getElementById('shopModal').classList.add('active');
+}
+
+function closeShopModal() {
+    document.getElementById('shopModal').classList.remove('active');
+    document.getElementById('shopEditKey').disabled = false;
+}
 document.getElementById('shopModal').addEventListener('click', e => { if (e.target.id === 'shopModal') closeShopModal(); });
+
+document.getElementById('shopEditForm').addEventListener('submit', async e => {
+    e.preventDefault();
+    const id = document.getElementById('shopEditId').value;
+    const isCreate = !id;
+    const body = {
+        name: document.getElementById('shopEditName').value,
+        emoji: document.getElementById('shopEditEmoji').value || null,
+        image_key: document.getElementById('shopEditImageKey').value || null,
+        description: document.getElementById('shopEditDesc').value || null,
+        price: parseInt(document.getElementById('shopEditPrice').value) || 0,
+        category: document.getElementById('shopEditCategory').value,
+        rarity: document.getElementById('shopEditRarity').value,
+    };
+    if (isCreate) body.item_key = document.getElementById('shopEditKey').value;
+    try {
+        const url = isCreate ? API_URL + '/admin/shop' : API_URL + '/admin/shop/' + id;
+        const method = isCreate ? 'POST' : 'PUT';
+        const res = await fetch(url, {
+            method,
+            headers: { 'Content-Type': 'application/json', 'X-Admin-Key': API_KEY },
+            body: JSON.stringify(body),
+        });
+        if (!res.ok) {
+            const errData = await res.json().catch(() => ({}));
+            throw new Error(errData.detail || res.status);
+        }
+        const updated = await res.json();
+        if (isCreate) {
+            allShopItems.push(updated);
+        } else {
+            const idx = allShopItems.findIndex(i => i.id === updated.id);
+            if (idx !== -1) allShopItems[idx] = updated;
+        }
+        renderShopGrids();
+        document.getElementById('shopSaveSuccess').textContent = isCreate ? 'Item created!' : 'Saved successfully';
+        document.getElementById('shopSaveSuccess').style.display = 'block';
+        document.getElementById('shopEditId').value = updated.id;
+        document.getElementById('shopEditKey').disabled = true;
+        setTimeout(() => { document.getElementById('shopSaveSuccess').style.display = 'none'; }, 2000);
+    } catch (err) {
+        alert('Failed to save: ' + err.message);
+    }
+});
+
+async function deleteShopItem() {
+    const id = document.getElementById('shopEditId').value;
+    if (!id) return;
+    const name = document.getElementById('shopEditName').value;
+    if (!confirm(`Delete "${name}"? This cannot be undone.`)) return;
+    try {
+        const res = await fetch(API_URL + '/admin/shop/' + id, {
+            method: 'DELETE',
+            headers: { 'X-Admin-Key': API_KEY },
+        });
+        if (!res.ok) throw new Error(res.status);
+        allShopItems = allShopItems.filter(i => i.id !== parseInt(id));
+        renderShopGrids();
+        closeShopModal();
+    } catch (err) {
+        alert('Failed to delete: ' + err.message);
+    }
+}
 
 const ANIMAL_EMOJIS = {
     'Red Panda':'🐼','Sea Turtle':'🐢','Penguin':'🐧','Koala':'🐨','Flamingo':'🦩',
