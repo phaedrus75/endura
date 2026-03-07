@@ -1,3 +1,8 @@
+# Environment files (secrets)
+.env
+.env.local
+.env.*.local
+
 # Python Backend
 backend/__pycache__/
 backend/*.py[cod]

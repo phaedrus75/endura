@@ -1300,7 +1300,12 @@ async def send_push_notification(
 
 # ============ Admin Dashboard API ============
 
-ADMIN_API_KEY = os.getenv("ADMIN_API_KEY", "endura-admin-2024")
+ADMIN_API_KEY = os.getenv("ADMIN_API_KEY")
+if not ADMIN_API_KEY:
+    if os.getenv("RAILWAY_ENVIRONMENT") or os.getenv("PORT"):
+        raise RuntimeError("ADMIN_API_KEY environment variable is required in production")
+    ADMIN_API_KEY = "dev-only-admin-key"
+    logger.warning("Using insecure dev ADMIN_API_KEY — set ADMIN_API_KEY env var for production")
 
 def verify_admin(x_admin_key: str = Header(...)):
     if x_admin_key != ADMIN_API_KEY:
