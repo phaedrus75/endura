@@ -404,8 +404,9 @@
 
             <div class="sub-content active" id="subtab-animals">
                 <div class="table-card">
-                    <div class="section-header" style="margin-bottom:14px">
+                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
                         <h3 style="margin:0">Animals <span id="animalCount" style="color:var(--text-muted);font-weight:500"></span></h3>
+                        <button onclick="openCreateAnimal()" style="padding:8px 18px;background:linear-gradient(135deg,var(--forest-light),var(--forest));color:#fff;border:none;border-radius:10px;font-size:13px;font-weight:600;cursor:pointer">+ Add Animal</button>
                     </div>
                     <div class="animal-grid" id="animalGrid"></div>
                 </div>
@@ -413,8 +414,9 @@
 
             <div class="sub-content" id="subtab-tips">
                 <div class="table-card">
-                    <div class="section-header" style="margin-bottom:14px">
+                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
                         <h3 style="margin:0">Study Tips <span id="tipCount" style="color:var(--text-muted);font-weight:500"></span></h3>
+                        <button onclick="openCreateTip()" style="padding:8px 18px;background:linear-gradient(135deg,var(--forest-light),var(--forest));color:#fff;border:none;border-radius:10px;font-size:13px;font-weight:600;cursor:pointer">+ Add Tip</button>
                     </div>
                     <div style="overflow-x:auto">
                         <table>
@@ -938,6 +940,7 @@ document.getElementById('animalModal').addEventListener('click', e => { if (e.ta
 document.getElementById('animalEditForm').addEventListener('submit', async e => {
     e.preventDefault();
     const id = document.getElementById('animalEditId').value;
+    const isCreate = !id;
     const body = {
         name: document.getElementById('animalEditName').value,
         species: document.getElementById('animalEditSpecies').value,
@@ -947,18 +950,29 @@ document.getElementById('animalEditForm').addEventListener('submit', async e => 
         description: document.getElementById('animalEditDesc').value || null,
     };
     try {
-        const res = await fetch(API_URL + '/admin/animals/' + id, {
-            method: 'PUT',
+        const url = isCreate ? API_URL + '/admin/animals' : API_URL + '/admin/animals/' + id;
+        const method = isCreate ? 'POST' : 'PUT';
+        const res = await fetch(url, {
+            method,
             headers: { 'Content-Type': 'application/json', 'X-Admin-Key': API_KEY },
             body: JSON.stringify(body),
         });
-        if (!res.ok) throw new Error(res.status);
+        if (!res.ok) {
+            const errData = await res.json().catch(() => ({}));
+            throw new Error(errData.detail || res.status);
+        }
         const updated = await res.json();
-        const idx = allAnimals.findIndex(a => a.id === updated.id);
-        if (idx !== -1) allAnimals[idx] = { ...allAnimals[idx], ...updated };
+        if (isCreate) {
+            allAnimals.push(updated);
+        } else {
+            const idx = allAnimals.findIndex(a => a.id === updated.id);
+            if (idx !== -1) allAnimals[idx] = { ...allAnimals[idx], ...updated };
+        }
         renderAnimalGrid();
+        document.getElementById('animalSaveSuccess').textContent = isCreate ? 'Animal created!' : 'Saved successfully';
         document.getElementById('animalSaveSuccess').style.display = 'block';
         document.getElementById('animalModalTitle').textContent = getAnimalEmoji(updated.name) + ' ' + updated.name;
+        document.getElementById('animalEditId').value = updated.id;
         if (updated.image_url) {
             document.getElementById('animalImgWrap').innerHTML = `<img class="animal-detail-img" src="${esc(updated.image_url)}">`;
         }
@@ -984,6 +998,22 @@ async function deleteAnimal() {
     } catch (err) {
         alert('Failed to delete: ' + err.message);
     }
+}
+
+function openCreateAnimal() {
+    document.getElementById('animalEditId').value = '';
+    document.getElementById('animalDetailId').textContent = 'New';
+    document.getElementById('animalModalTitle').textContent = '➕ New Animal';
+    document.getElementById('animalEditName').value = '';
+    document.getElementById('animalEditSpecies').value = '';
+    document.getElementById('animalEditRarity').value = 'common';
+    document.getElementById('animalEditStatus').value = '';
+    document.getElementById('animalEditImage').value = '';
+    document.getElementById('animalEditDesc').value = '';
+    document.getElementById('animalDetailRarity').innerHTML = '<span class="badge badge-green">common</span>';
+    document.getElementById('animalImgWrap').innerHTML = '<div class="animal-detail-placeholder">🐾</div>';
+    document.getElementById('animalSaveSuccess').style.display = 'none';
+    document.getElementById('animalModal').classList.add('active');
 }
 
 // ----- Content: Study Tips -----
@@ -1025,30 +1055,52 @@ function openTipDetail(id) {
     document.getElementById('tipModal').classList.add('active');
 }
 
+function openCreateTip() {
+    document.getElementById('tipEditId').value = '';
+    document.getElementById('tipModalTitle').textContent = '➕ New Study Tip';
+    document.getElementById('tipEditContent').value = '';
+    document.getElementById('tipEditCategory').value = 'general';
+    document.getElementById('tipEditAnimal').value = '';
+    document.getElementById('tipSaveSuccess').style.display = 'none';
+    document.getElementById('tipModal').classList.add('active');
+}
+
 function closeTipModal() { document.getElementById('tipModal').classList.remove('active'); }
 document.getElementById('tipModal').addEventListener('click', e => { if (e.target.id === 'tipModal') closeTipModal(); });
 
 document.getElementById('tipEditForm').addEventListener('submit', async e => {
     e.preventDefault();
     const id = document.getElementById('tipEditId').value;
+    const isCreate = !id;
     const body = {
         content: document.getElementById('tipEditContent').value,
         category: document.getElementById('tipEditCategory').value,
         animal_name: document.getElementById('tipEditAnimal').value || null,
     };
     try {
-        const res = await fetch(API_URL + '/admin/tips/' + id, {
-            method: 'PUT',
+        const url = isCreate ? API_URL + '/admin/tips' : API_URL + '/admin/tips/' + id;
+        const method = isCreate ? 'POST' : 'PUT';
+        const res = await fetch(url, {
+            method,
             headers: { 'Content-Type': 'application/json', 'X-Admin-Key': API_KEY },
             body: JSON.stringify(body),
         });
-        if (!res.ok) throw new Error(res.status);
+        if (!res.ok) {
+            const errData = await res.json().catch(() => ({}));
+            throw new Error(errData.detail || res.status);
+        }
         const updated = await res.json();
-        const idx = allTips.findIndex(t => t.id === updated.id);
-        if (idx !== -1) allTips[idx] = { ...allTips[idx], ...updated };
+        if (isCreate) {
+            allTips.unshift(updated);
+        } else {
+            const idx = allTips.findIndex(t => t.id === updated.id);
+            if (idx !== -1) allTips[idx] = { ...allTips[idx], ...updated };
+        }
         renderTipsTable();
-        document.getElementById('tipSaveSuccess').textContent = 'Saved successfully';
+        document.getElementById('tipSaveSuccess').textContent = isCreate ? 'Tip created!' : 'Saved successfully';
         document.getElementById('tipSaveSuccess').style.display = 'block';
+        document.getElementById('tipEditId').value = updated.id;
+        document.getElementById('tipModalTitle').textContent = 'Edit Tip #' + updated.id;
         setTimeout(() => { document.getElementById('tipSaveSuccess').style.display = 'none'; }, 2000);
     } catch (err) {
         alert('Failed to save: ' + err.message);

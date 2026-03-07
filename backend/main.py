@@ -1557,6 +1557,15 @@ def admin_activity(
     return {"events": result}
 
 
+class AnimalCreate(BaseModel):
+    name: str
+    species: Optional[str] = None
+    rarity: str = "common"
+    conservation_status: Optional[str] = None
+    description: Optional[str] = None
+    image_url: Optional[str] = None
+
+
 class AnimalUpdate(BaseModel):
     name: Optional[str] = None
     species: Optional[str] = None
@@ -1564,6 +1573,33 @@ class AnimalUpdate(BaseModel):
     conservation_status: Optional[str] = None
     description: Optional[str] = None
     image_url: Optional[str] = None
+
+
+@app.post("/admin/animals")
+def admin_create_animal(body: AnimalCreate, db: Session = Depends(get_db), _=Depends(verify_admin)):
+    existing = db.query(models.Animal).filter(models.Animal.name == body.name).first()
+    if existing:
+        raise HTTPException(status_code=400, detail=f"Animal '{body.name}' already exists")
+    animal = models.Animal(
+        name=body.name,
+        species=body.species or body.name,
+        rarity=body.rarity,
+        conservation_status=body.conservation_status,
+        description=body.description,
+        image_url=body.image_url,
+    )
+    db.add(animal)
+    db.commit()
+    db.refresh(animal)
+    return {
+        "id": animal.id,
+        "name": animal.name,
+        "species": animal.species,
+        "rarity": animal.rarity,
+        "conservation_status": animal.conservation_status,
+        "description": animal.description,
+        "image_url": animal.image_url,
+    }
 
 
 @app.put("/admin/animals/{animal_id}")
@@ -1633,10 +1669,38 @@ def admin_tips(
     return {"total": total, "tips": result}
 
 
+class TipCreate(BaseModel):
+    content: str
+    category: str = "general"
+    animal_name: Optional[str] = None
+
+
 class TipUpdate(BaseModel):
     content: Optional[str] = None
     category: Optional[str] = None
     animal_name: Optional[str] = None
+
+
+@app.post("/admin/tips")
+def admin_create_tip(body: TipCreate, db: Session = Depends(get_db), _=Depends(verify_admin)):
+    tip = models.StudyTip(
+        content=body.content,
+        category=body.category,
+        animal_name=body.animal_name,
+    )
+    db.add(tip)
+    db.commit()
+    db.refresh(tip)
+    return {
+        "id": tip.id,
+        "content": tip.content,
+        "category": tip.category,
+        "animal_name": tip.animal_name,
+        "likes_count": tip.likes_count or 0,
+        "dislikes_count": tip.dislikes_count or 0,
+        "author": None,
+        "created_at": tip.created_at.isoformat() if tip.created_at else None,
+    }
 
 
 @app.put("/admin/tips/{tip_id}")
