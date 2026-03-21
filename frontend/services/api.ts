@@ -1,21 +1,8 @@
 import * as SecureStore from 'expo-secure-store';
 
-const DEFAULT_API = 'https://web-production-34028.up.railway.app';
-export const API_URL = (process.env.EXPO_PUBLIC_API_URL || DEFAULT_API).replace(/\/$/, '');
+// Use local development server
+export const API_URL = 'https://web-production-34028.up.railway.app';
 
-if (__DEV__) {
-  console.log(`[Endura] API_URL=${API_URL}`);
-}
-
-/** Normalize email for login/register: trim, NFKC, ASCII +, strip invisible chars (avoids fullwidth ＋ etc.). */
-function sanitizeAuthEmail(email: string): string {
-  return email
-    .normalize('NFKC')
-    .trim()
-    .replace(/\uFF0B/g, '+')
-    .replace(/[\u200b-\u200d\ufeff]/g, '')
-    .toLowerCase();
-}
 
 // Types
 export interface User {
@@ -222,92 +209,28 @@ export interface UserStats {
   study_minutes_by_subject: { [key: string]: number };
 }
 
-function formatFastApiErrorBody(data: unknown, status: number): string {
-  const d = data as { detail?: unknown };
-  const detail = d.detail;
-  if (Array.isArray(detail)) {
-    return detail
-      .map((e: { msg?: string; message?: string }) => e.msg || e.message || JSON.stringify(e))
-      .join('; ');
-  }
-  if (typeof detail === 'string') {
-    if (status === 404 && (detail === 'Not Found' || detail.toLowerCase().includes('not found'))) {
-      return (
-        'This API does not have password reset yet (404). Deploy the latest backend to Railway, ' +
-        `or check EXPO_PUBLIC_API_URL. Using: ${API_URL}`
-      );
-    }
-    return detail;
-  }
-  return `HTTP ${status}`;
-}
-
-/** POST JSON without auth header (login, password reset, etc.). */
-async function publicJsonPost<T>(
-  endpoint: string,
-  body: Record<string, unknown>,
-): Promise<T> {
-  const url = `${API_URL}${endpoint}`;
-  try {
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Accept: 'application/json',
-      },
-      body: JSON.stringify(body),
-    });
-    const data = await response.json().catch(() => ({}));
-    if (!response.ok) {
-      throw new Error(formatFastApiErrorBody(data, response.status));
-    }
-    return data as T;
-  } catch (error: unknown) {
-    const raw =
-      typeof (error as Error)?.message === 'string'
-        ? (error as Error).message
-        : error instanceof Error
-          ? error.message
-          : String(error);
-    if (__DEV__) console.error('API error:', endpoint, raw);
-    if (raw === 'Network request failed' || raw === 'Failed to fetch') {
-      throw new Error(
-        `Cannot reach the server. Check Wi‑Fi/VPN, then try again. (${API_URL})`,
-      );
-    }
-    throw error instanceof Error ? error : new Error(raw);
-  }
-}
-
 // Helper function for API calls
 async function apiFetch<T>(
   endpoint: string,
   options: RequestInit = {}
 ): Promise<T> {
-  const method = (options.method || 'GET').toUpperCase();
-  const skipBearerForPublicAuth =
-    method === 'POST' &&
-    (endpoint === '/auth/login' || endpoint === '/auth/register');
-
-  const token = skipBearerForPublicAuth
-    ? null
-    : await SecureStore.getItemAsync('authToken');
-
-  const headers: Record<string, string> = {
+  const token = await SecureStore.getItemAsync('authToken');
+  
+  const headers: HeadersInit = {
     'Content-Type': 'application/json',
-    ...(options.headers as Record<string, string>),
+    ...options.headers,
   };
-
+  
   if (token) {
-    headers.Authorization = `Bearer ${token}`;
+    headers['Authorization'] = `Bearer ${token}`;
   }
-
+  
   const url = `${API_URL}${endpoint}`;
-
+  
   try {
     const response = await fetch(url, {
       ...options,
-      headers: headers as HeadersInit,
+      headers,
       redirect: 'follow',
     });
     
@@ -326,22 +249,8 @@ async function apiFetch<T>(
     
     return response.json();
   } catch (error: any) {
-    const raw =
-      typeof error?.message === 'string'
-        ? error.message
-        : error instanceof Error
-          ? error.message
-          : String(error);
-    if (__DEV__) console.error('API error:', endpoint, raw);
-    const networkish =
-      raw === 'Network request failed' ||
-      raw === 'Failed to fetch';
-    if (networkish) {
-      throw new Error(
-        `Cannot reach the server. Check Wi‑Fi/VPN, then try again. (${API_URL})`,
-      );
-    }
-    throw error instanceof Error ? error : new Error(raw);
+    if (__DEV__) console.error('API error:', endpoint, error.message);
+    throw error;
   }
 }
 
@@ -350,7 +259,7 @@ export const authAPI = {
   register: async (email: string, password: string) => {
     const data = await apiFetch<{ access_token: string }>('/auth/register', {
       method: 'POST',
-      body: JSON.stringify({ email: sanitizeAuthEmail(email), password }),
+      body: JSON.stringify({ email, password }),
     });
     await SecureStore.setItemAsync('authToken', data.access_token);
     return data;
@@ -359,7 +268,7 @@ export const authAPI = {
   login: async (email: string, password: string) => {
     const data = await apiFetch<{ access_token: string }>('/auth/login', {
       method: 'POST',
-      body: JSON.stringify({ email: sanitizeAuthEmail(email), password }),
+      body: JSON.stringify({ email, password }),
     });
     await SecureStore.setItemAsync('authToken', data.access_token);
     return data;
@@ -370,18 +279,6 @@ export const authAPI = {
   },
   
   getMe: () => apiFetch<User>('/auth/me'),
-
-  forgotPassword: (email: string) =>
-    publicJsonPost<{ message: string }>('/auth/forgot-password', {
-      email: sanitizeAuthEmail(email),
-    }),
-
-  resetPassword: (email: string, token: string, password: string) =>
-    publicJsonPost<{ message: string }>('/auth/reset-password', {
-      email: sanitizeAuthEmail(email),
-      token,
-      password,
-    }),
   
   setUsername: (username: string) =>
     apiFetch('/user/username', {

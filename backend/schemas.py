@@ -26,27 +26,6 @@ class UserLogin(BaseModel):
     password: str
 
 
-class ForgotPasswordRequest(BaseModel):
-    email: EmailStr
-
-
-class ResetPasswordRequest(BaseModel):
-    email: EmailStr
-    token: str = Field(..., min_length=20, max_length=256)
-    password: str = Field(..., min_length=8, max_length=128)
-
-    @field_validator("password")
-    @classmethod
-    def password_strength(cls, v: str) -> str:
-        if len(v) < 8:
-            raise ValueError("Password must be at least 8 characters")
-        if not any(c.isdigit() for c in v):
-            raise ValueError("Password must contain at least one number")
-        if not any(c.isalpha() for c in v):
-            raise ValueError("Password must contain at least one letter")
-        return v
-
-
 class UserResponse(BaseModel):
     id: int
     email: str

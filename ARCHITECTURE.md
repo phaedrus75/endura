@@ -296,13 +296,13 @@ Code Push (GitHub)
 | `SECRET_KEY` | JWT signing key (required in production) |
 | `STRIPE_SECRET_KEY` | Stripe API key |
 
-**Frontend (.env file — not committed to git):**
-| Variable | Purpose |
-|----------|---------|
-| `EXPO_PUBLIC_POSTHOG_API_KEY` | PostHog analytics SDK key |
-| `EXPO_PUBLIC_POSTHOG_HOST` | PostHog ingest host |
-
-See `frontend/.env.example` for the template.
+**Frontend (hardcoded):**
+| Variable | Value |
+|----------|-------|
+| API URL | `https://web-production-34028.up.railway.app` |
+| PostHog Key | `phc_qlSNr...` |
+| PostHog Host | `https://us.i.posthog.com` |
+| Every.org Webhook Token | `9f29c612e6f8` |
 
 ---
 

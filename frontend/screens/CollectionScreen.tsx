@@ -24,15 +24,7 @@ import Svg, { Circle, Defs, LinearGradient as SvgLinearGradient, Stop } from 're
 import LottieView from 'lottie-react-native';
 import { colors, shadows, spacing, borderRadius } from '../theme/colors';
 import { useAuth } from '../contexts/AuthContext';
-import {
-  API_URL,
-  animalsAPI,
-  badgesAPI,
-  donationsAPI,
-  UserAnimal,
-  Animal,
-  DonationLeaderboardEntry,
-} from '../services/api';
+import { animalsAPI, badgesAPI, donationsAPI, UserAnimal, Animal, DonationLeaderboardEntry } from '../services/api';
 import { getAnimalImage } from '../assets/animals';
 import { Analytics } from '../services/analytics';
 

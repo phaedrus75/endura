@@ -29,10 +29,6 @@ class User(Base):
     notification_enabled = Column(Boolean, default=True)
     study_reminder_hour = Column(Integer, nullable=True)
     study_reminder_minute = Column(Integer, nullable=True)
-
-    # Password reset (token stored as SHA-256 hex of raw token sent by email)
-    password_reset_token_hash = Column(String(64), nullable=True, index=True)
-    password_reset_expires_at = Column(DateTime, nullable=True)
     
     # Relationships
     tasks = relationship("Task", back_populates="user")

@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import * as SecureStore from 'expo-secure-store';
 import {
   View,
   Text,
@@ -9,33 +10,15 @@ import {
   Platform,
   Alert,
   ActivityIndicator,
+  Dimensions,
   ScrollView,
-  Linking,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import LottieView from 'lottie-react-native';
 import { colors, shadows, spacing, borderRadius } from '../theme/colors';
 import { useAuth } from '../contexts/AuthContext';
-import { authAPI } from '../services/api';
 
-type RecoveryMode = 'forgot' | 'reset' | null;
-
-function parseResetTokenFromUrl(url: string): string | null {
-  const m = url.match(/[?&]token=([^&]+)/);
-  if (!m) return null;
-  try {
-    return decodeURIComponent(m[1]);
-  } catch {
-    return m[1];
-  }
-}
-
-function validateNewPassword(p: string): string | null {
-  if (p.length < 8) return 'Password must be at least 8 characters';
-  if (!/[a-zA-Z]/.test(p)) return 'Password must contain at least one letter';
-  if (!/\d/.test(p)) return 'Password must contain at least one number';
-  return null;
-}
+const { width } = Dimensions.get('window');
 
 // Animated Egg Logo Component using Lottie
 const AnimatedEggLogo = () => (
@@ -52,49 +35,30 @@ const AnimatedEggLogo = () => (
 export default function AuthScreen() {
   const [showForm, setShowForm] = useState(false);
   const [isLogin, setIsLogin] = useState(false);
-  const [recoveryMode, setRecoveryMode] = useState<RecoveryMode>(null);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [resetToken, setResetToken] = useState('');
-  const [newPassword, setNewPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const { login, register } = useAuth();
 
+  // Clear any stored auth data on mount (debug)
   useEffect(() => {
-    function handleIncomingUrl(url: string | null) {
-      if (!url) return;
-      const token = parseResetTokenFromUrl(url);
-      if (!token) return;
-      if (url.includes('reset-password') || url.includes('token=')) {
-        setShowForm(true);
-        setIsLogin(true);
-        setRecoveryMode('reset');
-        setResetToken(token);
+    const clearOldData = async () => {
+      try {
+        await SecureStore.deleteItemAsync('authToken');
+        console.log('🗑️ Cleared old auth token');
+      } catch (e) {
+        console.log('No old token to clear');
       }
-    }
-    Linking.getInitialURL().then(handleIncomingUrl);
-    const sub = Linking.addEventListener('url', (e) => handleIncomingUrl(e.url));
-    return () => sub.remove();
+    };
+    clearOldData();
   }, []);
-
-  const goBack = () => {
-    if (recoveryMode) {
-      setRecoveryMode(null);
-      setResetToken('');
-      setNewPassword('');
-      setConfirmPassword('');
-      return;
-    }
-    setShowForm(false);
-  };
 
   const handleSubmit = async () => {
     if (!email || !password) {
       Alert.alert('Error', 'Please fill in all fields');
       return;
     }
-
+    
     setIsLoading(true);
     try {
       if (isLogin) {
@@ -109,87 +73,13 @@ export default function AuthScreen() {
     }
   };
 
-  const handleForgotSend = async () => {
-    const e = email.trim();
-    if (!e) {
-      Alert.alert('Email required', 'Enter the email for your account.');
-      return;
-    }
-    if (!e.includes('@') || !e.includes('.')) {
-      Alert.alert(
-        'Complete email required',
-        'Use your full address, e.g. aseem.munshi@gmail.com (include @ and the domain).',
-      );
-      return;
-    }
-    setIsLoading(true);
-    try {
-      await authAPI.forgotPassword(e);
-      Alert.alert(
-        'Check your email',
-        'If an account exists for that address, we sent reset instructions. You can enter the code on the next screen.',
-        [
-          { text: 'OK' },
-          {
-            text: 'Enter reset code',
-            onPress: () => setRecoveryMode('reset'),
-          },
-        ],
-      );
-    } catch (err: any) {
-      Alert.alert('Error', err.message || 'Something went wrong');
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const handleResetSubmit = async () => {
-    const e = email.trim();
-    const tok = resetToken.trim();
-    if (!e || !tok) {
-      Alert.alert('Missing fields', 'Enter your email and the reset code from your email.');
-      return;
-    }
-    const v = validateNewPassword(newPassword);
-    if (v) {
-      Alert.alert('Password', v);
-      return;
-    }
-    if (newPassword !== confirmPassword) {
-      Alert.alert('Password', 'Passwords do not match.');
-      return;
-    }
-    setIsLoading(true);
-    try {
-      await authAPI.resetPassword(e, tok, newPassword);
-      Alert.alert('Success', 'Your password was updated. Sign in with your new password.', [
-        {
-          text: 'OK',
-          onPress: () => {
-            setRecoveryMode(null);
-            setPassword(newPassword);
-            setResetToken('');
-            setNewPassword('');
-            setConfirmPassword('');
-          },
-        },
-      ]);
-    } catch (err: any) {
-      Alert.alert('Error', err.message || 'Reset failed');
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
   const handleGetStarted = () => {
     setIsLogin(false);
-    setRecoveryMode(null);
     setShowForm(true);
   };
 
   const handleAlreadyHaveAccount = () => {
     setIsLogin(true);
-    setRecoveryMode(null);
     setShowForm(true);
   };
 
@@ -198,183 +88,29 @@ export default function AuthScreen() {
     return (
       <SafeAreaView style={styles.container}>
         <View style={styles.welcomeContent}>
+          {/* Brand Area */}
           <View style={styles.brandContainer}>
             <Text style={styles.brandName}>endura</Text>
             <AnimatedEggLogo />
           </View>
 
+          {/* Buttons */}
           <View style={styles.buttonsContainer}>
-            <TouchableOpacity style={styles.primaryButton} onPress={handleGetStarted}>
+            <TouchableOpacity
+              style={styles.primaryButton}
+              onPress={handleGetStarted}
+            >
               <Text style={styles.primaryButtonText}>GET STARTED FOR FREE</Text>
             </TouchableOpacity>
 
-            <TouchableOpacity style={styles.secondaryButton} onPress={handleAlreadyHaveAccount}>
+            <TouchableOpacity
+              style={styles.secondaryButton}
+              onPress={handleAlreadyHaveAccount}
+            >
               <Text style={styles.secondaryButtonText}>ALREADY HAVE AN ACCOUNT?</Text>
             </TouchableOpacity>
           </View>
         </View>
-      </SafeAreaView>
-    );
-  }
-
-  // Forgot password
-  if (recoveryMode === 'forgot') {
-    return (
-      <SafeAreaView style={styles.container}>
-        <KeyboardAvoidingView
-          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-          style={styles.keyboardView}
-        >
-          <ScrollView
-            contentContainerStyle={styles.scrollContent}
-            keyboardShouldPersistTaps="handled"
-            showsVerticalScrollIndicator={false}
-          >
-            <TouchableOpacity style={styles.backButton} onPress={goBack}>
-              <Text style={styles.backButtonText}>← Back</Text>
-            </TouchableOpacity>
-
-            <View style={styles.formHeader}>
-              <Text style={styles.formTitle}>Forgot password</Text>
-              <Text style={styles.formSubtitle}>
-                We will email you a reset code if an account exists for this address.
-              </Text>
-            </View>
-
-            <View style={styles.formContainer}>
-              <View style={styles.inputContainer}>
-                <Text style={styles.inputLabel}>Email</Text>
-                <TextInput
-                  style={styles.input}
-                  placeholder="your@email.com"
-                  placeholderTextColor={colors.textMuted}
-                  value={email}
-                  onChangeText={setEmail}
-                  keyboardType="email-address"
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                />
-              </View>
-
-              <TouchableOpacity
-                style={[styles.submitButton, isLoading && styles.buttonDisabled]}
-                onPress={handleForgotSend}
-                disabled={isLoading}
-              >
-                {isLoading ? (
-                  <ActivityIndicator color={colors.textOnPrimary} />
-                ) : (
-                  <Text style={styles.submitButtonText}>Send reset email</Text>
-                )}
-              </TouchableOpacity>
-            </View>
-
-            <TouchableOpacity
-              style={styles.toggleButton}
-              onPress={() => setRecoveryMode('reset')}
-            >
-              <Text style={styles.toggleText}>
-                Already have a code?{' '}
-                <Text style={styles.toggleTextBold}>Enter reset code</Text>
-              </Text>
-            </TouchableOpacity>
-          </ScrollView>
-        </KeyboardAvoidingView>
-      </SafeAreaView>
-    );
-  }
-
-  // Reset password (code + new password)
-  if (recoveryMode === 'reset') {
-    return (
-      <SafeAreaView style={styles.container}>
-        <KeyboardAvoidingView
-          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-          style={styles.keyboardView}
-        >
-          <ScrollView
-            contentContainerStyle={styles.scrollContent}
-            keyboardShouldPersistTaps="handled"
-            showsVerticalScrollIndicator={false}
-          >
-            <TouchableOpacity style={styles.backButton} onPress={goBack}>
-              <Text style={styles.backButtonText}>← Back</Text>
-            </TouchableOpacity>
-
-            <View style={styles.formHeader}>
-              <Text style={styles.formTitle}>New password</Text>
-              <Text style={styles.formSubtitle}>
-                Paste the code from your email, then choose a new password (8+ characters, with a
-                letter and a number).
-              </Text>
-            </View>
-
-            <View style={styles.formContainer}>
-              <View style={styles.inputContainer}>
-                <Text style={styles.inputLabel}>Email</Text>
-                <TextInput
-                  style={styles.input}
-                  placeholder="your@email.com"
-                  placeholderTextColor={colors.textMuted}
-                  value={email}
-                  onChangeText={setEmail}
-                  keyboardType="email-address"
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                />
-              </View>
-
-              <View style={styles.inputContainer}>
-                <Text style={styles.inputLabel}>Reset code</Text>
-                <TextInput
-                  style={styles.input}
-                  placeholder="Paste code from email"
-                  placeholderTextColor={colors.textMuted}
-                  value={resetToken}
-                  onChangeText={setResetToken}
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                />
-              </View>
-
-              <View style={styles.inputContainer}>
-                <Text style={styles.inputLabel}>New password</Text>
-                <TextInput
-                  style={styles.input}
-                  placeholder="••••••••"
-                  placeholderTextColor={colors.textMuted}
-                  value={newPassword}
-                  onChangeText={setNewPassword}
-                  secureTextEntry
-                />
-              </View>
-
-              <View style={styles.inputContainer}>
-                <Text style={styles.inputLabel}>Confirm password</Text>
-                <TextInput
-                  style={styles.input}
-                  placeholder="••••••••"
-                  placeholderTextColor={colors.textMuted}
-                  value={confirmPassword}
-                  onChangeText={setConfirmPassword}
-                  secureTextEntry
-                />
-              </View>
-
-              <TouchableOpacity
-                style={[styles.submitButton, isLoading && styles.buttonDisabled]}
-                onPress={handleResetSubmit}
-                disabled={isLoading}
-              >
-                {isLoading ? (
-                  <ActivityIndicator color={colors.textOnPrimary} />
-                ) : (
-                  <Text style={styles.submitButtonText}>Update password</Text>
-                )}
-              </TouchableOpacity>
-            </View>
-          </ScrollView>
-        </KeyboardAvoidingView>
       </SafeAreaView>
     );
   }
@@ -386,24 +122,32 @@ export default function AuthScreen() {
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         style={styles.keyboardView}
       >
-        <ScrollView
+        <ScrollView 
           contentContainerStyle={styles.scrollContent}
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
         >
-          <TouchableOpacity style={styles.backButton} onPress={goBack}>
+          {/* Back button */}
+          <TouchableOpacity 
+            style={styles.backButton}
+            onPress={() => setShowForm(false)}
+          >
             <Text style={styles.backButtonText}>← Back</Text>
           </TouchableOpacity>
 
+          {/* Header */}
           <View style={styles.formHeader}>
-            <Text style={styles.formTitle}>{isLogin ? 'Welcome Back!' : 'Create Account'}</Text>
+            <Text style={styles.formTitle}>
+              {isLogin ? 'Welcome Back!' : 'Create Account'}
+            </Text>
             <Text style={styles.formSubtitle}>
-              {isLogin
-                ? 'Sign in to continue your journey'
+              {isLogin 
+                ? 'Sign in to continue your journey' 
                 : 'Start hatching endangered animals today'}
             </Text>
           </View>
 
+          {/* Form */}
           <View style={styles.formContainer}>
             <View style={styles.inputContainer}>
               <Text style={styles.inputLabel}>Email</Text>
@@ -431,15 +175,6 @@ export default function AuthScreen() {
               />
             </View>
 
-            {isLogin && (
-              <TouchableOpacity
-                style={styles.forgotLinkWrap}
-                onPress={() => setRecoveryMode('forgot')}
-              >
-                <Text style={styles.forgotLinkText}>Forgot password?</Text>
-              </TouchableOpacity>
-            )}
-
             <TouchableOpacity
               style={[styles.submitButton, isLoading && styles.buttonDisabled]}
               onPress={handleSubmit}
@@ -455,16 +190,18 @@ export default function AuthScreen() {
             </TouchableOpacity>
           </View>
 
+          {/* Toggle between login/register */}
           <TouchableOpacity
             style={styles.toggleButton}
-            onPress={() => {
-              setRecoveryMode(null);
-              setIsLogin(!isLogin);
-            }}
+            onPress={() => setIsLogin(!isLogin)}
           >
             <Text style={styles.toggleText}>
-              {isLogin ? "Don't have an account? " : 'Already have an account? '}
-              <Text style={styles.toggleTextBold}>{isLogin ? 'Sign Up' : 'Sign In'}</Text>
+              {isLogin
+                ? "Don't have an account? "
+                : 'Already have an account? '}
+              <Text style={styles.toggleTextBold}>
+                {isLogin ? 'Sign Up' : 'Sign In'}
+              </Text>
             </Text>
           </TouchableOpacity>
         </ScrollView>
@@ -589,16 +326,6 @@ const styles = StyleSheet.create({
     fontSize: 16,
     borderWidth: 1,
     borderColor: colors.cardBorder,
-  },
-  forgotLinkWrap: {
-    alignSelf: 'flex-end',
-    marginBottom: spacing.sm,
-    marginTop: -spacing.xs,
-  },
-  forgotLinkText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: colors.primary,
   },
   submitButton: {
     backgroundColor: colors.primary,

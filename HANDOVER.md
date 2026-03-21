@@ -55,7 +55,7 @@ endura-v-2/
 ### Railway Environment Variables (set via Railway dashboard)
 - `DATABASE_URL` — PostgreSQL connection string
 - `SECRET_KEY` — JWT signing key (was updated from hardcoded to env var)
-- `ADMIN_API_KEY` — Admin dashboard auth key (required — no default fallback)
+- `ADMIN_API_KEY` — Admin dashboard auth key (default fallback: `endura-admin-2024`)
 - `STRIPE_SECRET_KEY` — Stripe API key (optional, for payment intents)
 
 ### Vercel (Website)
@@ -66,12 +66,12 @@ endura-v-2/
 - **Important**: There's also an `aseemmunshi` Vercel account — do NOT use it. The domain is linked to the `phaedrus75` account.
 
 ### Every.org (Donations)
-- **API Key**: Set in `frontend/.env` (label: "endura") — do NOT commit to git
+- **API Key**: `pk_live_8913a39d0db6790bf98977221209232b` (label: "endura")
 - **Webhook URL**: `https://web-production-34028.up.railway.app/webhook/every-org`
 - **Fundraising link**: Uses Every.org prefilled donate URLs with `partnerDonationId` for user tracking
 
 ### PostHog (Product Analytics)
-- **SDK Key** (frontend): Set in `frontend/.env` as `EXPO_PUBLIC_POSTHOG_API_KEY` — do NOT commit to git
+- **SDK Key** (frontend): `phc_qlSNrffxYPTSRAxQy0gC7q7h4DmhMiScXYwriCiTOtr`
 - **Personal API Key** (admin dashboard): Stored in browser localStorage as `phPersonalKey`. Needs scopes: `project:read`, `query:read`, `insight:read`, `person:read`.
 
 ---
