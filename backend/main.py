@@ -85,12 +85,18 @@ def health_check():
     return {
         "status": "healthy",
         "app": "Endura API",
-        "version": "1.0.48",
+        "version": "1.0.49",
     }
 
 @app.get("/health")
 def health():
-    return {"status": "ok"}
+    resend_key = os.getenv("RESEND_API_KEY")
+    return {
+        "status": "ok",
+        "resend_configured": bool(resend_key),
+        "resend_key_length": len(resend_key) if resend_key else 0,
+        "resend_key_prefix": resend_key[:6] + "..." if resend_key else None,
+    }
 
 
 
