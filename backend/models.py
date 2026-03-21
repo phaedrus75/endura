@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Float, DateTime, Boolean, ForeignKey, Text
+from sqlalchemy import Column, Integer, String, Float, DateTime, Boolean, ForeignKey, Text, LargeBinary
 from sqlalchemy.orm import relationship
 from datetime import datetime
 from database import Base
@@ -287,6 +287,17 @@ class ShopItem(Base):
     category = Column(String, default="accessories")
     rarity = Column(String, default="common")
     is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class Upload(Base):
+    """Uploaded images stored in DB"""
+    __tablename__ = "uploads"
+
+    id = Column(Integer, primary_key=True, index=True)
+    filename = Column(String, nullable=False)
+    content_type = Column(String, nullable=False)
+    data = Column(LargeBinary, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
 
 

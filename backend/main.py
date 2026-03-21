@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Depends, HTTPException, status, Request, Header
+from fastapi import FastAPI, Depends, HTTPException, status, Request, Header, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
@@ -8,7 +8,7 @@ from typing import List, Optional
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 import models
 import schemas
 import crud
@@ -1755,6 +1755,46 @@ def admin_delete_animal(animal_id: int, db: Session = Depends(get_db), _=Depends
     db.delete(animal)
     db.commit()
     return {"deleted": True, "id": animal_id}
+
+
+# ============ Image Uploads ============
+
+ALLOWED_TYPES = {"image/png", "image/jpeg", "image/webp", "image/gif"}
+MAX_FILE_SIZE = 5 * 1024 * 1024  # 5 MB
+
+@app.post("/admin/upload")
+async def admin_upload_image(
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    _=Depends(verify_admin),
+):
+    if file.content_type not in ALLOWED_TYPES:
+        raise HTTPException(400, f"File type {file.content_type} not allowed")
+    data = await file.read()
+    if len(data) > MAX_FILE_SIZE:
+        raise HTTPException(400, "File too large (max 5 MB)")
+    upload = models.Upload(
+        filename=file.filename or "image.png",
+        content_type=file.content_type,
+        data=data,
+    )
+    db.add(upload)
+    db.commit()
+    db.refresh(upload)
+    base = os.getenv("API_BASE_URL", "https://web-production-34028.up.railway.app")
+    return {"id": upload.id, "url": f"{base}/uploads/{upload.id}"}
+
+
+@app.get("/uploads/{upload_id}")
+def serve_upload(upload_id: int, db: Session = Depends(get_db)):
+    upload = db.query(models.Upload).filter(models.Upload.id == upload_id).first()
+    if not upload:
+        raise HTTPException(404, "Not found")
+    return Response(
+        content=upload.data,
+        media_type=upload.content_type,
+        headers={"Cache-Control": "public, max-age=31536000"},
+    )
 
 
 @app.get("/admin/tips")

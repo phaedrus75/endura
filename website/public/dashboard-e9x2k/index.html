@@ -199,6 +199,18 @@
         }
         .btn-delete:hover { background: var(--red); color: #fff; }
 
+        /* ---- Image Upload ---- */
+        .upload-row { display: flex; gap: 10px; align-items: center; }
+        .upload-row input[type="url"] { flex: 1; }
+        .upload-btn {
+            padding: 8px 16px; background: var(--forest-light); color: #fff; border: none;
+            border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; white-space: nowrap;
+        }
+        .upload-btn:hover { opacity: .85; }
+        .upload-btn.uploading { opacity: .5; pointer-events: none; }
+        .upload-preview { margin-top: 8px; }
+        .upload-preview img { max-height: 120px; border-radius: 10px; border: 1px solid var(--border); }
+
         /* ---- Sub-tabs ---- */
         .sub-tabs { display: flex; gap: 4px; margin-bottom: 20px; background: var(--bg); border-radius: 10px; padding: 4px; }
         .sub-tab {
@@ -554,8 +566,13 @@
             </select>
             <label>Conservation Status</label>
             <input type="text" id="animalEditStatus">
-            <label>Image URL</label>
-            <input type="url" id="animalEditImage" placeholder="https://...">
+            <label>Image</label>
+            <div class="upload-row">
+                <input type="url" id="animalEditImage" placeholder="https://... or upload →">
+                <input type="file" id="animalFileInput" accept="image/*" style="display:none" onchange="handleAnimalUpload(this)">
+                <button type="button" class="upload-btn" id="animalUploadBtn" onclick="document.getElementById('animalFileInput').click()">Upload</button>
+            </div>
+            <div class="upload-preview" id="animalUploadPreview"></div>
             <label>Description</label>
             <textarea id="animalEditDesc"></textarea>
             <div class="save-success" id="animalSaveSuccess">Saved successfully</div>
@@ -614,8 +631,13 @@
             <input type="text" id="shopEditName" required>
             <label>Emoji</label>
             <input type="text" id="shopEditEmoji" placeholder="🎩">
-            <label>Image Key</label>
-            <input type="text" id="shopEditImageKey" placeholder="e.g. tophat">
+            <label>Image</label>
+            <div class="upload-row">
+                <input type="text" id="shopEditImageKey" placeholder="URL or image key">
+                <input type="file" id="shopFileInput" accept="image/*" style="display:none" onchange="handleShopUpload(this)">
+                <button type="button" class="upload-btn" id="shopUploadBtn" onclick="document.getElementById('shopFileInput').click()">Upload</button>
+            </div>
+            <div class="upload-preview" id="shopUploadPreview"></div>
             <label>Description</label>
             <textarea id="shopEditDesc"></textarea>
             <label>Price (Coins)</label>
@@ -695,6 +717,60 @@ async function adminFetch(path) {
     const res = await fetch(API_URL + path, { headers: { 'X-Admin-Key': API_KEY } });
     if (!res.ok) throw new Error(res.status);
     return res.json();
+}
+
+async function uploadImage(file) {
+    const form = new FormData();
+    form.append('file', file);
+    const res = await fetch(API_URL + '/admin/upload', {
+        method: 'POST',
+        headers: { 'X-Admin-Key': API_KEY },
+        body: form,
+    });
+    if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.detail || 'Upload failed');
+    }
+    return res.json();
+}
+
+async function handleAnimalUpload(input) {
+    const file = input.files[0];
+    if (!file) return;
+    const btn = document.getElementById('animalUploadBtn');
+    btn.textContent = 'Uploading…';
+    btn.classList.add('uploading');
+    try {
+        const result = await uploadImage(file);
+        document.getElementById('animalEditImage').value = result.url;
+        document.getElementById('animalUploadPreview').innerHTML = `<img src="${result.url}">`;
+        document.getElementById('animalImgWrap').innerHTML = `<img class="animal-detail-img" src="${result.url}">`;
+    } catch (e) {
+        alert('Upload failed: ' + e.message);
+    } finally {
+        btn.textContent = 'Upload';
+        btn.classList.remove('uploading');
+        input.value = '';
+    }
+}
+
+async function handleShopUpload(input) {
+    const file = input.files[0];
+    if (!file) return;
+    const btn = document.getElementById('shopUploadBtn');
+    btn.textContent = 'Uploading…';
+    btn.classList.add('uploading');
+    try {
+        const result = await uploadImage(file);
+        document.getElementById('shopEditImageKey').value = result.url;
+        document.getElementById('shopUploadPreview').innerHTML = `<img src="${result.url}">`;
+    } catch (e) {
+        alert('Upload failed: ' + e.message);
+    } finally {
+        btn.textContent = 'Upload';
+        btn.classList.remove('uploading');
+        input.value = '';
+    }
 }
 
 // ----- Navigation -----
@@ -944,6 +1020,9 @@ function openAnimalDetail(id) {
         wrap.innerHTML = `<div class="animal-detail-placeholder">${getAnimalEmoji(a.name)}</div>`;
     }
 
+    const preview = document.getElementById('animalUploadPreview');
+    preview.innerHTML = a.image_url ? `<img src="${esc(a.image_url)}">` : '';
+
     document.getElementById('animalSaveSuccess').style.display = 'none';
     document.getElementById('animalModal').classList.add('active');
 }
@@ -1026,6 +1105,7 @@ function openCreateAnimal() {
     document.getElementById('animalEditDesc').value = '';
     document.getElementById('animalDetailRarity').innerHTML = '<span class="badge badge-green">common</span>';
     document.getElementById('animalImgWrap').innerHTML = '<div class="animal-detail-placeholder">🐾</div>';
+    document.getElementById('animalUploadPreview').innerHTML = '';
     document.getElementById('animalSaveSuccess').style.display = 'none';
     document.getElementById('animalModal').classList.add('active');
 }
@@ -1190,6 +1270,8 @@ function openShopDetail(id) {
     document.getElementById('shopEditPrice').value = item.price;
     document.getElementById('shopEditCategory').value = item.category;
     document.getElementById('shopEditRarity').value = item.rarity;
+    const shopPreview = document.getElementById('shopUploadPreview');
+    shopPreview.innerHTML = item.image_key && item.image_key.startsWith('http') ? `<img src="${esc(item.image_key)}">` : '';
     document.getElementById('shopSaveSuccess').style.display = 'none';
     document.getElementById('shopModal').classList.add('active');
 }
@@ -1206,6 +1288,7 @@ function openCreateShop(category) {
     document.getElementById('shopEditPrice').value = '0';
     document.getElementById('shopEditCategory').value = category || 'accessories';
     document.getElementById('shopEditRarity').value = 'common';
+    document.getElementById('shopUploadPreview').innerHTML = '';
     document.getElementById('shopSaveSuccess').style.display = 'none';
     document.getElementById('shopModal').classList.add('active');
 }
