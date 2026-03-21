@@ -1,8 +1,11 @@
 import * as SecureStore from 'expo-secure-store';
 
-// Use local development server
-export const API_URL = 'https://web-production-34028.up.railway.app';
+const DEFAULT_API = 'https://web-production-34028.up.railway.app';
+export const API_URL = (process.env.EXPO_PUBLIC_API_URL || DEFAULT_API).replace(/\/$/, '');
 
+if (__DEV__) {
+  console.log(`[Endura] API_URL=${API_URL}`);
+}
 
 // Types
 export interface User {
@@ -209,24 +212,67 @@ export interface UserStats {
   study_minutes_by_subject: { [key: string]: number };
 }
 
+/** POST JSON without auth header (login, password reset, etc.). */
+async function publicJsonPost<T>(
+  endpoint: string,
+  body: Record<string, unknown>,
+): Promise<T> {
+  const url = `${API_URL}${endpoint}`;
+  try {
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+      },
+      body: JSON.stringify(body),
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      const detail = (data as { detail?: unknown }).detail;
+      const msg = Array.isArray(detail)
+        ? detail.map((e: { msg?: string }) => e.msg || JSON.stringify(e)).join('; ')
+        : typeof detail === 'string'
+          ? detail
+          : `HTTP ${response.status}`;
+      throw new Error(msg);
+    }
+    return data as T;
+  } catch (error: unknown) {
+    const raw =
+      typeof (error as Error)?.message === 'string'
+        ? (error as Error).message
+        : error instanceof Error
+          ? error.message
+          : String(error);
+    if (__DEV__) console.error('API error:', endpoint, raw);
+    if (raw === 'Network request failed' || raw === 'Failed to fetch') {
+      throw new Error(
+        `Cannot reach the server. Check Wi‑Fi/VPN, then try again. (${API_URL})`,
+      );
+    }
+    throw error instanceof Error ? error : new Error(raw);
+  }
+}
+
 // Helper function for API calls
 async function apiFetch<T>(
   endpoint: string,
   options: RequestInit = {}
 ): Promise<T> {
   const token = await SecureStore.getItemAsync('authToken');
-  
+
   const headers: HeadersInit = {
     'Content-Type': 'application/json',
     ...options.headers,
   };
-  
+
   if (token) {
     headers['Authorization'] = `Bearer ${token}`;
   }
-  
+
   const url = `${API_URL}${endpoint}`;
-  
+
   try {
     const response = await fetch(url, {
       ...options,
@@ -249,8 +295,22 @@ async function apiFetch<T>(
     
     return response.json();
   } catch (error: any) {
-    if (__DEV__) console.error('API error:', endpoint, error.message);
-    throw error;
+    const raw =
+      typeof error?.message === 'string'
+        ? error.message
+        : error instanceof Error
+          ? error.message
+          : String(error);
+    if (__DEV__) console.error('API error:', endpoint, raw);
+    const networkish =
+      raw === 'Network request failed' ||
+      raw === 'Failed to fetch';
+    if (networkish) {
+      throw new Error(
+        `Cannot reach the server. Check Wi‑Fi/VPN, then try again. (${API_URL})`,
+      );
+    }
+    throw error instanceof Error ? error : new Error(raw);
   }
 }
 
@@ -279,6 +339,16 @@ export const authAPI = {
   },
   
   getMe: () => apiFetch<User>('/auth/me'),
+
+  forgotPassword: (email: string) =>
+    publicJsonPost<{ message: string }>('/auth/forgot-password', { email }),
+
+  resetPassword: (email: string, token: string, password: string) =>
+    publicJsonPost<{ message: string }>('/auth/reset-password', {
+      email,
+      token,
+      password,
+    }),
   
   setUsername: (username: string) =>
     apiFetch('/user/username', {

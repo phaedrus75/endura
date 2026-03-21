@@ -1,7 +1,10 @@
 from sqlalchemy.orm import Session
 from sqlalchemy import func, desc
 from datetime import datetime, timedelta
-from typing import List, Optional
+from typing import List, Optional, Tuple
+import hashlib
+import hmac
+import secrets
 import models
 import random
 
@@ -9,11 +12,18 @@ import random
 # ============ User CRUD ============
 
 def get_user_by_email(db: Session, email: str) -> Optional[models.User]:
-    return db.query(models.User).filter(models.User.email == email).first()
+    if not email or not str(email).strip():
+        return None
+    normalized = str(email).strip().lower()
+    return (
+        db.query(models.User)
+        .filter(func.lower(models.User.email) == normalized)
+        .first()
+    )
 
 
 def create_user(db: Session, email: str, hashed_password: str) -> models.User:
-    user = models.User(email=email, hashed_password=hashed_password)
+    user = models.User(email=str(email).strip().lower(), hashed_password=hashed_password)
     db.add(user)
     db.commit()
     db.refresh(user)
@@ -31,6 +41,49 @@ def update_username(db: Session, user_id: int, username: str) -> models.User:
         db.commit()
         db.refresh(user)
     return user
+
+
+def _hash_reset_token(raw: str) -> str:
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+
+
+def start_password_reset(db: Session, email: str) -> Optional[str]:
+    """
+    If user exists, store hashed token + expiry and return the raw token for email.
+    Otherwise return None.
+    """
+    user = get_user_by_email(db, email)
+    if not user:
+        return None
+    raw = secrets.token_urlsafe(32)
+    user.password_reset_token_hash = _hash_reset_token(raw)
+    user.password_reset_expires_at = datetime.utcnow() + timedelta(hours=1)
+    db.commit()
+    db.refresh(user)
+    return raw
+
+
+def complete_password_reset(
+    db: Session, email: str, token_raw: str, hashed_new_password: str
+) -> Tuple[bool, Optional[str]]:
+    """
+    Returns (success, error_detail). On success clears reset fields and sets new password hash.
+    """
+    user = get_user_by_email(db, email)
+    if not user or not user.password_reset_token_hash or not user.password_reset_expires_at:
+        return False, "Invalid or expired reset code"
+    if user.password_reset_expires_at < datetime.utcnow():
+        return False, "Invalid or expired reset code"
+    expected = user.password_reset_token_hash
+    actual = _hash_reset_token(token_raw.strip())
+    if not hmac.compare_digest(expected, actual):
+        return False, "Invalid or expired reset code"
+    user.hashed_password = hashed_new_password
+    user.password_reset_token_hash = None
+    user.password_reset_expires_at = None
+    db.commit()
+    db.refresh(user)
+    return True, None
 
 
 # ============ Task CRUD ============

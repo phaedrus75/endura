@@ -12,6 +12,7 @@ from fastapi.responses import JSONResponse
 import models
 import schemas
 import crud
+import mailer
 from database import engine, get_db, Base, SQLALCHEMY_DATABASE_URL
 from auth import (
     get_password_hash, verify_password, create_access_token,
@@ -43,6 +44,8 @@ _migrations = [
     ("users", "notification_enabled", "ALTER TABLE users ADD COLUMN notification_enabled BOOLEAN DEFAULT TRUE"),
     ("users", "study_reminder_hour", "ALTER TABLE users ADD COLUMN study_reminder_hour INTEGER"),
     ("users", "study_reminder_minute", "ALTER TABLE users ADD COLUMN study_reminder_minute INTEGER"),
+    ("users", "password_reset_token_hash", "ALTER TABLE users ADD COLUMN password_reset_token_hash VARCHAR(64)"),
+    ("users", "password_reset_expires_at", "ALTER TABLE users ADD COLUMN password_reset_expires_at TIMESTAMP"),
     ("donations", "user_id", "ALTER TABLE donations ADD COLUMN user_id INTEGER REFERENCES users(id)"),
     ("donations", "partner_donation_id", "ALTER TABLE donations ADD COLUMN partner_donation_id VARCHAR"),
 ]
@@ -83,7 +86,7 @@ def health_check():
     return {
         "status": "healthy",
         "app": "Endura API",
-        "version": "1.0.45",
+        "version": "1.0.46",
     }
 
 @app.get("/health")
@@ -338,6 +341,34 @@ def login(request: Request, user: schemas.UserLogin, db: Session = Depends(get_d
         expires_delta=timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     )
     return {"access_token": access_token, "token_type": "bearer"}
+
+
+@app.post("/auth/forgot-password")
+@limiter.limit("10/hour")
+def forgot_password(
+    request: Request, data: schemas.ForgotPasswordRequest, db: Session = Depends(get_db)
+):
+    """
+    Always returns the same message. If the user exists, stores a reset token and sends email (when SMTP is configured).
+    """
+    raw = crud.start_password_reset(db, str(data.email))
+    if raw:
+        mailer.send_password_reset_email(str(data.email), raw)
+    return {
+        "message": "If an account exists for that email, you will receive reset instructions shortly."
+    }
+
+
+@app.post("/auth/reset-password")
+@limiter.limit("15/hour")
+def reset_password(
+    request: Request, data: schemas.ResetPasswordRequest, db: Session = Depends(get_db)
+):
+    hp = get_password_hash(data.password)
+    ok, err = crud.complete_password_reset(db, str(data.email), data.token, hp)
+    if not ok:
+        raise HTTPException(status_code=400, detail=err or "Reset failed")
+    return {"message": "Password updated. You can sign in now."}
 
 
 @app.get("/auth/me", response_model=schemas.UserResponse)
