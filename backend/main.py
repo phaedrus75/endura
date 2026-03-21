@@ -21,6 +21,7 @@ from auth import (
 import os
 import json as _json
 import logging
+import threading
 import stripe
 
 logger = logging.getLogger(__name__)
@@ -86,7 +87,7 @@ def health_check():
     return {
         "status": "healthy",
         "app": "Endura API",
-        "version": "1.0.47",
+        "version": "1.0.48",
     }
 
 @app.get("/health")
@@ -96,9 +97,11 @@ def health():
 
 
 # ============ Startup: Seed Animals ============
+# Run in a background thread so Uvicorn can bind and pass Railway healthchecks immediately.
+# Heavy seeding must not block the ASGI lifespan (otherwise / returns only after minutes).
 
-@app.on_event("startup")
-def seed_check():
+
+def _seed_check_impl():
     """Quick check: only seed if data is missing"""
     try:
         db = next(get_db())
@@ -308,6 +311,11 @@ def seed_check():
         import traceback
         print(f"Warning: Could not seed database on startup: {e}")
         traceback.print_exc()
+
+
+@app.on_event("startup")
+def seed_check():
+    threading.Thread(target=_seed_check_impl, daemon=True, name="seed-check").start()
 
 
 # ============ Auth Endpoints ============
