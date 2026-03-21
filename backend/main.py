@@ -85,7 +85,7 @@ def health_check():
     return {
         "status": "healthy",
         "app": "Endura API",
-        "version": "1.0.47",
+        "version": "1.0.48",
     }
 
 @app.get("/health")
@@ -373,6 +373,7 @@ def forgot_password(request: Request, body: ForgotPasswordRequest, db: Session =
 
     resend_key = os.getenv("RESEND_API_KEY")
     resend_from = os.getenv("RESEND_FROM", "Endura <onboarding@resend.dev>")
+    logger.info(f"RESEND_API_KEY present: {bool(resend_key)}, length: {len(resend_key) if resend_key else 0}")
 
     if resend_key:
         try:
