@@ -371,46 +371,35 @@ def forgot_password(request: Request, body: ForgotPasswordRequest, db: Session =
     user.reset_token_expires = datetime.utcnow() + timedelta(minutes=15)
     db.commit()
 
-    smtp_user = os.getenv("SMTP_USER")
-    smtp_pass = os.getenv("SMTP_PASS")
-    smtp_host = os.getenv("SMTP_HOST", "smtp.gmail.com")
-    smtp_port = int(os.getenv("SMTP_PORT", "587"))
+    resend_key = os.getenv("RESEND_API_KEY")
+    resend_from = os.getenv("RESEND_FROM", "Endura <onboarding@resend.dev>")
 
-    if smtp_user and smtp_pass:
+    if resend_key:
         try:
-            import smtplib
-            from email.mime.text import MIMEText
-            from email.mime.multipart import MIMEMultipart
+            import resend
+            resend.api_key = resend_key
 
-            msg = MIMEMultipart("alternative")
-            msg["Subject"] = "Endura — Password Reset Code"
-            msg["From"] = smtp_user
-            msg["To"] = body.email
-
-            text = f"Your Endura password reset code is: {code}\n\nThis code expires in 15 minutes."
-            html = f"""
-            <div style="font-family:sans-serif;max-width:400px;margin:0 auto;padding:32px;background:#f0f2f0;border-radius:16px">
-                <h2 style="color:#4A7C59;margin:0 0 8px">Endura</h2>
-                <p style="color:#555;margin:0 0 24px">Password Reset</p>
-                <div style="background:#fff;border-radius:12px;padding:24px;text-align:center;margin-bottom:20px">
-                    <p style="color:#888;margin:0 0 8px;font-size:14px">Your reset code is</p>
-                    <p style="font-size:36px;font-weight:700;letter-spacing:8px;color:#4A7C59;margin:0">{code}</p>
+            resend.Emails.send({
+                "from": resend_from,
+                "to": [body.email],
+                "subject": "Endura — Password Reset Code",
+                "html": f"""
+                <div style="font-family:sans-serif;max-width:400px;margin:0 auto;padding:32px;background:#f0f2f0;border-radius:16px">
+                    <h2 style="color:#4A7C59;margin:0 0 8px">Endura</h2>
+                    <p style="color:#555;margin:0 0 24px">Password Reset</p>
+                    <div style="background:#fff;border-radius:12px;padding:24px;text-align:center;margin-bottom:20px">
+                        <p style="color:#888;margin:0 0 8px;font-size:14px">Your reset code is</p>
+                        <p style="font-size:36px;font-weight:700;letter-spacing:8px;color:#4A7C59;margin:0">{code}</p>
+                    </div>
+                    <p style="color:#999;font-size:12px;margin:0;text-align:center">This code expires in 15 minutes.</p>
                 </div>
-                <p style="color:#999;font-size:12px;margin:0;text-align:center">This code expires in 15 minutes.</p>
-            </div>
-            """
-            msg.attach(MIMEText(text, "plain"))
-            msg.attach(MIMEText(html, "html"))
-
-            with smtplib.SMTP(smtp_host, smtp_port) as server:
-                server.starttls()
-                server.login(smtp_user, smtp_pass)
-                server.sendmail(smtp_user, body.email, msg.as_string())
-            logger.info(f"Reset code sent to {body.email}")
+                """,
+            })
+            logger.info(f"Reset code sent to {body.email} via Resend")
         except Exception as e:
-            logger.error(f"Failed to send reset email: {e}")
+            logger.error(f"Failed to send reset email via Resend: {e}")
     else:
-        logger.warning(f"SMTP not configured — reset code for {body.email}: {code}")
+        logger.warning(f"RESEND_API_KEY not set — reset code for {body.email}: {code}")
 
     return {"message": "If that email exists, a reset code has been sent."}
 
