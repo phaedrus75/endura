@@ -90,13 +90,7 @@ def health_check():
 
 @app.get("/health")
 def health():
-    resend_key = os.getenv("RESEND_API_KEY")
-    return {
-        "status": "ok",
-        "resend_configured": bool(resend_key),
-        "resend_key_length": len(resend_key) if resend_key else 0,
-        "resend_key_prefix": resend_key[:6] + "..." if resend_key else None,
-    }
+    return {"status": "ok"}
 
 
 
