@@ -24,6 +24,10 @@ class User(Base):
     total_study_minutes = Column(Integer, default=0)
     total_sessions = Column(Integer, default=0)
     
+    # Password reset
+    reset_token = Column(String, nullable=True)
+    reset_token_expires = Column(DateTime, nullable=True)
+
     # Push notification token
     push_token = Column(String, nullable=True)
     notification_enabled = Column(Boolean, default=True)

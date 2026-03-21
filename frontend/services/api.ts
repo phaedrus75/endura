@@ -277,7 +277,24 @@ export const authAPI = {
   logout: async () => {
     await SecureStore.deleteItemAsync('authToken');
   },
-  
+
+  forgotPassword: (email: string) =>
+    apiFetch<{ message: string }>('/auth/forgot-password', {
+      method: 'POST',
+      body: JSON.stringify({ email }),
+    }),
+
+  resetPassword: async (email: string, code: string, new_password: string) => {
+    const data = await apiFetch<{ message: string; access_token: string }>('/auth/reset-password', {
+      method: 'POST',
+      body: JSON.stringify({ email, code, new_password }),
+    });
+    if (data.access_token) {
+      await SecureStore.setItemAsync('authToken', data.access_token);
+    }
+    return data;
+  },
+
   getMe: () => apiFetch<User>('/auth/me'),
   
   setUsername: (username: string) =>

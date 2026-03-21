@@ -45,6 +45,8 @@ _migrations = [
     ("users", "study_reminder_minute", "ALTER TABLE users ADD COLUMN study_reminder_minute INTEGER"),
     ("donations", "user_id", "ALTER TABLE donations ADD COLUMN user_id INTEGER REFERENCES users(id)"),
     ("donations", "partner_donation_id", "ALTER TABLE donations ADD COLUMN partner_donation_id VARCHAR"),
+    ("users", "reset_token", "ALTER TABLE users ADD COLUMN reset_token VARCHAR"),
+    ("users", "reset_token_expires", "ALTER TABLE users ADD COLUMN reset_token_expires TIMESTAMP"),
 ]
 try:
     with engine.connect() as conn:
@@ -83,7 +85,7 @@ def health_check():
     return {
         "status": "healthy",
         "app": "Endura API",
-        "version": "1.0.45",
+        "version": "1.0.46",
     }
 
 @app.get("/health")
@@ -343,6 +345,105 @@ def login(request: Request, user: schemas.UserLogin, db: Session = Depends(get_d
 @app.get("/auth/me", response_model=schemas.UserResponse)
 def get_me(current_user: models.User = Depends(get_current_user)):
     return current_user
+
+
+# ============ Forgot / Reset Password ============
+
+class ForgotPasswordRequest(BaseModel):
+    email: str
+
+class ResetPasswordRequest(BaseModel):
+    email: str
+    code: str
+    new_password: str
+
+
+@app.post("/auth/forgot-password")
+@limiter.limit("5/minute")
+def forgot_password(request: Request, body: ForgotPasswordRequest, db: Session = Depends(get_db)):
+    import secrets
+    user = db.query(models.User).filter(models.User.email == body.email).first()
+    if not user:
+        return {"message": "If that email exists, a reset code has been sent."}
+
+    code = f"{secrets.randbelow(1000000):06d}"
+    user.reset_token = code
+    user.reset_token_expires = datetime.utcnow() + timedelta(minutes=15)
+    db.commit()
+
+    smtp_user = os.getenv("SMTP_USER")
+    smtp_pass = os.getenv("SMTP_PASS")
+    smtp_host = os.getenv("SMTP_HOST", "smtp.gmail.com")
+    smtp_port = int(os.getenv("SMTP_PORT", "587"))
+
+    if smtp_user and smtp_pass:
+        try:
+            import smtplib
+            from email.mime.text import MIMEText
+            from email.mime.multipart import MIMEMultipart
+
+            msg = MIMEMultipart("alternative")
+            msg["Subject"] = "Endura — Password Reset Code"
+            msg["From"] = smtp_user
+            msg["To"] = body.email
+
+            text = f"Your Endura password reset code is: {code}\n\nThis code expires in 15 minutes."
+            html = f"""
+            <div style="font-family:sans-serif;max-width:400px;margin:0 auto;padding:32px;background:#f0f2f0;border-radius:16px">
+                <h2 style="color:#4A7C59;margin:0 0 8px">Endura</h2>
+                <p style="color:#555;margin:0 0 24px">Password Reset</p>
+                <div style="background:#fff;border-radius:12px;padding:24px;text-align:center;margin-bottom:20px">
+                    <p style="color:#888;margin:0 0 8px;font-size:14px">Your reset code is</p>
+                    <p style="font-size:36px;font-weight:700;letter-spacing:8px;color:#4A7C59;margin:0">{code}</p>
+                </div>
+                <p style="color:#999;font-size:12px;margin:0;text-align:center">This code expires in 15 minutes.</p>
+            </div>
+            """
+            msg.attach(MIMEText(text, "plain"))
+            msg.attach(MIMEText(html, "html"))
+
+            with smtplib.SMTP(smtp_host, smtp_port) as server:
+                server.starttls()
+                server.login(smtp_user, smtp_pass)
+                server.sendmail(smtp_user, body.email, msg.as_string())
+            logger.info(f"Reset code sent to {body.email}")
+        except Exception as e:
+            logger.error(f"Failed to send reset email: {e}")
+    else:
+        logger.warning(f"SMTP not configured — reset code for {body.email}: {code}")
+
+    return {"message": "If that email exists, a reset code has been sent."}
+
+
+@app.post("/auth/reset-password")
+@limiter.limit("10/minute")
+def reset_password(request: Request, body: ResetPasswordRequest, db: Session = Depends(get_db)):
+    user = db.query(models.User).filter(models.User.email == body.email).first()
+    if not user or not user.reset_token:
+        raise HTTPException(status_code=400, detail="Invalid or expired reset code")
+
+    if user.reset_token != body.code:
+        raise HTTPException(status_code=400, detail="Invalid or expired reset code")
+
+    if user.reset_token_expires and user.reset_token_expires < datetime.utcnow():
+        user.reset_token = None
+        user.reset_token_expires = None
+        db.commit()
+        raise HTTPException(status_code=400, detail="Reset code has expired. Please request a new one.")
+
+    if len(body.new_password) < 6:
+        raise HTTPException(status_code=400, detail="Password must be at least 6 characters")
+
+    user.hashed_password = get_password_hash(body.new_password)
+    user.reset_token = None
+    user.reset_token_expires = None
+    db.commit()
+
+    access_token = create_access_token(
+        data={"sub": user.email},
+        expires_delta=timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    )
+    return {"message": "Password reset successful", "access_token": access_token, "token_type": "bearer"}
 
 
 @app.post("/user/username")

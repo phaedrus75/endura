@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import * as SecureStore from 'expo-secure-store';
 import {
   View,
@@ -12,15 +12,16 @@ import {
   ActivityIndicator,
   Dimensions,
   ScrollView,
+  Modal,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import LottieView from 'lottie-react-native';
 import { colors, shadows, spacing, borderRadius } from '../theme/colors';
 import { useAuth } from '../contexts/AuthContext';
+import { authAPI } from '../services/api';
 
 const { width } = Dimensions.get('window');
 
-// Animated Egg Logo Component using Lottie
 const AnimatedEggLogo = () => (
   <View style={styles.logoWrapper}>
     <LottieView
@@ -38,7 +39,85 @@ export default function AuthScreen() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const { login, register } = useAuth();
+  const { login, register, checkAuth } = useAuth();
+
+  const [showForgotModal, setShowForgotModal] = useState(false);
+  const [forgotStep, setForgotStep] = useState<'email' | 'code'>('email');
+  const [forgotEmail, setForgotEmail] = useState('');
+  const [resetCode, setResetCode] = useState(['', '', '', '', '', '']);
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [forgotLoading, setForgotLoading] = useState(false);
+  const codeInputRefs = useRef<(TextInput | null)[]>([]);
+
+  const handleForgotSubmitEmail = async () => {
+    if (!forgotEmail) {
+      Alert.alert('Error', 'Please enter your email');
+      return;
+    }
+    setForgotLoading(true);
+    try {
+      await authAPI.forgotPassword(forgotEmail);
+      setForgotStep('code');
+      Alert.alert('Code Sent', 'If an account exists with that email, a 6-digit reset code has been sent.');
+    } catch (error: any) {
+      Alert.alert('Error', error.message || 'Something went wrong');
+    } finally {
+      setForgotLoading(false);
+    }
+  };
+
+  const handleResetPassword = async () => {
+    const code = resetCode.join('');
+    if (code.length !== 6) {
+      Alert.alert('Error', 'Please enter the full 6-digit code');
+      return;
+    }
+    if (!newPassword || newPassword.length < 6) {
+      Alert.alert('Error', 'Password must be at least 6 characters');
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      Alert.alert('Error', 'Passwords do not match');
+      return;
+    }
+    setForgotLoading(true);
+    try {
+      await authAPI.resetPassword(forgotEmail, code, newPassword);
+      Alert.alert('Success', 'Your password has been reset!');
+      closeForgotModal();
+      await checkAuth();
+    } catch (error: any) {
+      Alert.alert('Error', error.message || 'Invalid or expired code');
+    } finally {
+      setForgotLoading(false);
+    }
+  };
+
+  const closeForgotModal = () => {
+    setShowForgotModal(false);
+    setForgotStep('email');
+    setForgotEmail('');
+    setResetCode(['', '', '', '', '', '']);
+    setNewPassword('');
+    setConfirmPassword('');
+  };
+
+  const handleCodeChange = (text: string, index: number) => {
+    if (text.length > 1) text = text.slice(-1);
+    const newCode = [...resetCode];
+    newCode[index] = text;
+    setResetCode(newCode);
+    if (text && index < 5) {
+      codeInputRefs.current[index + 1]?.focus();
+    }
+  };
+
+  const handleCodeKeyPress = (e: any, index: number) => {
+    if (e.nativeEvent.key === 'Backspace' && !resetCode[index] && index > 0) {
+      codeInputRefs.current[index - 1]?.focus();
+    }
+  };
 
   // Clear any stored auth data on mount (debug)
   useEffect(() => {
@@ -188,6 +267,18 @@ export default function AuthScreen() {
                 </Text>
               )}
             </TouchableOpacity>
+
+            {isLogin && (
+              <TouchableOpacity
+                style={styles.forgotButton}
+                onPress={() => {
+                  setForgotEmail(email);
+                  setShowForgotModal(true);
+                }}
+              >
+                <Text style={styles.forgotButtonText}>Forgot password?</Text>
+              </TouchableOpacity>
+            )}
           </View>
 
           {/* Toggle between login/register */}
@@ -206,6 +297,118 @@ export default function AuthScreen() {
           </TouchableOpacity>
         </ScrollView>
       </KeyboardAvoidingView>
+
+      <Modal visible={showForgotModal} animationType="slide" transparent>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalBox}>
+            <TouchableOpacity style={styles.modalClose} onPress={closeForgotModal}>
+              <Text style={{ fontSize: 22, color: colors.textMuted }}>✕</Text>
+            </TouchableOpacity>
+
+            {forgotStep === 'email' ? (
+              <>
+                <Text style={styles.modalTitle}>Reset Password</Text>
+                <Text style={styles.modalSubtitle}>
+                  Enter your email and we'll send you a 6-digit code to reset your password.
+                </Text>
+                <View style={styles.inputContainer}>
+                  <Text style={styles.inputLabel}>Email</Text>
+                  <TextInput
+                    style={styles.input}
+                    placeholder="your@email.com"
+                    placeholderTextColor={colors.textMuted}
+                    value={forgotEmail}
+                    onChangeText={setForgotEmail}
+                    keyboardType="email-address"
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                  />
+                </View>
+                <TouchableOpacity
+                  style={[styles.submitButton, forgotLoading && styles.buttonDisabled]}
+                  onPress={handleForgotSubmitEmail}
+                  disabled={forgotLoading}
+                >
+                  {forgotLoading ? (
+                    <ActivityIndicator color={colors.textOnPrimary} />
+                  ) : (
+                    <Text style={styles.submitButtonText}>Send Reset Code</Text>
+                  )}
+                </TouchableOpacity>
+              </>
+            ) : (
+              <>
+                <Text style={styles.modalTitle}>Enter Code</Text>
+                <Text style={styles.modalSubtitle}>
+                  We sent a 6-digit code to {forgotEmail}
+                </Text>
+
+                <View style={styles.codeRow}>
+                  {resetCode.map((digit, i) => (
+                    <TextInput
+                      key={i}
+                      ref={ref => { codeInputRefs.current[i] = ref; }}
+                      style={styles.codeInput}
+                      value={digit}
+                      onChangeText={text => handleCodeChange(text, i)}
+                      onKeyPress={e => handleCodeKeyPress(e, i)}
+                      keyboardType="number-pad"
+                      maxLength={1}
+                      selectTextOnFocus
+                    />
+                  ))}
+                </View>
+
+                <View style={styles.inputContainer}>
+                  <Text style={styles.inputLabel}>New Password</Text>
+                  <TextInput
+                    style={styles.input}
+                    placeholder="Min 6 characters"
+                    placeholderTextColor={colors.textMuted}
+                    value={newPassword}
+                    onChangeText={setNewPassword}
+                    secureTextEntry
+                  />
+                </View>
+
+                <View style={styles.inputContainer}>
+                  <Text style={styles.inputLabel}>Confirm Password</Text>
+                  <TextInput
+                    style={styles.input}
+                    placeholder="Re-enter password"
+                    placeholderTextColor={colors.textMuted}
+                    value={confirmPassword}
+                    onChangeText={setConfirmPassword}
+                    secureTextEntry
+                  />
+                </View>
+
+                <TouchableOpacity
+                  style={[styles.submitButton, forgotLoading && styles.buttonDisabled]}
+                  onPress={handleResetPassword}
+                  disabled={forgotLoading}
+                >
+                  {forgotLoading ? (
+                    <ActivityIndicator color={colors.textOnPrimary} />
+                  ) : (
+                    <Text style={styles.submitButtonText}>Reset Password</Text>
+                  )}
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={styles.resendButton}
+                  onPress={() => {
+                    setResetCode(['', '', '', '', '', '']);
+                    handleForgotSubmitEmail();
+                  }}
+                >
+                  <Text style={styles.forgotButtonText}>Resend code</Text>
+                </TouchableOpacity>
+              </>
+            )}
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -351,5 +554,66 @@ const styles = StyleSheet.create({
   toggleTextBold: {
     color: colors.primary,
     fontWeight: '700',
+  },
+  forgotButton: {
+    alignItems: 'center',
+    marginTop: spacing.md,
+  },
+  forgotButtonText: {
+    color: colors.primary,
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.4)',
+    justifyContent: 'flex-end',
+  },
+  modalBox: {
+    backgroundColor: colors.surface,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    padding: spacing.xl,
+    paddingBottom: 48,
+    ...shadows.medium,
+  },
+  modalClose: {
+    alignSelf: 'flex-end',
+    padding: 4,
+    marginBottom: spacing.sm,
+  },
+  modalTitle: {
+    fontSize: 24,
+    fontWeight: '700',
+    color: colors.textPrimary,
+    marginBottom: spacing.xs,
+  },
+  modalSubtitle: {
+    fontSize: 14,
+    color: colors.textSecondary,
+    marginBottom: spacing.lg,
+    lineHeight: 20,
+  },
+  codeRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: spacing.lg,
+    gap: 8,
+  },
+  codeInput: {
+    flex: 1,
+    height: 56,
+    borderRadius: borderRadius.md,
+    borderWidth: 2,
+    borderColor: colors.cardBorder,
+    backgroundColor: colors.surfaceAlt,
+    textAlign: 'center',
+    fontSize: 24,
+    fontWeight: '700',
+    color: colors.textPrimary,
+  },
+  resendButton: {
+    alignItems: 'center',
+    marginTop: spacing.md,
   },
 });
