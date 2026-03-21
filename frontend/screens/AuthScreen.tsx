@@ -115,6 +115,13 @@ export default function AuthScreen() {
       Alert.alert('Email required', 'Enter the email for your account.');
       return;
     }
+    if (!e.includes('@') || !e.includes('.')) {
+      Alert.alert(
+        'Complete email required',
+        'Use your full address, e.g. aseem.munshi@gmail.com (include @ and the domain).',
+      );
+      return;
+    }
     setIsLoading(true);
     try {
       await authAPI.forgotPassword(e);

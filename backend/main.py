@@ -86,7 +86,7 @@ def health_check():
     return {
         "status": "healthy",
         "app": "Endura API",
-        "version": "1.0.46",
+        "version": "1.0.47",
     }
 
 @app.get("/health")
