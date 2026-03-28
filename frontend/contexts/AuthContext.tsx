@@ -29,8 +29,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const loadProfilePicForUser = async (userData: User) => {
     try {
-      const uri = await AsyncStorage.getItem(profilePicKey(userData.id));
-      setProfilePicState(uri);
+      if (userData.profile_pic_url) {
+        setProfilePicState(userData.profile_pic_url);
+        await AsyncStorage.setItem(profilePicKey(userData.id), userData.profile_pic_url);
+        return;
+      }
+      const localUri = await AsyncStorage.getItem(profilePicKey(userData.id));
+      if (localUri) {
+        setProfilePicState(localUri);
+        authAPI.uploadProfilePic(localUri).then(res => {
+          setProfilePicState(res.profile_pic_url);
+          AsyncStorage.setItem(profilePicKey(userData.id), res.profile_pic_url);
+        }).catch(() => {});
+      } else {
+        setProfilePicState(null);
+      }
     } catch {
       setProfilePicState(null);
     }
@@ -63,8 +76,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (!user) return;
     if (uri) {
       await AsyncStorage.setItem(profilePicKey(user.id), uri);
+      try {
+        const res = await authAPI.uploadProfilePic(uri);
+        setProfilePicState(res.profile_pic_url);
+        await AsyncStorage.setItem(profilePicKey(user.id), res.profile_pic_url);
+      } catch (e) {
+        console.log('Failed to upload profile pic to server:', e);
+      }
     } else {
       await AsyncStorage.removeItem(profilePicKey(user.id));
+      try { await authAPI.deleteProfilePic(); } catch {}
     }
   };
 

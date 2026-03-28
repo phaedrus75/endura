@@ -37,6 +37,7 @@ class UserResponse(BaseModel):
     total_study_minutes: int
     total_sessions: int
     created_at: datetime
+    profile_pic_url: Optional[str] = None
 
     class Config:
         from_attributes = True
@@ -205,6 +206,7 @@ class FriendResponse(BaseModel):
     total_study_minutes: int
     current_streak: int
     animals_count: int
+    profile_pic_url: Optional[str] = None
 
     class Config:
         from_attributes = True
@@ -218,6 +220,7 @@ class LeaderboardEntry(BaseModel):
     current_streak: int
     animals_count: int
     total_donated: float = 0.0
+    profile_pic_url: Optional[str] = None
 
 
 # ============ Study Pact Schemas ============
@@ -262,6 +265,7 @@ class GroupMemberResponse(BaseModel):
     username: Optional[str]
     role: str
     minutes_contributed: int = 0
+    profile_pic_url: Optional[str] = None
 
 class GroupMessageResponse(BaseModel):
     id: int
@@ -269,6 +273,7 @@ class GroupMessageResponse(BaseModel):
     username: Optional[str]
     content: str
     created_at: datetime
+    profile_pic_url: Optional[str] = None
 
 class GroupResponse(BaseModel):
     id: int

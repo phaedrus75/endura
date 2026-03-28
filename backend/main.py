@@ -47,6 +47,7 @@ _migrations = [
     ("donations", "partner_donation_id", "ALTER TABLE donations ADD COLUMN partner_donation_id VARCHAR"),
     ("users", "reset_token", "ALTER TABLE users ADD COLUMN reset_token VARCHAR"),
     ("users", "reset_token_expires", "ALTER TABLE users ADD COLUMN reset_token_expires TIMESTAMP"),
+    ("users", "profile_pic_url", "ALTER TABLE users ADD COLUMN profile_pic_url VARCHAR"),
 ]
 try:
     with engine.connect() as conn:
@@ -345,6 +346,44 @@ def login(request: Request, user: schemas.UserLogin, db: Session = Depends(get_d
 @app.get("/auth/me", response_model=schemas.UserResponse)
 def get_me(current_user: models.User = Depends(get_current_user)):
     return current_user
+
+
+@app.post("/auth/profile-pic")
+async def upload_profile_pic(
+    file: UploadFile = File(...),
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    if file.content_type not in {"image/png", "image/jpeg", "image/webp", "image/gif"}:
+        raise HTTPException(400, "Only PNG, JPEG, WebP, or GIF images are allowed")
+    data = await file.read()
+    if len(data) > 5 * 1024 * 1024:
+        raise HTTPException(400, "File too large (max 5 MB)")
+    upload = models.Upload(
+        filename=file.filename or "profile.jpg",
+        content_type=file.content_type,
+        data=data,
+    )
+    db.add(upload)
+    db.commit()
+    db.refresh(upload)
+    base = os.getenv("API_BASE_URL", "https://web-production-34028.up.railway.app")
+    pic_url = f"{base}/uploads/{upload.id}"
+    user = db.query(models.User).filter(models.User.id == current_user.id).first()
+    user.profile_pic_url = pic_url
+    db.commit()
+    return {"profile_pic_url": pic_url}
+
+
+@app.delete("/auth/profile-pic")
+def delete_profile_pic(
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    user = db.query(models.User).filter(models.User.id == current_user.id).first()
+    user.profile_pic_url = None
+    db.commit()
+    return {"message": "Profile picture removed"}
 
 
 # ============ Forgot / Reset Password ============
@@ -779,7 +818,8 @@ def get_friends(
             "email": friend.email,
             "total_study_minutes": friend.total_study_minutes,
             "current_streak": friend.current_streak,
-            "animals_count": animals_count
+            "animals_count": animals_count,
+            "profile_pic_url": friend.profile_pic_url,
         })
     return result
 

@@ -28,6 +28,9 @@ class User(Base):
     reset_token = Column(String, nullable=True)
     reset_token_expires = Column(DateTime, nullable=True)
 
+    # Profile picture URL (stored in uploads table)
+    profile_pic_url = Column(String, nullable=True)
+
     # Push notification token
     push_token = Column(String, nullable=True)
     notification_enabled = Column(Boolean, default=True)

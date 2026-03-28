@@ -77,6 +77,48 @@ interface IncomingReaction {
   event_description: string;
 }
 
+const AVATAR_COLORS = [
+  '#4ECDC4', '#45B7D1', '#96CEB4', '#FFEAA7', '#DDA0DD',
+  '#98D8C8', '#F7DC6F', '#BB8FCE', '#85C1E9', '#F1948A',
+  '#82E0AA', '#F8C471', '#AED6F1', '#D2B4DE', '#A3E4D7',
+];
+
+function getInitials(name?: string, email?: string): string {
+  if (name) {
+    const parts = name.trim().split(/\s+/);
+    if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase();
+    return name.slice(0, 2).toUpperCase();
+  }
+  if (email) return email.slice(0, 2).toUpperCase();
+  return '??';
+}
+
+function getAvatarColor(id: number): string {
+  return AVATAR_COLORS[id % AVATAR_COLORS.length];
+}
+
+function UserAvatar({ id, username, email, profilePicUrl, size = 36 }: { id: number; username?: string; email?: string; profilePicUrl?: string | null; size?: number }) {
+  if (profilePicUrl) {
+    return (
+      <Image
+        source={{ uri: profilePicUrl }}
+        style={{ width: size, height: size, borderRadius: size / 2 }}
+      />
+    );
+  }
+  return (
+    <View style={{
+      width: size, height: size, borderRadius: size / 2,
+      backgroundColor: getAvatarColor(id),
+      alignItems: 'center', justifyContent: 'center',
+    }}>
+      <Text style={{ color: '#fff', fontWeight: '700', fontSize: size * 0.4 }}>
+        {getInitials(username, email)}
+      </Text>
+    </View>
+  );
+}
+
 export default function SocialScreen() {
   const { user, profilePic } = useAuth();
   const navigation = useNavigation<any>();
@@ -365,7 +407,8 @@ export default function SocialScreen() {
           <Text style={styles.leaderboardTitle}>📊 Weekly Leaderboard</Text>
           {[...friends, ...(user ? [{
             id: user.id, username: user.username, email: user.email,
-            total_study_minutes: user.total_study_minutes, current_streak: user.current_streak, animals_count: 0
+            total_study_minutes: user.total_study_minutes, current_streak: user.current_streak, animals_count: 0,
+            profile_pic_url: profilePic || user.profile_pic_url,
           }] : [])]
             .sort((a, b) => b.total_study_minutes - a.total_study_minutes)
             .slice(0, 10)
@@ -374,9 +417,9 @@ export default function SocialScreen() {
                 <Text style={styles.leaderboardRank}>
                   {i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `${i + 1}.`}
                 </Text>
-                {f.id === user?.id && profilePic ? (
-                  <Image source={{ uri: profilePic }} style={{ width: 24, height: 24, borderRadius: 12, marginRight: 6 }} />
-                ) : null}
+                <View style={{ marginRight: 6 }}>
+                  <UserAvatar id={f.id} username={f.username} email={f.email} profilePicUrl={(f as any).profile_pic_url} size={24} />
+                </View>
                 <Text style={[styles.leaderboardName, f.id === user?.id && styles.leaderboardNameSelf]}>
                   {f.username || f.email?.split('@')[0]}
                 </Text>
@@ -445,13 +488,7 @@ export default function SocialScreen() {
                   const displayName = m.username || '?';
                   return (
                     <View key={m.user_id} style={styles.memberChip}>
-                      {isMe && profilePic ? (
-                        <Image source={{ uri: profilePic }} style={styles.memberAvatar} />
-                      ) : (
-                        <View style={styles.memberAvatarFallback}>
-                          <Text style={styles.memberAvatarInitial}>{displayName.charAt(0).toUpperCase()}</Text>
-                        </View>
-                      )}
+                      <UserAvatar id={m.user_id} username={displayName} profilePicUrl={isMe ? profilePic : m.profile_pic_url} size={22} />
                       <Text style={styles.memberChipText}>{displayName}</Text>
                       <Text style={styles.memberChipMins}>{m.minutes_contributed}m</Text>
                     </View>
@@ -606,11 +643,7 @@ export default function SocialScreen() {
             style={{ width: 38, height: 38, borderRadius: 19, backgroundColor: '#FFFFFF', justifyContent: 'center', alignItems: 'center', overflow: 'hidden' }}
             onPress={() => navigation.navigate('Profile')}
           >
-            {profilePic ? (
-              <Image source={{ uri: profilePic }} style={{ width: 38, height: 38, borderRadius: 19 }} />
-            ) : (
-              <Text style={{ fontSize: 18 }}>👤</Text>
-            )}
+            <UserAvatar id={user?.id || 0} username={user?.username} profilePicUrl={profilePic} size={38} />
           </TouchableOpacity>
         </View>
       </View>
@@ -647,7 +680,7 @@ export default function SocialScreen() {
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.allUsersRow}>
             {friends.map(f => (
               <View key={f.id} style={styles.allUserChip}>
-                <Text style={styles.allUserAvatar}>🧑‍🎓</Text>
+                <UserAvatar id={f.id} username={f.username} email={f.email} profilePicUrl={f.profile_pic_url} size={36} />
                 <Text style={styles.allUserName} numberOfLines={1}>@{f.username || f.email?.split('@')[0]}</Text>
                 <Text style={styles.allUserStats}>{f.total_study_minutes}m · 🔥{f.current_streak}</Text>
                 <View style={[styles.allUserActionBtn, styles.allUserFriendBtn]}>
@@ -708,8 +741,8 @@ export default function SocialScreen() {
                           onPress={() => toggleGroupFriend(f.id)}
                           activeOpacity={0.7}
                         >
-                          <Text style={styles.friendSelectAvatar}>👤</Text>
-                          <Text style={[styles.friendSelectName, selected && styles.friendSelectNameActive]}>
+                          <UserAvatar id={f.id} username={f.username} email={f.email} profilePicUrl={f.profile_pic_url} size={24} />
+                          <Text style={[styles.friendSelectName, selected && styles.friendSelectNameActive, { marginLeft: 4 }]}>
                             {f.username || f.email?.split('@')[0]}
                           </Text>
                           {selected && <Text style={styles.friendSelectCheck}>✓</Text>}
@@ -744,149 +777,159 @@ export default function SocialScreen() {
       </Modal>
 
       {/* Group Chat Modal */}
-      <Modal visible={!!selectedGroup} animationType="slide" onRequestClose={() => setSelectedGroup(null)}>
-        <SafeAreaView style={styles.chatContainer} edges={['top', 'bottom']}>
+      <Modal visible={!!selectedGroup} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => { setSelectedGroup(null); setShowChatActions(false); }}>
+        <SafeAreaView style={styles.chatContainer} edges={['top']}>
+          {/* Swipe handle */}
+          <View style={styles.chatSwipeHandle}>
+            <View style={styles.chatSwipeBar} />
+          </View>
           {/* Chat Header */}
           <View style={styles.chatHeader}>
-            <TouchableOpacity
-              style={styles.chatBackBtn}
-              onPress={() => setSelectedGroup(null)}
-              hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-            >
-              <Text style={styles.chatBackArrow}>‹</Text>
-            </TouchableOpacity>
             <View style={styles.chatHeaderCenter}>
               <Text style={styles.chatTitle} numberOfLines={1}>{selectedGroup?.name}</Text>
               <Text style={styles.chatSubtitle}>{selectedGroup?.members.length || 0} members</Text>
             </View>
+            <TouchableOpacity
+              style={styles.chatCloseBtn}
+              onPress={() => { setSelectedGroup(null); setShowChatActions(false); setChatInput(''); }}
+            >
+              <Text style={styles.chatCloseText}>Done</Text>
+            </TouchableOpacity>
           </View>
 
           {/* Messages */}
-          <FlatList
-            data={messages}
-            keyExtractor={m => m.id.toString()}
-            contentContainerStyle={styles.chatList}
-            inverted={false}
-            ListEmptyComponent={
-              <View style={styles.chatEmpty}>
-                <Text style={styles.chatEmptyEmoji}>💬</Text>
-                <Text style={styles.chatEmptyTitle}>No messages yet</Text>
-                <Text style={styles.chatEmptySubtitle}>Start the conversation!</Text>
-              </View>
-            }
-            renderItem={({ item }) => {
-              const isMine = item.user_id === user?.id;
-
-              if (isTipMessage(item.content)) {
-                const tipText = item.content.replace('📚 [TIP] ', '');
-                return (
-                  <View style={[styles.chatSpecialBubble, isMine ? { alignSelf: 'flex-end' } : { alignSelf: 'flex-start' }]}>
-                    {!isMine && <Text style={styles.chatSpecialSender}>{item.username || 'Someone'} shared a tip</Text>}
-                    {isMine && <Text style={styles.chatSpecialSenderMine}>You shared a tip</Text>}
-                    <LinearGradient
-                      colors={['#E7EFEA', '#FFFFFF']}
-                      start={{ x: 0, y: 0 }}
-                      end={{ x: 0, y: 1 }}
-                      style={styles.chatTipCard}
-                    >
-                      <Text style={styles.chatTipEmoji}>📚</Text>
-                      <Text style={styles.chatTipText}>{tipText}</Text>
-                    </LinearGradient>
-                    <Text style={styles.chatSpecialTime}>{timeAgo(item.created_at)}</Text>
-                  </View>
-                );
-              }
-
-              if (isHatchInvite(item.content)) {
-                return (
-                  <View style={[styles.chatSpecialBubble, isMine ? { alignSelf: 'flex-end' } : { alignSelf: 'flex-start' }]}>
-                    {!isMine && <Text style={styles.chatSpecialSender}>{item.username || 'Someone'}</Text>}
-                    <LinearGradient
-                      colors={['#A8C8D8', '#5F8C87']}
-                      start={{ x: 0, y: 0 }}
-                      end={{ x: 1, y: 1 }}
-                      style={styles.chatHatchCard}
-                    >
-                      <Text style={styles.chatHatchEmoji}>🥚</Text>
-                      <Text style={styles.chatHatchTitle}>Hatch Together Invite!</Text>
-                      <Text style={styles.chatHatchDesc}>Study together to hatch a shared animal egg</Text>
-                      {!isMine && (
-                        <TouchableOpacity
-                          style={styles.chatHatchAcceptBtn}
-                          onPress={() => acceptHatchInvite(item.username || 'Someone')}
-                        >
-                          <Text style={styles.chatHatchAcceptText}>🐣 Accept Challenge</Text>
-                        </TouchableOpacity>
-                      )}
-                    </LinearGradient>
-                    <Text style={styles.chatSpecialTime}>{timeAgo(item.created_at)}</Text>
-                  </View>
-                );
-              }
-
-              if (isHatchAccept(item.content)) {
-                return (
-                  <View style={[styles.chatSpecialBubble, { alignSelf: 'center' }]}>
-                    <View style={styles.chatHatchAcceptedBanner}>
-                      <Text style={styles.chatHatchAcceptedText}>
-                        🎉 {isMine ? 'You' : (item.username || 'Someone')} accepted the hatch challenge!
-                      </Text>
-                      <Text style={styles.chatHatchAcceptedSub}>Study together to hatch your shared egg 🐣</Text>
-                    </View>
-                    <Text style={[styles.chatSpecialTime, { textAlign: 'center' }]}>{timeAgo(item.created_at)}</Text>
-                  </View>
-                );
-              }
-
-              return (
-                <View style={[styles.chatBubbleWrap, isMine ? styles.chatBubbleWrapMine : styles.chatBubbleWrapTheirs]}>
-                  {!isMine && (
-                    <View style={styles.chatAvatar}>
-                      <Text style={styles.chatAvatarText}>{(item.username || '?')[0].toUpperCase()}</Text>
-                    </View>
-                  )}
-                  <View style={[styles.chatBubble, isMine ? styles.chatBubbleMine : styles.chatBubbleTheirs]}>
-                    {!isMine && <Text style={styles.chatBubbleSender}>{item.username || 'Someone'}</Text>}
-                    <Text style={[styles.chatBubbleText, isMine && { color: '#fff' }]}>{item.content}</Text>
-                    <Text style={[styles.chatBubbleTime, isMine && { color: 'rgba(255,255,255,0.7)' }]}>{timeAgo(item.created_at)}</Text>
-                  </View>
-                  {isMine && profilePic && (
-                    <Image source={{ uri: profilePic }} style={styles.chatAvatarImage} />
-                  )}
+          <KeyboardAvoidingView
+            style={{ flex: 1 }}
+            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+            keyboardVerticalOffset={0}
+          >
+            <FlatList
+              data={messages}
+              keyExtractor={m => m.id.toString()}
+              contentContainerStyle={styles.chatList}
+              inverted={false}
+              keyboardShouldPersistTaps="handled"
+              ListEmptyComponent={
+                <View style={styles.chatEmpty}>
+                  <Text style={styles.chatEmptyEmoji}>💬</Text>
+                  <Text style={styles.chatEmptyTitle}>No messages yet</Text>
+                  <Text style={styles.chatEmptySubtitle}>Start the conversation!</Text>
                 </View>
-              );
-            }}
-          />
+              }
+              renderItem={({ item }) => {
+                const isMine = item.user_id === user?.id;
 
-          {/* Chat action bar */}
-          {showChatActions && (
-            <View style={styles.chatActionsBar}>
-              <TouchableOpacity
-                style={styles.chatActionItem}
-                onPress={() => {
-                  setShowChatActions(false);
-                  loadSavedTips();
-                  setShowTipsPicker(true);
-                }}
-              >
-                <Text style={styles.chatActionEmoji}>📚</Text>
-                <Text style={styles.chatActionLabel}>Share Tip</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.chatActionItem}
-                onPress={() => {
-                  setShowChatActions(false);
-                  sendHatchInvite();
-                }}
-              >
-                <Text style={styles.chatActionEmoji}>🥚</Text>
-                <Text style={styles.chatActionLabel}>Hatch Together</Text>
-              </TouchableOpacity>
-            </View>
-          )}
+                if (isTipMessage(item.content)) {
+                  const tipText = item.content.replace('📚 [TIP] ', '');
+                  return (
+                    <View style={[styles.chatSpecialBubble, isMine ? { alignSelf: 'flex-end' } : { alignSelf: 'flex-start' }]}>
+                      {!isMine && <Text style={styles.chatSpecialSender}>{item.username || 'Someone'} shared a tip</Text>}
+                      {isMine && <Text style={styles.chatSpecialSenderMine}>You shared a tip</Text>}
+                      <LinearGradient
+                        colors={['#E7EFEA', '#FFFFFF']}
+                        start={{ x: 0, y: 0 }}
+                        end={{ x: 0, y: 1 }}
+                        style={styles.chatTipCard}
+                      >
+                        <Text style={styles.chatTipEmoji}>📚</Text>
+                        <Text style={styles.chatTipText}>{tipText}</Text>
+                      </LinearGradient>
+                      <Text style={styles.chatSpecialTime}>{timeAgo(item.created_at)}</Text>
+                    </View>
+                  );
+                }
 
-          {/* Chat Input */}
-          <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+                if (isHatchInvite(item.content)) {
+                  return (
+                    <View style={[styles.chatSpecialBubble, isMine ? { alignSelf: 'flex-end' } : { alignSelf: 'flex-start' }]}>
+                      {!isMine && <Text style={styles.chatSpecialSender}>{item.username || 'Someone'}</Text>}
+                      <LinearGradient
+                        colors={['#A8C8D8', '#5F8C87']}
+                        start={{ x: 0, y: 0 }}
+                        end={{ x: 1, y: 1 }}
+                        style={styles.chatHatchCard}
+                      >
+                        <Text style={styles.chatHatchEmoji}>🥚</Text>
+                        <Text style={styles.chatHatchTitle}>Hatch Together Invite!</Text>
+                        <Text style={styles.chatHatchDesc}>Study together to hatch a shared animal egg</Text>
+                        {!isMine && (
+                          <TouchableOpacity
+                            style={styles.chatHatchAcceptBtn}
+                            onPress={() => acceptHatchInvite(item.username || 'Someone')}
+                          >
+                            <Text style={styles.chatHatchAcceptText}>🐣 Accept Challenge</Text>
+                          </TouchableOpacity>
+                        )}
+                      </LinearGradient>
+                      <Text style={styles.chatSpecialTime}>{timeAgo(item.created_at)}</Text>
+                    </View>
+                  );
+                }
+
+                if (isHatchAccept(item.content)) {
+                  return (
+                    <View style={[styles.chatSpecialBubble, { alignSelf: 'center' }]}>
+                      <View style={styles.chatHatchAcceptedBanner}>
+                        <Text style={styles.chatHatchAcceptedText}>
+                          🎉 {isMine ? 'You' : (item.username || 'Someone')} accepted the hatch challenge!
+                        </Text>
+                        <Text style={styles.chatHatchAcceptedSub}>Study together to hatch your shared egg 🐣</Text>
+                      </View>
+                      <Text style={[styles.chatSpecialTime, { textAlign: 'center' }]}>{timeAgo(item.created_at)}</Text>
+                    </View>
+                  );
+                }
+
+                return (
+                  <View style={[styles.chatBubbleWrap, isMine ? styles.chatBubbleWrapMine : styles.chatBubbleWrapTheirs]}>
+                    {!isMine && (
+                      <View style={{ marginRight: 8, marginBottom: 2 }}>
+                        <UserAvatar id={item.user_id} username={item.username} profilePicUrl={item.profile_pic_url} size={28} />
+                      </View>
+                    )}
+                    <View style={[styles.chatBubble, isMine ? styles.chatBubbleMine : styles.chatBubbleTheirs]}>
+                      {!isMine && <Text style={styles.chatBubbleSender}>{item.username || 'Someone'}</Text>}
+                      <Text style={[styles.chatBubbleText, isMine && { color: '#fff' }]}>{item.content}</Text>
+                      <Text style={[styles.chatBubbleTime, isMine && { color: 'rgba(255,255,255,0.7)' }]}>{timeAgo(item.created_at)}</Text>
+                    </View>
+                    {isMine && (
+                      <View style={{ marginLeft: 8, marginBottom: 2 }}>
+                        <UserAvatar id={user?.id || 0} username={user?.username} profilePicUrl={profilePic} size={28} />
+                      </View>
+                    )}
+                  </View>
+                );
+              }}
+            />
+
+            {/* Chat action bar */}
+            {showChatActions && (
+              <View style={styles.chatActionsBar}>
+                <TouchableOpacity
+                  style={styles.chatActionItem}
+                  onPress={() => {
+                    setShowChatActions(false);
+                    loadSavedTips();
+                    setShowTipsPicker(true);
+                  }}
+                >
+                  <Text style={styles.chatActionEmoji}>📚</Text>
+                  <Text style={styles.chatActionLabel}>Share Tip</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.chatActionItem}
+                  onPress={() => {
+                    setShowChatActions(false);
+                    sendHatchInvite();
+                  }}
+                >
+                  <Text style={styles.chatActionEmoji}>🥚</Text>
+                  <Text style={styles.chatActionLabel}>Hatch Together</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+
+            {/* Chat Input */}
             <View style={styles.chatInputRow}>
               <TouchableOpacity
                 style={styles.chatPlusBtn}
@@ -977,7 +1020,7 @@ export default function SocialScreen() {
                     {available.map(f => (
                       <View key={f.id} style={styles.inviteFriendRow}>
                         <View style={styles.inviteFriendInfo}>
-                          <Text style={styles.inviteFriendAvatar}>👤</Text>
+                          <UserAvatar id={f.id} username={f.username} email={f.email} profilePicUrl={f.profile_pic_url} size={32} />
                           <View>
                             <Text style={styles.inviteFriendName}>{f.username || f.email?.split('@')[0]}</Text>
                             <Text style={styles.inviteFriendStats}>🔥 {f.current_streak} · {f.total_study_minutes}m studied</Text>
@@ -1089,13 +1132,9 @@ export default function SocialScreen() {
                             <Text style={styles.featureLeaderboardRank}>
                               {i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `${i + 1}.`}
                             </Text>
-                            {isMe && profilePic ? (
-                              <Image source={{ uri: profilePic }} style={{ width: 28, height: 28, borderRadius: 14, marginRight: 8 }} />
-                            ) : (
-                              <View style={[styles.memberAvatarFallback, { width: 28, height: 28, borderRadius: 14, marginRight: 8 }]}>
-                                <Text style={[styles.memberAvatarInitial, { fontSize: 13 }]}>{(m.username || '?').charAt(0).toUpperCase()}</Text>
-                              </View>
-                            )}
+                            <View style={{ marginRight: 8 }}>
+                              <UserAvatar id={m.user_id || i} username={m.username} profilePicUrl={isMe ? profilePic : m.profile_pic_url} size={28} />
+                            </View>
                             <Text style={[styles.featureLeaderboardName, isMe && { fontWeight: '700' }]}>
                               {m.username || '?'}
                             </Text>
@@ -1300,8 +1339,7 @@ const styles = StyleSheet.create({
     ...shadows.small,
   },
   allUserAvatar: {
-    fontSize: 28,
-    marginBottom: 4,
+    marginBottom: 6,
   },
   allUserName: {
     fontSize: 12,
@@ -1800,19 +1838,31 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#F4F7F5',
   },
+  chatSwipeHandle: {
+    alignItems: 'center',
+    paddingTop: 8,
+    paddingBottom: 4,
+    backgroundColor: '#FFFFFF',
+  },
+  chatSwipeBar: {
+    width: 36,
+    height: 5,
+    borderRadius: 3,
+    backgroundColor: '#D0D4D2',
+  },
   chatHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 16,
-    paddingVertical: 14,
+    paddingVertical: 10,
     borderBottomWidth: 1,
-    borderBottomColor: 'rgba(0,0,0,0.06)',
+    borderBottomColor: 'rgba(0,0,0,0.08)',
     backgroundColor: '#FFFFFF',
   },
   chatBackBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: 34,
+    height: 34,
+    borderRadius: 17,
     backgroundColor: '#E7EFEA',
     alignItems: 'center',
     justifyContent: 'center',
@@ -1824,6 +1874,16 @@ const styles = StyleSheet.create({
     color: colors.textPrimary,
     marginTop: -1,
     marginLeft: -1,
+  },
+  chatCloseBtn: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    marginLeft: 12,
+  },
+  chatCloseText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#5F8C87',
   },
   chatHeaderCenter: {
     flex: 1,
@@ -1839,13 +1899,14 @@ const styles = StyleSheet.create({
     marginTop: 1,
   },
   chatList: {
-    paddingHorizontal: 16,
-    paddingTop: 16,
-    paddingBottom: 8,
+    paddingHorizontal: 14,
+    paddingTop: 12,
+    paddingBottom: 6,
     flexGrow: 1,
   },
   chatEmpty: {
     alignItems: 'center',
+    justifyContent: 'center',
     paddingVertical: 80,
   },
   chatEmptyEmoji: {
@@ -1866,7 +1927,7 @@ const styles = StyleSheet.create({
   chatBubbleWrap: {
     flexDirection: 'row',
     alignItems: 'flex-end',
-    marginBottom: 12,
+    marginBottom: 8,
   },
   chatBubbleWrapMine: {
     justifyContent: 'flex-end',
@@ -1875,9 +1936,9 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-start',
   },
   chatAvatar: {
-    width: 30,
-    height: 30,
-    borderRadius: 15,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
     backgroundColor: '#5F8C87' + '20',
     alignItems: 'center',
     justifyContent: 'center',
@@ -1885,37 +1946,37 @@ const styles = StyleSheet.create({
     marginBottom: 2,
   },
   chatAvatarImage: {
-    width: 30,
-    height: 30,
-    borderRadius: 15,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
     marginLeft: 8,
     marginBottom: 2,
   },
   chatAvatarText: {
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: '700',
     color: '#5F8C87',
   },
   chatBubble: {
-    maxWidth: '72%',
+    maxWidth: '75%',
     paddingHorizontal: 14,
     paddingVertical: 10,
-    borderRadius: 20,
+    borderRadius: 18,
   },
   chatBubbleMine: {
     backgroundColor: '#5F8C87',
-    borderBottomRightRadius: 6,
+    borderBottomRightRadius: 4,
   },
   chatBubbleTheirs: {
     backgroundColor: '#FFFFFF',
-    borderBottomLeftRadius: 6,
+    borderBottomLeftRadius: 4,
     ...shadows.small,
   },
   chatBubbleSender: {
     fontSize: 11,
     fontWeight: '700',
     color: '#5F8C87',
-    marginBottom: 3,
+    marginBottom: 2,
   },
   chatBubbleText: {
     fontSize: 15,
@@ -1925,7 +1986,7 @@ const styles = StyleSheet.create({
   chatBubbleTime: {
     fontSize: 10,
     color: colors.textMuted,
-    marginTop: 4,
+    marginTop: 3,
     textAlign: 'right',
   },
 
@@ -2030,23 +2091,23 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFFFFF',
     borderTopWidth: 1,
     borderTopColor: 'rgba(0,0,0,0.06)',
-    paddingVertical: 12,
-    paddingHorizontal: 24,
-    gap: 12,
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    gap: 10,
   },
   chatActionItem: {
     flex: 1,
     alignItems: 'center',
     paddingVertical: 10,
     backgroundColor: '#E7EFEA',
-    borderRadius: 14,
+    borderRadius: 12,
   },
   chatActionEmoji: {
-    fontSize: 22,
-    marginBottom: 4,
+    fontSize: 20,
+    marginBottom: 3,
   },
   chatActionLabel: {
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: '600',
     color: colors.textSecondary,
   },
@@ -2054,58 +2115,58 @@ const styles = StyleSheet.create({
   chatInputRow: {
     flexDirection: 'row',
     alignItems: 'flex-end',
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    paddingBottom: 12,
+    paddingHorizontal: 12,
+    paddingTop: 8,
+    paddingBottom: Platform.OS === 'ios' ? 28 : 12,
     borderTopWidth: 1,
     borderTopColor: 'rgba(0,0,0,0.06)',
     backgroundColor: '#FFFFFF',
-    gap: 10,
+    gap: 8,
   },
   chatPlusBtn: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
     backgroundColor: '#E7EFEA',
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 1,
   },
   chatPlusBtnText: {
-    fontSize: 22,
+    fontSize: 20,
     fontWeight: '500',
     color: '#5F8C87',
     marginTop: -1,
   },
   chatInputWrap: {
     flex: 1,
-    backgroundColor: '#F4F7F5',
-    borderRadius: 22,
+    backgroundColor: '#F0F3F1',
+    borderRadius: 20,
     borderWidth: 1,
-    borderColor: 'rgba(0,0,0,0.06)',
+    borderColor: 'rgba(0,0,0,0.05)',
     maxHeight: 100,
   },
   chatInput: {
-    paddingHorizontal: 16,
-    paddingVertical: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 9,
     fontSize: 15,
     color: colors.textPrimary,
     maxHeight: 100,
   },
   chatSendButton: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
     backgroundColor: '#5F8C87',
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 1,
   },
   chatSendButtonDisabled: {
-    opacity: 0.35,
+    opacity: 0.3,
   },
   chatSendText: {
-    fontSize: 18,
+    fontSize: 17,
     fontWeight: '700',
     color: '#FFFFFF',
     marginTop: -1,

@@ -22,15 +22,15 @@ import { statsAPI, tasksAPI, badgesAPI, UserStats, Task, BadgeResponse } from '.
 const { width } = Dimensions.get('window');
 const CHART_WIDTH = width - spacing.lg * 2;
 
-const SUBJECT_COLORS = [
-  '#5F8C87', // Ocean Sage
-  '#3B5466', // Navy
-  '#A9BDAF', // Moss Grey
-  '#2F4A3E', // Deep Pine
-  '#A8C8D8', // Light Blue
-  '#5E7F6E', // Forest Calm
-  '#7C8F86', // Stone Fog
-  '#3B5466', // Navy
+const SUBJECT_GRADIENTS = [
+  ['#5F8C87', '#A8D8CF'],  // Teal → Mint
+  ['#3B5466', '#7BA5C4'],  // Navy → Sky
+  ['#6B8F71', '#B8D9A3'],  // Sage → Lime
+  ['#7C6B8A', '#C4B0D6'],  // Plum → Lavender
+  ['#C47D5E', '#E8B89D'],  // Terracotta → Peach
+  ['#5A7F9A', '#A3CAE0'],  // Steel → Ice
+  ['#8B7355', '#D4BFA0'],  // Walnut → Sand
+  ['#6A8E7F', '#B5D9C8'],  // Forest → Seafoam
 ];
 
 const LABEL_PAD = 20;
@@ -91,7 +91,7 @@ const BarChart = ({ data, height = 150 }: { data: { label: string; value: number
   );
 };
 
-const SubjectBarChart = ({ data, height = 150 }: { data: { label: string; value: number; color: string }[]; height?: number }) => {
+const SubjectBarChart = ({ data, height = 150 }: { data: { label: string; value: number; gradientIndex: number }[]; height?: number }) => {
   const filtered = data.filter(d => d.value > 0);
   if (filtered.length === 0) {
     return (
@@ -111,10 +111,15 @@ const SubjectBarChart = ({ data, height = 150 }: { data: { label: string; value:
   return (
     <Svg width={CHART_WIDTH} height={height + 40}>
       <Defs>
-        <LinearGradient id="subjColGrad" x1="0%" y1="0%" x2="0%" y2="100%">
-          <Stop offset="0%" stopColor={colors.primary} />
-          <Stop offset="100%" stopColor={colors.primaryLight} />
-        </LinearGradient>
+        {filtered.map((item, index) => {
+          const grad = SUBJECT_GRADIENTS[item.gradientIndex % SUBJECT_GRADIENTS.length];
+          return (
+            <LinearGradient key={`sg${index}`} id={`subjGrad${index}`} x1="0%" y1="0%" x2="0%" y2="100%">
+              <Stop offset="0%" stopColor={grad[0]} />
+              <Stop offset="100%" stopColor={grad[1]} />
+            </LinearGradient>
+          );
+        })}
       </Defs>
       {filtered.map((item, index) => {
         const barHeight = (item.value / maxVal) * drawH;
@@ -130,8 +135,8 @@ const SubjectBarChart = ({ data, height = 150 }: { data: { label: string; value:
               y={y}
               width={barWidth}
               height={barHeight || 2}
-              fill={item.color}
-              rx={4}
+              fill={`url(#subjGrad${index})`}
+              rx={6}
             />
             <SvgText
               x={x + barWidth / 2}
@@ -282,11 +287,11 @@ export default function ProgressScreen() {
   const subjectChartData = Object.entries(subjectStudyTime).map(([subject, minutes], index) => ({
     label: subject,
     value: minutes,
-    color: SUBJECT_COLORS[index % SUBJECT_COLORS.length],
+    gradientIndex: index,
   }));
 
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
       <ScrollView
         style={styles.scrollView}
         contentContainerStyle={styles.scrollContent}
@@ -352,8 +357,8 @@ export default function ProgressScreen() {
         </View>
 
         {/* Weekly Study Bar Chart */}
-        <View style={styles.chartCard}>
-          <Text style={styles.chartTitle}>📅 This Past Week</Text>
+        <View style={[styles.chartCard, { alignItems: 'center' }]}>
+          <Text style={[styles.chartTitle, { alignSelf: 'flex-start' }]}>📅 This Past Week</Text>
           <BarChart 
             data={(() => {
               const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
@@ -370,8 +375,8 @@ export default function ProgressScreen() {
         </View>
 
         {/* Monthly Study Bar Chart */}
-        <View style={styles.chartCard}>
-          <Text style={styles.chartTitle}>📆 This Past Month</Text>
+        <View style={[styles.chartCard, { alignItems: 'center' }]}>
+          <Text style={[styles.chartTitle, { alignSelf: 'flex-start' }]}>📆 This Past Month</Text>
           <BarChart 
             data={(() => {
               const weeks = ['Week 1', 'Week 2', 'Week 3', 'This Week'];
@@ -392,8 +397,8 @@ export default function ProgressScreen() {
         </View>
 
         {/* Subject Distribution Bar Chart */}
-        <View style={styles.chartCard}>
-          <Text style={styles.chartTitle}>📚 Study Time by Subject</Text>
+        <View style={[styles.chartCard, { alignItems: 'center' }]}>
+          <Text style={[styles.chartTitle, { alignSelf: 'flex-start' }]}>📚 Study Time by Subject</Text>
           <SubjectBarChart data={subjectChartData} />
           <Text style={styles.chartSubtext}>Minutes studied per subject</Text>
         </View>
@@ -588,10 +593,11 @@ export default function ProgressScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: colors.background,
+    backgroundColor: '#FFFFFF',
   },
   scrollView: {
     flex: 1,
+    backgroundColor: colors.background,
   },
   scrollContent: {
     padding: spacing.lg,

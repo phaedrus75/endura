@@ -409,6 +409,7 @@ def get_leaderboard(db: Session, user_id: int, limit: int = 20) -> List[dict]:
             "current_streak": user.current_streak,
             "animals_count": animals_count,
             "total_donated": float(total_donated),
+            "profile_pic_url": user.profile_pic_url,
         })
     
     return leaderboard
@@ -705,7 +706,8 @@ def get_user_groups(db: Session, user_id: int) -> List[dict]:
                 "user_id": mb.user_id,
                 "username": u.username if u else None,
                 "role": mb.role,
-                "minutes_contributed": mins
+                "minutes_contributed": mins,
+                "profile_pic_url": u.profile_pic_url if u else None,
             })
 
         results.append({
@@ -739,7 +741,8 @@ def send_group_message(db: Session, user_id: int, group_id: int, content: str) -
     db.refresh(msg)
     u = db.query(models.User).filter(models.User.id == user_id).first()
     return {"id": msg.id, "user_id": user_id, "username": u.username if u else None,
-            "content": msg.content, "created_at": msg.created_at}
+            "content": msg.content, "created_at": msg.created_at,
+            "profile_pic_url": u.profile_pic_url if u else None}
 
 
 def get_group_messages(db: Session, group_id: int, limit: int = 50) -> List[dict]:
@@ -752,7 +755,8 @@ def get_group_messages(db: Session, group_id: int, limit: int = 50) -> List[dict
         results.append({
             "id": m.id, "user_id": m.user_id,
             "username": u.username if u else None,
-            "content": m.content, "created_at": m.created_at
+            "content": m.content, "created_at": m.created_at,
+            "profile_pic_url": u.profile_pic_url if u else None,
         })
     return list(reversed(results))
 

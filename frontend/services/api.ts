@@ -16,6 +16,7 @@ export interface User {
   total_study_minutes: number;
   total_sessions: number;
   created_at: string;
+  profile_pic_url: string | null;
 }
 
 export interface Task {
@@ -94,6 +95,7 @@ export interface Friend {
   total_study_minutes: number;
   current_streak: number;
   animals_count: number;
+  profile_pic_url: string | null;
 }
 
 export interface LeaderboardEntry {
@@ -104,6 +106,7 @@ export interface LeaderboardEntry {
   current_streak: number;
   animals_count: number;
   total_donated: number;
+  profile_pic_url: string | null;
 }
 
 export interface DonationLeaderboardEntry {
@@ -163,6 +166,7 @@ export interface StudyGroupMember {
   username: string | null;
   role: string;
   minutes_contributed: number;
+  profile_pic_url: string | null;
 }
 
 export interface StudyGroup {
@@ -183,6 +187,7 @@ export interface GroupMessage {
   username: string | null;
   content: string;
   created_at: string;
+  profile_pic_url: string | null;
 }
 
 export interface FeedEvent {
@@ -302,6 +307,25 @@ export const authAPI = {
       method: 'POST',
       body: JSON.stringify(username),
     }),
+
+  uploadProfilePic: async (uri: string): Promise<{ profile_pic_url: string }> => {
+    const token = await SecureStore.getItemAsync('authToken');
+    const formData = new FormData();
+    const filename = uri.split('/').pop() || 'photo.jpg';
+    const match = /\.(\w+)$/.exec(filename);
+    const type = match ? `image/${match[1] === 'jpg' ? 'jpeg' : match[1]}` : 'image/jpeg';
+    formData.append('file', { uri, name: filename, type } as any);
+    const response = await fetch(`${API_URL}/auth/profile-pic`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+      body: formData,
+    });
+    if (!response.ok) throw new Error('Failed to upload profile picture');
+    return response.json();
+  },
+
+  deleteProfilePic: () =>
+    apiFetch<{ message: string }>('/auth/profile-pic', { method: 'DELETE' }),
 };
 
 // Tasks API
