@@ -381,8 +381,61 @@ def get_friends(db: Session, user_id: int) -> List[models.User]:
     return db.query(models.User).filter(models.User.id.in_(friend_ids)).all()
 
 
+def remove_friend(db: Session, user_id: int, friend_id: int) -> bool:
+    friendship = db.query(models.Friendship).filter(
+        models.Friendship.status == "accepted",
+        (
+            ((models.Friendship.user_id == user_id) & (models.Friendship.friend_id == friend_id)) |
+            ((models.Friendship.user_id == friend_id) & (models.Friendship.friend_id == user_id))
+        )
+    ).first()
+    if not friendship:
+        return False
+    db.delete(friendship)
+    db.commit()
+    return True
+
+
+def remove_group_member(db: Session, admin_user_id: int, group_id: int, target_user_id: int) -> tuple[bool, str]:
+    group = db.query(models.StudyGroup).filter(models.StudyGroup.id == group_id).first()
+    if not group:
+        return False, "Group not found"
+    if group.creator_id != admin_user_id:
+        return False, "Only the group admin can remove members"
+    if target_user_id == admin_user_id:
+        return False, "You cannot remove yourself"
+    member = db.query(models.GroupMember).filter(
+        models.GroupMember.group_id == group_id,
+        models.GroupMember.user_id == target_user_id,
+    ).first()
+    if not member:
+        return False, "User is not a member of this group"
+    db.delete(member)
+    db.commit()
+    return True, "Member removed"
+
+
+def get_global_leaderboard(db: Session) -> List[dict]:
+    users = db.query(models.User).order_by(
+        models.User.total_study_minutes.desc()
+    ).all()
+
+    leaderboard = []
+    for rank, u in enumerate(users, 1):
+        leaderboard.append({
+            "rank": rank,
+            "user_id": u.id,
+            "username": u.username or u.email.split("@")[0],
+            "total_study_minutes": u.total_study_minutes,
+            "current_streak": u.current_streak,
+            "animals_count": 0,
+            "total_donated": 0,
+            "profile_pic_url": u.profile_pic_url,
+        })
+    return leaderboard
+
+
 def get_leaderboard(db: Session, user_id: int, limit: int = 20) -> List[dict]:
-    # Get friends
     friends = get_friends(db, user_id)
     friend_ids = [f.id for f in friends] + [user_id]
     

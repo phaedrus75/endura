@@ -825,12 +825,44 @@ def get_friends(
 
 
 
+@app.delete("/friends/{friend_id}")
+def remove_friend(
+    friend_id: int,
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    if not crud.remove_friend(db, current_user.id, friend_id):
+        raise HTTPException(status_code=404, detail="Friendship not found")
+    return {"message": "Friend removed"}
+
+
+@app.delete("/groups/{group_id}/members/{user_id}")
+def remove_group_member(
+    group_id: int,
+    user_id: int,
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    success, message = crud.remove_group_member(db, current_user.id, group_id, user_id)
+    if not success:
+        raise HTTPException(status_code=400, detail=message)
+    return {"message": message}
+
+
 @app.get("/leaderboard", response_model=List[schemas.LeaderboardEntry])
 def get_leaderboard(
     current_user: models.User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     return crud.get_leaderboard(db, current_user.id)
+
+
+@app.get("/leaderboard/global", response_model=List[schemas.LeaderboardEntry])
+def get_global_leaderboard(
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    return crud.get_global_leaderboard(db)
 
 
 # ============ Stats Endpoints ============
