@@ -24,13 +24,13 @@ const CHART_WIDTH = width - spacing.lg * 2;
 
 const SUBJECT_GRADIENTS = [
   ['#5F8C87', '#A8D8CF'],  // Teal → Mint
-  ['#3B5466', '#7BA5C4'],  // Navy → Sky
-  ['#6B8F71', '#B8D9A3'],  // Sage → Lime
-  ['#7C6B8A', '#C4B0D6'],  // Plum → Lavender
-  ['#C47D5E', '#E8B89D'],  // Terracotta → Peach
-  ['#5A7F9A', '#A3CAE0'],  // Steel → Ice
-  ['#8B7355', '#D4BFA0'],  // Walnut → Sand
-  ['#6A8E7F', '#B5D9C8'],  // Forest → Seafoam
+  ['#3B7A6E', '#7BC8B8'],  // Deep teal → Aqua
+  ['#4A8FA8', '#8ED4E8'],  // Ocean → Sky blue
+  ['#6B8F71', '#B8D9A3'],  // Sage → Light green
+  ['#5A7F9A', '#A3CAE0'],  // Steel blue → Ice
+  ['#3B6B5E', '#82C4A8'],  // Emerald → Seafoam
+  ['#4E8B7A', '#9DDBC4'],  // Jade → Pale mint
+  ['#3B5466', '#7BA5C4'],  // Navy → Cornflower
 ];
 
 const LABEL_PAD = 20;
@@ -578,7 +578,12 @@ export default function ProgressScreen() {
                       </Text>
                     </View>
                   ) : (
-                    <Text style={styles.badgeModalLockedText}>Keep going to unlock this badge!</Text>
+                    <View style={styles.badgeModalRequirementBox}>
+                      <Text style={styles.badgeModalRequirementLabel}>How to earn</Text>
+                      <Text style={styles.badgeModalRequirementText}>
+                        {selectedBadge.requirement || 'Keep going to unlock this badge!'}
+                      </Text>
+                    </View>
                   )}
                 </TouchableOpacity>
               );
@@ -593,11 +598,10 @@ export default function ProgressScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: colors.background,
   },
   scrollView: {
     flex: 1,
-    backgroundColor: colors.background,
   },
   scrollContent: {
     padding: spacing.lg,
@@ -937,5 +941,28 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: colors.textMuted,
     fontWeight: '500',
+  },
+  badgeModalRequirementBox: {
+    backgroundColor: colors.background,
+    borderRadius: 12,
+    padding: 12,
+    marginTop: 4,
+    width: '100%',
+    alignItems: 'center',
+  },
+  badgeModalRequirementLabel: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: colors.primary,
+    textTransform: 'uppercase',
+    letterSpacing: 1,
+    marginBottom: 4,
+  },
+  badgeModalRequirementText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: colors.textPrimary,
+    textAlign: 'center',
+    lineHeight: 20,
   },
 });

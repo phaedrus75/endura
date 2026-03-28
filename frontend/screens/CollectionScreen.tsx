@@ -1165,11 +1165,10 @@ export default function CollectionScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: colors.background,
   },
   scrollView: {
     flex: 1,
-    backgroundColor: colors.background,
   },
   scrollContent: {
     padding: spacing.lg,

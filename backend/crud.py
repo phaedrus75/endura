@@ -830,6 +830,7 @@ BADGE_DEFINITIONS = [
     {"id": "double_digits", "name": "Double Digits", "icon": "🔟", "description": "Ten down, thousands to go.", "category": "getting_started", "tier": "bronze"},
     {"id": "halfway_hero", "name": "Halfway Hero", "icon": "🏅", "description": "Quarter century of focus.", "category": "getting_started", "tier": "silver"},
     {"id": "session_centurion", "name": "Session Centurion", "icon": "💯", "description": "Triple digits. Absolute legend.", "category": "getting_started", "tier": "gold"},
+    {"id": "dedicated_learner", "name": "Dedicated Learner", "icon": "📖", "description": "Two hundred sessions of pure commitment.", "category": "getting_started", "tier": "diamond"},
     # Streaks
     {"id": "on_fire", "name": "On Fire", "icon": "🔥", "description": "Three days strong — keep the flame alive.", "category": "streaks", "tier": "bronze"},
     {"id": "momentum_builder", "name": "Momentum Builder", "icon": "⚡", "description": "Five days. The momentum is real.", "category": "streaks", "tier": "bronze"},
@@ -838,6 +839,8 @@ BADGE_DEFINITIONS = [
     {"id": "monthly_machine", "name": "Monthly Machine", "icon": "⚙️", "description": "Habits are forged in this fire.", "category": "streaks", "tier": "gold"},
     {"id": "iron_will", "name": "Iron Will", "icon": "🪨", "description": "Two months. Nothing can stop you.", "category": "streaks", "tier": "gold"},
     {"id": "unbreakable", "name": "Unbreakable", "icon": "💎", "description": "Only the most dedicated reach this level.", "category": "streaks", "tier": "diamond"},
+    {"id": "ten_day_titan", "name": "Ten-Day Titan", "icon": "🔱", "description": "Double digits. You mean business.", "category": "streaks", "tier": "silver"},
+    {"id": "quarter_century", "name": "Quarter Century", "icon": "🏔️", "description": "Twenty-five days of relentless focus.", "category": "streaks", "tier": "gold"},
     # Study Time
     {"id": "hour_of_power", "name": "Hour of Power", "icon": "⏱️", "description": "A full hour of deep focus.", "category": "study_time", "tier": "silver"},
     {"id": "endurance_mode", "name": "Endurance Mode", "icon": "🏋️", "description": "Two hours. Absolute beast.", "category": "study_time", "tier": "gold"},
@@ -853,6 +856,8 @@ BADGE_DEFINITIONS = [
     {"id": "weekend_scholar", "name": "Weekend Scholar", "icon": "📚", "description": "No days off.", "category": "habits", "tier": "silver"},
     {"id": "lunch_break_learner", "name": "Lunch Break Learner", "icon": "🥪", "description": "Studying through lunch — committed.", "category": "habits", "tier": "bronze"},
     {"id": "comeback_kid", "name": "Comeback Kid", "icon": "🔄", "description": "You came back. That's what matters.", "category": "habits", "tier": "silver"},
+    {"id": "golden_hour", "name": "Golden Hour", "icon": "🌇", "description": "Sunset study sessions hit different.", "category": "habits", "tier": "bronze"},
+    {"id": "all_nighter", "name": "All-Nighter", "icon": "🌃", "description": "Burning both ends of the candle.", "category": "habits", "tier": "gold"},
     # Animals
     {"id": "first_friend", "name": "First Friend", "icon": "🐣", "description": "Welcome to the sanctuary!", "category": "animals", "tier": "bronze"},
     {"id": "growing_family", "name": "Growing Family", "icon": "🌱", "description": "Your sanctuary is coming to life.", "category": "animals", "tier": "silver"},
@@ -861,31 +866,105 @@ BADGE_DEFINITIONS = [
     {"id": "full_sanctuary", "name": "Full Sanctuary", "icon": "🌍", "description": "Every endangered species — saved by studying.", "category": "animals", "tier": "diamond"},
     {"id": "favourite_friend", "name": "Favourite Friend", "icon": "❤️", "description": "Clearly you have a favourite.", "category": "animals", "tier": "silver"},
     {"id": "naming_ceremony", "name": "Naming Ceremony", "icon": "✏️", "description": "Each one is special to you.", "category": "animals", "tier": "bronze"},
+    {"id": "rare_finder", "name": "Rare Finder", "icon": "🔮", "description": "A rare specimen joins the sanctuary.", "category": "animals", "tier": "silver"},
+    {"id": "legendary_keeper", "name": "Legendary Keeper", "icon": "🐉", "description": "Legends live in your sanctuary.", "category": "animals", "tier": "gold"},
     # Eco-Credits
     {"id": "saver", "name": "Saver", "icon": "🍀", "description": "Saving up for something special?", "category": "eco_credits", "tier": "silver"},
     {"id": "big_spender", "name": "Big Spender", "icon": "💸", "description": "Treating the sanctuary right.", "category": "eco_credits", "tier": "gold"},
     {"id": "window_shopper", "name": "Window Shopper", "icon": "👀", "description": "Just browsing... for now.", "category": "eco_credits", "tier": "bronze"},
     {"id": "eco_mogul", "name": "Eco Mogul", "icon": "🤑", "description": "A true eco-credit tycoon.", "category": "eco_credits", "tier": "diamond"},
     {"id": "impulse_buyer", "name": "Impulse Buyer", "icon": "🛒", "description": "Couldn't resist.", "category": "eco_credits", "tier": "silver"},
+    {"id": "first_purchase", "name": "First Purchase", "icon": "🎉", "description": "Your first shop purchase — exciting!", "category": "eco_credits", "tier": "bronze"},
     # Subjects
     {"id": "subject_explorer", "name": "Subject Explorer", "icon": "🧭", "description": "A well-rounded learner.", "category": "subjects", "tier": "silver"},
     {"id": "renaissance_student", "name": "Renaissance Student", "icon": "🎨", "description": "Curious about everything.", "category": "subjects", "tier": "gold"},
     {"id": "deep_diver", "name": "Deep Diver", "icon": "🤿", "description": "Mastery takes dedication.", "category": "subjects", "tier": "gold"},
     {"id": "subject_champion", "name": "Subject Champion", "icon": "👑", "description": "You own this subject now.", "category": "subjects", "tier": "diamond"},
     {"id": "balanced_brain", "name": "Balanced Brain", "icon": "⚖️", "description": "Keeping all the plates spinning.", "category": "subjects", "tier": "silver"},
+    {"id": "polymath", "name": "Polymath", "icon": "🧠", "description": "Knowledge knows no boundaries.", "category": "subjects", "tier": "diamond"},
     # Sanctuary
     {"id": "interior_designer", "name": "Interior Designer", "icon": "🎨", "description": "Making it feel like home.", "category": "sanctuary", "tier": "silver"},
     {"id": "decorator_deluxe", "name": "Decorator Deluxe", "icon": "✨", "description": "The sanctuary looks incredible.", "category": "sanctuary", "tier": "gold"},
     {"id": "accessory_addict", "name": "Accessory Addict", "icon": "👒", "description": "Fashion-forward sanctuary.", "category": "sanctuary", "tier": "gold"},
     {"id": "curator", "name": "Curator", "icon": "🖼️", "description": "A little bit of everything.", "category": "sanctuary", "tier": "silver"},
+    {"id": "green_thumb", "name": "Green Thumb", "icon": "🌿", "description": "Your sanctuary is flourishing.", "category": "sanctuary", "tier": "bronze"},
+    {"id": "sanctuary_master", "name": "Sanctuary Master", "icon": "🏰", "description": "A paradise of your own making.", "category": "sanctuary", "tier": "diamond"},
     # Social
     {"id": "social_butterfly", "name": "Social Butterfly", "icon": "🦋", "description": "Popular AND productive.", "category": "social", "tier": "gold"},
     {"id": "top_of_the_class", "name": "Top of the Class", "icon": "🥇", "description": "This week's champion.", "category": "social", "tier": "diamond"},
     {"id": "generous_spirit", "name": "Generous Spirit", "icon": "🎁", "description": "Sharing is caring.", "category": "social", "tier": "gold"},
     {"id": "study_squad", "name": "Study Squad", "icon": "👥", "description": "Stronger together.", "category": "social", "tier": "gold"},
+    {"id": "first_friend_social", "name": "First Friend", "icon": "🤝", "description": "Every friendship starts somewhere.", "category": "social", "tier": "bronze"},
+    {"id": "team_player", "name": "Team Player", "icon": "🏅", "description": "Contributing to the group goal.", "category": "social", "tier": "silver"},
 ]
 
 BADGE_MAP = {b["id"]: b for b in BADGE_DEFINITIONS}
+
+BADGE_REQUIREMENTS = {
+    "first_steps": "Complete your first study session",
+    "finding_rhythm": "Complete 8 study sessions",
+    "double_digits": "Complete 20 study sessions",
+    "halfway_hero": "Complete 40 study sessions",
+    "session_centurion": "Complete 100 study sessions",
+    "on_fire": "Reach a 3-day study streak",
+    "momentum_builder": "Reach a 5-day study streak",
+    "week_warrior": "Reach a 7-day study streak",
+    "fortnight_force": "Reach a 21-day study streak",
+    "monthly_machine": "Reach a 45-day study streak",
+    "iron_will": "Reach a 90-day study streak",
+    "unbreakable": "Reach a 150-day study streak",
+    "hour_of_power": "Complete a single 60-minute study session",
+    "endurance_mode": "Complete a single 120-minute study session",
+    "marathon_mind": "Study for 600 total minutes (10 hours)",
+    "study_veteran": "Study for 3,000 total minutes (50 hours)",
+    "thousand_minute_club": "Study for 1,500 total minutes (25 hours)",
+    "time_lord": "Study for 6,000 total minutes (100 hours)",
+    "early_bird": "Complete a study session before 7 AM",
+    "dawn_patrol": "Complete 5 study sessions before 8 AM",
+    "night_owl": "Complete a study session after 11 PM",
+    "moonlight_scholar": "Complete 5 study sessions after 10 PM",
+    "weekend_scholar": "Study on both Saturday and Sunday in the same week",
+    "lunch_break_learner": "Complete a study session between 12\u20131 PM",
+    "comeback_kid": "Return to study after a 7+ day break",
+    "first_friend": "Hatch your first animal",
+    "growing_family": "Hatch 8 different animal species",
+    "collectors_pride": "Hatch 25 animals total",
+    "speed_hatcher": "Hatch 3 animals in a single day",
+    "full_sanctuary": "Collect all 30 unique animal species",
+    "favourite_friend": "Hatch the same animal species 5 times",
+    "naming_ceremony": "Give nicknames to 5 of your animals",
+    "saver": "Have 500 eco-credits saved up",
+    "big_spender": "Spend 1,000 eco-credits total",
+    "window_shopper": "Visit the shop",
+    "eco_mogul": "Earn 5,000 eco-credits total",
+    "impulse_buyer": "Buy an item from the shop",
+    "subject_explorer": "Study 3 different subjects",
+    "renaissance_student": "Study 6 different subjects",
+    "deep_diver": "Study one subject for 600+ minutes (10 hours)",
+    "subject_champion": "Study one subject for 1,500+ minutes (25 hours)",
+    "balanced_brain": "Study 3+ different subjects in the same week",
+    "interior_designer": "Place a decoration in your sanctuary",
+    "decorator_deluxe": "Place 5 decorations in your sanctuary",
+    "accessory_addict": "Buy 5 accessories from the shop",
+    "curator": "Own items from 3+ different shop categories",
+    "social_butterfly": "Add 10 friends",
+    "top_of_the_class": "Reach #1 on the weekly leaderboard",
+    "generous_spirit": "Share a study tip with a friend",
+    "study_squad": "Join or create a study group",
+    "dedicated_learner": "Complete 200 study sessions",
+    "ten_day_titan": "Reach a 10-day study streak",
+    "quarter_century": "Reach a 25-day study streak",
+    "golden_hour": "Complete a study session between 5\u20137 PM",
+    "all_nighter": "Complete a study session between 2\u20135 AM",
+    "rare_finder": "Hatch a rare animal",
+    "legendary_keeper": "Hatch a legendary animal",
+    "first_purchase": "Buy your first item from the shop",
+    "polymath": "Study 10 different subjects",
+    "green_thumb": "Place your first decoration",
+    "sanctuary_master": "Place 10+ items in your sanctuary",
+    "first_friend_social": "Add your first friend",
+    "team_player": "Contribute 60+ minutes to a group goal",
+}
 
 
 def get_user_badges(db: Session, user_id: int) -> List[dict]:
@@ -894,7 +973,8 @@ def get_user_badges(db: Session, user_id: int) -> List[dict]:
 
     result = []
     for b in BADGE_DEFINITIONS:
-        entry = {**b, "earned": b["id"] in earned_map}
+        entry = {**b, "earned": b["id"] in earned_map,
+                 "requirement": BADGE_REQUIREMENTS.get(b["id"], "")}
         if entry["earned"]:
             entry["earned_at"] = earned_map[b["id"]].isoformat()
         result.append(entry)
@@ -945,6 +1025,7 @@ def check_badges(db: Session, user_id: int, session_hour: int = None, session_mi
     if ts >= 20: capped_award("double_digits")
     if ts >= 40: capped_award("halfway_hero")
     if ts >= 100: capped_award("session_centurion")
+    if ts >= 200: capped_award("dedicated_learner")
 
     # Streaks
     if best_streak >= 3: capped_award("on_fire")
@@ -953,6 +1034,8 @@ def check_badges(db: Session, user_id: int, session_hour: int = None, session_mi
     if best_streak >= 21: capped_award("fortnight_force")
     if best_streak >= 45: capped_award("monthly_machine")
     if best_streak >= 90: capped_award("iron_will")
+    if best_streak >= 10: capped_award("ten_day_titan")
+    if best_streak >= 25: capped_award("quarter_century")
     if best_streak >= 150: capped_award("unbreakable")
 
     # Study Time (session length)
@@ -970,6 +1053,8 @@ def check_badges(db: Session, user_id: int, session_hour: int = None, session_mi
         if session_hour < 7: capped_award("early_bird")
         if session_hour >= 23 or session_hour < 4: capped_award("night_owl")
         if 12 <= session_hour < 13: capped_award("lunch_break_learner")
+        if 17 <= session_hour < 19: capped_award("golden_hour")
+        if 2 <= session_hour < 5: capped_award("all_nighter")
 
     # Early bird / night owl multi-session
     early_count = db.query(models.StudySession).filter(
@@ -1024,6 +1109,14 @@ def check_badges(db: Session, user_id: int, session_hour: int = None, session_mi
     ).count()
     if today_hatches >= 3: capped_award("speed_hatcher")
 
+    # Rare/legendary animal badges
+    user_animal_rarities = db.query(models.Animal.rarity).join(
+        models.UserAnimal, models.UserAnimal.animal_id == models.Animal.id
+    ).filter(models.UserAnimal.user_id == user_id).all()
+    rarity_set = {r[0] for r in user_animal_rarities if r[0]}
+    if "rare" in rarity_set or "epic" in rarity_set: capped_award("rare_finder")
+    if "legendary" in rarity_set: capped_award("legendary_keeper")
+
     # Naming ceremony
     named = db.query(models.UserAnimal).filter(
         models.UserAnimal.user_id == user_id,
@@ -1061,13 +1154,29 @@ def check_badges(db: Session, user_id: int, session_hour: int = None, session_mi
         models.StudySession.subject != None
     ).distinct().count()
     if week_subjects >= 3: capped_award("balanced_brain")
+    if distinct_subjects >= 10: capped_award("polymath")
+
+    # Eco-credits: first purchase
+    spent = tc - cc
+    if spent > 0: capped_award("first_purchase")
 
     # Friends count
     friend_count = db.query(models.Friendship).filter(
         models.Friendship.status == "accepted",
         ((models.Friendship.user_id == user_id) | (models.Friendship.friend_id == user_id))
     ).count()
+    if friend_count >= 1: capped_award("first_friend_social")
     if friend_count >= 10: capped_award("social_butterfly")
+
+    # Team player: contributed 60+ mins to any group
+    user_groups = db.query(models.GroupMember).filter(models.GroupMember.user_id == user_id).all()
+    for gm in user_groups:
+        group = db.query(models.StudyGroup).filter(models.StudyGroup.id == gm.group_id).first()
+        if group:
+            mins_in_group = _group_member_minutes(db, user_id, group)
+            if mins_in_group >= 60:
+                capped_award("team_player")
+                break
 
     if new_badges:
         db.commit()

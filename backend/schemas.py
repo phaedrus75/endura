@@ -136,6 +136,7 @@ class BadgeResponse(BaseModel):
     tier: str
     earned: bool
     earned_at: Optional[str] = None
+    requirement: Optional[str] = None
 
 class StudySessionWithHatchResponse(BaseModel):
     session: StudySessionResponse

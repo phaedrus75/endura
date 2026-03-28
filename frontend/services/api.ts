@@ -130,6 +130,7 @@ export interface BadgeInfo {
 export interface BadgeResponse extends BadgeInfo {
   earned: boolean;
   earned_at?: string;
+  requirement?: string;
 }
 
 export interface StudySessionWithHatchAndBadges extends StudySessionWithHatch {
