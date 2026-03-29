@@ -891,7 +891,12 @@ def get_leaderboard(
     current_user: models.User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    return crud.get_leaderboard(db, current_user.id)
+    try:
+        return crud.get_leaderboard(db, current_user.id)
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.get("/leaderboard/global", response_model=List[schemas.LeaderboardEntry])
@@ -1078,7 +1083,12 @@ def get_feed(
     current_user: models.User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    return crud.get_friend_feed(db, current_user.id)
+    try:
+        return crud.get_friend_feed(db, current_user.id)
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/feed/reactions/new")
 def get_new_reactions(
