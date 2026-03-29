@@ -435,7 +435,7 @@ def get_global_leaderboard(db: Session) -> List[dict]:
 
 def get_leaderboard(db: Session, user_id: int, limit: int = 20) -> List[dict]:
     friends = get_friends(db, user_id)
-    friend_ids = [f.id for f in friends] + [user_id]
+    friend_ids = [entry["user"].id for entry in friends] + [user_id]
     
     users = db.query(models.User).filter(
         models.User.id.in_(friend_ids)
@@ -834,7 +834,7 @@ def create_session_event(db: Session, user_id: int, minutes: int, animal_name: s
 
 def get_friend_feed(db: Session, user_id: int, limit: int = 30) -> List[dict]:
     friends = get_friends(db, user_id)
-    friend_ids = [f.id for f in friends]
+    friend_ids = [entry["user"].id for entry in friends]
     if not friend_ids:
         return []
 
