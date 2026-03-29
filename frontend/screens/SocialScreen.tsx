@@ -20,12 +20,13 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { colors, shadows, spacing, borderRadius } from '../theme/colors';
+import SwipeDismiss, { DragHandle } from '../components/SwipeDismiss';
 import { useAuth } from '../contexts/AuthContext';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   groupsAPI, feedAPI, socialAPI, tipsAPI,
   StudyGroup, GroupMessage, FeedEvent,
-  Friend, StudyTip,
+  Friend, FriendProfile, StudyTip, LeaderboardEntry,
 } from '../services/api';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
@@ -152,12 +153,55 @@ export default function SocialScreen() {
   const [showAddFriend, setShowAddFriend] = useState(false);
   const [addFriendHandle, setAddFriendHandle] = useState('');
 
+
+  // Friend profile modal
+  const [selectedFriend, setSelectedFriend] = useState<FriendProfile | null>(null);
+  const [showFriendProfile, setShowFriendProfile] = useState(false);
+  const [friendProfileLoading, setFriendProfileLoading] = useState(false);
+  const friendProfileScale = useRef(new Animated.Value(0)).current;
+
+  // Leaderboards
+  const [leaderboardTab, setLeaderboardTab] = useState<'all' | 'friends'>('all');
+  const [globalLeaderboard, setGlobalLeaderboard] = useState<LeaderboardEntry[]>([]);
+  const [friendsLeaderboard, setFriendsLeaderboard] = useState<LeaderboardEntry[]>([]);
+
   // Reaction notification
   const [showReactionModal, setShowReactionModal] = useState(false);
   const [incomingReactions, setIncomingReactions] = useState<IncomingReaction[]>([]);
   const reactionScale = useRef(new Animated.Value(0)).current;
   const reactionOpacity = useRef(new Animated.Value(0)).current;
   const emojiFloat = useRef(new Animated.Value(0)).current;
+  const [hasSeenTips, setHasSeenTips] = useState(true);
+  const tipsPulse = useRef(new Animated.Value(1)).current;
+
+  useEffect(() => {
+    const checkTips = async () => {
+      const seen = await AsyncStorage.getItem(`hasSeenTips_${user?.id || 'anon'}`);
+      setHasSeenTips(seen === 'true');
+    };
+    checkTips();
+  }, [user?.id]);
+
+  useEffect(() => {
+    if (!hasSeenTips) {
+      const loop = Animated.loop(
+        Animated.sequence([
+          Animated.timing(tipsPulse, { toValue: 1.25, duration: 800, useNativeDriver: true }),
+          Animated.timing(tipsPulse, { toValue: 1, duration: 800, useNativeDriver: true }),
+        ])
+      );
+      loop.start();
+      return () => loop.stop();
+    }
+  }, [hasSeenTips]);
+
+  const handleOpenTips = async () => {
+    if (!hasSeenTips) {
+      setHasSeenTips(true);
+      await AsyncStorage.setItem(`hasSeenTips_${user?.id || 'anon'}`, 'true');
+    }
+    navigation.navigate('Tips');
+  };
 
   const reactionMsgIdx = useRef(0);
   const showReactionPopup = (reactions: IncomingReaction[]) => {
@@ -212,16 +256,20 @@ export default function SocialScreen() {
 
   const loadData = useCallback(async () => {
     try {
-      const [g, f, fr, pr] = await Promise.all([
+      const [g, f, fr, pr, gl, fl] = await Promise.all([
         groupsAPI.getAll().catch(() => []),
         feedAPI.getFeed().catch(() => []),
         socialAPI.getFriends().catch(() => []),
         socialAPI.getPendingRequests().catch(() => []),
+        socialAPI.getGlobalLeaderboard().catch(() => []),
+        socialAPI.getLeaderboard().catch(() => []),
       ]);
       setGroups(g);
       setFeed(f);
       setFriends(fr);
       setPendingRequests(pr);
+      setGlobalLeaderboard(gl);
+      setFriendsLeaderboard(fl);
     } catch {}
   }, []);
 
@@ -266,6 +314,115 @@ export default function SocialScreen() {
     } catch (e: any) {
       Alert.alert('Error', e.message || 'Could not accept request');
     }
+  };
+
+  const openFriendProfile = async (friendId: number) => {
+    setFriendProfileLoading(true);
+    setShowFriendProfile(true);
+    friendProfileScale.setValue(0);
+    try {
+      const profile = await socialAPI.getFriendProfile(friendId);
+      setSelectedFriend(profile);
+      Animated.spring(friendProfileScale, {
+        toValue: 1,
+        useNativeDriver: true,
+        tension: 65,
+        friction: 8,
+      }).start();
+    } catch (e: any) {
+      Alert.alert('Error', e.message || 'Could not load friend profile');
+      setShowFriendProfile(false);
+    } finally {
+      setFriendProfileLoading(false);
+    }
+  };
+
+  const closeFriendProfile = () => {
+    Animated.timing(friendProfileScale, {
+      toValue: 0,
+      duration: 150,
+      useNativeDriver: true,
+    }).start(() => {
+      setShowFriendProfile(false);
+      setSelectedFriend(null);
+    });
+  };
+
+  const formatFriendDate = (isoString: string | null) => {
+    if (!isoString) return 'Unknown';
+    const date = new Date(isoString);
+    return date.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+  };
+
+  const getDaysSince = (isoString: string | null) => {
+    if (!isoString) return 0;
+    const diff = Date.now() - new Date(isoString).getTime();
+    return Math.floor(diff / (1000 * 60 * 60 * 24));
+  };
+
+  const formatStudyTime = (minutes: number) => {
+    if (minutes < 60) return `${minutes}m`;
+    const hours = Math.floor(minutes / 60);
+    const mins = minutes % 60;
+    if (hours < 24) return mins > 0 ? `${hours}h ${mins}m` : `${hours}h`;
+    const days = Math.floor(hours / 24);
+    const remainHours = hours % 24;
+    return remainHours > 0 ? `${days}d ${remainHours}h` : `${days}d`;
+  };
+
+  const getFriendshipLevel = (days: number) => {
+    if (days >= 365) return { title: 'Soulmates', emoji: '💎', color: '#A78BFA' };
+    if (days >= 180) return { title: 'Best Friends', emoji: '🌟', color: '#F59E0B' };
+    if (days >= 90) return { title: 'Close Friends', emoji: '💫', color: '#3B82F6' };
+    if (days >= 30) return { title: 'Good Friends', emoji: '🤝', color: '#10B981' };
+    if (days >= 7) return { title: 'New Friends', emoji: '🌱', color: '#6EE7B7' };
+    return { title: 'Just Met', emoji: '👋', color: '#94A3B8' };
+  };
+
+  const handleRemoveFriend = (friendId: number, friendName: string) => {
+    Alert.alert(
+      'Remove Friend',
+      `Are you sure you want to remove ${friendName} from your friends?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Remove',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await socialAPI.removeFriend(friendId);
+              Alert.alert('Removed', `${friendName} has been removed from your friends.`);
+              loadData();
+            } catch (e: any) {
+              Alert.alert('Error', e.message || 'Could not remove friend');
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  const handleRemoveGroupMember = (groupId: number, memberId: number, memberName: string) => {
+    Alert.alert(
+      'Remove Member',
+      `Remove ${memberName} from this group?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Remove',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await groupsAPI.removeMember(groupId, memberId);
+              Alert.alert('Removed', `${memberName} has been removed from the group.`);
+              loadData();
+            } catch (e: any) {
+              Alert.alert('Error', e.message || 'Could not remove member');
+            }
+          },
+        },
+      ]
+    );
   };
 
   // ---- Group Actions ----
@@ -399,52 +556,82 @@ export default function SocialScreen() {
   };
 
   // ---- Render ----
-  const renderBuddies = () => (
-    <View style={styles.tabContent}>
-      {/* Leaderboard */}
-      {friends.length > 0 && (
-        <View style={styles.leaderboardCard}>
-          <Text style={styles.leaderboardTitle}>📊 Weekly Leaderboard</Text>
-          {[...friends, ...(user ? [{
-            id: user.id, username: user.username, email: user.email,
-            total_study_minutes: user.total_study_minutes, current_streak: user.current_streak, animals_count: 0,
-            profile_pic_url: profilePic || user.profile_pic_url,
-          }] : [])]
-            .sort((a, b) => b.total_study_minutes - a.total_study_minutes)
-            .slice(0, 10)
-            .map((f, i) => (
-              <View key={f.id} style={styles.leaderboardRow}>
-                <Text style={styles.leaderboardRank}>
-                  {i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `${i + 1}.`}
-                </Text>
-                <View style={{ marginRight: 6 }}>
-                  <UserAvatar id={f.id} username={f.username} email={f.email} profilePicUrl={(f as any).profile_pic_url} size={24} />
-                </View>
-                <Text style={[styles.leaderboardName, f.id === user?.id && styles.leaderboardNameSelf]}>
-                  {f.username || f.email?.split('@')[0]}
-                </Text>
-                <Text style={styles.leaderboardStreak}>🔥 {f.current_streak}</Text>
-                <Text style={styles.leaderboardMins}>{f.total_study_minutes}m</Text>
-              </View>
-            ))}
-        </View>
-      )}
+  const renderBuddies = () => {
+    const activeList = leaderboardTab === 'all' ? globalLeaderboard : friendsLeaderboard;
+    const userRank = activeList.findIndex(e => e.user_id === user?.id);
 
-      {friends.length === 0 && (
-        <View style={styles.emptyState}>
-          <Text style={styles.emptyIcon}>👥</Text>
-          <Text style={styles.emptyTitle}>No friends yet</Text>
-          <Text style={styles.emptySubtitle}>Add friends to see who's studying the most!</Text>
+    return (
+      <View style={styles.tabContent}>
+        <View style={styles.leaderboardCard}>
+          <Text style={styles.leaderboardTitle}>📊 Leaderboard</Text>
+
+          {/* Swatch toggle */}
+          <View style={styles.leaderboardSwatch}>
+            <TouchableOpacity
+              style={[styles.leaderboardSwatchBtn, leaderboardTab === 'all' && styles.leaderboardSwatchBtnActive]}
+              onPress={() => setLeaderboardTab('all')}
+            >
+              <Text style={[styles.leaderboardSwatchText, leaderboardTab === 'all' && styles.leaderboardSwatchTextActive]}>All Users</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.leaderboardSwatchBtn, leaderboardTab === 'friends' && styles.leaderboardSwatchBtnActive]}
+              onPress={() => setLeaderboardTab('friends')}
+            >
+              <Text style={[styles.leaderboardSwatchText, leaderboardTab === 'friends' && styles.leaderboardSwatchTextActive]}>Friends</Text>
+            </TouchableOpacity>
+          </View>
+
+          {activeList.length === 0 ? (
+            <View style={{ alignItems: 'center', paddingVertical: 20 }}>
+              <Text style={{ fontSize: 28, marginBottom: 6 }}>{leaderboardTab === 'friends' ? '👥' : '🌍'}</Text>
+              <Text style={{ fontSize: 14, color: colors.textMuted, textAlign: 'center' }}>
+                {leaderboardTab === 'friends' ? 'Add friends to see the friends leaderboard!' : 'Start studying to appear on the leaderboard!'}
+              </Text>
+            </View>
+          ) : (
+            <>
+              {activeList.slice(0, 20).map((entry, i) => {
+                const isMe = entry.user_id === user?.id;
+                return (
+                  <View key={entry.user_id} style={[styles.leaderboardRow, isMe && styles.leaderboardRowSelf]}>
+                    <Text style={styles.leaderboardRank}>
+                      {i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `${i + 1}.`}
+                    </Text>
+                    <View style={{ marginRight: 6 }}>
+                      <UserAvatar id={entry.user_id} username={entry.username || undefined} profilePicUrl={entry.profile_pic_url} size={24} />
+                    </View>
+                    <Text style={[styles.leaderboardName, isMe && styles.leaderboardNameSelf]} numberOfLines={1}>
+                      {isMe ? 'You' : (entry.username || '?')}
+                    </Text>
+                    <Text style={styles.leaderboardStreak}>🔥 {entry.current_streak}</Text>
+                    <Text style={styles.leaderboardMins}>{entry.total_study_minutes}m</Text>
+                  </View>
+                );
+              })}
+
+              {userRank >= 20 && (
+                <View style={[styles.leaderboardRow, styles.leaderboardRowSelf, { marginTop: 8, borderTopWidth: 1, borderTopColor: '#E7EFEA', paddingTop: 10 }]}>
+                  <Text style={styles.leaderboardRank}>{userRank + 1}.</Text>
+                  <View style={{ marginRight: 6 }}>
+                    <UserAvatar id={user?.id || 0} username={user?.username || undefined} profilePicUrl={profilePic} size={24} />
+                  </View>
+                  <Text style={[styles.leaderboardName, styles.leaderboardNameSelf]} numberOfLines={1}>You</Text>
+                  <Text style={styles.leaderboardStreak}>🔥 {user?.current_streak || 0}</Text>
+                  <Text style={styles.leaderboardMins}>{user?.total_study_minutes || 0}m</Text>
+                </View>
+              )}
+            </>
+          )}
         </View>
-      )}
-    </View>
-  );
+      </View>
+    );
+  };
 
   const renderGroups = () => (
     <View style={styles.tabContent}>
       <TouchableOpacity onPress={() => setShowCreateGroup(true)}>
         <LinearGradient
-          colors={['#5F8C87', '#3B5466']}
+          colors={['#A9CECA', '#7DA9A4']}
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 0 }}
           style={styles.createButton}
@@ -469,29 +656,27 @@ export default function SocialScreen() {
             <TouchableOpacity onPress={() => openGroupChat(g)} activeOpacity={0.7}>
               <View style={styles.groupHeader}>
                 <Text style={styles.groupName}>{g.name}</Text>
-                {g.goal_met && <Text style={styles.goalMetBadge}>🎉 Goal Met!</Text>}
               </View>
-              <View style={styles.groupProgressBar}>
-                <LinearGradient
-                  colors={['#A8C8D8', '#5F8C87']}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 0 }}
-                  style={[styles.groupProgressFill, { width: `${Math.max(progress, 2)}%` }]}
-                />
-              </View>
-              <Text style={styles.groupProgressText}>
-                {g.total_minutes} / {g.goal_minutes} min
-              </Text>
               <View style={styles.groupMembersRow}>
                 {g.members.slice(0, 5).map(m => {
                   const isMe = m.user_id === user?.id;
+                  const isAdmin = g.creator_id === user?.id;
                   const displayName = m.username || '?';
                   return (
-                    <View key={m.user_id} style={styles.memberChip}>
+                    <TouchableOpacity
+                      key={m.user_id}
+                      style={styles.memberChip}
+                      activeOpacity={isAdmin && !isMe ? 0.6 : 1}
+                      onLongPress={() => {
+                        if (isAdmin && !isMe) {
+                          handleRemoveGroupMember(g.id, m.user_id, displayName);
+                        }
+                      }}
+                    >
                       <UserAvatar id={m.user_id} username={displayName} profilePicUrl={isMe ? profilePic : m.profile_pic_url} size={22} />
                       <Text style={styles.memberChipText}>{displayName}</Text>
-                      <Text style={styles.memberChipMins}>{m.minutes_contributed}m</Text>
-                    </View>
+                      {isAdmin && isMe && <Text style={{ fontSize: 9, color: '#5F8C87' }}>👑</Text>}
+                    </TouchableOpacity>
                   );
                 })}
                 {g.members.length > 5 && (
@@ -518,35 +703,6 @@ export default function SocialScreen() {
                 >
                   <Text style={styles.groupActionEmoji}>➕</Text>
                   <Text style={styles.groupActionText}>Add</Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  style={styles.groupActionBtnClean}
-                  onPress={() => setFeatureModal({ type: 'challenge', group: g })}
-                  activeOpacity={0.7}
-                >
-                  <Text style={styles.groupActionEmoji}>🎯</Text>
-                  <Text style={styles.groupActionText}>Challenge</Text>
-                </TouchableOpacity>
-              </View>
-
-              <View style={styles.groupActionsBottomRow}>
-                <TouchableOpacity
-                  style={styles.groupActionBtnClean}
-                  onPress={() => setFeatureModal({ type: 'leaderboard', group: g })}
-                  activeOpacity={0.7}
-                >
-                  <Text style={styles.groupActionEmoji}>📊</Text>
-                  <Text style={styles.groupActionText}>Leaderboard</Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  style={styles.groupActionBtnClean}
-                  onPress={() => setFeatureModal({ type: 'streak', group: g })}
-                  activeOpacity={0.7}
-                >
-                  <Text style={styles.groupActionEmoji}>🏆</Text>
-                  <Text style={styles.groupActionText}>Streak</Text>
                 </TouchableOpacity>
 
                 <TouchableOpacity
@@ -616,7 +772,7 @@ export default function SocialScreen() {
   );
 
   return (
-    <SafeAreaView style={styles.container} edges={['top']}>
+    <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
       <View style={styles.header}>
         <View>
           <Text style={styles.headerTitle}>Friends</Text>
@@ -635,9 +791,17 @@ export default function SocialScreen() {
           </TouchableOpacity>
           <TouchableOpacity
             style={{ width: 38, height: 38, borderRadius: 19, backgroundColor: '#FFFFFF', justifyContent: 'center', alignItems: 'center' }}
-            onPress={() => navigation.navigate('Tips')}
+            onPress={handleOpenTips}
           >
             <Text style={{ fontSize: 18 }}>💡</Text>
+            {!hasSeenTips && (
+              <Animated.View style={{
+                position: 'absolute', top: 1, right: 1,
+                width: 9, height: 9, borderRadius: 4.5,
+                backgroundColor: '#FF6B6B', borderWidth: 1.5, borderColor: '#FFFFFF',
+                transform: [{ scale: tipsPulse }],
+              }} />
+            )}
           </TouchableOpacity>
           <TouchableOpacity
             style={{ width: 38, height: 38, borderRadius: 19, backgroundColor: '#FFFFFF', justifyContent: 'center', alignItems: 'center', overflow: 'hidden' }}
@@ -649,24 +813,24 @@ export default function SocialScreen() {
       </View>
 
       {/* Pending Requests */}
-      {pendingRequests.length > 0 && (
-        <LinearGradient
-          colors={['#FFFFFF', '#E7EFEA']}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 0, y: 1 }}
-          style={styles.pendingSection}
-        >
-          <Text style={styles.pendingTitle}>Friend Requests ({pendingRequests.length})</Text>
-          {pendingRequests.map(req => (
+      <View style={styles.pendingSection}>
+        <Text style={styles.pendingTitle}>
+          Friend Requests {pendingRequests.length > 0 ? `(${pendingRequests.length})` : ''}
+        </Text>
+        {pendingRequests.length === 0 ? (
+          <Text style={styles.pendingEmpty}>No pending requests</Text>
+        ) : (
+          pendingRequests.map(req => (
             <View key={req.id} style={styles.pendingRow}>
+              <UserAvatar id={req.user_id} username={req.username || undefined} size={32} />
               <Text style={styles.pendingName}>{req.username || req.email.split('@')[0]}</Text>
               <TouchableOpacity style={styles.pendingAcceptBtn} onPress={() => handleAcceptFriend(req.id)}>
                 <Text style={styles.pendingAcceptText}>Accept</Text>
               </TouchableOpacity>
             </View>
-          ))}
-        </LinearGradient>
-      )}
+          ))
+        )}
+      </View>
 
       {/* Friends */}
       {friends.length > 0 && (
@@ -678,16 +842,25 @@ export default function SocialScreen() {
         >
           <Text style={styles.allUsersTitle}>👥 Friends ({friends.length})</Text>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.allUsersRow}>
-            {friends.map(f => (
-              <View key={f.id} style={styles.allUserChip}>
-                <UserAvatar id={f.id} username={f.username} email={f.email} profilePicUrl={f.profile_pic_url} size={36} />
-                <Text style={styles.allUserName} numberOfLines={1}>@{f.username || f.email?.split('@')[0]}</Text>
-                <Text style={styles.allUserStats}>{f.total_study_minutes}m · 🔥{f.current_streak}</Text>
-                <View style={[styles.allUserActionBtn, styles.allUserFriendBtn]}>
-                  <Text style={styles.allUserFriendText}>✓ Friends</Text>
-                </View>
-              </View>
-            ))}
+            {friends.map(f => {
+              const name = f.username || f.email?.split('@')[0] || 'Friend';
+              return (
+                <TouchableOpacity key={f.id} style={styles.allUserChip} activeOpacity={0.7} onPress={() => openFriendProfile(f.id)}>
+                  <TouchableOpacity
+                    onPress={() => handleRemoveFriend(f.id, name)}
+                    style={{ position: 'absolute', top: 6, right: 6, zIndex: 1, width: 20, height: 20, borderRadius: 10, backgroundColor: '#00000015', justifyContent: 'center', alignItems: 'center' }}
+                  >
+                    <Text style={{ fontSize: 11, color: '#999', fontWeight: '700' }}>✕</Text>
+                  </TouchableOpacity>
+                  <UserAvatar id={f.id} username={f.username} email={f.email} profilePicUrl={f.profile_pic_url} size={36} />
+                  <Text style={styles.allUserName} numberOfLines={1}>@{name}</Text>
+                  <Text style={styles.allUserStats}>{f.total_study_minutes}m · 🔥{f.current_streak}</Text>
+                  <View style={[styles.allUserActionBtn, styles.allUserFriendBtn]}>
+                    <Text style={styles.allUserFriendText}>✓ Friends</Text>
+                  </View>
+                </TouchableOpacity>
+              );
+            })}
           </ScrollView>
         </LinearGradient>
       )}
@@ -716,17 +889,15 @@ export default function SocialScreen() {
       </ScrollView>
 
       {/* Create Group Modal */}
-      <Modal visible={showCreateGroup} transparent animationType="slide">
-        <View style={styles.modalOverlay}>
-          <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-            <View style={styles.modalContent}>
+      <Modal visible={showCreateGroup} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => { setShowCreateGroup(false); setSelectedGroupFriends(new Set()); }}>
+        <View style={{ flex: 1, backgroundColor: '#fff' }}>
+          <DragHandle />
+          <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}>
+            <ScrollView contentContainerStyle={{ padding: 20 }}>
               <Text style={styles.modalTitle}>👥 Create Study Group</Text>
               <Text style={styles.inputLabel}>Group name</Text>
               <TextInput style={styles.input} placeholder="Physics Study Group" placeholderTextColor={colors.textMuted}
                 value={groupName} onChangeText={setGroupName} />
-              <Text style={styles.inputLabel}>Goal (total minutes)</Text>
-              <TextInput style={styles.input} value={groupGoal} onChangeText={setGroupGoal} keyboardType="number-pad"
-                placeholder="500" placeholderTextColor={colors.textMuted} />
 
               {friends.length > 0 && (
                 <>
@@ -771,43 +942,40 @@ export default function SocialScreen() {
               <TouchableOpacity style={styles.modalCancel} onPress={() => { setShowCreateGroup(false); setSelectedGroupFriends(new Set()); }}>
                 <Text style={styles.modalCancelText}>Cancel</Text>
               </TouchableOpacity>
-            </View>
+            </ScrollView>
           </KeyboardAvoidingView>
         </View>
       </Modal>
 
       {/* Group Chat Modal */}
-      <Modal visible={!!selectedGroup} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => { setSelectedGroup(null); setShowChatActions(false); }}>
-        <SafeAreaView style={styles.chatContainer} edges={['top']}>
-          {/* Swipe handle */}
-          <View style={styles.chatSwipeHandle}>
-            <View style={styles.chatSwipeBar} />
-          </View>
-          {/* Chat Header */}
-          <View style={styles.chatHeader}>
-            <View style={styles.chatHeaderCenter}>
-              <Text style={styles.chatTitle} numberOfLines={1}>{selectedGroup?.name}</Text>
-              <Text style={styles.chatSubtitle}>{selectedGroup?.members.length || 0} members</Text>
+      <Modal visible={!!selectedGroup} animationType="slide" onRequestClose={() => { setSelectedGroup(null); setShowChatActions(false); }}>
+        <KeyboardAvoidingView
+          style={{ flex: 1 }}
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        >
+          <SafeAreaView style={styles.chatContainer} edges={['top', 'bottom']}>
+            {/* Chat Header */}
+            <View style={styles.chatHeader}>
+              <View style={styles.chatHeaderCenter}>
+                <Text style={styles.chatTitle} numberOfLines={1}>{selectedGroup?.name}</Text>
+                <Text style={styles.chatSubtitle}>{selectedGroup?.members.length || 0} members</Text>
+              </View>
+              <TouchableOpacity
+                style={styles.chatCloseBtn}
+                onPress={() => { setSelectedGroup(null); setShowChatActions(false); setChatInput(''); }}
+              >
+                <Text style={styles.chatCloseText}>Done</Text>
+              </TouchableOpacity>
             </View>
-            <TouchableOpacity
-              style={styles.chatCloseBtn}
-              onPress={() => { setSelectedGroup(null); setShowChatActions(false); setChatInput(''); }}
-            >
-              <Text style={styles.chatCloseText}>Done</Text>
-            </TouchableOpacity>
-          </View>
 
           {/* Messages */}
-          <KeyboardAvoidingView
-            style={{ flex: 1 }}
-            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-            keyboardVerticalOffset={0}
-          >
             <FlatList
-              data={messages}
+              style={{ flex: 1 }}
+              data={[...messages].reverse()}
               keyExtractor={m => m.id.toString()}
               contentContainerStyle={styles.chatList}
-              inverted={false}
+              inverted={true}
+              keyboardDismissMode="interactive"
               keyboardShouldPersistTaps="handled"
               ListEmptyComponent={
                 <View style={styles.chatEmpty}>
@@ -903,29 +1071,55 @@ export default function SocialScreen() {
             />
 
             {/* Chat action bar */}
-            {showChatActions && (
+            {showChatActions && selectedGroup && (
               <View style={styles.chatActionsBar}>
-                <TouchableOpacity
-                  style={styles.chatActionItem}
-                  onPress={() => {
-                    setShowChatActions(false);
-                    loadSavedTips();
-                    setShowTipsPicker(true);
-                  }}
-                >
-                  <Text style={styles.chatActionEmoji}>📚</Text>
-                  <Text style={styles.chatActionLabel}>Share Tip</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={styles.chatActionItem}
-                  onPress={() => {
-                    setShowChatActions(false);
-                    sendHatchInvite();
-                  }}
-                >
-                  <Text style={styles.chatActionEmoji}>🥚</Text>
-                  <Text style={styles.chatActionLabel}>Hatch Together</Text>
-                </TouchableOpacity>
+                <View style={{ flexDirection: 'row', marginBottom: 12 }}>
+                  <TouchableOpacity
+                    style={styles.chatActionItem}
+                    onPress={() => {
+                      setShowChatActions(false);
+                      loadSavedTips();
+                      setShowTipsPicker(true);
+                    }}
+                  >
+                    <Text style={styles.chatActionEmoji}>📚</Text>
+                    <Text style={styles.chatActionLabel}>Share Tip</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.chatActionItem}
+                    onPress={() => {
+                      setShowChatActions(false);
+                      sendHatchInvite();
+                    }}
+                  >
+                    <Text style={styles.chatActionEmoji}>🥚</Text>
+                    <Text style={styles.chatActionLabel}>Hatch Together</Text>
+                  </TouchableOpacity>
+                </View>
+                <Text style={{ fontSize: 12, fontWeight: '700', color: colors.textMuted, marginBottom: 6 }}>Members</Text>
+                {selectedGroup.members.map(m => {
+                  const isMe = m.user_id === user?.id;
+                  const isAdmin = selectedGroup.creator_id === user?.id;
+                  const displayName = m.username || '?';
+                  const isCreator = m.user_id === selectedGroup.creator_id;
+                  return (
+                    <View key={m.user_id} style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 6 }}>
+                      <UserAvatar id={m.user_id} username={displayName} profilePicUrl={isMe ? profilePic : m.profile_pic_url} size={28} />
+                      <Text style={{ flex: 1, fontSize: 14, fontWeight: '500', color: colors.textPrimary, marginLeft: 8 }}>
+                        {displayName}{isCreator ? ' 👑' : ''}{isMe ? ' (you)' : ''}
+                      </Text>
+                      <Text style={{ fontSize: 12, color: colors.textMuted, marginRight: 8 }}>{m.minutes_contributed}m</Text>
+                      {isAdmin && !isMe && (
+                        <TouchableOpacity
+                          onPress={() => handleRemoveGroupMember(selectedGroup.id, m.user_id, displayName)}
+                          style={{ paddingHorizontal: 8, paddingVertical: 4, backgroundColor: '#FFE5E5', borderRadius: 8 }}
+                        >
+                          <Text style={{ fontSize: 11, fontWeight: '600', color: '#D44' }}>Remove</Text>
+                        </TouchableOpacity>
+                      )}
+                    </View>
+                  );
+                })}
               </View>
             )}
 
@@ -956,15 +1150,15 @@ export default function SocialScreen() {
                 <Text style={styles.chatSendText}>↑</Text>
               </TouchableOpacity>
             </View>
-          </KeyboardAvoidingView>
-        </SafeAreaView>
+          </SafeAreaView>
+        </KeyboardAvoidingView>
       </Modal>
 
       {/* Tips Picker Modal */}
-      <Modal visible={showTipsPicker} transparent animationType="slide">
-        <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => setShowTipsPicker(false)}>
-          <TouchableOpacity activeOpacity={1}>
-            <View style={[styles.modalContent, { maxHeight: SCREEN_WIDTH * 1.2 }]}>
+      <Modal visible={showTipsPicker} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setShowTipsPicker(false)}>
+        <View style={{ flex: 1, backgroundColor: '#fff' }}>
+          <DragHandle />
+          <View style={{ flex: 1, padding: 20 }}>
               <Text style={styles.modalTitle}>📚 Share a Study Tip</Text>
               {savedTips.length === 0 ? (
                 <View style={{ alignItems: 'center', paddingVertical: 20 }}>
@@ -992,9 +1186,8 @@ export default function SocialScreen() {
               <TouchableOpacity style={styles.modalCancel} onPress={() => setShowTipsPicker(false)}>
                 <Text style={styles.modalCancelText}>Cancel</Text>
               </TouchableOpacity>
-            </View>
-          </TouchableOpacity>
-        </TouchableOpacity>
+          </View>
+        </View>
       </Modal>
 
       {/* Invite Friends to Group Modal */}
@@ -1060,7 +1253,7 @@ export default function SocialScreen() {
                 <Text style={styles.inputLabel}>Friend's username</Text>
                 <TextInput
                   style={styles.input}
-                  placeholder="e.g. popsie"
+                  placeholder="e.g. rhea"
                   placeholderTextColor={colors.textMuted}
                   value={addFriendHandle}
                   onChangeText={setAddFriendHandle}
@@ -1087,8 +1280,8 @@ export default function SocialScreen() {
 
       {/* Feature Modal (Challenge / Leaderboard / Streak / Hatch) */}
       <Modal visible={!!featureModal} transparent animationType="fade">
-        <View style={styles.modalOverlay}>
-          <View style={styles.featureModalContent}>
+        <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => setFeatureModal(null)}>
+          <TouchableOpacity activeOpacity={1} style={styles.featureModalContent}>
             {featureModal?.type === 'challenge' && (
               <>
                 <Text style={styles.featureModalIcon}>🎯</Text>
@@ -1192,8 +1385,8 @@ export default function SocialScreen() {
             >
               <Text style={styles.featureModalCloseText}>Close</Text>
             </TouchableOpacity>
-          </View>
-        </View>
+          </TouchableOpacity>
+        </TouchableOpacity>
       </Modal>
 
       {/* Reaction Notification Modal */}
@@ -1281,6 +1474,138 @@ export default function SocialScreen() {
           </Animated.View>
         </TouchableOpacity>
       </Modal>
+
+      {/* Friend Profile Modal */}
+      <Modal visible={showFriendProfile} transparent animationType="fade">
+        <TouchableOpacity
+          style={styles.fpOverlay}
+          activeOpacity={1}
+          onPress={closeFriendProfile}
+        >
+          <Animated.View style={[
+            styles.fpCard,
+            { transform: [{ scale: friendProfileScale }], opacity: friendProfileScale },
+          ]}>
+            <TouchableOpacity activeOpacity={1}>
+              {friendProfileLoading || !selectedFriend ? (
+                <View style={styles.fpLoading}>
+                  <Text style={{ fontSize: 32 }}>✨</Text>
+                  <Text style={styles.fpLoadingText}>Loading...</Text>
+                </View>
+              ) : (() => {
+                const fp = selectedFriend;
+                const name = fp.username || fp.email?.split('@')[0] || 'Friend';
+                const daysFriends = getDaysSince(fp.friends_since);
+                const level = getFriendshipLevel(daysFriends);
+                const daysMember = getDaysSince(fp.member_since);
+                const avgSessionMin = fp.total_sessions > 0
+                  ? Math.round(fp.total_study_minutes / fp.total_sessions)
+                  : 0;
+
+                return (
+                  <View>
+                    {/* Header gradient */}
+                    <LinearGradient
+                      colors={[level.color + '30', '#FFFFFF00']}
+                      start={{ x: 0, y: 0 }}
+                      end={{ x: 0, y: 1 }}
+                      style={styles.fpHeader}
+                    >
+                      <View style={styles.fpAvatarRing}>
+                        <UserAvatar id={fp.id} username={fp.username} email={fp.email} profilePicUrl={fp.profile_pic_url} size={72} />
+                      </View>
+                      <Text style={styles.fpName}>@{name}</Text>
+                      <View style={[styles.fpLevelBadge, { backgroundColor: level.color + '20' }]}>
+                        <Text style={{ fontSize: 14 }}>{level.emoji}</Text>
+                        <Text style={[styles.fpLevelText, { color: level.color }]}>{level.title}</Text>
+                      </View>
+                    </LinearGradient>
+
+                    {/* Friends since banner */}
+                    <View style={styles.fpSinceBanner}>
+                      <Text style={styles.fpSinceLabel}>Friends for</Text>
+                      <Text style={styles.fpSinceValue}>
+                        {daysFriends === 0 ? 'today' : daysFriends === 1 ? '1 day' : `${daysFriends} days`}
+                      </Text>
+                      <Text style={styles.fpSinceDate}>since {formatFriendDate(fp.friends_since)}</Text>
+                    </View>
+
+                    {/* Stats grid */}
+                    <View style={styles.fpStatsGrid}>
+                      <View style={styles.fpStatItem}>
+                        <Text style={styles.fpStatEmoji}>📚</Text>
+                        <Text style={styles.fpStatValue}>{formatStudyTime(fp.total_study_minutes)}</Text>
+                        <Text style={styles.fpStatLabel}>Total Study</Text>
+                      </View>
+                      <View style={styles.fpStatItem}>
+                        <Text style={styles.fpStatEmoji}>🔥</Text>
+                        <Text style={styles.fpStatValue}>{fp.current_streak}</Text>
+                        <Text style={styles.fpStatLabel}>Current Streak</Text>
+                      </View>
+                      <View style={styles.fpStatItem}>
+                        <Text style={styles.fpStatEmoji}>⚡</Text>
+                        <Text style={styles.fpStatValue}>{fp.longest_streak}</Text>
+                        <Text style={styles.fpStatLabel}>Best Streak</Text>
+                      </View>
+                      <View style={styles.fpStatItem}>
+                        <Text style={styles.fpStatEmoji}>🎯</Text>
+                        <Text style={styles.fpStatValue}>{fp.total_sessions}</Text>
+                        <Text style={styles.fpStatLabel}>Sessions</Text>
+                      </View>
+                      <View style={styles.fpStatItem}>
+                        <Text style={styles.fpStatEmoji}>🐾</Text>
+                        <Text style={styles.fpStatValue}>{fp.animals_count}</Text>
+                        <Text style={styles.fpStatLabel}>Animals</Text>
+                      </View>
+                      <View style={styles.fpStatItem}>
+                        <Text style={styles.fpStatEmoji}>⏱️</Text>
+                        <Text style={styles.fpStatValue}>{avgSessionMin}m</Text>
+                        <Text style={styles.fpStatLabel}>Avg Session</Text>
+                      </View>
+                    </View>
+
+                    {/* Fun facts */}
+                    <View style={styles.fpFunFacts}>
+                      <View style={styles.fpFunFactRow}>
+                        <Text style={styles.fpFunFactEmoji}>🪙</Text>
+                        <Text style={styles.fpFunFactText}>
+                          Earned <Text style={styles.fpFunFactBold}>{fp.total_coins.toLocaleString()}</Text> coins lifetime
+                        </Text>
+                      </View>
+                      <View style={styles.fpFunFactRow}>
+                        <Text style={styles.fpFunFactEmoji}>🗓️</Text>
+                        <Text style={styles.fpFunFactText}>
+                          Member for <Text style={styles.fpFunFactBold}>{daysMember}</Text> days
+                        </Text>
+                      </View>
+                      {fp.total_study_minutes >= 60 && (
+                        <View style={styles.fpFunFactRow}>
+                          <Text style={styles.fpFunFactEmoji}>☕</Text>
+                          <Text style={styles.fpFunFactText}>
+                            That's <Text style={styles.fpFunFactBold}>{Math.floor(fp.total_study_minutes / 25)}</Text> pomodoros worth of focus
+                          </Text>
+                        </View>
+                      )}
+                    </View>
+
+                    {/* Close button */}
+                    <TouchableOpacity style={styles.fpCloseBtn} onPress={closeFriendProfile}>
+                      <LinearGradient
+                        colors={['#A8C8D8', '#5F8C87']}
+                        start={{ x: 0, y: 0 }}
+                        end={{ x: 1, y: 0 }}
+                        style={styles.fpCloseBtnGradient}
+                      >
+                        <Text style={styles.fpCloseBtnText}>Close</Text>
+                      </LinearGradient>
+                    </TouchableOpacity>
+                  </View>
+                );
+              })()}
+            </TouchableOpacity>
+          </Animated.View>
+        </TouchableOpacity>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -1300,18 +1625,27 @@ const styles = StyleSheet.create({
   addFriendButtonText: { fontSize: 13, fontWeight: '700', color: '#fff' },
   pendingSection: {
     marginHorizontal: spacing.lg,
-    borderRadius: borderRadius.lg, padding: spacing.md, marginBottom: spacing.sm,
-    borderWidth: 1, borderColor: '#5F8C8740',
+    borderRadius: borderRadius.lg,
+    padding: spacing.md,
+    marginTop: spacing.md,
+    marginBottom: spacing.md,
+    backgroundColor: '#F9FBFA',
+    borderWidth: 1,
+    borderColor: '#E7EFEA',
   },
-  pendingTitle: { fontSize: 13, fontWeight: '700', color: '#5F8C87', marginBottom: 8 },
+  pendingTitle: { fontSize: 14, fontWeight: '700', color: '#5F8C87', marginBottom: 10 },
+  pendingEmpty: { fontSize: 13, color: colors.textMuted, fontStyle: 'italic' },
   pendingRow: {
-    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
-    paddingVertical: 6,
+    flexDirection: 'row', alignItems: 'center',
+    paddingVertical: 8,
+    borderTopWidth: 1,
+    borderTopColor: '#E7EFEA',
+    gap: 10,
   },
-  pendingName: { fontSize: 14, fontWeight: '600', color: colors.textPrimary },
+  pendingName: { fontSize: 14, fontWeight: '600', color: colors.textPrimary, flex: 1 },
   pendingAcceptBtn: {
-    backgroundColor: colors.tertiary, borderRadius: borderRadius.full,
-    paddingHorizontal: 16, paddingVertical: 6,
+    backgroundColor: '#5F8C87', borderRadius: borderRadius.full,
+    paddingHorizontal: 16, paddingVertical: 7,
   },
   pendingAcceptText: { fontSize: 13, fontWeight: '700', color: '#fff' },
 
@@ -1771,13 +2105,49 @@ const styles = StyleSheet.create({
     padding: spacing.md, marginBottom: spacing.md, ...shadows.small,
   },
   leaderboardTitle: { fontSize: 15, fontWeight: '700', color: colors.textPrimary, marginBottom: 10 },
+  leaderboardSwatch: {
+    flexDirection: 'row',
+    backgroundColor: '#F0F4F2',
+    borderRadius: 10,
+    padding: 3,
+    marginBottom: 14,
+  },
+  leaderboardSwatchBtn: {
+    flex: 1,
+    paddingVertical: 7,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  leaderboardSwatchBtnActive: {
+    backgroundColor: '#fff',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.08,
+    shadowRadius: 2,
+    elevation: 1,
+  },
+  leaderboardSwatchText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: colors.textMuted,
+  },
+  leaderboardSwatchTextActive: {
+    color: '#5F8C87',
+    fontWeight: '700',
+  },
   leaderboardRow: {
-    flexDirection: 'row', alignItems: 'center', paddingVertical: 6,
+    flexDirection: 'row', alignItems: 'center', paddingVertical: 7,
     borderBottomWidth: 1, borderBottomColor: colors.divider,
+  },
+  leaderboardRowSelf: {
+    backgroundColor: '#E7EFEA40',
+    borderRadius: 8,
+    marginHorizontal: -4,
+    paddingHorizontal: 4,
   },
   leaderboardRank: { fontSize: 16, width: 30, textAlign: 'center' },
   leaderboardName: { flex: 1, fontSize: 14, fontWeight: '600', color: colors.textPrimary },
-  leaderboardNameSelf: { color: colors.primary },
+  leaderboardNameSelf: { color: '#5F8C87', fontWeight: '700' },
   leaderboardStreak: { fontSize: 12, color: colors.textMuted, marginRight: 10 },
   leaderboardMins: { fontSize: 13, fontWeight: '700', color: colors.textSecondary, width: 55, textAlign: 'right' },
 
@@ -2117,7 +2487,7 @@ const styles = StyleSheet.create({
     alignItems: 'flex-end',
     paddingHorizontal: 12,
     paddingTop: 8,
-    paddingBottom: Platform.OS === 'ios' ? 28 : 12,
+    paddingBottom: 12,
     borderTopWidth: 1,
     borderTopColor: 'rgba(0,0,0,0.06)',
     backgroundColor: '#FFFFFF',
@@ -2183,4 +2553,154 @@ const styles = StyleSheet.create({
   tipPickerBadgeText: { fontSize: 11, fontWeight: '700', color: colors.primary, textTransform: 'capitalize' },
   tipPickerText: { fontSize: 14, color: colors.textPrimary, lineHeight: 20, marginBottom: 8 },
   tipPickerSend: { fontSize: 13, fontWeight: '700', color: colors.primary, textAlign: 'right' },
+
+  // Friend Profile Modal
+  fpOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: spacing.lg,
+  },
+  fpCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 24,
+    width: '100%',
+    maxWidth: 360,
+    overflow: 'hidden',
+    ...shadows.medium,
+  },
+  fpLoading: {
+    padding: 60,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  fpLoadingText: {
+    marginTop: 12,
+    fontSize: 14,
+    color: colors.textSecondary,
+  },
+  fpHeader: {
+    alignItems: 'center',
+    paddingTop: 28,
+    paddingBottom: 12,
+    paddingHorizontal: 20,
+  },
+  fpAvatarRing: {
+    borderRadius: 50,
+    padding: 3,
+    borderWidth: 3,
+    borderColor: '#5F8C8740',
+    marginBottom: 12,
+  },
+  fpName: {
+    fontSize: 20,
+    fontWeight: '800',
+    color: colors.textPrimary,
+    marginBottom: 8,
+  },
+  fpLevelBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 14,
+    paddingVertical: 5,
+    borderRadius: 20,
+    gap: 6,
+  },
+  fpLevelText: {
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  fpSinceBanner: {
+    alignItems: 'center',
+    paddingVertical: 14,
+    marginHorizontal: 20,
+    borderTopWidth: 1,
+    borderBottomWidth: 1,
+    borderColor: '#E8EDE9',
+  },
+  fpSinceLabel: {
+    fontSize: 12,
+    color: colors.textSecondary,
+    fontWeight: '500',
+    marginBottom: 2,
+  },
+  fpSinceValue: {
+    fontSize: 24,
+    fontWeight: '800',
+    color: colors.primary,
+    marginBottom: 2,
+  },
+  fpSinceDate: {
+    fontSize: 11,
+    color: colors.textSecondary,
+  },
+  fpStatsGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    padding: 16,
+    gap: 0,
+  },
+  fpStatItem: {
+    width: '33.33%',
+    alignItems: 'center',
+    paddingVertical: 12,
+  },
+  fpStatEmoji: {
+    fontSize: 20,
+    marginBottom: 4,
+  },
+  fpStatValue: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: colors.textPrimary,
+  },
+  fpStatLabel: {
+    fontSize: 10,
+    fontWeight: '600',
+    color: colors.textSecondary,
+    marginTop: 2,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  fpFunFacts: {
+    marginHorizontal: 20,
+    backgroundColor: '#F4F7F5',
+    borderRadius: 14,
+    padding: 14,
+    gap: 10,
+  },
+  fpFunFactRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  fpFunFactEmoji: {
+    fontSize: 16,
+  },
+  fpFunFactText: {
+    fontSize: 13,
+    color: colors.textSecondary,
+    flex: 1,
+  },
+  fpFunFactBold: {
+    fontWeight: '700',
+    color: colors.textPrimary,
+  },
+  fpCloseBtn: {
+    margin: 20,
+    marginTop: 16,
+    borderRadius: 14,
+    overflow: 'hidden',
+  },
+  fpCloseBtnGradient: {
+    paddingVertical: 13,
+    alignItems: 'center',
+    borderRadius: 14,
+  },
+  fpCloseBtnText: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
 });

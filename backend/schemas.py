@@ -208,6 +208,25 @@ class FriendResponse(BaseModel):
     current_streak: int
     animals_count: int
     profile_pic_url: Optional[str] = None
+    friends_since: Optional[str] = None
+
+    class Config:
+        from_attributes = True
+
+
+class FriendProfileResponse(BaseModel):
+    id: int
+    username: Optional[str]
+    email: str
+    total_study_minutes: int
+    current_streak: int
+    longest_streak: int
+    total_sessions: int
+    animals_count: int
+    profile_pic_url: Optional[str] = None
+    friends_since: Optional[str] = None
+    member_since: Optional[str] = None
+    total_coins: int = 0
 
     class Config:
         from_attributes = True

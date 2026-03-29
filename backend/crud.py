@@ -364,21 +364,19 @@ def get_pending_requests(db: Session, user_id: int) -> List[dict]:
     return results
 
 
-def get_friends(db: Session, user_id: int) -> List[models.User]:
-    # Get accepted friendships where user is either side
+def get_friends(db: Session, user_id: int):
     friendships = db.query(models.Friendship).filter(
         models.Friendship.status == "accepted",
         ((models.Friendship.user_id == user_id) | (models.Friendship.friend_id == user_id))
     ).all()
     
-    friend_ids = []
+    results = []
     for f in friendships:
-        if f.user_id == user_id:
-            friend_ids.append(f.friend_id)
-        else:
-            friend_ids.append(f.user_id)
-    
-    return db.query(models.User).filter(models.User.id.in_(friend_ids)).all()
+        friend_id = f.friend_id if f.user_id == user_id else f.user_id
+        friend = db.query(models.User).filter(models.User.id == friend_id).first()
+        if friend:
+            results.append({"user": friend, "friends_since": f.created_at})
+    return results
 
 
 def remove_friend(db: Session, user_id: int, friend_id: int) -> bool:

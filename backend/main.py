@@ -806,9 +806,10 @@ def get_friends(
     current_user: models.User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    friends = crud.get_friends(db, current_user.id)
+    friends_data = crud.get_friends(db, current_user.id)
     result = []
-    for friend in friends:
+    for entry in friends_data:
+        friend = entry["user"]
         animals_count = db.query(models.UserAnimal).filter(
             models.UserAnimal.user_id == friend.id
         ).count()
@@ -820,9 +821,45 @@ def get_friends(
             "current_streak": friend.current_streak,
             "animals_count": animals_count,
             "profile_pic_url": friend.profile_pic_url,
+            "friends_since": entry["friends_since"].isoformat() if entry["friends_since"] else None,
         })
     return result
 
+
+
+@app.get("/friends/{friend_id}/profile", response_model=schemas.FriendProfileResponse)
+def get_friend_profile(
+    friend_id: int,
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    friendship = db.query(models.Friendship).filter(
+        models.Friendship.status == "accepted",
+        (
+            ((models.Friendship.user_id == current_user.id) & (models.Friendship.friend_id == friend_id)) |
+            ((models.Friendship.user_id == friend_id) & (models.Friendship.friend_id == current_user.id))
+        )
+    ).first()
+    if not friendship:
+        raise HTTPException(status_code=404, detail="Friend not found")
+    friend = db.query(models.User).filter(models.User.id == friend_id).first()
+    if not friend:
+        raise HTTPException(status_code=404, detail="User not found")
+    animals_count = db.query(models.UserAnimal).filter(models.UserAnimal.user_id == friend.id).count()
+    return {
+        "id": friend.id,
+        "username": friend.username,
+        "email": friend.email,
+        "total_study_minutes": friend.total_study_minutes,
+        "current_streak": friend.current_streak,
+        "longest_streak": friend.longest_streak,
+        "total_sessions": friend.total_sessions,
+        "animals_count": animals_count,
+        "profile_pic_url": friend.profile_pic_url,
+        "friends_since": friendship.created_at.isoformat() if friendship.created_at else None,
+        "member_since": friend.created_at.isoformat() if friend.created_at else None,
+        "total_coins": friend.total_coins,
+    }
 
 
 @app.delete("/friends/{friend_id}")

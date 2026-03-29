@@ -96,6 +96,22 @@ export interface Friend {
   current_streak: number;
   animals_count: number;
   profile_pic_url: string | null;
+  friends_since: string | null;
+}
+
+export interface FriendProfile {
+  id: number;
+  username: string | null;
+  email: string;
+  total_study_minutes: number;
+  current_streak: number;
+  longest_streak: number;
+  total_sessions: number;
+  animals_count: number;
+  profile_pic_url: string | null;
+  friends_since: string | null;
+  member_since: string | null;
+  total_coins: number;
 }
 
 export interface LeaderboardEntry {
@@ -425,7 +441,14 @@ export const socialAPI = {
   getFriends: () => apiFetch<Friend[]>('/friends'),
   getPendingRequests: () => apiFetch<{ id: number; user_id: number; username: string | null; email: string }[]>('/friends/pending'),
 
+  removeFriend: (friendId: number) =>
+    apiFetch(`/friends/${friendId}`, { method: 'DELETE' }),
+
+  getFriendProfile: (friendId: number) =>
+    apiFetch<FriendProfile>(`/friends/${friendId}/profile`),
+
   getLeaderboard: () => apiFetch<LeaderboardEntry[]>('/leaderboard'),
+  getGlobalLeaderboard: () => apiFetch<LeaderboardEntry[]>('/leaderboard/global'),
 };
 
 // Stats API
@@ -478,6 +501,8 @@ export const groupsAPI = {
       method: 'POST',
       body: JSON.stringify(opts),
     }),
+  removeMember: (groupId: number, userId: number) =>
+    apiFetch<{ message: string }>(`/groups/${groupId}/members/${userId}`, { method: 'DELETE' }),
 };
 
 // Activity Feed API
