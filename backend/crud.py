@@ -394,6 +394,40 @@ def remove_friend(db: Session, user_id: int, friend_id: int) -> bool:
     return True
 
 
+def get_friend_suggestions(db: Session, user_id: int, limit: int = 10) -> List[dict]:
+    """Return users from the same school who aren't already friends or pending."""
+    user = db.query(models.User).filter(models.User.id == user_id).first()
+    if not user or not user.school:
+        return []
+
+    all_friendships = db.query(models.Friendship).filter(
+        (models.Friendship.user_id == user_id) | (models.Friendship.friend_id == user_id)
+    ).all()
+    exclude_ids = {user_id}
+    for f in all_friendships:
+        exclude_ids.add(f.user_id)
+        exclude_ids.add(f.friend_id)
+
+    suggestions = db.query(models.User).filter(
+        models.User.school == user.school,
+        models.User.id.notin_(exclude_ids),
+        models.User.username.isnot(None),
+    ).order_by(models.User.total_study_minutes.desc()).limit(limit).all()
+
+    return [
+        {
+            "id": s.id,
+            "username": s.username,
+            "email": s.email,
+            "total_study_minutes": s.total_study_minutes or 0,
+            "current_streak": s.current_streak or 0,
+            "profile_pic_url": s.profile_pic_url,
+            "school": s.school,
+        }
+        for s in suggestions
+    ]
+
+
 def remove_group_member(db: Session, admin_user_id: int, group_id: int, target_user_id: int) -> tuple[bool, str]:
     group = db.query(models.StudyGroup).filter(models.StudyGroup.id == group_id).first()
     if not group:

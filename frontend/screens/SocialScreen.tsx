@@ -26,7 +26,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   groupsAPI, feedAPI, socialAPI, tipsAPI,
   StudyGroup, GroupMessage, FeedEvent,
-  Friend, FriendProfile, StudyTip, LeaderboardEntry,
+  Friend, FriendProfile, FriendSuggestion, StudyTip, LeaderboardEntry,
 } from '../services/api';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
@@ -153,6 +153,9 @@ export default function SocialScreen() {
   const [showAddFriend, setShowAddFriend] = useState(false);
   const [addFriendHandle, setAddFriendHandle] = useState('');
 
+  // Friend suggestions (same school)
+  const [suggestions, setSuggestions] = useState<FriendSuggestion[]>([]);
+  const [sentSuggestionIds, setSentSuggestionIds] = useState<Set<number>>(new Set());
 
   // Friend profile modal
   const [selectedFriend, setSelectedFriend] = useState<FriendProfile | null>(null);
@@ -256,13 +259,14 @@ export default function SocialScreen() {
 
   const loadData = useCallback(async () => {
     try {
-      const [g, f, fr, pr, gl, fl] = await Promise.all([
+      const [g, f, fr, pr, gl, fl, sg] = await Promise.all([
         groupsAPI.getAll().catch(() => []),
         feedAPI.getFeed().catch(() => []),
         socialAPI.getFriends().catch(() => []),
         socialAPI.getPendingRequests().catch(() => []),
         socialAPI.getGlobalLeaderboard().catch(() => []),
         socialAPI.getLeaderboard().catch(() => []),
+        socialAPI.getFriendSuggestions().catch(() => []),
       ]);
       setGroups(g);
       setFeed(f);
@@ -270,6 +274,7 @@ export default function SocialScreen() {
       setPendingRequests(pr);
       setGlobalLeaderboard(gl);
       setFriendsLeaderboard(fl);
+      setSuggestions(sg);
     } catch {}
   }, []);
 
@@ -313,6 +318,18 @@ export default function SocialScreen() {
       loadData();
     } catch (e: any) {
       Alert.alert('Error', e.message || 'Could not accept request');
+    }
+  };
+
+  const handleSuggestionAdd = async (suggestion: FriendSuggestion) => {
+    if (!suggestion.username) return;
+    try {
+      await socialAPI.sendFriendRequest(suggestion.username);
+      setSentSuggestionIds(prev => new Set(prev).add(suggestion.id));
+      Alert.alert('Request Sent!', `Friend request sent to @${suggestion.username}`);
+    } catch (e: any) {
+      const msg = typeof e?.message === 'string' ? e.message : String(e || 'Could not send request');
+      Alert.alert('Error', msg);
     }
   };
 
@@ -829,6 +846,35 @@ export default function SocialScreen() {
               </TouchableOpacity>
             </View>
           ))
+        )}
+
+        {/* Friend Suggestions (same school) */}
+        {suggestions.length > 0 && (
+          <>
+            <View style={styles.suggestionDivider} />
+            <Text style={styles.suggestionTitle}>🎓 People from your school</Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.suggestionRow}>
+              {suggestions.map(s => {
+                const sent = sentSuggestionIds.has(s.id);
+                return (
+                  <View key={s.id} style={styles.suggestionChip}>
+                    <UserAvatar id={s.id} username={s.username} profilePicUrl={s.profile_pic_url} size={40} />
+                    <Text style={styles.suggestionName} numberOfLines={1}>@{s.username}</Text>
+                    <Text style={styles.suggestionStats}>{s.total_study_minutes}m · 🔥{s.current_streak}</Text>
+                    <TouchableOpacity
+                      style={[styles.suggestionAddBtn, sent && styles.suggestionSentBtn]}
+                      onPress={() => !sent && handleSuggestionAdd(s)}
+                      activeOpacity={sent ? 1 : 0.7}
+                    >
+                      <Text style={[styles.suggestionAddText, sent && styles.suggestionSentText]}>
+                        {sent ? '✓ Sent' : '+ Add'}
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+                );
+              })}
+            </ScrollView>
+          </>
         )}
       </View>
 
@@ -1646,6 +1692,61 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16, paddingVertical: 7,
   },
   pendingAcceptText: { fontSize: 13, fontWeight: '700', color: '#fff' },
+
+  suggestionDivider: {
+    height: 1,
+    backgroundColor: '#E7EFEA',
+    marginTop: 12,
+    marginBottom: 10,
+  },
+  suggestionTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#5F8C87',
+    marginBottom: 10,
+  },
+  suggestionRow: {
+    gap: 10,
+    paddingBottom: 4,
+  },
+  suggestionChip: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 14,
+    padding: 10,
+    alignItems: 'center',
+    width: 110,
+    borderWidth: 1,
+    borderColor: '#E7EFEA',
+  },
+  suggestionName: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: colors.textPrimary,
+    marginTop: 6,
+    marginBottom: 2,
+  },
+  suggestionStats: {
+    fontSize: 10,
+    color: colors.textSecondary,
+    marginBottom: 8,
+  },
+  suggestionAddBtn: {
+    backgroundColor: '#5F8C87',
+    borderRadius: 20,
+    paddingHorizontal: 14,
+    paddingVertical: 5,
+  },
+  suggestionAddText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#fff',
+  },
+  suggestionSentBtn: {
+    backgroundColor: '#E7EFEA',
+  },
+  suggestionSentText: {
+    color: '#5F8C87',
+  },
 
   allUsersSection: {
     paddingHorizontal: spacing.lg,

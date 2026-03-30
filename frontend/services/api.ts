@@ -127,6 +127,16 @@ export interface FriendProfile {
   country: string | null;
 }
 
+export interface FriendSuggestion {
+  id: number;
+  username: string;
+  email: string;
+  total_study_minutes: number;
+  current_streak: number;
+  profile_pic_url: string | null;
+  school: string | null;
+}
+
 export interface LeaderboardEntry {
   rank: number;
   user_id: number;
@@ -471,6 +481,8 @@ export const socialAPI = {
 
   getLeaderboard: () => apiFetch<LeaderboardEntry[]>('/leaderboard'),
   getGlobalLeaderboard: () => apiFetch<LeaderboardEntry[]>('/leaderboard/global'),
+
+  getFriendSuggestions: () => apiFetch<FriendSuggestion[]>('/friends/suggestions'),
 };
 
 // Stats API

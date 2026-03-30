@@ -910,6 +910,14 @@ def get_pending_requests(
     return crud.get_pending_requests(db, current_user.id)
 
 
+@app.get("/friends/suggestions")
+def get_friend_suggestions(
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    return crud.get_friend_suggestions(db, current_user.id)
+
+
 @app.get("/friends", response_model=List[schemas.FriendResponse])
 def get_friends(
     current_user: models.User = Depends(get_current_user),
