@@ -536,33 +536,24 @@ def search_schools(
 def seed_schools(
     db: Session = Depends(get_db)
 ):
-    """Seed schools from UK GIAS and US NCES data. Only runs if table is empty."""
+    """Seed schools from bundled UK data + Hipo university API."""
     existing = db.query(models.School).first()
     if existing:
         return {"message": "Schools already seeded", "count": db.query(models.School).count()}
 
-    import urllib.request, csv, io
+    import json as json_lib, os, urllib.request
     count = 0
     errors = []
 
-    # UK schools from GIAS
+    # UK schools from bundled JSON
     try:
-        uk_url = "https://ea-edubase-api-prod.azurewebsites.net/edubase/downloads/public/allestablishments.csv"
-        req = urllib.request.Request(uk_url, headers={"User-Agent": "Mozilla/5.0"})
-        response = urllib.request.urlopen(req, timeout=120)
-        raw = response.read().decode("utf-8-sig", errors="replace")
-        reader = csv.DictReader(io.StringIO(raw))
+        uk_path = os.path.join(os.path.dirname(__file__), "uk_schools.json")
+        with open(uk_path, "r") as f:
+            uk_data = json_lib.load(f)
         batch = []
-        for row in reader:
-            name = row.get("EstablishmentName", "").strip()
-            status = row.get("EstablishmentStatus (name)", "").strip()
-            if not name or status != "Open":
-                continue
+        for s in uk_data:
             batch.append(models.School(
-                name=name,
-                city=row.get("Town", "").strip() or None,
-                region=row.get("County (name)", "").strip() or None,
-                country="UK",
+                name=s["name"], city=s.get("city"), region=s.get("region"), country="UK",
             ))
             if len(batch) >= 2000:
                 db.bulk_save_objects(batch)
@@ -578,43 +569,35 @@ def seed_schools(
 
     uk_count = count
 
-    # US schools from NCES
+    # Global universities from Hipo
     try:
-        us_url = "https://nces.ed.gov/ccd/data/zip/ccd_sch_029_2324_w_1a_080624.zip"
-        req = urllib.request.Request(us_url, headers={"User-Agent": "Mozilla/5.0"})
-        response = urllib.request.urlopen(req, timeout=180)
-        import zipfile
-        zip_bytes = io.BytesIO(response.read())
-        with zipfile.ZipFile(zip_bytes) as zf:
-            csv_name = [n for n in zf.namelist() if n.endswith(".csv")][0]
-            with zf.open(csv_name) as f:
-                raw = f.read().decode("utf-8-sig", errors="replace")
-                reader = csv.DictReader(io.StringIO(raw))
+        url = "https://raw.githubusercontent.com/Hipo/university-domains-list/master/world_universities_and_domains.json"
+        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+        response = urllib.request.urlopen(req, timeout=60)
+        data = json_lib.loads(response.read().decode("utf-8"))
+        batch = []
+        for uni in data:
+            name = uni.get("name", "").strip()
+            if not name:
+                continue
+            batch.append(models.School(
+                name=name, city=None, region=uni.get("state-province") or None,
+                country=uni.get("country", "").strip(),
+            ))
+            if len(batch) >= 1000:
+                db.bulk_save_objects(batch)
+                db.commit()
+                count += len(batch)
                 batch = []
-                for row in reader:
-                    name = row.get("SCH_NAME", row.get("SCHNAM", "")).strip()
-                    if not name:
-                        continue
-                    batch.append(models.School(
-                        name=name,
-                        city=row.get("LCITY", row.get("CITY", "")).strip() or None,
-                        region=row.get("STATENAME", row.get("ST", "")).strip() or None,
-                        country="US",
-                    ))
-                    if len(batch) >= 2000:
-                        db.bulk_save_objects(batch)
-                        db.commit()
-                        count += len(batch)
-                        batch = []
-                if batch:
-                    db.bulk_save_objects(batch)
-                    db.commit()
-                    count += len(batch)
+        if batch:
+            db.bulk_save_objects(batch)
+            db.commit()
+            count += len(batch)
     except Exception as e:
-        errors.append(f"US: {str(e)}")
+        errors.append(f"Unis: {str(e)}")
 
     return {
-        "message": f"Seeded {count} schools (UK: {uk_count}, US: {count - uk_count})",
+        "message": f"Seeded {count} schools (UK: {uk_count}, Universities: {count - uk_count})",
         "errors": errors if errors else None,
     }
 
