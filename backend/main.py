@@ -342,8 +342,11 @@ def register(request: Request, user: schemas.UserCreate, db: Session = Depends(g
         db_user.verification_code_expires = datetime.utcnow() + timedelta(minutes=15)
         db_user.hashed_password = get_password_hash(user.password)
         db.commit()
-        _send_verification_email(db_user.email, code)
-        return {"message": "Verification code sent", "needs_verification": True}
+        sent = _send_verification_email(db_user.email, code)
+        resp: dict = {"message": "Verification code sent", "needs_verification": True}
+        if not sent:
+            resp["_debug_code"] = code
+        return resp
 
     hashed_password = get_password_hash(user.password)
     new_user = crud.create_user(db, user.email, hashed_password)
@@ -354,8 +357,11 @@ def register(request: Request, user: schemas.UserCreate, db: Session = Depends(g
     new_user.email_verified = False
     db.commit()
 
-    _send_verification_email(new_user.email, code)
-    return {"message": "Verification code sent", "needs_verification": True}
+    sent = _send_verification_email(new_user.email, code)
+    resp: dict = {"message": "Verification code sent", "needs_verification": True}
+    if not sent:
+        resp["_debug_code"] = code
+    return resp
 
 
 class VerifyEmailRequest(BaseModel):
@@ -406,19 +412,23 @@ def resend_verification(request: Request, body: ResendVerificationRequest, db: S
     user.verification_code_expires = datetime.utcnow() + timedelta(minutes=15)
     db.commit()
 
-    _send_verification_email(user.email, code)
-    return {"message": "Verification code sent"}
+    sent = _send_verification_email(user.email, code)
+    resp: dict = {"message": "Verification code sent"}
+    if not sent:
+        resp["_debug_code"] = code
+    return resp
 
 
-def _send_verification_email(email: str, code: str):
+def _send_verification_email(email: str, code: str) -> bool:
     resend_key = os.getenv("RESEND_API_KEY")
     resend_from = os.getenv("RESEND_FROM", "Endura <onboarding@resend.dev>")
+    logger.info(f"Sending verification to {email}, RESEND_API_KEY set: {bool(resend_key)}, from: {resend_from}")
 
     if resend_key:
         try:
             import resend
             resend.api_key = resend_key
-            resend.Emails.send({
+            result = resend.Emails.send({
                 "from": resend_from,
                 "to": [email],
                 "subject": "Endura — Verify Your Email",
@@ -434,11 +444,14 @@ def _send_verification_email(email: str, code: str):
                 </div>
                 """,
             })
-            logger.info(f"Verification code sent to {email} via Resend")
+            logger.info(f"Verification email sent to {email} via Resend, result: {result}")
+            return True
         except Exception as e:
-            logger.error(f"Failed to send verification email: {e}")
+            logger.error(f"Failed to send verification email to {email}: {e}", exc_info=True)
+            return False
     else:
         logger.warning(f"RESEND_API_KEY not set — verification code for {email}: {code}")
+        return False
 
 
 @app.post("/auth/login", response_model=schemas.Token)
