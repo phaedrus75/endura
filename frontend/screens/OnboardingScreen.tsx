@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   View,
   Text,
@@ -10,424 +10,352 @@ import {
   ActivityIndicator,
   Animated,
   ScrollView,
+  Image,
+  Platform,
+  ActionSheetIOS,
+  KeyboardAvoidingView,
+  ImageSourcePropType,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
-import LottieView from 'lottie-react-native';
+import * as ImagePicker from 'expo-image-picker';
 import { colors, shadows, spacing, borderRadius } from '../theme/colors';
 import { useAuth } from '../contexts/AuthContext';
 import * as SecureStore from 'expo-secure-store';
-import { API_URL } from '../services/api';
+import { API_URL, authAPI, SchoolSearchResult } from '../services/api';
 
-const { width, height } = Dimensions.get('window');
+const { width: SW, height: SH } = Dimensions.get('window');
 
-interface OnboardingStep {
-  emoji?: string;
-  useLottie?: boolean;
-  title: string;
-  subtitle: string;
-  body: string;
-  gradient: [string, string];
+const C = {
+  bg: '#E8F5E9', hero: '#C5DEC9', surface: '#FFFFFF', sage: '#6B9B9B',
+  green: '#6B8F71', textDark: '#2F4A3E', textMid: '#5F8C87', textMute: '#7C8F86',
+  border: '#A9BDAF', primary: '#5F8C87', dark: '#3B5466', light: '#A8C8D8',
+  tipsBg: '#F4F7F5',
+};
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  SCREENSHOT IMAGES — actual app screenshots used as onboarding backgrounds
+// ═══════════════════════════════════════════════════════════════════════════
+
+const SCREENSHOTS = {
+  home: require('../assets/onboarding/home.png'),
+  timer: require('../assets/onboarding/timer.png'),
+  sanctuary: require('../assets/onboarding/sanctuary.png'),
+  progress: require('../assets/onboarding/progress.png'),
+  tips: require('../assets/onboarding/tips.png'),
+  friends: require('../assets/onboarding/friends.png'),
+};
+
+function ScreenshotSlide({ source }: { source: ImageSourcePropType }) {
+  return (
+    <Image source={source} style={StyleSheet.absoluteFill} resizeMode="cover" />
+  );
 }
 
-const onboardingSteps: OnboardingStep[] = [
+// ═══════════════════════════════════════════════════════════════════════════
+//  SLIDE DATA
+// ═══════════════════════════════════════════════════════════════════════════
+
+interface Slide {
+  image: ImageSourcePropType;
+  tag: string;
+  title: string;
+  body: string;
+}
+
+const SLIDES: Slide[] = [
   {
-    useLottie: true,
-    title: 'Welcome to Endura',
-    subtitle: 'Study with purpose',
-    body: 'Every minute you study helps protect endangered species.\n\nEarn eco-credits, hatch animals, and make a real difference in wildlife conservation.',
-    gradient: ['#E7EFEA', '#DCEAE3'],
+    image: SCREENSHOTS.home,
+    tag: 'YOUR DASHBOARD',
+    title: 'Everything starts here',
+    body: 'See your streaks, badges, animals and tasks at a glance. Tap the egg to jump into a study session!',
   },
   {
-    emoji: '⏱️',
-    title: 'Focus Timer',
-    subtitle: 'Study smarter',
-    body: 'Start a focus session and watch your eco-credits grow with every minute. Track your subjects, build daily streaks, and develop a study habit that lasts.',
-    gradient: ['#E7EFEA', '#D6E5EC'],
+    image: SCREENSHOTS.timer,
+    tag: 'FOCUS TIMER',
+    title: 'Study to earn eco-credits',
+    body: 'Pick a duration, hit start, and every minute you study earns eco-credits that hatch your egg.',
   },
   {
-    emoji: '🐣',
-    title: 'Hatch & Collect',
-    subtitle: 'Build my sanctuary',
-    body: 'Your eco-credits fill an egg. When it hatches, you discover a real endangered animal — from Red Pandas to Snow Leopards.\n\nCollect all 30 species and build your own sanctuary.',
-    gradient: ['#E7EFEA', '#E2E8D8'],
+    image: SCREENSHOTS.sanctuary,
+    tag: 'YOUR SANCTUARY',
+    title: 'Hatch & collect animals',
+    body: 'When your egg fills up it hatches into a real endangered species. Build your own wildlife sanctuary!',
   },
   {
-    emoji: '💚',
-    title: 'Take Action',
-    subtitle: 'Real-world impact',
-    body: 'Donate directly to wildlife conservation through our partnership with Every.org.\n\nTrack how much you and the whole community have contributed to protecting these beautiful creatures.',
-    gradient: ['#E7EFEA', '#D8E8E0'],
+    image: SCREENSHOTS.progress,
+    tag: 'TRACK PROGRESS',
+    title: 'See how far you\'ve come',
+    body: 'View weekly study stats, subject breakdowns, and badges. Watch your consistency grow over time.',
   },
   {
-    emoji: '👥',
-    title: 'Friends & Leaderboard',
-    subtitle: 'Better together',
-    body: 'Add friends, compare study stats, and climb the leaderboard together. Join study groups, share tips, and motivate each other to keep going.',
-    gradient: ['#E7EFEA', '#D6DEE8'],
+    image: SCREENSHOTS.tips,
+    tag: 'STUDY TIPS',
+    title: 'Tap 💡 on any screen',
+    body: 'Open Study Tips from the 💡 icon on any page. Swipe through advice from animal friends, save favourites, and share with mates.',
   },
   {
-    emoji: '🏅',
-    title: 'Badges & Progress',
-    subtitle: 'Every session counts',
-    body: 'Earn 50+ badges for streaks, study milestones, and animals collected. See your growth with weekly and monthly progress charts.',
-    gradient: ['#E7EFEA', '#E0E4E8'],
+    image: SCREENSHOTS.friends,
+    tag: 'FRIENDS & LEADERBOARD',
+    title: 'Better together',
+    body: 'Add friends from your school, climb the leaderboard, join study groups, and motivate each other.',
   },
 ];
 
+// ═══════════════════════════════════════════════════════════════════════════
+//  MAIN COMPONENT
+// ═══════════════════════════════════════════════════════════════════════════
+
 export default function OnboardingScreen() {
-  const [currentStep, setCurrentStep] = useState(0);
+  const insets = useSafeAreaInsets();
+  const [step, setStep] = useState(0);
+  const fadeA = useRef(new Animated.Value(1)).current;
+
+  // Profile setup state
   const [username, setUsername] = useState('');
+  const [profilePicUri, setProfilePicUri] = useState<string | null>(null);
+  const [school, setSchool] = useState('');
+  const [country, setCountry] = useState('');
+  const [schoolSuggestions, setSchoolSuggestions] = useState<SchoolSearchResult[]>([]);
+  const [showSchoolSuggestions, setShowSchoolSuggestions] = useState(false);
+  const schoolSearchTimeout = useRef<NodeJS.Timeout | null>(null);
   const [isLoading, setIsLoading] = useState(false);
-  const fadeAnim = useRef(new Animated.Value(1)).current;
-  const slideAnim = useRef(new Animated.Value(0)).current;
-  const { refreshUser } = useAuth();
+  const { refreshUser, setProfilePic } = useAuth();
 
-  const isLastStep = currentStep === onboardingSteps.length;
+  const isSetup = step === SLIDES.length;
 
-  const animateTransition = (next: number) => {
-    Animated.parallel([
-      Animated.timing(fadeAnim, { toValue: 0, duration: 150, useNativeDriver: true }),
-      Animated.timing(slideAnim, { toValue: -30, duration: 150, useNativeDriver: true }),
-    ]).start(() => {
-      setCurrentStep(next);
-      slideAnim.setValue(30);
-      Animated.parallel([
-        Animated.timing(fadeAnim, { toValue: 1, duration: 250, useNativeDriver: true }),
-        Animated.timing(slideAnim, { toValue: 0, duration: 250, useNativeDriver: true }),
-      ]).start();
+  const go = (next: number) => {
+    Animated.timing(fadeA, { toValue: 0, duration: 180, useNativeDriver: true }).start(() => {
+      setStep(next);
+      Animated.timing(fadeA, { toValue: 1, duration: 280, useNativeDriver: true }).start();
     });
   };
 
-  const handleNext = () => {
-    if (currentStep < onboardingSteps.length) {
-      animateTransition(currentStep + 1);
+  // ── helpers ──
+  const handleSchoolSearch = (text: string) => {
+    setSchool(text);
+    if (schoolSearchTimeout.current) clearTimeout(schoolSearchTimeout.current);
+    if (text.length < 2) { setSchoolSuggestions([]); setShowSchoolSuggestions(false); return; }
+    schoolSearchTimeout.current = setTimeout(async () => {
+      try { const r = await authAPI.searchSchools(text); setSchoolSuggestions(r); setShowSchoolSuggestions(r.length > 0); }
+      catch { setSchoolSuggestions([]); setShowSchoolSuggestions(false); }
+    }, 300);
+  };
+  const selectSchool = (s: SchoolSearchResult) => {
+    setSchool(s.name);
+    if (s.country && !country) setCountry(s.country === 'UK' ? 'United Kingdom' : s.country === 'US' ? 'United States' : s.country);
+    setShowSchoolSuggestions(false);
+  };
+
+  const pickImage = async (src: 'camera' | 'gallery') => {
+    if (src === 'camera') {
+      const p = await ImagePicker.requestCameraPermissionsAsync();
+      if (!p.granted) { Alert.alert('Permission needed', 'Please allow camera access.'); return; }
+      const r = await ImagePicker.launchCameraAsync({ allowsEditing: true, aspect: [1, 1], quality: 0.7 });
+      if (!r.canceled && r.assets[0]) setProfilePicUri(r.assets[0].uri);
+    } else {
+      const p = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!p.granted) { Alert.alert('Permission needed', 'Please allow photo library access.'); return; }
+      const r = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], allowsEditing: true, aspect: [1, 1], quality: 0.7 });
+      if (!r.canceled && r.assets[0]) setProfilePicUri(r.assets[0].uri);
+    }
+  };
+  const handleAvatarPress = () => {
+    if (Platform.OS === 'ios') {
+      const o = profilePicUri ? ['Take Photo', 'Choose from Library', 'Remove Photo', 'Cancel'] : ['Take Photo', 'Choose from Library', 'Cancel'];
+      ActionSheetIOS.showActionSheetWithOptions({ options: o, cancelButtonIndex: o.length - 1, destructiveButtonIndex: profilePicUri ? 2 : undefined },
+        i => { if (i === 0) pickImage('camera'); else if (i === 1) pickImage('gallery'); else if (i === 2 && profilePicUri) setProfilePicUri(null); });
+    } else {
+      const b: any[] = [{ text: 'Take Photo', onPress: () => pickImage('camera') }, { text: 'Choose from Library', onPress: () => pickImage('gallery') }];
+      if (profilePicUri) b.push({ text: 'Remove Photo', style: 'destructive', onPress: () => setProfilePicUri(null) });
+      b.push({ text: 'Cancel', style: 'cancel' });
+      Alert.alert('Profile Photo', 'Choose an option', b);
     }
   };
 
   const handleComplete = async () => {
-    if (!username.trim()) {
-      Alert.alert('Username Required', 'Please enter a username to continue');
-      return;
-    }
+    if (!profilePicUri) { Alert.alert('Profile Photo Required', 'Please add a profile picture to continue.'); return; }
+    const u = username.trim();
+    if (!u) { Alert.alert('Username Required', 'Please enter a username to continue.'); return; }
+    if (!school.trim()) { Alert.alert('School Required', 'Please enter your school to continue.'); return; }
+    if (!country.trim()) { Alert.alert('Country Required', 'Please enter your country to continue.'); return; }
 
     setIsLoading(true);
     try {
       const token = await SecureStore.getItemAsync('authToken');
-      const response = await fetch(
-        `${API_URL}/user/username?username=${encodeURIComponent(username.trim())}`,
-        {
-          method: 'POST',
-          headers: { Authorization: `Bearer ${token}` },
-        }
-      );
-
-      if (!response.ok) {
-        const error = await response.json().catch(() => ({ detail: 'Failed to set username' }));
-        throw new Error(error.detail || 'Failed to set username');
+      const res = await fetch(`${API_URL}/user/username?username=${encodeURIComponent(u)}`, { method: 'POST', headers: { Authorization: `Bearer ${token}` } });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ detail: 'Failed to set username' }));
+        const d = err.detail || 'Failed to set username';
+        if (typeof d === 'string' && d.toLowerCase().includes('taken')) Alert.alert('Username Taken', `@${u} is already in use. Try a different one.`);
+        else Alert.alert('Error', d);
+        return;
       }
-
+      try { await authAPI.updateProfile({ school: school.trim(), country: country.trim() }); } catch {}
+      try { await setProfilePic(profilePicUri); } catch {}
       await refreshUser();
-    } catch (error: any) {
-      Alert.alert('Error', error?.message || 'Something went wrong');
-    } finally {
-      setIsLoading(false);
-    }
+    } catch (e: any) { Alert.alert('Error', e?.message || 'Something went wrong'); }
+    finally { setIsLoading(false); }
   };
 
-  if (isLastStep) {
+  // ═══════ PROFILE SETUP ═══════
+  if (isSetup) {
     return (
-      <LinearGradient colors={['#E7EFEA', '#DCEAE3']} style={styles.container}>
-        <SafeAreaView style={styles.safeArea}>
-          <ScrollView
-            contentContainerStyle={styles.usernameContent}
-            keyboardShouldPersistTaps="handled"
-          >
-            <View style={styles.usernameIconWrap}>
-              <LinearGradient
-                colors={[colors.primary, colors.primaryDark]}
-                style={styles.usernameIconCircle}
-              >
-                <Text style={styles.usernameEmoji}>🌿</Text>
-              </LinearGradient>
-            </View>
+      <LinearGradient colors={['#E7EFEA', '#DCEAE3']} style={{ flex: 1 }}>
+        <SafeAreaView style={{ flex: 1 }}>
+          <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
+            <ScrollView contentContainerStyle={ps.content} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+              <Text style={ps.title}>Set Up Your Profile</Text>
+              <Text style={ps.sub}>All fields are required to continue</Text>
 
-            <Text style={styles.stepTitle}>Choose Your Username</Text>
-            <Text style={styles.usernameSubtitle}>
-              This is how friends will see you on the leaderboard
-            </Text>
+              <TouchableOpacity onPress={handleAvatarPress} activeOpacity={0.8} style={ps.avatarWrap}>
+                <View style={ps.avatarCircle}>
+                  {profilePicUri ? <Image source={{ uri: profilePicUri }} style={ps.avatarImg} /> : <Text style={ps.avatarPlus}>+</Text>}
+                </View>
+                <Text style={ps.avatarLabel}>Add Photo *</Text>
+              </TouchableOpacity>
 
-            <View style={styles.usernameInputWrap}>
-              <TextInput
-                style={styles.usernameInput}
-                placeholder="Enter username"
-                placeholderTextColor={colors.textMuted}
-                value={username}
-                onChangeText={setUsername}
-                autoCapitalize="none"
-                autoCorrect={false}
-                maxLength={20}
-              />
-            </View>
+              <View style={ps.field}>
+                <Text style={ps.label}>Username *</Text>
+                <TextInput style={ps.input} placeholder="Choose a username" placeholderTextColor={C.textMute} value={username} onChangeText={setUsername} autoCapitalize="none" autoCorrect={false} maxLength={30} />
+              </View>
 
-            <TouchableOpacity
-              style={[styles.primaryButton, isLoading && styles.buttonDisabled]}
-              onPress={handleComplete}
-              disabled={isLoading}
-              activeOpacity={0.8}
-            >
-              <LinearGradient
-                colors={[colors.primary, colors.primaryDark]}
-                style={styles.buttonGradient}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 0 }}
-              >
-                {isLoading ? (
-                  <ActivityIndicator color="#fff" />
-                ) : (
-                  <Text style={styles.primaryButtonText}>Start My Journey</Text>
+              <View style={[ps.field, { zIndex: 10 }]}>
+                <Text style={ps.label}>School *</Text>
+                <TextInput style={ps.input} placeholder="e.g. Southbank International School" placeholderTextColor={C.textMute} value={school} onChangeText={handleSchoolSearch} autoCapitalize="words" />
+                {showSchoolSuggestions && schoolSuggestions.length > 0 && (
+                  <View style={ps.sugBox}><ScrollView style={{ maxHeight: 150 }} keyboardShouldPersistTaps="handled" nestedScrollEnabled>
+                    {schoolSuggestions.map((sc, i) => (
+                      <TouchableOpacity key={`${sc.name}-${i}`} style={ps.sugItem} onPress={() => selectSchool(sc)}>
+                        <Text style={ps.sugName} numberOfLines={1}>{sc.name}</Text>
+                        <Text style={ps.sugLoc} numberOfLines={1}>{[sc.city, sc.country].filter(Boolean).join(', ')}</Text>
+                      </TouchableOpacity>
+                    ))}
+                  </ScrollView></View>
                 )}
-              </LinearGradient>
-            </TouchableOpacity>
-          </ScrollView>
+              </View>
+
+              <View style={ps.field}>
+                <Text style={ps.label}>Country *</Text>
+                <TextInput style={ps.input} placeholder="e.g. United Kingdom" placeholderTextColor={C.textMute} value={country} onChangeText={setCountry} autoCapitalize="words" />
+              </View>
+
+              <TouchableOpacity style={[ps.cta, isLoading && { opacity: 0.7 }, { marginTop: spacing.md }]} onPress={handleComplete} disabled={isLoading} activeOpacity={0.8}>
+                <LinearGradient colors={[C.primary, C.dark]} style={ps.ctaGrad} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}>
+                  {isLoading ? <ActivityIndicator color="#fff" /> : <Text style={ps.ctaText}>Start My Journey</Text>}
+                </LinearGradient>
+              </TouchableOpacity>
+            </ScrollView>
+          </KeyboardAvoidingView>
         </SafeAreaView>
       </LinearGradient>
     );
   }
 
-  const step = onboardingSteps[currentStep];
+  // ═══════ WALKTHROUGH SLIDES ═══════
+  const sl = SLIDES[step];
 
   return (
-    <LinearGradient colors={step.gradient} style={styles.container}>
-      <SafeAreaView style={styles.safeArea}>
-        <View style={styles.content}>
-          {/* Progress bar */}
-          <View style={styles.progressBar}>
-            {onboardingSteps.map((_, index) => (
-              <View
-                key={index}
-                style={[
-                  styles.progressSegment,
-                  index <= currentStep && styles.progressSegmentActive,
-                ]}
-              />
+    <View style={{ flex: 1, backgroundColor: '#000' }}>
+      {/* Full-screen screenshot behind everything */}
+      <Animated.View style={[StyleSheet.absoluteFill, { opacity: fadeA }]}>
+        <ScreenshotSlide source={sl.image} />
+      </Animated.View>
+
+      {/* Uniform dark overlay */}
+      <View style={wb.overlay} pointerEvents="none" />
+
+      {/* Safe-area content on top */}
+      <SafeAreaView style={{ flex: 1 }} pointerEvents="box-none">
+        <View style={{ flex: 1 }} pointerEvents="box-none">
+
+          {/* Progress bar at top */}
+          <View style={wb.progressRow}>
+            {SLIDES.map((_, i) => (
+              <View key={i} style={[wb.progressSeg, i <= step && wb.progressSegActive]} />
             ))}
           </View>
 
-          <Animated.View
-            style={[
-              styles.stepContent,
-              { opacity: fadeAnim, transform: [{ translateY: slideAnim }] },
-            ]}
-          >
-            {/* Icon */}
-            <View style={styles.iconArea}>
-              {step.useLottie ? (
-                <LottieView
-                  source={require('../assets/egg-animation.json')}
-                  autoPlay
-                  loop
-                  style={{ width: 200, height: 200 }}
-                />
-              ) : (
-                <View style={styles.emojiCircle}>
-                  <Text style={styles.stepEmoji}>{step.emoji}</Text>
-                </View>
-              )}
+          {/* Spacer pushes card to bottom */}
+          <View style={{ flex: 1 }} pointerEvents="none" />
+
+          {/* Instruction card */}
+          <Animated.View style={[wb.card, { opacity: fadeA, paddingBottom: Math.max(insets.bottom, 12) }]}>
+            <Text style={wb.cardTag}>{sl.tag}</Text>
+            <Text style={wb.cardTitle}>{sl.title}</Text>
+            <Text style={wb.cardBody}>{sl.body}</Text>
+
+            {/* Dots */}
+            <View style={wb.dotsRow}>
+              {SLIDES.map((_, i) => (
+                <View key={i} style={[wb.dot, i === step && wb.dotActive]} />
+              ))}
             </View>
 
-            {/* Text */}
-            <Text style={styles.stepSubtitle}>{step.subtitle}</Text>
-            <Text style={styles.stepTitle}>{step.title}</Text>
-            <Text style={styles.stepBody}>{step.body}</Text>
-          </Animated.View>
-
-          {/* Bottom buttons */}
-          <View style={styles.bottomButtons}>
-            <TouchableOpacity
-              style={styles.primaryButton}
-              onPress={handleNext}
-              activeOpacity={0.8}
-            >
-              <LinearGradient
-                colors={[colors.primary, colors.primaryDark]}
-                style={styles.buttonGradient}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 0 }}
-              >
-                <Text style={styles.primaryButtonText}>
-                  {currentStep === onboardingSteps.length - 1 ? "Let's Go!" : 'Next'}
-                </Text>
+            {/* Buttons */}
+            <TouchableOpacity style={wb.nextBtn} onPress={() => go(step + 1)} activeOpacity={0.8}>
+              <LinearGradient colors={['#5F8C87', '#3B5466']} style={wb.nextGrad} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}>
+                <Text style={wb.nextText}>{step === SLIDES.length - 1 ? 'Set Up Profile' : 'Next'}</Text>
               </LinearGradient>
             </TouchableOpacity>
-
-            <TouchableOpacity
-              style={styles.skipButton}
-              onPress={() => animateTransition(onboardingSteps.length)}
-            >
-              <Text style={styles.skipButtonText}>Skip</Text>
+            <TouchableOpacity style={{ paddingVertical: 10 }} onPress={() => go(SLIDES.length)}>
+              <Text style={wb.skipText}>Skip</Text>
             </TouchableOpacity>
-          </View>
+          </Animated.View>
         </View>
       </SafeAreaView>
-    </LinearGradient>
+    </View>
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
-  safeArea: {
-    flex: 1,
-  },
-  content: {
-    flex: 1,
-    paddingHorizontal: spacing.xl,
-    paddingTop: spacing.md,
-  },
+// ═══════════════════════════════════════════════════════════════════════════
+//  STYLES
+// ═══════════════════════════════════════════════════════════════════════════
 
-  // Progress bar
-  progressBar: {
-    flexDirection: 'row',
-    gap: 6,
-    marginBottom: spacing.lg,
-  },
-  progressSegment: {
-    flex: 1,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: 'rgba(95,140,135,0.15)',
-  },
-  progressSegmentActive: {
-    backgroundColor: colors.primary,
-  },
+// Walkthrough wrapper styles
+const wb = StyleSheet.create({
+  overlay: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.48)' },
+  progressRow: { flexDirection: 'row', gap: 5, marginHorizontal: 20, marginTop: 8 },
+  progressSeg: { flex: 1, height: 3, borderRadius: 2, backgroundColor: 'rgba(255,255,255,0.2)' },
+  progressSegActive: { backgroundColor: '#7DD4C0' },
 
-  // Step content
-  stepContent: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
+  card: {
+    backgroundColor: '#fff', borderTopLeftRadius: 28, borderTopRightRadius: 28,
+    paddingHorizontal: 24, paddingTop: 24, alignItems: 'center',
+    ...shadows.large,
   },
+  cardTag: { fontSize: 11, fontWeight: '700', color: '#5F8C87', textTransform: 'uppercase', letterSpacing: 2, marginBottom: 6 },
+  cardTitle: { fontSize: 24, fontWeight: '800', color: '#2F4A3E', textAlign: 'center', marginBottom: 10 },
+  cardBody: { fontSize: 15, lineHeight: 22, color: '#7C8F86', textAlign: 'center', marginBottom: 18, paddingHorizontal: 8 },
 
-  // Icon
-  iconArea: {
-    marginBottom: spacing.lg,
-    alignItems: 'center',
-  },
-  emojiCircle: {
-    width: 140,
-    height: 140,
-    borderRadius: 70,
-    backgroundColor: 'rgba(255,255,255,0.7)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    ...shadows.medium,
-  },
-  stepEmoji: {
-    fontSize: 64,
-  },
+  dotsRow: { flexDirection: 'row', gap: 6, marginBottom: 18 },
+  dot: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#E7EFEA' },
+  dotActive: { backgroundColor: '#5F8C87', width: 20 },
 
-  // Text
-  stepSubtitle: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: colors.primary,
-    textTransform: 'uppercase',
-    letterSpacing: 1.5,
-    marginBottom: spacing.xs,
-  },
-  stepTitle: {
-    fontSize: 30,
-    fontWeight: '800',
-    color: colors.textPrimary,
-    textAlign: 'center',
-    marginBottom: spacing.md,
-  },
-  stepBody: {
-    fontSize: 16,
-    color: colors.textSecondary,
-    textAlign: 'center',
-    lineHeight: 26,
-    paddingHorizontal: spacing.md,
-  },
+  nextBtn: { width: '100%', borderRadius: 16, overflow: 'hidden', ...shadows.medium },
+  nextGrad: { paddingVertical: 16, alignItems: 'center', borderRadius: 16 },
+  nextText: { color: '#fff', fontSize: 17, fontWeight: '700' },
+  skipText: { color: '#7C8F86', fontSize: 14, fontWeight: '500' },
+});
 
-  // Bottom
-  bottomButtons: {
-    paddingBottom: spacing.lg,
-    alignItems: 'center',
-  },
-  primaryButton: {
-    width: '100%',
-    borderRadius: borderRadius.lg,
-    overflow: 'hidden',
-    ...shadows.medium,
-  },
-  buttonGradient: {
-    paddingVertical: 16,
-    alignItems: 'center',
-    borderRadius: borderRadius.lg,
-  },
-  buttonDisabled: {
-    opacity: 0.7,
-  },
-  primaryButtonText: {
-    color: '#fff',
-    fontSize: 17,
-    fontWeight: '700',
-  },
-  skipButton: {
-    padding: spacing.md,
-    marginTop: spacing.xs,
-  },
-  skipButtonText: {
-    color: colors.textMuted,
-    fontSize: 14,
-    fontWeight: '500',
-  },
-
-  // Username step
-  usernameContent: {
-    flexGrow: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingHorizontal: spacing.xl,
-    paddingBottom: spacing.xxl,
-  },
-  usernameIconWrap: {
-    marginBottom: spacing.xl,
-  },
-  usernameIconCircle: {
-    width: 100,
-    height: 100,
-    borderRadius: 50,
-    justifyContent: 'center',
-    alignItems: 'center',
-    ...shadows.medium,
-  },
-  usernameEmoji: {
-    fontSize: 48,
-  },
-  usernameSubtitle: {
-    fontSize: 15,
-    color: colors.textSecondary,
-    textAlign: 'center',
-    marginBottom: spacing.xl,
-    paddingHorizontal: spacing.md,
-  },
-  usernameInputWrap: {
-    width: '100%',
-    marginBottom: spacing.xl,
-  },
-  usernameInput: {
-    backgroundColor: '#fff',
-    borderRadius: borderRadius.lg,
-    padding: spacing.lg,
-    fontSize: 18,
-    color: colors.textPrimary,
-    textAlign: 'center',
-    borderWidth: 2,
-    borderColor: colors.primary,
-    ...shadows.small,
-  },
+// Profile setup styles
+const ps = StyleSheet.create({
+  content: { flexGrow: 1, paddingHorizontal: 32, paddingTop: 32, paddingBottom: 48 },
+  title: { fontSize: 28, fontWeight: '800', color: C.textDark, textAlign: 'center', marginBottom: 4 },
+  sub: { fontSize: 15, color: C.textMid, textAlign: 'center', marginBottom: 28 },
+  avatarWrap: { alignItems: 'center', marginBottom: 20 },
+  avatarCircle: { width: 110, height: 110, borderRadius: 55, backgroundColor: '#fff', justifyContent: 'center', alignItems: 'center', borderWidth: 3, borderColor: C.primary, borderStyle: 'dashed', overflow: 'hidden', ...shadows.small },
+  avatarImg: { width: 110, height: 110, borderRadius: 55 },
+  avatarPlus: { fontSize: 36, color: C.primary, fontWeight: '300' },
+  avatarLabel: { marginTop: 8, fontSize: 14, fontWeight: '600', color: C.primary },
+  field: { marginBottom: 14, width: '100%' },
+  label: { fontSize: 14, fontWeight: '600', color: C.textMid, marginBottom: 6 },
+  input: { backgroundColor: '#fff', borderRadius: 12, padding: 14, fontSize: 16, color: C.textDark, borderWidth: 1.5, borderColor: C.border },
+  sugBox: { backgroundColor: '#fff', borderRadius: 12, marginTop: 4, borderWidth: 1, borderColor: C.border, ...shadows.small },
+  sugItem: { paddingVertical: 10, paddingHorizontal: 14, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: C.border },
+  sugName: { fontSize: 15, fontWeight: '600', color: C.textDark },
+  sugLoc: { fontSize: 12, color: C.textMute, marginTop: 2 },
+  cta: { width: '100%', borderRadius: 16, overflow: 'hidden', ...shadows.medium },
+  ctaGrad: { paddingVertical: 16, alignItems: 'center', borderRadius: 16 },
+  ctaText: { color: '#fff', fontSize: 17, fontWeight: '700' },
 });

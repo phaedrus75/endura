@@ -170,7 +170,7 @@ def seed_check():
         else:
             print(f"[STARTUP] Shop items: {shop_count}")
 
-        if animal_count >= 30 and tip_count >= 100:
+        if animal_count >= 30 and tip_count >= 160:
             print("[STARTUP] Database already seeded, skipping")
             return
         print("[STARTUP] Seeding missing data...")
@@ -285,6 +285,67 @@ def seed_check():
             ("Set a 3-minute \u201cconfusion sprint.\u201d Tackle the part you\u2019ve been avoiding immediately.", "motivation"),
             ("Explain a concept using only analogies. If you can compare it, you understand it.", "memorization"),
             ("Create a \u201ctopic ladder\u201d \u2014 list subtopics from easiest to hardest and climb upward.", "focus"),
+            # ── 60 new tips ──
+            ("Write one \u201canchor sentence\u201d per topic. Something your brain can grab onto later.", "memorization"),
+            ("When something feels obvious, test yourself anyway. That\u2019s where mistakes hide.", "memorization"),
+            ("If a concept feels abstract, force it into a real-life example.", "memorization"),
+            ("Start with a question, not content. Curiosity pulls you in stronger than discipline.", "focus"),
+            ("Sit in a slightly uncomfortable chair. Comfort invites distraction.", "focus"),
+            ("Rename your study folder something dramatic: \u201cMission: 7s Only.\u201d", "motivation"),
+            ("Change your handwriting style mid-session to refresh attention.", "focus"),
+            ("Study facing sunlight in the morning \u2014 natural light boosts cognition.", "general"),
+            ("Keep a \u201cconfusion first\u201d rule: always start with what you don\u2019t get.", "focus"),
+            ("Change your study location every 2\u20133 days. Novelty prevents stagnation.", "general"),
+            ("Keep a \u2018wrong answer log\u2019 and return to it every so often. Patterns in your mistakes are more useful than the mistakes themselves.", "memorization"),
+            ("Rewrite one concept using only diagrams.", "memorization"),
+            ("Use your non-dominant hand briefly \u2014 it wakes up your brain.", "focus"),
+            ("Keep your desk slightly minimal \u2014 clarity outside = clarity inside.", "focus"),
+            ("Start with a blank page and rebuild knowledge from memory.", "memorization"),
+            ("Study with your back straight \u2014 posture affects cognition.", "general"),
+            ("Read your notes backwards \u2014 starting from the conclusion forces your brain to reconstruct the logic differently.", "memorization"),
+            ("Assign each subject a different font when typing notes. Visual distinction helps compartmentalise memory.", "memorization"),
+            ("Study in a foreign accent for five minutes. It sounds absurd but the novelty triggers attention.", "focus"),
+            ("Annotate your notes with symbols you invent \u2014 a lightning bolt for \u201cthis will be on the exam,\u201d a spiral for \u201cI don\u2019t fully get this yet.\u201d", "memorization"),
+            ("Write out every formula you know from memory each morning. The ones you fumble are the day\u2019s priority.", "memorization"),
+            ("Read your notes immediately after exercise, while your heart rate is still slightly elevated. Neurologically optimal.", "general"),
+            ("After memorising something, do a star jump. The physical jolt tags the memory with a physical marker.", "memorization"),
+            ("Create a \u201cbefore\u201d and \u201cafter\u201d page \u2014 what you thought about a topic before studying it vs. what you know now.", "memorization"),
+            ("Assign a numerical value to each topic\u2019s difficulty (1\u201310) and keep a running score. Gamify the hardness.", "motivation"),
+            ("Find one real-world product, story, or event that perfectly illustrates each concept. Reality = relevance = memory.", "memorization"),
+            ("Keep a \u201ctranslation log\u201d \u2014 every time you rephrase a textbook definition in your own words, log the original and your version.", "memorization"),
+            ("When you finish a practice question, spend as long analysing your answer as you did writing it. The debrief is where learning happens.", "memorization"),
+            ("Read the mark scheme before you revise a topic. Knowing what\u2019s being rewarded restructures how you absorb the material.", "general"),
+            ("When revising an essay subject, practise writing introductions only \u2014 ten in a row, on different questions. The opening argument is the hardest thing to get right under pressure.", "memorization"),
+            ("Read primary sources \u2014 original texts, original data, original speeches \u2014 even briefly. Examiners reward engagement with the actual material, not just summaries of it.", "general"),
+            ("Practise writing conclusions first. If you can\u2019t state your argument\u2019s endpoint clearly, you don\u2019t know your argument yet.", "memorization"),
+            ("Track which types of questions you consistently avoid in practice. Avoidance patterns are the most honest signal of where your gaps actually are.", "general"),
+            ("After completing a past paper, rank every question by how confident you felt, not by whether you got it right. Calibration \u2014 knowing what you know \u2014 is its own skill.", "general"),
+            ("Identify the one concept in each subject that, if you misunderstood it, would contaminate your answers across multiple questions. Master that one first.", "focus"),
+            ("When a topic feels solid, increase the difficulty of the retrieval condition \u2014 less time, fewer notes, higher stakes simulation. Comfort is the enemy of exam readiness.", "memorization"),
+            ("Study in blocks anchored by a clear objective, not a time target. \u201cUnderstand the causes of WWI\u201d is a better session goal than \u201crevise for two hours.\u201d", "focus"),
+            ("After finishing a topic, write the follow-up question a good examiner would ask. The ability to anticipate depth is the ability to demonstrate it.", "memorization"),
+            ("When you can\u2019t understand something, find the last point at which you did understand it. The breakdown is always at a specific junction \u2014 find it.", "general"),
+            ("Separate what you know from what you\u2019ve seen. Recognition is not recall. If you need the notes in front of you to explain something, you don\u2019t know it yet.", "memorization"),
+            ("Plan your exam answer before you write a single sentence. Three minutes of planning typically produces a stronger response than three minutes of additional writing.", "general"),
+            ("For subjects that require argument, practise writing the strongest possible case for a position you disagree with. Opposing positions you can\u2019t argue are positions you don\u2019t understand.", "memorization"),
+            ("Study a topic to the point where you can generate your own examples \u2014 not reproduce the textbook ones. Original examples signal genuine understanding.", "memorization"),
+            ("Build a \u201cquestion ladder\u201d per topic: easy retrieval at the bottom, analysis and evaluation at the top. Know which rung you\u2019re on.", "focus"),
+            ("When revising definitions, practise producing them under time pressure. Recognition is not the same as fluent production.", "memorization"),
+            ("Schedule one session per week to revisit material from three weeks ago. The forgetting curve is real; the spacing effect is the antidote.", "memorization"),
+            ("When you get something right, ask yourself whether you got it right for the right reasons. Correct answers built on shaky reasoning will fail under different phrasing.", "memorization"),
+            ("When you\u2019re fatigued, switch to retrieval rather than input \u2014 test yourself on old material instead of reading new material. Tired brains retain less; retrieval works even tired.", "focus"),
+            ("Read one piece of academic commentary on each major topic in your humanities subjects. The vocabulary of scholarly debate is what elevates exam writing.", "general"),
+            ("For every major topic, know one example that\u2019s specific, one that\u2019s recent, and one that\u2019s unexpected. Range of evidence is what distinguishes excellent answers.", "memorization"),
+            ("Learn the history of at least one idea per subject \u2014 who developed it, why, what it replaced. Context gives concepts sticking power.", "memorization"),
+            ("Study your strongest subject just before your weakest. The residual confidence from competence carries into harder material.", "motivation"),
+            ("For every formula or rule, practise deriving it \u2014 not just applying it. Derivation proves you understand the logic, not just the output.", "memorization"),
+            ("Build the habit of citing the source of your examples: who said it, when, in what context. Precision in attribution elevates analytical writing.", "general"),
+            ("Keep a running log of every teacher or examiner comment you\u2019ve received. Patterns in feedback are patterns in your thinking.", "general"),
+            ("Read your subject\u2019s most recent grade boundaries. The distance between mark bands tells you how precisely the examiner thinks the material can be graded.", "general"),
+            ("Find the three most common errors in student answers for each topic \u2014 most exam board reports publish them. Avoiding known errors is a low-effort, high-return strategy.", "general"),
+            ("After getting a question right, generate two variants of that question with different conditions. The ability to anticipate variation is the ability to generalise your knowledge.", "memorization"),
+            ("Prioritise understanding over coverage. A partial syllabus understood deeply will outperform a full syllabus known superficially on most well-constructed exam papers.", "general"),
+            ("The night before an exam, revise nothing new. Review your key terms, your argument structures, your worked examples. Your job the night before is to trust what you\u2019ve built.", "general"),
         ]
         tips = [
             {"content": text, "category": cat, "animal_name": animals_cycle[i % 30]}
@@ -292,10 +353,10 @@ def seed_check():
         ]
 
         existing_tips = db.query(models.StudyTip).count()
-        if existing_tips >= 100:
+        if existing_tips >= 160:
             print(f"[STARTUP] Found {existing_tips} tips already seeded, skipping re-seed")
         else:
-            print(f"[STARTUP] Found {existing_tips} tips, seeding 100 new ones")
+            print(f"[STARTUP] Found {existing_tips} tips, seeding {len(tip_texts)} new ones")
             try:
                 db.execute(text("DELETE FROM tip_views"))
                 db.execute(text("DELETE FROM study_tips"))
