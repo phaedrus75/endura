@@ -294,7 +294,7 @@ async function apiFetch<T>(
     
     return response.json();
   } catch (error: any) {
-    if (__DEV__) console.error('API error:', endpoint, error.message);
+    if (__DEV__) console.warn('API error:', endpoint, error.message);
     throw error;
   }
 }

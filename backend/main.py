@@ -1215,31 +1215,38 @@ def get_new_reactions(
     current_user: models.User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    my_events = db.query(models.ActivityEvent).filter(
-        models.ActivityEvent.user_id == current_user.id
-    ).all()
-    event_ids = [e.id for e in my_events]
-    if not event_ids:
+    try:
+        my_events = db.query(models.ActivityEvent).filter(
+            models.ActivityEvent.user_id == current_user.id
+        ).all()
+        event_ids = [e.id for e in my_events]
+        if not event_ids:
+            return []
+        unseen = db.query(models.FeedReaction).filter(
+            models.FeedReaction.event_id.in_(event_ids),
+            models.FeedReaction.user_id != current_user.id,
+            (models.FeedReaction.seen == False) | (models.FeedReaction.seen == None)
+        ).all()
+        results = []
+        for r in unseen:
+            sender = db.query(models.User).filter(models.User.id == r.user_id).first()
+            event = next((e for e in my_events if e.id == r.event_id), None)
+            results.append({
+                "id": r.id,
+                "sender_username": sender.username if sender else "Someone",
+                "reaction": r.reaction,
+                "event_description": event.description if event else "",
+                "created_at": r.created_at.isoformat() if r.created_at else "",
+            })
+            r.seen = True
+        try:
+            db.commit()
+        except Exception:
+            db.rollback()
+        return results
+    except Exception as e:
+        logger.error(f"Error fetching new reactions for user {current_user.id}: {e}")
         return []
-    unseen = db.query(models.FeedReaction).filter(
-        models.FeedReaction.event_id.in_(event_ids),
-        models.FeedReaction.user_id != current_user.id,
-        models.FeedReaction.seen == False
-    ).all()
-    results = []
-    for r in unseen:
-        sender = db.query(models.User).filter(models.User.id == r.user_id).first()
-        event = next((e for e in my_events if e.id == r.event_id), None)
-        results.append({
-            "id": r.id,
-            "sender_username": sender.username if sender else "Someone",
-            "reaction": r.reaction,
-            "event_description": event.description if event else "",
-            "created_at": r.created_at.isoformat() if r.created_at else "",
-        })
-        r.seen = True
-    db.commit()
-    return results
 
 @app.post("/feed/{event_id}/react")
 def react_to_event(
