@@ -51,6 +51,9 @@ _migrations = [
     ("users", "school", "ALTER TABLE users ADD COLUMN school VARCHAR"),
     ("users", "city", "ALTER TABLE users ADD COLUMN city VARCHAR"),
     ("users", "country", "ALTER TABLE users ADD COLUMN country VARCHAR"),
+    ("users", "email_verified", "ALTER TABLE users ADD COLUMN email_verified BOOLEAN DEFAULT FALSE"),
+    ("users", "verification_code", "ALTER TABLE users ADD COLUMN verification_code VARCHAR"),
+    ("users", "verification_code_expires", "ALTER TABLE users ADD COLUMN verification_code_expires TIMESTAMP"),
 ]
 try:
     with engine.connect() as conn:
@@ -63,6 +66,15 @@ try:
             if result.fetchone() is None:
                 conn.execute(text(sql))
                 conn.commit()
+    # Backfill: mark pre-existing users (who have a username) as verified
+    try:
+        conn.execute(text(
+            "UPDATE users SET email_verified = TRUE "
+            "WHERE username IS NOT NULL AND (email_verified IS NULL OR email_verified = FALSE)"
+        ))
+        conn.commit()
+    except Exception:
+        pass
 except Exception:
     pass
 
@@ -315,21 +327,118 @@ def seed_check():
 
 # ============ Auth Endpoints ============
 
-@app.post("/auth/register", response_model=schemas.Token)
+@app.post("/auth/register")
 @limiter.limit("5/minute")
 def register(request: Request, user: schemas.UserCreate, db: Session = Depends(get_db)):
+    import secrets
     db_user = crud.get_user_by_email(db, user.email)
     if db_user:
-        raise HTTPException(status_code=400, detail="Email already registered")
-    
+        # Existing user with a username or verified = already registered
+        if db_user.username or db_user.email_verified:
+            raise HTTPException(status_code=400, detail="Email already registered")
+        # Truly unverified user re-registering: resend code
+        code = f"{secrets.randbelow(1000000):06d}"
+        db_user.verification_code = code
+        db_user.verification_code_expires = datetime.utcnow() + timedelta(minutes=15)
+        db_user.hashed_password = get_password_hash(user.password)
+        db.commit()
+        _send_verification_email(db_user.email, code)
+        return {"message": "Verification code sent", "needs_verification": True}
+
     hashed_password = get_password_hash(user.password)
     new_user = crud.create_user(db, user.email, hashed_password)
-    
+
+    code = f"{secrets.randbelow(1000000):06d}"
+    new_user.verification_code = code
+    new_user.verification_code_expires = datetime.utcnow() + timedelta(minutes=15)
+    new_user.email_verified = False
+    db.commit()
+
+    _send_verification_email(new_user.email, code)
+    return {"message": "Verification code sent", "needs_verification": True}
+
+
+class VerifyEmailRequest(BaseModel):
+    email: str
+    code: str
+
+@app.post("/auth/verify-email")
+@limiter.limit("10/minute")
+def verify_email(request: Request, body: VerifyEmailRequest, db: Session = Depends(get_db)):
+    user = db.query(models.User).filter(models.User.email == body.email).first()
+    if not user or not user.verification_code:
+        raise HTTPException(status_code=400, detail="Invalid or expired verification code")
+
+    if user.verification_code != body.code:
+        raise HTTPException(status_code=400, detail="Invalid verification code")
+
+    if user.verification_code_expires and user.verification_code_expires < datetime.utcnow():
+        user.verification_code = None
+        user.verification_code_expires = None
+        db.commit()
+        raise HTTPException(status_code=400, detail="Code has expired. Please request a new one.")
+
+    user.email_verified = True
+    user.verification_code = None
+    user.verification_code_expires = None
+    db.commit()
+
     access_token = create_access_token(
-        data={"sub": new_user.email},
+        data={"sub": user.email},
         expires_delta=timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     )
     return {"access_token": access_token, "token_type": "bearer"}
+
+
+class ResendVerificationRequest(BaseModel):
+    email: str
+
+@app.post("/auth/resend-verification")
+@limiter.limit("3/minute")
+def resend_verification(request: Request, body: ResendVerificationRequest, db: Session = Depends(get_db)):
+    import secrets
+    user = db.query(models.User).filter(models.User.email == body.email).first()
+    if not user or user.email_verified:
+        return {"message": "If that email exists and needs verification, a code has been sent."}
+
+    code = f"{secrets.randbelow(1000000):06d}"
+    user.verification_code = code
+    user.verification_code_expires = datetime.utcnow() + timedelta(minutes=15)
+    db.commit()
+
+    _send_verification_email(user.email, code)
+    return {"message": "Verification code sent"}
+
+
+def _send_verification_email(email: str, code: str):
+    resend_key = os.getenv("RESEND_API_KEY")
+    resend_from = os.getenv("RESEND_FROM", "Endura <onboarding@resend.dev>")
+
+    if resend_key:
+        try:
+            import resend
+            resend.api_key = resend_key
+            resend.Emails.send({
+                "from": resend_from,
+                "to": [email],
+                "subject": "Endura — Verify Your Email",
+                "html": f"""
+                <div style="font-family:sans-serif;max-width:400px;margin:0 auto;padding:32px;background:#E7EFEA;border-radius:16px">
+                    <h2 style="color:#5F8C87;margin:0 0 8px">Endura</h2>
+                    <p style="color:#555;margin:0 0 24px">Email Verification</p>
+                    <div style="background:#fff;border-radius:12px;padding:24px;text-align:center;margin-bottom:20px">
+                        <p style="color:#888;margin:0 0 8px;font-size:14px">Your verification code is</p>
+                        <p style="font-size:36px;font-weight:700;letter-spacing:8px;color:#5F8C87;margin:0">{code}</p>
+                    </div>
+                    <p style="color:#999;font-size:12px;margin:0;text-align:center">This code expires in 15 minutes.</p>
+                </div>
+                """,
+            })
+            logger.info(f"Verification code sent to {email} via Resend")
+        except Exception as e:
+            logger.error(f"Failed to send verification email: {e}")
+    else:
+        logger.warning(f"RESEND_API_KEY not set — verification code for {email}: {code}")
 
 
 @app.post("/auth/login", response_model=schemas.Token)
@@ -484,7 +593,12 @@ def set_username(
     current_user: models.User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    # Check if username is taken
+    username = username.strip()
+    if not username or len(username) < 2:
+        raise HTTPException(status_code=400, detail="Username must be at least 2 characters")
+    if len(username) > 30:
+        raise HTTPException(status_code=400, detail="Username must be 30 characters or fewer")
+
     existing = db.query(models.User).filter(
         models.User.username == username,
         models.User.id != current_user.id

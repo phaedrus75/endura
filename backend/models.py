@@ -28,6 +28,11 @@ class User(Base):
     reset_token = Column(String, nullable=True)
     reset_token_expires = Column(DateTime, nullable=True)
 
+    # Email verification
+    email_verified = Column(Boolean, default=False)
+    verification_code = Column(String, nullable=True)
+    verification_code_expires = Column(DateTime, nullable=True)
+
     # Profile picture URL (stored in uploads table)
     profile_pic_url = Column(String, nullable=True)
 
