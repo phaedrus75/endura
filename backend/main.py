@@ -543,14 +543,13 @@ def seed_schools(
 
     import urllib.request, csv, io
     count = 0
+    errors = []
 
-    # UK schools from GIAS CSV
+    # UK schools from GIAS
     try:
-        uk_url = "https://www.get-information-schools.service.gov.uk/Downloads/csv/allgrouplinks"
-        # Actually use the establishment download
         uk_url = "https://ea-edubase-api-prod.azurewebsites.net/edubase/downloads/public/allestablishments.csv"
         req = urllib.request.Request(uk_url, headers={"User-Agent": "Mozilla/5.0"})
-        response = urllib.request.urlopen(req, timeout=60)
+        response = urllib.request.urlopen(req, timeout=120)
         raw = response.read().decode("utf-8-sig", errors="replace")
         reader = csv.DictReader(io.StringIO(raw))
         batch = []
@@ -565,7 +564,7 @@ def seed_schools(
                 region=row.get("County (name)", "").strip() or None,
                 country="UK",
             ))
-            if len(batch) >= 1000:
+            if len(batch) >= 2000:
                 db.bulk_save_objects(batch)
                 db.commit()
                 count += len(batch)
@@ -574,15 +573,16 @@ def seed_schools(
             db.bulk_save_objects(batch)
             db.commit()
             count += len(batch)
-        print(f"Seeded {count} UK schools")
     except Exception as e:
-        print(f"Error seeding UK schools: {e}")
+        errors.append(f"UK: {str(e)}")
+
+    uk_count = count
 
     # US schools from NCES
     try:
         us_url = "https://nces.ed.gov/ccd/data/zip/ccd_sch_029_2324_w_1a_080624.zip"
         req = urllib.request.Request(us_url, headers={"User-Agent": "Mozilla/5.0"})
-        response = urllib.request.urlopen(req, timeout=120)
+        response = urllib.request.urlopen(req, timeout=180)
         import zipfile
         zip_bytes = io.BytesIO(response.read())
         with zipfile.ZipFile(zip_bytes) as zf:
@@ -593,10 +593,7 @@ def seed_schools(
                 batch = []
                 for row in reader:
                     name = row.get("SCH_NAME", row.get("SCHNAM", "")).strip()
-                    status = row.get("SY_STATUS_TEXT", row.get("UPDATED_STATUS_TEXT", row.get("SCH_STATUS", ""))).strip()
                     if not name:
-                        continue
-                    if "closed" in status.lower():
                         continue
                     batch.append(models.School(
                         name=name,
@@ -604,7 +601,7 @@ def seed_schools(
                         region=row.get("STATENAME", row.get("ST", "")).strip() or None,
                         country="US",
                     ))
-                    if len(batch) >= 1000:
+                    if len(batch) >= 2000:
                         db.bulk_save_objects(batch)
                         db.commit()
                         count += len(batch)
@@ -613,11 +610,13 @@ def seed_schools(
                     db.bulk_save_objects(batch)
                     db.commit()
                     count += len(batch)
-        print(f"Total seeded: {count} schools")
     except Exception as e:
-        print(f"Error seeding US schools: {e}")
+        errors.append(f"US: {str(e)}")
 
-    return {"message": f"Seeded {count} schools"}
+    return {
+        "message": f"Seeded {count} schools (UK: {uk_count}, US: {count - uk_count})",
+        "errors": errors if errors else None,
+    }
 
 
 # ============ Task Endpoints ============
