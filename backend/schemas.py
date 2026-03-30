@@ -38,9 +38,25 @@ class UserResponse(BaseModel):
     total_sessions: int
     created_at: datetime
     profile_pic_url: Optional[str] = None
+    school: Optional[str] = None
+    city: Optional[str] = None
+    country: Optional[str] = None
 
     class Config:
         from_attributes = True
+
+
+class UpdateProfileRequest(BaseModel):
+    school: Optional[str] = None
+    city: Optional[str] = None
+    country: Optional[str] = None
+
+
+class SchoolSearchResult(BaseModel):
+    name: str
+    city: Optional[str] = None
+    region: Optional[str] = None
+    country: str
 
 
 class Token(BaseModel):
@@ -227,6 +243,9 @@ class FriendProfileResponse(BaseModel):
     friends_since: Optional[str] = None
     member_since: Optional[str] = None
     total_coins: int = 0
+    school: Optional[str] = None
+    city: Optional[str] = None
+    country: Optional[str] = None
 
     class Config:
         from_attributes = True

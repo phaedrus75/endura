@@ -48,6 +48,9 @@ _migrations = [
     ("users", "reset_token", "ALTER TABLE users ADD COLUMN reset_token VARCHAR"),
     ("users", "reset_token_expires", "ALTER TABLE users ADD COLUMN reset_token_expires TIMESTAMP"),
     ("users", "profile_pic_url", "ALTER TABLE users ADD COLUMN profile_pic_url VARCHAR"),
+    ("users", "school", "ALTER TABLE users ADD COLUMN school VARCHAR"),
+    ("users", "city", "ALTER TABLE users ADD COLUMN city VARCHAR"),
+    ("users", "country", "ALTER TABLE users ADD COLUMN country VARCHAR"),
 ]
 try:
     with engine.connect() as conn:
@@ -493,6 +496,130 @@ def set_username(
     return {"message": "Username updated"}
 
 
+@app.put("/user/profile")
+def update_profile(
+    profile: schemas.UpdateProfileRequest,
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    user = db.query(models.User).filter(models.User.id == current_user.id).first()
+    if profile.school is not None:
+        user.school = profile.school.strip() if profile.school.strip() else None
+    if profile.city is not None:
+        user.city = profile.city.strip() if profile.city.strip() else None
+    if profile.country is not None:
+        user.country = profile.country.strip() if profile.country.strip() else None
+    db.commit()
+    db.refresh(user)
+    return {"message": "Profile updated"}
+
+
+@app.get("/schools/search", response_model=List[schemas.SchoolSearchResult])
+def search_schools(
+    q: str = "",
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    if not q or len(q) < 2:
+        return []
+    query = f"%{q}%"
+    results = db.query(models.School).filter(
+        models.School.name.ilike(query)
+    ).order_by(models.School.name).limit(20).all()
+    return [
+        {"name": s.name, "city": s.city, "region": s.region, "country": s.country}
+        for s in results
+    ]
+
+
+@app.post("/schools/seed")
+def seed_schools(
+    db: Session = Depends(get_db)
+):
+    """Seed schools from UK GIAS and US NCES data. Only runs if table is empty."""
+    existing = db.query(models.School).first()
+    if existing:
+        return {"message": "Schools already seeded", "count": db.query(models.School).count()}
+
+    import urllib.request, csv, io
+    count = 0
+
+    # UK schools from GIAS CSV
+    try:
+        uk_url = "https://www.get-information-schools.service.gov.uk/Downloads/csv/allgrouplinks"
+        # Actually use the establishment download
+        uk_url = "https://ea-edubase-api-prod.azurewebsites.net/edubase/downloads/public/allestablishments.csv"
+        req = urllib.request.Request(uk_url, headers={"User-Agent": "Mozilla/5.0"})
+        response = urllib.request.urlopen(req, timeout=60)
+        raw = response.read().decode("utf-8-sig", errors="replace")
+        reader = csv.DictReader(io.StringIO(raw))
+        batch = []
+        for row in reader:
+            name = row.get("EstablishmentName", "").strip()
+            status = row.get("EstablishmentStatus (name)", "").strip()
+            if not name or status != "Open":
+                continue
+            batch.append(models.School(
+                name=name,
+                city=row.get("Town", "").strip() or None,
+                region=row.get("County (name)", "").strip() or None,
+                country="UK",
+            ))
+            if len(batch) >= 1000:
+                db.bulk_save_objects(batch)
+                db.commit()
+                count += len(batch)
+                batch = []
+        if batch:
+            db.bulk_save_objects(batch)
+            db.commit()
+            count += len(batch)
+        print(f"Seeded {count} UK schools")
+    except Exception as e:
+        print(f"Error seeding UK schools: {e}")
+
+    # US schools from NCES
+    try:
+        us_url = "https://nces.ed.gov/ccd/data/zip/ccd_sch_029_2324_w_1a_080624.zip"
+        req = urllib.request.Request(us_url, headers={"User-Agent": "Mozilla/5.0"})
+        response = urllib.request.urlopen(req, timeout=120)
+        import zipfile
+        zip_bytes = io.BytesIO(response.read())
+        with zipfile.ZipFile(zip_bytes) as zf:
+            csv_name = [n for n in zf.namelist() if n.endswith(".csv")][0]
+            with zf.open(csv_name) as f:
+                raw = f.read().decode("utf-8-sig", errors="replace")
+                reader = csv.DictReader(io.StringIO(raw))
+                batch = []
+                for row in reader:
+                    name = row.get("SCH_NAME", row.get("SCHNAM", "")).strip()
+                    status = row.get("SY_STATUS_TEXT", row.get("UPDATED_STATUS_TEXT", row.get("SCH_STATUS", ""))).strip()
+                    if not name:
+                        continue
+                    if "closed" in status.lower():
+                        continue
+                    batch.append(models.School(
+                        name=name,
+                        city=row.get("LCITY", row.get("CITY", "")).strip() or None,
+                        region=row.get("STATENAME", row.get("ST", "")).strip() or None,
+                        country="US",
+                    ))
+                    if len(batch) >= 1000:
+                        db.bulk_save_objects(batch)
+                        db.commit()
+                        count += len(batch)
+                        batch = []
+                if batch:
+                    db.bulk_save_objects(batch)
+                    db.commit()
+                    count += len(batch)
+        print(f"Total seeded: {count} schools")
+    except Exception as e:
+        print(f"Error seeding US schools: {e}")
+
+    return {"message": f"Seeded {count} schools"}
+
+
 # ============ Task Endpoints ============
 
 @app.post("/tasks", response_model=schemas.TaskResponse)
@@ -859,6 +986,9 @@ def get_friend_profile(
         "friends_since": friendship.created_at.isoformat() if friendship.created_at else None,
         "member_since": friend.created_at.isoformat() if friend.created_at else None,
         "total_coins": friend.total_coins,
+        "school": friend.school,
+        "city": friend.city,
+        "country": friend.country,
     }
 
 

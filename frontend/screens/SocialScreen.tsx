@@ -835,7 +835,7 @@ export default function SocialScreen() {
       {/* Friends */}
       {friends.length > 0 && (
         <LinearGradient
-          colors={['#E7EFEA', '#FFFFFF']}
+          colors={['#E7EFEA', '#E7EFEA']}
           start={{ x: 0, y: 0 }}
           end={{ x: 0, y: 1 }}
           style={styles.allUsersSection}
@@ -1519,6 +1519,18 @@ export default function SocialScreen() {
                         <Text style={{ fontSize: 14 }}>{level.emoji}</Text>
                         <Text style={[styles.fpLevelText, { color: level.color }]}>{level.title}</Text>
                       </View>
+                      {(fp.school || fp.city || fp.country) && (
+                        <View style={styles.fpInfoRow}>
+                          {fp.school && (
+                            <Text style={styles.fpInfoText}>🎓 {fp.school}</Text>
+                          )}
+                          {(fp.city || fp.country) && (
+                            <Text style={styles.fpInfoText}>
+                              📍 {[fp.city, fp.country].filter(Boolean).join(', ')}
+                            </Text>
+                          )}
+                        </View>
+                      )}
                     </LinearGradient>
 
                     {/* Friends since banner */}
@@ -1567,25 +1579,11 @@ export default function SocialScreen() {
                     {/* Fun facts */}
                     <View style={styles.fpFunFacts}>
                       <View style={styles.fpFunFactRow}>
-                        <Text style={styles.fpFunFactEmoji}>🪙</Text>
-                        <Text style={styles.fpFunFactText}>
-                          Earned <Text style={styles.fpFunFactBold}>{fp.total_coins.toLocaleString()}</Text> coins lifetime
-                        </Text>
-                      </View>
-                      <View style={styles.fpFunFactRow}>
                         <Text style={styles.fpFunFactEmoji}>🗓️</Text>
                         <Text style={styles.fpFunFactText}>
                           Member for <Text style={styles.fpFunFactBold}>{daysMember}</Text> days
                         </Text>
                       </View>
-                      {fp.total_study_minutes >= 60 && (
-                        <View style={styles.fpFunFactRow}>
-                          <Text style={styles.fpFunFactEmoji}>☕</Text>
-                          <Text style={styles.fpFunFactText}>
-                            That's <Text style={styles.fpFunFactBold}>{Math.floor(fp.total_study_minutes / 25)}</Text> pomodoros worth of focus
-                          </Text>
-                        </View>
-                      )}
                     </View>
 
                     {/* Close button */}
@@ -2610,6 +2608,16 @@ const styles = StyleSheet.create({
   fpLevelText: {
     fontSize: 13,
     fontWeight: '700',
+  },
+  fpInfoRow: {
+    alignItems: 'center',
+    marginTop: 10,
+    gap: 4,
+  },
+  fpInfoText: {
+    fontSize: 12,
+    color: colors.textSecondary,
+    fontWeight: '500',
   },
   fpSinceBanner: {
     alignItems: 'center',

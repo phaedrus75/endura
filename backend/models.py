@@ -31,6 +31,11 @@ class User(Base):
     # Profile picture URL (stored in uploads table)
     profile_pic_url = Column(String, nullable=True)
 
+    # Profile info
+    school = Column(String, nullable=True)
+    city = Column(String, nullable=True)
+    country = Column(String, nullable=True)
+
     # Push notification token
     push_token = Column(String, nullable=True)
     notification_enabled = Column(Boolean, default=True)
@@ -324,3 +329,13 @@ class Donation(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
 
     user = relationship("User")
+
+
+class School(Base):
+    __tablename__ = "schools"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String, nullable=False, index=True)
+    city = Column(String, nullable=True)
+    region = Column(String, nullable=True)
+    country = Column(String, nullable=False, index=True)

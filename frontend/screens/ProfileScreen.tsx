@@ -13,6 +13,7 @@ import {
   Image,
   ActionSheetIOS,
   Platform,
+  KeyboardAvoidingView,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
@@ -20,15 +21,18 @@ import { LinearGradient as ExpoLinearGradient } from 'expo-linear-gradient';
 import Svg, { Circle, Rect, G, Text as SvgText, Path, Defs, LinearGradient, Stop } from 'react-native-svg';
 import * as ImagePicker from 'expo-image-picker';
 import { colors, shadows, spacing, borderRadius } from '../theme/colors';
+import SwipeDismiss, { DragHandle } from '../components/SwipeDismiss';
 import { useAuth } from '../contexts/AuthContext';
 import {
   statsAPI,
   socialAPI,
+  authAPI,
   donationsAPI,
   UserStats,
   LeaderboardEntry,
   DonationLeaderboardEntry,
   Friend,
+  SchoolSearchResult,
 } from '../services/api';
 
 const { width } = Dimensions.get('window');
@@ -162,6 +166,98 @@ export default function ProfileScreen() {
   const [friendEmail, setFriendEmail] = useState('');
   const [personalDonation, setPersonalDonation] = useState<{ total: number; count: number }>({ total: 0, count: 0 });
   const [donationLeaderboard, setDonationLeaderboard] = useState<DonationLeaderboardEntry[]>([]);
+
+  // Edit profile
+  const [showEditProfile, setShowEditProfile] = useState(false);
+  const [editSchool, setEditSchool] = useState('');
+  const [editCity, setEditCity] = useState('');
+  const [editCountry, setEditCountry] = useState('');
+  const [schoolSuggestions, setSchoolSuggestions] = useState<SchoolSearchResult[]>([]);
+  const [showSchoolSuggestions, setShowSchoolSuggestions] = useState(false);
+  const schoolSearchTimeout = React.useRef<NodeJS.Timeout | null>(null);
+
+  const openEditProfile = () => {
+    setEditSchool(user?.school || '');
+    setEditCity(user?.city || '');
+    setEditCountry(user?.country || '');
+    setSchoolSuggestions([]);
+    setShowSchoolSuggestions(false);
+    setShowEditProfile(true);
+  };
+
+  const handleSchoolSearch = (text: string) => {
+    setEditSchool(text);
+    if (schoolSearchTimeout.current) clearTimeout(schoolSearchTimeout.current);
+    if (text.length < 2) {
+      setSchoolSuggestions([]);
+      setShowSchoolSuggestions(false);
+      return;
+    }
+    schoolSearchTimeout.current = setTimeout(async () => {
+      try {
+        const results = await authAPI.searchSchools(text);
+        setSchoolSuggestions(results);
+        setShowSchoolSuggestions(results.length > 0);
+      } catch {
+        setSchoolSuggestions([]);
+        setShowSchoolSuggestions(false);
+      }
+    }, 300);
+  };
+
+  const selectSchool = (school: SchoolSearchResult) => {
+    setEditSchool(school.name);
+    if (school.city && !editCity) setEditCity(school.city);
+    if (school.country && !editCountry) setEditCountry(school.country === 'UK' ? 'United Kingdom' : school.country === 'US' ? 'United States' : school.country);
+    setShowSchoolSuggestions(false);
+  };
+
+  const saveProfile = async () => {
+    try {
+      await authAPI.updateProfile({
+        school: editSchool || undefined,
+        city: editCity || undefined,
+        country: editCountry || undefined,
+      });
+      await refreshUser();
+      setShowEditProfile(false);
+      Alert.alert('Saved', 'Your profile has been updated!');
+    } catch (e: any) {
+      Alert.alert('Error', e.message || 'Could not update profile');
+    }
+  };
+
+  const handleEditUsername = () => {
+    Alert.prompt(
+      'Change Username',
+      'Enter your new username',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Save',
+          onPress: async (newUsername?: string) => {
+            if (!newUsername || !newUsername.trim()) return;
+            const trimmed = newUsername.trim();
+            if (trimmed === user?.username) return;
+            try {
+              await authAPI.setUsername(trimmed);
+              await refreshUser();
+              Alert.alert('Done', `Username changed to @${trimmed}`);
+            } catch (e: any) {
+              const msg = e?.message || '';
+              if (msg.toLowerCase().includes('taken')) {
+                Alert.alert('Username Taken', `@${trimmed} is already in use. Try a different one.`);
+              } else {
+                Alert.alert('Error', msg || 'Could not update username');
+              }
+            }
+          },
+        },
+      ],
+      'plain-text',
+      user?.username || '',
+    );
+  };
 
   const pickImage = async (source: 'camera' | 'gallery') => {
     if (source === 'camera') {
@@ -302,7 +398,7 @@ export default function ProfileScreen() {
   };
 
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
       <ScrollView
         style={styles.scrollView}
         contentContainerStyle={styles.scrollContent}
@@ -349,18 +445,46 @@ export default function ProfileScreen() {
               </View>
             </View>
           </TouchableOpacity>
-          <Text style={styles.username}>{user?.username || 'Studier'}</Text>
+          <View style={styles.usernameRow}>
+            <Text style={styles.username}>{user?.username || 'Studier'}</Text>
+            <TouchableOpacity onPress={handleEditUsername} style={styles.usernameEditBtn} activeOpacity={0.7}>
+              <Text style={styles.usernameEditText}>Edit</Text>
+            </TouchableOpacity>
+          </View>
           <Text style={styles.email}>{user?.email}</Text>
-          <ExpoLinearGradient
-            colors={['#A8C8D8', '#E7EFEA']}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 0, y: 1 }}
-            style={styles.streakContainer}
-          >
-            <Text style={styles.streakEmoji}>🔥</Text>
-            <Text style={styles.streakValue}>{user?.current_streak || 0}</Text>
-            <Text style={styles.streakLabel}>day streak</Text>
-          </ExpoLinearGradient>
+          {(user?.school || user?.city || user?.country) && (
+            <View style={styles.profileInfoRow}>
+              {user?.school && (
+                <View style={styles.profileInfoChip}>
+                  <Text style={styles.profileInfoIcon}>🎓</Text>
+                  <Text style={styles.profileInfoText}>{user.school}</Text>
+                </View>
+              )}
+              {(user?.city || user?.country) && (
+                <View style={styles.profileInfoChip}>
+                  <Text style={styles.profileInfoIcon}>📍</Text>
+                  <Text style={styles.profileInfoText}>
+                    {[user?.city, user?.country].filter(Boolean).join(', ')}
+                  </Text>
+                </View>
+              )}
+            </View>
+          )}
+          <View style={styles.profileHeaderActions}>
+            <ExpoLinearGradient
+              colors={['#A8C8D8', '#E7EFEA']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 0, y: 1 }}
+              style={styles.streakContainer}
+            >
+              <Text style={styles.streakEmoji}>🔥</Text>
+              <Text style={styles.streakValue}>{user?.current_streak || 0}</Text>
+              <Text style={styles.streakLabel}>day streak</Text>
+            </ExpoLinearGradient>
+            <TouchableOpacity onPress={openEditProfile} style={styles.editProfileBtn} activeOpacity={0.7}>
+              <Text style={styles.editProfileBtnText}>Edit Profile</Text>
+            </TouchableOpacity>
+          </View>
         </ExpoLinearGradient>
 
         {/* Stats Grid */}
@@ -592,9 +716,11 @@ export default function ProfileScreen() {
       </ScrollView>
 
       {/* Add Friend Modal */}
-      <Modal visible={showFriendModal} transparent animationType="slide">
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
+      <Modal visible={showFriendModal} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setShowFriendModal(false)}>
+        <View style={{ flex: 1, backgroundColor: '#fff' }}>
+          <DragHandle />
+          <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}>
+          <View style={{ padding: 20 }}>
             <Text style={styles.modalTitle}>Add a Friend 👥</Text>
             <Text style={styles.modalSubtitle}>
               Enter their email to send a friend request
@@ -628,7 +754,86 @@ export default function ProfileScreen() {
               <Text style={styles.cancelButtonText}>Cancel</Text>
             </TouchableOpacity>
           </View>
+          </KeyboardAvoidingView>
         </View>
+      </Modal>
+
+      {/* Edit Profile Modal */}
+      <Modal visible={showEditProfile} transparent animationType="fade">
+        <TouchableOpacity
+          style={styles.epOverlay}
+          activeOpacity={1}
+          onPress={() => { setShowSchoolSuggestions(false); setShowEditProfile(false); }}
+        >
+          <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+            <TouchableOpacity activeOpacity={1} style={styles.epCard}>
+              <Text style={styles.epTitle}>Edit Profile</Text>
+
+              <Text style={styles.epLabel}>School</Text>
+              <TextInput
+                style={styles.epInput}
+                placeholder="e.g. Westminster School"
+                placeholderTextColor={colors.textMuted}
+                value={editSchool}
+                onChangeText={handleSchoolSearch}
+                autoCapitalize="words"
+              />
+              {showSchoolSuggestions && schoolSuggestions.length > 0 && (
+                <View style={styles.epSuggestions}>
+                  <ScrollView style={{ maxHeight: 150 }} keyboardShouldPersistTaps="handled">
+                    {schoolSuggestions.map((s, i) => (
+                      <TouchableOpacity
+                        key={`${s.name}-${i}`}
+                        style={styles.epSuggestionItem}
+                        onPress={() => selectSchool(s)}
+                      >
+                        <Text style={styles.epSuggestionName} numberOfLines={1}>{s.name}</Text>
+                        <Text style={styles.epSuggestionLocation} numberOfLines={1}>
+                          {[s.city, s.region, s.country].filter(Boolean).join(', ')}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                  </ScrollView>
+                </View>
+              )}
+
+              <Text style={styles.epLabel}>City</Text>
+              <TextInput
+                style={styles.epInput}
+                placeholder="e.g. London"
+                placeholderTextColor={colors.textMuted}
+                value={editCity}
+                onChangeText={setEditCity}
+                autoCapitalize="words"
+              />
+
+              <Text style={styles.epLabel}>Country</Text>
+              <TextInput
+                style={styles.epInput}
+                placeholder="e.g. United Kingdom"
+                placeholderTextColor={colors.textMuted}
+                value={editCountry}
+                onChangeText={setEditCountry}
+                autoCapitalize="words"
+              />
+
+              <TouchableOpacity onPress={saveProfile} activeOpacity={0.8} style={{ marginTop: 20 }}>
+                <ExpoLinearGradient
+                  colors={['#5F8C87', '#3B5466']}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 0 }}
+                  style={styles.epSaveBtn}
+                >
+                  <Text style={styles.epSaveBtnText}>Save</Text>
+                </ExpoLinearGradient>
+              </TouchableOpacity>
+
+              <TouchableOpacity onPress={() => setShowEditProfile(false)} style={styles.epCancelBtn}>
+                <Text style={styles.epCancelBtnText}>Cancel</Text>
+              </TouchableOpacity>
+            </TouchableOpacity>
+          </KeyboardAvoidingView>
+        </TouchableOpacity>
       </Modal>
     </SafeAreaView>
   );
@@ -724,11 +929,27 @@ const styles = StyleSheet.create({
   cameraIcon: {
     fontSize: 14,
   },
+  usernameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: spacing.xs,
+  },
   username: {
     fontSize: 28,
     fontWeight: '700',
     color: '#FFFFFF',
-    marginBottom: spacing.xs,
+  },
+  usernameEditBtn: {
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
+  usernameEditText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#FFFFFF',
   },
   email: {
     fontSize: 14,
@@ -1095,6 +1316,130 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   cancelButtonText: {
+    color: colors.textMuted,
+    fontSize: 14,
+  },
+
+  // Profile info chips
+  profileInfoRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'center',
+    gap: 8,
+    marginBottom: 12,
+  },
+  profileInfoChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255, 255, 255, 0.15)',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
+    gap: 4,
+  },
+  profileInfoIcon: {
+    fontSize: 12,
+  },
+  profileInfoText: {
+    fontSize: 12,
+    color: '#FFFFFF',
+    fontWeight: '500',
+    opacity: 0.9,
+  },
+  profileHeaderActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  editProfileBtn: {
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 16,
+  },
+  editProfileBtnText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#FFFFFF',
+  },
+
+  // Edit Profile Modal
+  epOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: spacing.lg,
+  },
+  epCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 20,
+    padding: 24,
+    width: Dimensions.get('window').width - spacing.lg * 2,
+    maxWidth: 380,
+    ...shadows.medium,
+  },
+  epTitle: {
+    fontSize: 22,
+    fontWeight: '800',
+    color: colors.textPrimary,
+    marginBottom: 20,
+    textAlign: 'center',
+  },
+  epLabel: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: colors.textSecondary,
+    marginBottom: 6,
+    marginTop: 12,
+  },
+  epInput: {
+    backgroundColor: colors.surfaceAlt,
+    borderRadius: 12,
+    padding: 14,
+    fontSize: 15,
+    color: colors.textPrimary,
+    borderWidth: 1,
+    borderColor: colors.cardBorder,
+  },
+  epSuggestions: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: colors.cardBorder,
+    marginTop: 4,
+    ...shadows.small,
+  },
+  epSuggestionItem: {
+    padding: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.cardBorder,
+  },
+  epSuggestionName: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: colors.textPrimary,
+  },
+  epSuggestionLocation: {
+    fontSize: 11,
+    color: colors.textSecondary,
+    marginTop: 2,
+  },
+  epSaveBtn: {
+    paddingVertical: 14,
+    borderRadius: 14,
+    alignItems: 'center',
+  },
+  epSaveBtnText: {
+    color: '#FFFFFF',
+    fontWeight: '700',
+    fontSize: 16,
+  },
+  epCancelBtn: {
+    padding: 14,
+    alignItems: 'center',
+  },
+  epCancelBtnText: {
     color: colors.textMuted,
     fontSize: 14,
   },

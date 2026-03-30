@@ -17,6 +17,16 @@ export interface User {
   total_sessions: number;
   created_at: string;
   profile_pic_url: string | null;
+  school: string | null;
+  city: string | null;
+  country: string | null;
+}
+
+export interface SchoolSearchResult {
+  name: string;
+  city: string | null;
+  region: string | null;
+  country: string;
 }
 
 export interface Task {
@@ -112,6 +122,9 @@ export interface FriendProfile {
   friends_since: string | null;
   member_since: string | null;
   total_coins: number;
+  school: string | null;
+  city: string | null;
+  country: string | null;
 }
 
 export interface LeaderboardEntry {
@@ -324,6 +337,15 @@ export const authAPI = {
       method: 'POST',
       body: JSON.stringify(username),
     }),
+
+  updateProfile: (data: { school?: string; city?: string; country?: string }) =>
+    apiFetch('/user/profile', {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    }),
+
+  searchSchools: (q: string) =>
+    apiFetch<SchoolSearchResult[]>(`/schools/search?q=${encodeURIComponent(q)}`),
 
   uploadProfilePic: async (uri: string): Promise<{ profile_pic_url: string }> => {
     const token = await SecureStore.getItemAsync('authToken');
