@@ -1215,6 +1215,14 @@ def get_global_leaderboard(
     return crud.get_global_leaderboard(db)
 
 
+@app.get("/leaderboard/school", response_model=List[schemas.LeaderboardEntry])
+def get_school_leaderboard(
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    return crud.get_school_leaderboard(db, current_user)
+
+
 # ============ Stats Endpoints ============
 
 @app.get("/stats", response_model=schemas.UserStats)

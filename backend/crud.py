@@ -467,6 +467,31 @@ def get_global_leaderboard(db: Session) -> List[dict]:
     return leaderboard
 
 
+def get_school_leaderboard(db: Session, current_user) -> List[dict]:
+    from sqlalchemy import func
+    if not current_user.school:
+        return []
+    school_lower = current_user.school.strip().lower()
+    users = db.query(models.User).filter(
+        models.User.school.isnot(None),
+        func.lower(func.trim(models.User.school)) == school_lower
+    ).order_by(models.User.total_study_minutes.desc()).all()
+
+    leaderboard = []
+    for rank, u in enumerate(users, 1):
+        leaderboard.append({
+            "rank": rank,
+            "user_id": u.id,
+            "username": u.username or u.email.split("@")[0],
+            "total_study_minutes": u.total_study_minutes,
+            "current_streak": u.current_streak,
+            "animals_count": 0,
+            "total_donated": 0,
+            "profile_pic_url": u.profile_pic_url,
+        })
+    return leaderboard
+
+
 def get_leaderboard(db: Session, user_id: int, limit: int = 20) -> List[dict]:
     friends = get_friends(db, user_id)
     friend_ids = [entry["user"].id for entry in friends] + [user_id]
