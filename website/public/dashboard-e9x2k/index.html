@@ -919,6 +919,10 @@ async function showUserDetail(id) {
                         <input type="text" id="adminUsernameInput" value="${esc(u.username || '')}" style="width:100%;padding:8px 12px;border:1px solid #ccc;border-radius:8px;font-size:14px" maxlength="30" />
                     </div>
                 </div>
+                <div style="margin-bottom:12px">
+                    <label style="font-size:12px;font-weight:600;color:#666;display:block;margin-bottom:4px">Total Study Minutes</label>
+                    <input type="number" id="adminStudyMinsInput" value="${u.total_study_minutes || 0}" min="0" style="width:160px;padding:8px 12px;border:1px solid #ccc;border-radius:8px;font-size:14px" />
+                </div>
                 <div style="display:flex;gap:8px">
                     <button onclick="saveUserEdits()" style="background:#5f8c87;color:#fff;border:none;padding:8px 20px;border-radius:8px;cursor:pointer;font-weight:600;font-size:13px">Save Changes</button>
                     <span id="adminSaveStatus" style="font-size:12px;color:#888;line-height:34px"></span>
@@ -979,6 +983,9 @@ async function saveUserEdits() {
     const form = new FormData();
     const newUsername = document.getElementById('adminUsernameInput').value.trim();
     if (newUsername) form.append('username', newUsername);
+
+    const studyMins = document.getElementById('adminStudyMinsInput').value;
+    if (studyMins !== '') form.append('total_study_minutes', studyMins);
 
     const picFile = document.getElementById('adminPicUpload').files[0];
     if (picFile) form.append('profile_pic', picFile);

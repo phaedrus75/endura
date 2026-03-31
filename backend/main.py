@@ -1953,6 +1953,7 @@ def admin_users(
 async def admin_update_user(
     user_id: int,
     username: Optional[str] = Form(None),
+    total_study_minutes: Optional[int] = Form(None),
     profile_pic: Optional[UploadFile] = File(None),
     db: Session = Depends(get_db),
     _=Depends(verify_admin),
@@ -1971,6 +1972,11 @@ async def admin_update_user(
         if existing:
             raise HTTPException(400, "Username already taken")
         user.username = username
+
+    if total_study_minutes is not None:
+        if total_study_minutes < 0:
+            raise HTTPException(400, "Study minutes cannot be negative")
+        user.total_study_minutes = total_study_minutes
 
     if profile_pic is not None:
         if profile_pic.content_type not in {"image/png", "image/jpeg", "image/webp", "image/gif"}:
