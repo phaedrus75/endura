@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Depends, HTTPException, status, Request, Header, UploadFile, File
+from fastapi import FastAPI, Depends, HTTPException, status, Request, Header, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
@@ -1949,6 +1949,56 @@ def admin_users(
     return {"total": total, "users": result}
 
 
+@app.put("/admin/users/{user_id}")
+async def admin_update_user(
+    user_id: int,
+    username: Optional[str] = Form(None),
+    profile_pic: Optional[UploadFile] = File(None),
+    db: Session = Depends(get_db),
+    _=Depends(verify_admin),
+):
+    user = db.query(models.User).filter(models.User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    if username is not None:
+        username = username.strip()
+        if len(username) < 2 or len(username) > 30:
+            raise HTTPException(400, "Username must be 2-30 characters")
+        existing = db.query(models.User).filter(
+            models.User.username == username, models.User.id != user_id
+        ).first()
+        if existing:
+            raise HTTPException(400, "Username already taken")
+        user.username = username
+
+    if profile_pic is not None:
+        if profile_pic.content_type not in {"image/png", "image/jpeg", "image/webp", "image/gif"}:
+            raise HTTPException(400, "Only PNG, JPEG, WebP, or GIF images allowed")
+        data = await profile_pic.read()
+        if len(data) > 5 * 1024 * 1024:
+            raise HTTPException(400, "File too large (max 5 MB)")
+        upload = models.Upload(
+            filename=profile_pic.filename or "profile.jpg",
+            content_type=profile_pic.content_type,
+            data=data,
+        )
+        db.add(upload)
+        db.commit()
+        db.refresh(upload)
+        base = os.getenv("API_BASE_URL", "https://web-production-34028.up.railway.app")
+        user.profile_pic_url = f"{base}/uploads/{upload.id}"
+
+    db.commit()
+    db.refresh(user)
+    return {
+        "id": user.id,
+        "username": user.username,
+        "profile_pic_url": user.profile_pic_url,
+        "message": "User updated",
+    }
+
+
 @app.get("/admin/users/{user_id}")
 def admin_user_detail(user_id: int, db: Session = Depends(get_db), _=Depends(verify_admin)):
     user = db.query(models.User).filter(models.User.id == user_id).first()
@@ -1992,6 +2042,7 @@ def admin_user_detail(user_id: int, db: Session = Depends(get_db), _=Depends(ver
         "id": user.id,
         "email": user.email,
         "username": user.username,
+        "profile_pic_url": user.profile_pic_url,
         "total_study_minutes": user.total_study_minutes or 0,
         "total_sessions": user.total_sessions or 0,
         "current_streak": user.current_streak or 0,

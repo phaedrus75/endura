@@ -897,11 +897,34 @@ function renderUsersTable() {
     `).join('');
 }
 
+let currentEditUserId = null;
+
 async function showUserDetail(id) {
     try {
+        currentEditUserId = id;
         const u = await adminFetch(`/admin/users/${id}`);
         document.getElementById('modalUserTitle').textContent = u.username || u.email;
         document.getElementById('modalUserBody').innerHTML = `
+            <div class="detail-section" style="background:#f8faf9;border-radius:12px;padding:16px;margin-bottom:16px">
+                <h4 style="margin-top:0;margin-bottom:12px">Edit Profile</h4>
+                <div style="display:flex;align-items:center;gap:16px;margin-bottom:12px">
+                    <div style="position:relative;cursor:pointer" onclick="document.getElementById('adminPicUpload').click()">
+                        <img id="adminPicPreview" src="${u.profile_pic_url || ''}" style="width:64px;height:64px;border-radius:50%;object-fit:cover;border:2px solid #ccc;background:#e7efea;display:${u.profile_pic_url ? 'block' : 'none'}" />
+                        <div id="adminPicPlaceholder" style="width:64px;height:64px;border-radius:50%;background:#e7efea;border:2px dashed #aaa;display:${u.profile_pic_url ? 'none' : 'flex'};align-items:center;justify-content:center;font-size:24px;color:#888">+</div>
+                        <div style="position:absolute;bottom:-2px;right:-2px;background:#5f8c87;color:#fff;border-radius:50%;width:20px;height:20px;display:flex;align-items:center;justify-content:center;font-size:11px">✎</div>
+                    </div>
+                    <input type="file" id="adminPicUpload" accept="image/*" style="display:none" onchange="previewAdminPic(this)" />
+                    <div style="flex:1">
+                        <label style="font-size:12px;font-weight:600;color:#666;display:block;margin-bottom:4px">Username</label>
+                        <input type="text" id="adminUsernameInput" value="${esc(u.username || '')}" style="width:100%;padding:8px 12px;border:1px solid #ccc;border-radius:8px;font-size:14px" maxlength="30" />
+                    </div>
+                </div>
+                <div style="display:flex;gap:8px">
+                    <button onclick="saveUserEdits()" style="background:#5f8c87;color:#fff;border:none;padding:8px 20px;border-radius:8px;cursor:pointer;font-weight:600;font-size:13px">Save Changes</button>
+                    <span id="adminSaveStatus" style="font-size:12px;color:#888;line-height:34px"></span>
+                </div>
+            </div>
+
             <div class="detail-grid">
                 <div class="detail-stat"><div class="val">${(u.total_study_minutes||0).toLocaleString()}</div><div class="lbl">Study Minutes</div></div>
                 <div class="detail-stat"><div class="val">${u.total_sessions||0}</div><div class="lbl">Sessions</div></div>
@@ -932,6 +955,53 @@ async function showUserDetail(id) {
         `;
         document.getElementById('userModal').classList.add('active');
     } catch (e) { console.error('User detail failed', e); }
+}
+
+function previewAdminPic(input) {
+    const file = input.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = e => {
+        const img = document.getElementById('adminPicPreview');
+        img.src = e.target.result;
+        img.style.display = 'block';
+        document.getElementById('adminPicPlaceholder').style.display = 'none';
+    };
+    reader.readAsDataURL(file);
+}
+
+async function saveUserEdits() {
+    if (!currentEditUserId) return;
+    const status = document.getElementById('adminSaveStatus');
+    status.textContent = 'Saving...';
+    status.style.color = '#888';
+
+    const form = new FormData();
+    const newUsername = document.getElementById('adminUsernameInput').value.trim();
+    if (newUsername) form.append('username', newUsername);
+
+    const picFile = document.getElementById('adminPicUpload').files[0];
+    if (picFile) form.append('profile_pic', picFile);
+
+    try {
+        const res = await fetch(API_URL + `/admin/users/${currentEditUserId}`, {
+            method: 'PUT',
+            headers: { 'X-Admin-Key': API_KEY },
+            body: form,
+        });
+        if (!res.ok) {
+            const err = await res.json().catch(() => ({}));
+            throw new Error(err.detail || 'Update failed');
+        }
+        const data = await res.json();
+        status.textContent = '✓ Saved';
+        status.style.color = '#5f8c87';
+        document.getElementById('modalUserTitle').textContent = data.username || 'User';
+        loadUsers(document.getElementById('userSearch').value);
+    } catch (e) {
+        status.textContent = '✗ ' + e.message;
+        status.style.color = '#c0392b';
+    }
 }
 
 function closeUserModal() { document.getElementById('userModal').classList.remove('active'); }

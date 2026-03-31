@@ -48,7 +48,13 @@ const SCREENSHOTS = {
 
 function ScreenshotSlide({ source }: { source: ImageSourcePropType }) {
   return (
-    <Image source={source} style={StyleSheet.absoluteFill} resizeMode="cover" />
+    <View style={{ flex: 1, overflow: 'hidden' }}>
+      <Image
+        source={source}
+        style={{ width: '100%', height: '108.5%', position: 'absolute', bottom: 0 }}
+        resizeMode="contain"
+      />
+    </View>
   );
 }
 
@@ -256,19 +262,9 @@ export default function OnboardingScreen() {
   const sl = SLIDES[step];
 
   return (
-    <View style={{ flex: 1, backgroundColor: '#000' }}>
-      {/* Full-screen screenshot behind everything */}
-      <Animated.View style={[StyleSheet.absoluteFill, { opacity: fadeA }]}>
-        <ScreenshotSlide source={sl.image} />
-      </Animated.View>
-
-      {/* Uniform dark overlay */}
-      <View style={wb.overlay} pointerEvents="none" />
-
-      {/* Safe-area content on top */}
-      <SafeAreaView style={{ flex: 1 }} pointerEvents="box-none">
-        <View style={{ flex: 1 }} pointerEvents="box-none">
-
+    <View style={{ flex: 1, backgroundColor: '#fff' }}>
+      <View style={{ flex: 1, backgroundColor: '#E7EFEA' }}>
+        <SafeAreaView style={{ flex: 1 }} edges={['top']}>
           {/* Progress bar at top */}
           <View style={wb.progressRow}>
             {SLIDES.map((_, i) => (
@@ -276,34 +272,44 @@ export default function OnboardingScreen() {
             ))}
           </View>
 
-          {/* Spacer pushes card to bottom */}
-          <View style={{ flex: 1 }} pointerEvents="none" />
-
-          {/* Instruction card */}
-          <Animated.View style={[wb.card, { opacity: fadeA, paddingBottom: Math.max(insets.bottom, 12) }]}>
-            <Text style={wb.cardTag}>{sl.tag}</Text>
-            <Text style={wb.cardTitle}>{sl.title}</Text>
-            <Text style={wb.cardBody}>{sl.body}</Text>
-
-            {/* Dots */}
-            <View style={wb.dotsRow}>
-              {SLIDES.map((_, i) => (
-                <View key={i} style={[wb.dot, i === step && wb.dotActive]} />
-              ))}
-            </View>
-
-            {/* Buttons */}
-            <TouchableOpacity style={wb.nextBtn} onPress={() => go(step + 1)} activeOpacity={0.8}>
-              <LinearGradient colors={['#5F8C87', '#3B5466']} style={wb.nextGrad} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}>
-                <Text style={wb.nextText}>{step === SLIDES.length - 1 ? 'Set Up Profile' : 'Next'}</Text>
-              </LinearGradient>
-            </TouchableOpacity>
-            <TouchableOpacity style={{ paddingVertical: 10 }} onPress={() => go(SLIDES.length)}>
-              <Text style={wb.skipText}>Skip</Text>
-            </TouchableOpacity>
+          {/* Screenshot blends seamlessly into background */}
+          <Animated.View style={{ flex: 1, opacity: fadeA }}>
+            <ScreenshotSlide source={sl.image} />
           </Animated.View>
+        </SafeAreaView>
+      </View>
+
+      {/* Instruction card at bottom — outside SafeAreaView so no green bleed */}
+      <Animated.View style={[wb.card, { opacity: fadeA, paddingBottom: Math.max(insets.bottom, 16) }]}>
+        <View style={wb.cardHandle} />
+        <Text style={wb.cardTag}>{sl.tag}</Text>
+        <Text style={wb.cardTitle}>{sl.title}</Text>
+        <Text style={wb.cardBody}>{sl.body}</Text>
+
+        <View style={wb.dotsRow}>
+          {SLIDES.map((_, i) => (
+            <View key={i} style={[wb.dot, i === step && wb.dotActive]} />
+          ))}
         </View>
-      </SafeAreaView>
+
+        <View style={wb.btnRow}>
+          {step > 0 ? (
+            <TouchableOpacity style={wb.backBtn} onPress={() => go(step - 1)} activeOpacity={0.8}>
+              <Text style={wb.backText}>Back</Text>
+            </TouchableOpacity>
+          ) : (
+            <View style={wb.backBtn} />
+          )}
+          <TouchableOpacity style={wb.nextBtn} onPress={() => go(step + 1)} activeOpacity={0.8}>
+            <LinearGradient colors={['#5F8C87', '#3B5466']} style={wb.nextGrad} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}>
+              <Text style={wb.nextText}>{step === SLIDES.length - 1 ? 'Set Up Profile' : 'Next'}</Text>
+            </LinearGradient>
+          </TouchableOpacity>
+        </View>
+        <TouchableOpacity style={{ paddingVertical: 6 }} onPress={() => go(SLIDES.length)}>
+          <Text style={wb.skipText}>Skip</Text>
+        </TouchableOpacity>
+      </Animated.View>
     </View>
   );
 }
@@ -314,28 +320,30 @@ export default function OnboardingScreen() {
 
 // Walkthrough wrapper styles
 const wb = StyleSheet.create({
-  overlay: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.48)' },
-  progressRow: { flexDirection: 'row', gap: 5, marginHorizontal: 20, marginTop: 8 },
-  progressSeg: { flex: 1, height: 3, borderRadius: 2, backgroundColor: 'rgba(255,255,255,0.2)' },
-  progressSegActive: { backgroundColor: '#7DD4C0' },
+  progressRow: { flexDirection: 'row', gap: 5, marginHorizontal: 20, marginTop: 6, marginBottom: 4 },
+  progressSeg: { flex: 1, height: 3, borderRadius: 2, backgroundColor: 'rgba(95,140,135,0.18)' },
+  progressSegActive: { backgroundColor: '#5F8C87' },
 
   card: {
-    backgroundColor: '#fff', borderTopLeftRadius: 28, borderTopRightRadius: 28,
-    paddingHorizontal: 24, paddingTop: 24, alignItems: 'center',
-    ...shadows.large,
+    backgroundColor: '#fff', borderTopLeftRadius: 0, borderTopRightRadius: 0,
+    paddingHorizontal: 24, paddingTop: 14, alignItems: 'center',
   },
-  cardTag: { fontSize: 11, fontWeight: '700', color: '#5F8C87', textTransform: 'uppercase', letterSpacing: 2, marginBottom: 6 },
-  cardTitle: { fontSize: 24, fontWeight: '800', color: '#2F4A3E', textAlign: 'center', marginBottom: 10 },
-  cardBody: { fontSize: 15, lineHeight: 22, color: '#7C8F86', textAlign: 'center', marginBottom: 18, paddingHorizontal: 8 },
+  cardHandle: { width: 36, height: 4, borderRadius: 2, backgroundColor: '#D0DDD6', marginBottom: 14 },
+  cardTag: { fontSize: 12, fontWeight: '700', color: '#5F8C87', textTransform: 'uppercase', letterSpacing: 2, marginBottom: 6 },
+  cardTitle: { fontSize: 26, fontWeight: '800', color: '#2F4A3E', textAlign: 'center', marginBottom: 8 },
+  cardBody: { fontSize: 16, lineHeight: 23, color: '#7C8F86', textAlign: 'center', marginBottom: 16, paddingHorizontal: 4 },
 
-  dotsRow: { flexDirection: 'row', gap: 6, marginBottom: 18 },
-  dot: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#E7EFEA' },
-  dotActive: { backgroundColor: '#5F8C87', width: 20 },
+  dotsRow: { flexDirection: 'row', gap: 6, marginBottom: 16 },
+  dot: { width: 7, height: 7, borderRadius: 4, backgroundColor: '#D0DDD6' },
+  dotActive: { backgroundColor: '#5F8C87', width: 18 },
 
-  nextBtn: { width: '100%', borderRadius: 16, overflow: 'hidden', ...shadows.medium },
-  nextGrad: { paddingVertical: 16, alignItems: 'center', borderRadius: 16 },
-  nextText: { color: '#fff', fontSize: 17, fontWeight: '700' },
-  skipText: { color: '#7C8F86', fontSize: 14, fontWeight: '500' },
+  btnRow: { flexDirection: 'row', gap: 10, width: '100%' },
+  backBtn: { flex: 1, borderRadius: 14, borderWidth: 1.5, borderColor: '#C0D0C6', justifyContent: 'center', alignItems: 'center', paddingVertical: 12 },
+  backText: { color: '#5F8C87', fontSize: 15, fontWeight: '700' },
+  nextBtn: { flex: 2, borderRadius: 14, overflow: 'hidden', ...shadows.medium },
+  nextGrad: { paddingVertical: 12, alignItems: 'center', borderRadius: 14 },
+  nextText: { color: '#fff', fontSize: 15, fontWeight: '700' },
+  skipText: { color: '#7C8F86', fontSize: 13, fontWeight: '500' },
 });
 
 // Profile setup styles
