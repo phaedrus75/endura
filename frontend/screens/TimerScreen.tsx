@@ -311,7 +311,8 @@ export default function TimerScreen() {
             }
             setSelectedMinutes(egg.minutes_required);
             setTimeLeft(egg.minutes_required * TIME_MULTIPLIER);
-            setTimeout(() => setShowSubjectModal(true), 400);
+            setIsRunning(true);
+            setIsPaused(false);
           }
         } catch (_) {}
       };
