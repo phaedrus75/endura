@@ -12,6 +12,7 @@ import {
   AppState,
   Modal,
   Image,
+  Animated,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
@@ -22,7 +23,8 @@ import LottieView from 'lottie-react-native';
 import Slider from '@react-native-community/slider';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { colors, shadows, spacing, borderRadius } from '../theme/colors';
-import { sessionsAPI, tasksAPI, animalsAPI, Task, BadgeInfo } from '../services/api';
+import SwipeDismiss, { DragHandle } from '../components/SwipeDismiss';
+import { sessionsAPI, animalsAPI, BadgeInfo, sharedEggAPI, socialAPI, SharedEgg, Friend } from '../services/api';
 import { useAuth } from '../contexts/AuthContext';
 import { getAnimalImage } from '../assets/animals';
 import { Analytics } from '../services/analytics';
@@ -80,37 +82,57 @@ const PRESET_TIMES = [
 const TIME_MULTIPLIER = TEST_MODE ? 1 : 60;
 
 // Circular Progress Component
-const CircularProgress = ({ progress, size = 260, strokeWidth = 14, children }: any) => {
+const CircularProgress = ({ progress, size = 260, strokeWidth = 10, children }: any) => {
   const radius = (size - strokeWidth) / 2;
   const circumference = radius * 2 * Math.PI;
   const strokeDashoffset = circumference - (progress * circumference);
+  const glowWidth = strokeWidth + 12;
   
   return (
     <View style={{
-      width: size + 16, height: size + 16, alignItems: 'center', justifyContent: 'center',
-      overflow: 'hidden',
+      width: size + 24, height: size + 24, alignItems: 'center', justifyContent: 'center',
     }}>
-      <Svg width={size} height={size} style={{ position: 'absolute' }}>
+      <Svg width={size + 24} height={size + 24} style={{ position: 'absolute' }}>
         <Defs>
           <LinearGradient id="progressGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-            <Stop offset="0%" stopColor="#A8C8D8" />
-            <Stop offset="50%" stopColor="#5F8C87" />
+            <Stop offset="0%" stopColor="#7DD4C0" />
+            <Stop offset="40%" stopColor="#5F8C87" />
             <Stop offset="100%" stopColor="#3B5466" />
           </LinearGradient>
+          <LinearGradient id="glowGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+            <Stop offset="0%" stopColor="rgba(125,212,192,0.25)" />
+            <Stop offset="40%" stopColor="rgba(95,140,135,0.20)" />
+            <Stop offset="100%" stopColor="rgba(59,84,102,0.15)" />
+          </LinearGradient>
         </Defs>
-        {/* Background circle */}
+        {/* Background track — matches the visual thickness of the progress arc */}
         <Circle
-          cx={size / 2}
-          cy={size / 2}
+          cx={(size + 24) / 2}
+          cy={(size + 24) / 2}
           r={radius}
-          stroke="#A9BDAF40"
-          strokeWidth={strokeWidth}
+          stroke="rgba(169,189,175,0.15)"
+          strokeWidth={glowWidth}
           fill="none"
         />
-        {/* Progress circle */}
+        {/* Glow layer — wider, semi-transparent copy */}
+        {progress > 0.01 && (
+          <Circle
+            cx={(size + 24) / 2}
+            cy={(size + 24) / 2}
+            r={radius}
+            stroke="url(#glowGrad)"
+            strokeWidth={glowWidth}
+            fill="none"
+            strokeDasharray={circumference}
+            strokeDashoffset={strokeDashoffset}
+            strokeLinecap="round"
+            transform={`rotate(-90 ${(size + 24) / 2} ${(size + 24) / 2})`}
+          />
+        )}
+        {/* Main progress arc */}
         <Circle
-          cx={size / 2}
-          cy={size / 2}
+          cx={(size + 24) / 2}
+          cy={(size + 24) / 2}
           r={radius}
           stroke="url(#progressGrad)"
           strokeWidth={strokeWidth}
@@ -118,7 +140,7 @@ const CircularProgress = ({ progress, size = 260, strokeWidth = 14, children }: 
           strokeDasharray={circumference}
           strokeDashoffset={strokeDashoffset}
           strokeLinecap="round"
-          transform={`rotate(-90 ${size / 2} ${size / 2})`}
+          transform={`rotate(-90 ${(size + 24) / 2} ${(size + 24) / 2})`}
         />
       </Svg>
       <View style={styles.timerInner}>
@@ -128,6 +150,21 @@ const CircularProgress = ({ progress, size = 260, strokeWidth = 14, children }: 
   );
 };
 
+const FOCUS_QUOTES = [
+  { text: "Deep focus is a superpower.", author: "Cal Newport" },
+  { text: "The secret of getting ahead is getting started.", author: "Mark Twain" },
+  { text: "Small daily improvements lead to stunning results.", author: "Robin Sharma" },
+  { text: "You don't have to be great to start, but you have to start to be great.", author: "Zig Ziglar" },
+  { text: "Focus on being productive instead of busy.", author: "Tim Ferriss" },
+  { text: "The beautiful thing about learning is that no one can take it away from you.", author: "B.B. King" },
+  { text: "It does not matter how slowly you go as long as you do not stop.", author: "Confucius" },
+  { text: "Education is the passport to the future.", author: "Malcolm X" },
+  { text: "An investment in knowledge pays the best interest.", author: "Benjamin Franklin" },
+  { text: "The mind is not a vessel to be filled, but a fire to be kindled.", author: "Plutarch" },
+  { text: "Every expert was once a beginner.", author: "Helen Hayes" },
+  { text: "Your future is created by what you do today.", author: "Robert Kiyosaki" },
+];
+
 export default function TimerScreen() {
   const { refreshUser, profilePic, user } = useAuth();
   const navigation = useNavigation();
@@ -135,8 +172,7 @@ export default function TimerScreen() {
   const [timeLeft, setTimeLeft] = useState(25 * TIME_MULTIPLIER);
   const [isRunning, setIsRunning] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
-  const [tasks, setTasks] = useState<Task[]>([]);
-  const [selectedTask, setSelectedTask] = useState<Task | null>(null);
+  
   const [showConfetti, setShowConfetti] = useState(false);
   const [showAnimalModal, setShowAnimalModal] = useState(false);
   const [showCelebrationModal, setShowCelebrationModal] = useState(false);
@@ -155,31 +191,100 @@ export default function TimerScreen() {
   const [showEggDeathModal, setShowEggDeathModal] = useState(false);
   const [deadAnimalName, setDeadAnimalName] = useState('');
   const [deathCause, setDeathCause] = useState<'timeout' | 'abandoned'>('timeout');
+  const [activeSharedEgg, setActiveSharedEgg] = useState<SharedEgg | null>(null);
+  const [showFriendPicker, setShowFriendPicker] = useState(false);
+  const [friends, setFriends] = useState<Friend[]>([]);
+  const [sharedHatchResult, setSharedHatchResult] = useState<{ animal_name: string; partner_name: string } | null>(null);
+  const [showSharedHatchModal, setShowSharedHatchModal] = useState(false);
+  const [quoteIndex, setQuoteIndex] = useState(0);
+  const [hasSeenTips, setHasSeenTips] = useState(true);
+  const tipsPulse = useRef(new Animated.Value(1)).current;
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
   const appState = useRef(AppState.currentState);
   const backgroundTimestamp = useRef<number | null>(null);
   const isRunningRef = useRef(false);
   const timeLeftRef = useRef(timeLeft);
+  const warnOnReturnRef = useRef(false);
+  const isPausedRef = useRef(false);
 
   useEffect(() => { isRunningRef.current = isRunning; }, [isRunning]);
   useEffect(() => { timeLeftRef.current = timeLeft; }, [timeLeft]);
+  useEffect(() => { isPausedRef.current = isPaused; }, [isPaused]);
 
-  // Load unlocked animals from storage
+  useEffect(() => {
+    if (isRunning) {
+      setQuoteIndex(Math.floor(Math.random() * FOCUS_QUOTES.length));
+    }
+  }, [isRunning]);
+
+  // Check if user has seen tips
+  useEffect(() => {
+    const checkTips = async () => {
+      const seen = await AsyncStorage.getItem(`hasSeenTips_${user?.id || 'anon'}`);
+      setHasSeenTips(seen === 'true');
+    };
+    checkTips();
+  }, [user?.id]);
+
+  useEffect(() => {
+    if (!hasSeenTips) {
+      const loop = Animated.loop(
+        Animated.sequence([
+          Animated.timing(tipsPulse, { toValue: 1.25, duration: 800, useNativeDriver: true }),
+          Animated.timing(tipsPulse, { toValue: 1, duration: 800, useNativeDriver: true }),
+        ])
+      );
+      loop.start();
+      return () => loop.stop();
+    }
+  }, [hasSeenTips]);
+
+  const handleOpenTips = async () => {
+    if (!hasSeenTips) {
+      setHasSeenTips(true);
+      await AsyncStorage.setItem(`hasSeenTips_${user?.id || 'anon'}`, 'true');
+    }
+    navigation.navigate('Tips' as never);
+  };
+
+  // Load unlocked animals from backend + local storage
   useEffect(() => {
     const loadUnlockedAnimals = async () => {
       try {
         const stored = await AsyncStorage.getItem(`unlockedAnimals_${user?.id || 'anon'}`);
-        if (stored) {
-          setUnlockedAnimals(JSON.parse(stored));
-        } else {
-          setUnlockedAnimals([]);
+        const localIds: number[] = stored ? JSON.parse(stored) : [];
+
+        const myAnimals = await animalsAPI.getMyAnimals().catch(() => []);
+        const backendNames = new Set(myAnimals.map((ua: any) => ua.animal?.name));
+        const backendIds = ENDANGERED_ANIMALS
+          .filter(a => backendNames.has(a.name))
+          .map(a => a.id);
+
+        const merged = Array.from(new Set([...localIds, ...backendIds]));
+
+        if (merged.length !== localIds.length) {
+          await AsyncStorage.setItem(`unlockedAnimals_${user?.id || 'anon'}`, JSON.stringify(merged));
         }
+        setUnlockedAnimals(merged);
       } catch (e) {
         console.log('Failed to load unlocked animals');
       }
     };
     loadUnlockedAnimals();
   }, [user?.id]);
+
+  // Load active shared egg on focus
+  useFocusEffect(
+    useCallback(() => {
+      const load = async () => {
+        try {
+          const egg = await sharedEggAPI.getActive();
+          setActiveSharedEgg(egg);
+        } catch (_) {}
+      };
+      load();
+    }, [])
+  );
 
   // Reload subjects every time the Timer tab is focused
   useFocusEffect(
@@ -222,44 +327,34 @@ export default function TimerScreen() {
   }, [isRunning]);
 
   // Handle app going to background during timer
-  const exitWarningShownRef = useRef(false);
+  // Pause and warn when user starts to leave; timer catches up on return
   useEffect(() => {
     const subscription = AppState.addEventListener('change', nextAppState => {
-      if (isRunningRef.current && appState.current === 'active' && nextAppState === 'inactive') {
-        backgroundTimestamp.current = Date.now();
-        setIsPaused(true);
-        if (!exitWarningShownRef.current) {
-          exitWarningShownRef.current = true;
-          showExitWarning();
-        }
-      }
-
-      if (isRunningRef.current && appState.current === 'active' && nextAppState === 'background') {
+      if (isRunningRef.current && appState.current === 'active' && (nextAppState === 'inactive' || nextAppState === 'background')) {
         if (!backgroundTimestamp.current) {
           backgroundTimestamp.current = Date.now();
         }
-        setIsPaused(true);
+        if (!isPausedRef.current) {
+          warnOnReturnRef.current = true;
+        }
       }
 
       if (isRunningRef.current && appState.current.match(/inactive|background/) && nextAppState === 'active') {
-        exitWarningShownRef.current = false;
         if (backgroundTimestamp.current) {
-          const elapsed = (Date.now() - backgroundTimestamp.current) / 1000;
+          const elapsedSeconds = Math.floor((Date.now() - backgroundTimestamp.current) / 1000);
           backgroundTimestamp.current = null;
-          if (elapsed > 10) {
-            const elapsedMinutes = Math.max(0, (selectedMinutes * TIME_MULTIPLIER - timeLeftRef.current) / 60);
-            Analytics.sessionAbandoned(elapsedMinutes);
-            const dying = ENDANGERED_ANIMALS.find(a => a.id === selectedAnimalId)?.name || 'Your animal';
-            if (intervalRef.current) clearInterval(intervalRef.current);
-            isRunningRef.current = false;
-            setIsRunning(false);
-            setIsPaused(false);
-            setTimeLeft(selectedMinutes * TIME_MULTIPLIER);
-            setDeadAnimalName(dying);
-            setDeathCause('timeout');
-            setShowEggDeathModal(true);
-            Vibration.vibrate([0, 300, 100, 300, 100, 300]);
+          const newTimeLeft = Math.max(0, timeLeftRef.current - elapsedSeconds);
+          setTimeLeft(newTimeLeft);
+          if (newTimeLeft <= 0) {
+            warnOnReturnRef.current = false;
+            handleTimerComplete();
+          } else if (warnOnReturnRef.current) {
+            warnOnReturnRef.current = false;
+            showExitWarning();
           }
+        } else if (warnOnReturnRef.current) {
+          warnOnReturnRef.current = false;
+          showExitWarning();
         }
       }
 
@@ -336,27 +431,17 @@ export default function TimerScreen() {
     );
   };
 
-  useFocusEffect(
-    useCallback(() => {
-      loadTasks();
-    }, [])
-  );
-
-  const loadTasks = async () => {
-    try {
-      const tasksData = await tasksAPI.getTasks();
-      setTasks(tasksData);
-    } catch (error) {
-      console.error('Failed to load tasks:', error);
-    }
-  };
+  
 
   useEffect(() => {
     if (isRunning && !isPaused && timeLeft > 0) {
       intervalRef.current = setInterval(() => {
-        setTimeLeft((prev) => prev - 1);
+        setTimeLeft((prev) => {
+          const next = prev - 1;
+          return next <= 0 ? 0 : next;
+        });
       }, 1000);
-    } else if (timeLeft === 0 && isRunning) {
+    } else if (timeLeft <= 0 && isRunning) {
       handleTimerComplete();
     }
 
@@ -378,72 +463,58 @@ export default function TimerScreen() {
     Vibration.vibrate([0, 500, 200, 500]);
 
     const localAnimal = ENDANGERED_ANIMALS.find(a => a.id === selectedAnimalId);
-    let hatchedName = localAnimal?.name || 'Mystery Animal';
-    let hatchedEmoji = localAnimal?.emoji || '🐾';
-    let coinsEarned = selectedMinutes;
+    const hatchedName = localAnimal?.name || 'Mystery Animal';
+    const hatchedEmoji = localAnimal?.emoji || '🐾';
+    const estimatedCoins = selectedMinutes + (selectedMinutes >= 25 ? 5 : 0) + (selectedMinutes >= 50 ? 10 : 0);
 
-    // Unlock the selected animal locally
+    setHatchedAnimalInfo({
+      emoji: hatchedEmoji,
+      name: hatchedName,
+      ecoCredits: estimatedCoins,
+    });
+    setShowConfetti(true);
+    setShowCelebrationModal(true);
+    setSessionSaveError(false);
+
+    Analytics.sessionCompleted(selectedMinutes, estimatedCoins, selectedSubject || undefined);
+    Analytics.eggHatched(hatchedName, localAnimal?.status || 'Unknown');
+
     if (selectedAnimalId && !unlockedAnimals.includes(selectedAnimalId)) {
-      const newUnlocked = [...unlockedAnimals, selectedAnimalId];
-      await saveUnlockedAnimals(newUnlocked);
+      saveUnlockedAnimals([...unlockedAnimals, selectedAnimalId]);
     }
 
-    setSessionSaveError(false);
-    let saved = false;
     try {
       const result: any = await sessionsAPI.completeSession(
         selectedMinutes,
-        selectedTask?.id,
+        undefined,
         localAnimal?.name,
         selectedSubject || undefined
       );
-      saved = true;
       if (result && typeof result === 'object') {
-        if (result.hatched_animal?.name) {
-          hatchedName = result.hatched_animal.name;
-          const animalFromList = ENDANGERED_ANIMALS.find(a => a.name === hatchedName);
-          if (animalFromList) hatchedEmoji = animalFromList.emoji;
-        }
         const sessionCoins = result?.session?.coins_earned;
         const directCoins = result?.coins_earned;
-        if (sessionCoins !== undefined && sessionCoins !== null) coinsEarned = sessionCoins;
-        else if (directCoins !== undefined && directCoins !== null) coinsEarned = directCoins;
+        if (sessionCoins !== undefined && sessionCoins !== null) {
+          setHatchedAnimalInfo(prev => prev ? { ...prev, ecoCredits: sessionCoins } : prev);
+        } else if (directCoins !== undefined && directCoins !== null) {
+          setHatchedAnimalInfo(prev => prev ? { ...prev, ecoCredits: directCoins } : prev);
+        }
         if (Array.isArray(result?.new_badges) && result.new_badges.length > 0) {
           setNewBadges(result.new_badges);
         }
+        if (result?.shared_hatch) {
+          setSharedHatchResult(result.shared_hatch);
+        }
       }
     } catch (error: any) {
-      if (__DEV__) console.warn('Session save failed (celebration will still show):', error?.message || error);
+      if (__DEV__) console.warn('Session save failed (celebration still showing):', error?.message || error);
       try {
-        const retry: any = await sessionsAPI.completeSession(
-          selectedMinutes,
-          undefined,
-          localAnimal?.name,
-          undefined
-        );
-        saved = true;
-        if (retry && typeof retry === 'object') {
-          const c = retry?.session?.coins_earned ?? retry?.coins_earned;
-          if (c !== undefined && c !== null) coinsEarned = c;
-        }
+        await sessionsAPI.completeSession(selectedMinutes, undefined, localAnimal?.name, undefined);
       } catch (_retryErr) {
         setSessionSaveError(true);
       }
     }
 
     try { await refreshUser(); } catch (_) {}
-
-    Analytics.sessionCompleted(selectedMinutes, coinsEarned, selectedSubject || undefined);
-    const animalStatus = localAnimal?.status || 'Unknown';
-    Analytics.eggHatched(hatchedName, animalStatus);
-
-    setHatchedAnimalInfo({
-      emoji: hatchedEmoji,
-      name: hatchedName,
-      ecoCredits: coinsEarned,
-    });
-    setShowConfetti(true);
-    setShowCelebrationModal(true);
   };
 
   const closeCelebrationModal = () => {
@@ -451,7 +522,9 @@ export default function TimerScreen() {
     setShowConfetti(false);
     setHatchedAnimalInfo(null);
     setSessionSaveError(false);
-    if (newBadges.length > 0) {
+    if (sharedHatchResult) {
+      setTimeout(() => setShowSharedHatchModal(true), 400);
+    } else if (newBadges.length > 0) {
       setPendingBadges([...newBadges]);
       setNewBadges([]);
       setTimeout(() => setShowBadgesModal(true), 400);
@@ -461,6 +534,19 @@ export default function TimerScreen() {
     setSelectedAnimalId(null);
     setSelectedSubject(null);
     resetTimer();
+    sharedEggAPI.getActive().then(e => setActiveSharedEgg(e)).catch(() => {});
+  };
+
+  const closeSharedHatchModal = () => {
+    setShowSharedHatchModal(false);
+    setSharedHatchResult(null);
+    if (newBadges.length > 0) {
+      setPendingBadges([...newBadges]);
+      setNewBadges([]);
+      setTimeout(() => setShowBadgesModal(true), 400);
+    } else {
+      setNewBadges([]);
+    }
   };
 
   const closeBadgesModal = () => {
@@ -494,6 +580,37 @@ export default function TimerScreen() {
     setIsPaused(false);
   };
 
+  const openFriendPicker = async () => {
+    setShowSubjectModal(false);
+    try {
+      const list = await socialAPI.getFriends();
+      setFriends(list);
+      setTimeout(() => setShowFriendPicker(true), 300);
+    } catch (e: any) {
+      Alert.alert('Error', 'Could not load friends');
+      setShowSubjectModal(true);
+    }
+  };
+
+  const closeFriendPicker = () => {
+    setShowFriendPicker(false);
+    setTimeout(() => setShowSubjectModal(true), 300);
+  };
+
+  const sendSharedEggInvite = async (friendId: number) => {
+    const animalObj = ENDANGERED_ANIMALS.find(a => a.id === selectedAnimalId);
+    if (!animalObj) return;
+    try {
+      const egg = await sharedEggAPI.invite(friendId, animalObj.name);
+      setActiveSharedEgg(egg);
+      setShowFriendPicker(false);
+      setTimeout(() => setShowSubjectModal(true), 300);
+      Alert.alert('Invite Sent!', `Your friend has been invited to hatch a ${animalObj.name} together. Start studying to contribute!`);
+    } catch (e: any) {
+      Alert.alert('Could not send invite', e?.message || 'Try again later');
+    }
+  };
+
   const startTimer = () => {
     setIsRunning(true);
     setIsPaused(false);
@@ -522,16 +639,20 @@ export default function TimerScreen() {
   };
 
   const formatTime = (seconds: number) => {
-    const mins = Math.floor(seconds / 60);
-    const secs = seconds % 60;
+    const total = Math.max(0, Math.round(seconds));
+    const mins = Math.floor(total / 60);
+    const secs = total % 60;
     return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
   };
 
   const progress = 1 - timeLeft / (selectedMinutes * TIME_MULTIPLIER);
   const estimatedEcoCredits = selectedMinutes + (selectedMinutes >= 25 ? 5 : 0) + (selectedMinutes >= 50 ? 10 : 0);
+  const elapsedSeconds = selectedMinutes * TIME_MULTIPLIER - timeLeft;
+  const elapsedMinutes = Math.floor(elapsedSeconds / 60);
+  const progressPercent = Math.round(progress * 100);
 
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
       <ScrollView 
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
@@ -544,9 +665,12 @@ export default function TimerScreen() {
           <View style={{ flexDirection: 'row', gap: 8 }}>
             <TouchableOpacity 
               style={styles.profileButton}
-              onPress={() => navigation.navigate('Tips')}
+              onPress={handleOpenTips}
             >
               <Text style={styles.profileButtonEmoji}>💡</Text>
+              {!hasSeenTips && (
+                <Animated.View style={[styles.tipsDot, { transform: [{ scale: tipsPulse }] }]} />
+              )}
             </TouchableOpacity>
             <TouchableOpacity 
               style={styles.profileButton}
@@ -563,40 +687,62 @@ export default function TimerScreen() {
         
         {/* Timer Display */}
         <View style={styles.timerContainer}>
-          {isRunning ? (
-            <CircularProgress progress={progress} size={336} strokeWidth={14}>
-              <View style={styles.timerEggContainer}>
-                <LottieView
-                  source={require('../assets/egg-animation.json')}
-                  autoPlay
-                  loop
-                  style={{ width: 330, height: 330, marginTop: -43 }}
-                />
-                <Text style={styles.timerTextSmall}>{formatTime(timeLeft)}</Text>
-              </View>
-            </CircularProgress>
-          ) : (
-            <CircularProgress progress={progress} size={312} strokeWidth={12}>
-              <View style={styles.timerEggContainer}>
-                <LottieView
-                  source={require('../assets/egg-animation.json')}
-                  autoPlay
-                  loop
-                  style={{ width: 300, height: 300, marginTop: -39 }}
-                />
-                <Text style={styles.timerText}>{formatTime(timeLeft)}</Text>
-              </View>
-            </CircularProgress>
-          )}
+          <CircularProgress progress={progress} size={isRunning ? 336 : 312} strokeWidth={isRunning ? 10 : 12}>
+            <View style={styles.timerEggContainer}>
+              <LottieView
+                source={require('../assets/egg-animation.json')}
+                autoPlay
+                loop
+                style={isRunning
+                  ? { width: 330, height: 330, marginTop: -43 }
+                  : { width: 300, height: 300, marginTop: -39 }
+                }
+              />
+              <Text style={isRunning ? styles.timerTextSmall : styles.timerText}>
+                {formatTime(timeLeft)}
+              </Text>
+            </View>
+          </CircularProgress>
         </View>
 
-        {/* Coin Preview */}
-        <View style={styles.coinPreview}>
-          <View style={styles.coinBadge}>
-            <Text style={styles.coinEmoji}>🍀</Text>
-            <Text style={styles.coinText}>~{estimatedEcoCredits} eco-credits</Text>
+        {/* Growing with [friend] banner */}
+        {activeSharedEgg && activeSharedEgg.status === 'active' && (
+          <View style={styles.sharedEggBanner}>
+            <View style={styles.sharedEggBannerTop}>
+              <Text style={styles.sharedEggHeart}>💚</Text>
+              <Text style={styles.sharedEggBannerText}>
+                Growing with {activeSharedEgg.creator.id === user?.id ? activeSharedEgg.partner.username : activeSharedEgg.creator.username}
+              </Text>
+            </View>
+            <Text style={styles.sharedEggAnimalLabel}>
+              Hatching: {activeSharedEgg.animal_name}
+            </Text>
+            <View style={styles.sharedEggProgressBar}>
+              <View style={[styles.sharedEggProgressFill, { width: `${activeSharedEgg.progress_percent}%` }]} />
+            </View>
+            <Text style={styles.sharedEggProgressText}>
+              {activeSharedEgg.creator_minutes + activeSharedEgg.partner_minutes} / {activeSharedEgg.minutes_required} min
+            </Text>
           </View>
-        </View>
+        )}
+
+        {/* Motivational Quote - only while running */}
+        {isRunning && (
+          <View style={styles.quoteContainer}>
+            <Text style={styles.quoteText}>"{FOCUS_QUOTES[quoteIndex].text}"</Text>
+            <Text style={styles.quoteAuthor}>— {FOCUS_QUOTES[quoteIndex].author}</Text>
+          </View>
+        )}
+
+        {/* Coin Preview - only when NOT running */}
+        {!isRunning && (
+          <View style={styles.coinPreview}>
+            <View style={styles.coinBadge}>
+              <Text style={styles.coinEmoji}>🍀</Text>
+              <Text style={styles.coinText}>~{estimatedEcoCredits} eco-credits</Text>
+            </View>
+          </View>
+        )}
 
         {/* Preset Times - Chips */}
         {!isRunning && (
@@ -643,51 +789,6 @@ export default function TimerScreen() {
                 </Text>
               </TouchableOpacity>
             </View>
-          </View>
-        )}
-
-        {/* Task Selection */}
-        {!isRunning && tasks.length > 0 && (
-          <View style={styles.taskSelection}>
-            <Text style={styles.presetsLabel}>Link to Task (Optional)</Text>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-              <TouchableOpacity
-                style={[
-                  styles.taskChip,
-                  !selectedTask && styles.taskChipActive,
-                ]}
-                onPress={() => setSelectedTask(null)}
-              >
-                <Text
-                  style={[
-                    styles.taskChipText,
-                    !selectedTask && styles.taskChipTextActive,
-                  ]}
-                >
-                  Free Study
-                </Text>
-              </TouchableOpacity>
-              {tasks.filter(t => !t.is_completed).slice(0, 5).map((task) => (
-                <TouchableOpacity
-                  key={task.id}
-                  style={[
-                    styles.taskChip,
-                    selectedTask?.id === task.id && styles.taskChipActive,
-                  ]}
-                  onPress={() => setSelectedTask(task)}
-                >
-                  <Text
-                    style={[
-                      styles.taskChipText,
-                      selectedTask?.id === task.id && styles.taskChipTextActive,
-                    ]}
-                    numberOfLines={1}
-                  >
-                    {task.title}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
           </View>
         )}
 
@@ -747,182 +848,197 @@ export default function TimerScreen() {
       </ScrollView>
 
       {/* Animal Selection Modal */}
-      <Modal visible={showAnimalModal} transparent animationType="slide">
-        <View style={styles.animalModalOverlay}>
-          <View style={styles.animalModalContent}>
-            <Text style={styles.animalModalTitle}>🥚 Choose Your Egg!</Text>
-            <Text style={styles.animalModalSubtitle}>
-              It's a surprise! Complete your study session to discover which endangered animal hatches! ✨
-            </Text>
+      <Modal visible={showAnimalModal} transparent animationType="fade" onRequestClose={() => { setShowAnimalModal(false); setSelectedAnimalId(null); }}>
+        <TouchableOpacity style={styles.animalModalOverlay} activeOpacity={1} onPress={() => { setShowAnimalModal(false); setSelectedAnimalId(null); }}>
+          <TouchableOpacity activeOpacity={1}>
+            <View style={styles.animalModalCard}>
+              <Text style={styles.animalModalTitle}>🥚 Choose Your Egg!</Text>
+              <Text style={styles.animalModalSubtitle}>
+                It's a surprise! Complete your study session to discover which endangered animal hatches!
+              </Text>
 
-            <ScrollView style={styles.animalGrid} showsVerticalScrollIndicator={false}>
-              <View style={styles.animalGridInner}>
-                {ENDANGERED_ANIMALS.map((animal, index) => {
-                  const isUnlocked = unlockedAnimals.includes(animal.id);
-                  const isSelected = selectedAnimalId === animal.id;
-                  // Allow selecting ANY animal (no sequential restriction)
-                  const canSelect = true;
+              <ScrollView style={styles.animalGrid} showsVerticalScrollIndicator={false}>
+                <View style={styles.animalGridInner}>
+                  {ENDANGERED_ANIMALS.map((animal, index) => {
+                    const isUnlocked = unlockedAnimals.includes(animal.id);
+                    const isSelected = selectedAnimalId === animal.id;
 
-                  return (
-                    <TouchableOpacity
-                      key={animal.id}
-                      style={[
-                        styles.animalSlot,
-                        isUnlocked && styles.animalSlotUnlocked,
-                        isSelected && styles.animalSlotSelected,
-                      ]}
-                      onPress={() => {
-                        setSelectedAnimalId(animal.id);
-                      }}
-                      disabled={false}
-                    >
-                      {isUnlocked ? (
-                        // Show the animal image if already hatched
-                        <View style={styles.unlockedContainer}>
-                          {getAnimalImage(animal.name) ? (
-                            <Image 
-                              source={getAnimalImage(animal.name)} 
-                              style={styles.animalSlotImage} 
-                            />
-                          ) : (
-                            <Text style={styles.animalEmoji}>{animal.emoji}</Text>
-                          )}
-                          <Text style={styles.checkMark}>✓</Text>
-                        </View>
-                      ) : (
-                        // Show egg with sparkle for unhatched
-                        <View style={styles.lockedContainer}>
-                          <Text style={styles.eggEmoji}>🥚</Text>
-                          <Text style={styles.lockEmojiAvailable}>✨</Text>
-                        </View>
-                      )}
-                    </TouchableOpacity>
-                  );
-                })}
-              </View>
-            </ScrollView>
+                    return (
+                      <TouchableOpacity
+                        key={animal.id}
+                        style={[
+                          styles.animalSlot,
+                          isUnlocked && styles.animalSlotUnlocked,
+                          isSelected && styles.animalSlotSelected,
+                        ]}
+                        onPress={() => {
+                          setSelectedAnimalId(animal.id);
+                        }}
+                        disabled={false}
+                      >
+                        {isUnlocked ? (
+                          <View style={styles.unlockedContainer}>
+                            {getAnimalImage(animal.name) ? (
+                              <Image 
+                                source={getAnimalImage(animal.name)} 
+                                style={styles.animalSlotImage}
+                                resizeMode="contain"
+                              />
+                            ) : (
+                              <Text style={styles.animalEmoji}>{animal.emoji}</Text>
+                            )}
+                          </View>
+                        ) : (
+                          <View style={styles.lockedContainer}>
+                            <Text style={styles.eggEmojiLocked}>🥚</Text>
+                            <Text style={styles.lockOverlay}>🔒</Text>
+                          </View>
+                        )}
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              </ScrollView>
 
-            {selectedAnimalId && (
-              <View style={styles.selectedAnimalPreview}>
-                <Text style={styles.selectedAnimalText}>
-                  Egg selected! What will hatch? Study to find out!
-                </Text>
-              </View>
-            )}
+              {selectedAnimalId && (
+                <View style={styles.selectedAnimalPreview}>
+                  <Text style={styles.selectedAnimalText}>
+                    Egg selected! What will hatch? Study to find out!
+                  </Text>
+                </View>
+              )}
 
-            <View style={styles.animalModalButtons}>
-              <TouchableOpacity
-                style={styles.animalModalCancel}
-                onPress={() => {
-                  setShowAnimalModal(false);
-                  setSelectedAnimalId(null);
-                }}
-              >
-                <Text style={styles.animalModalCancelText}>Cancel</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                onPress={confirmAnimalAndStart}
-                disabled={!selectedAnimalId}
-                style={[{ flex: 2 }, !selectedAnimalId && styles.animalModalStartDisabledWrapper]}
-              >
-                <ExpoLinearGradient
-                  colors={['#5F8C87', '#3B5466']}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 0 }}
-                  style={[
-                    styles.animalModalStart,
-                    !selectedAnimalId && styles.animalModalStartDisabled,
-                  ]}
+              <View style={styles.animalModalButtons}>
+                <TouchableOpacity
+                  style={styles.animalModalCancel}
+                  onPress={() => {
+                    setShowAnimalModal(false);
+                    setSelectedAnimalId(null);
+                  }}
                 >
-                  <Text style={styles.animalModalStartText}>Start Hatching!</Text>
-                </ExpoLinearGradient>
-              </TouchableOpacity>
+                  <Text style={styles.animalModalCancelText}>Cancel</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  onPress={confirmAnimalAndStart}
+                  disabled={!selectedAnimalId}
+                  style={[{ flex: 2 }, !selectedAnimalId && styles.animalModalStartDisabledWrapper]}
+                >
+                  <ExpoLinearGradient
+                    colors={['#5F8C87', '#3B5466']}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 0 }}
+                    style={[
+                      styles.animalModalStart,
+                      !selectedAnimalId && styles.animalModalStartDisabled,
+                    ]}
+                  >
+                    <Text style={styles.animalModalStartText}>Start Hatching!</Text>
+                  </ExpoLinearGradient>
+                </TouchableOpacity>
+              </View>
             </View>
-          </View>
-        </View>
+          </TouchableOpacity>
+        </TouchableOpacity>
       </Modal>
 
       {/* Subject Selection Modal */}
-      <Modal visible={showSubjectModal} transparent animationType="slide">
-        <View style={styles.subjectModalOverlay}>
-          <View style={styles.subjectModalContent}>
-            <Text style={styles.subjectModalTitle}>📚 What are you studying?</Text>
-            <Text style={styles.subjectModalSubtitle}>
-              Select a subject to track your progress
-            </Text>
-            
-            <View style={styles.subjectGrid}>
-              {subjects.map((subject) => (
-                <TouchableOpacity
-                  key={subject}
-                  style={[
-                    styles.subjectChip,
-                    selectedSubject === subject && styles.subjectChipActive,
-                  ]}
-                  onPress={() => setSelectedSubject(subject)}
-                >
-                  <Text
+      <Modal visible={showSubjectModal} transparent animationType="fade" onRequestClose={() => { setShowSubjectModal(false); setSelectedSubject(null); }}>
+        <TouchableOpacity style={styles.animalModalOverlay} activeOpacity={1} onPress={() => { setShowSubjectModal(false); setSelectedSubject(null); }}>
+          <TouchableOpacity activeOpacity={1}>
+            <View style={styles.subjectModalCard}>
+              <Text style={styles.subjectModalTitle}>📚 What are you studying?</Text>
+              <Text style={styles.subjectModalSubtitle}>
+                Select a subject to track your progress
+              </Text>
+              
+              <View style={styles.subjectGrid}>
+                {subjects.map((subject) => (
+                  <TouchableOpacity
+                    key={subject}
                     style={[
-                      styles.subjectChipText,
-                      selectedSubject === subject && styles.subjectChipTextActive,
+                      styles.subjectChip,
+                      selectedSubject === subject && styles.subjectChipActive,
+                    ]}
+                    onPress={() => setSelectedSubject(subject)}
+                  >
+                    <Text
+                      style={[
+                        styles.subjectChipText,
+                        selectedSubject === subject && styles.subjectChipTextActive,
+                      ]}
+                    >
+                      {subject}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+
+              {/* Hatch with a friend */}
+              {activeSharedEgg && activeSharedEgg.status === 'active' ? (
+                <View style={styles.sharedEggInline}>
+                  <Text style={styles.sharedEggInlineText}>
+                    💚 Hatching {activeSharedEgg.animal_name} with {activeSharedEgg.creator.id === user?.id ? activeSharedEgg.partner.username : activeSharedEgg.creator.username}
+                  </Text>
+                </View>
+              ) : !activeSharedEgg ? (
+                <TouchableOpacity style={styles.hatchWithFriendBtn} onPress={openFriendPicker}>
+                  <Text style={styles.hatchWithFriendText}>💚 Hatch with a friend</Text>
+                </TouchableOpacity>
+              ) : null}
+
+              <View style={styles.subjectModalButtons}>
+                <TouchableOpacity
+                  style={styles.subjectModalCancel}
+                  onPress={() => {
+                    setShowSubjectModal(false);
+                    setSelectedSubject(null);
+                    setSelectedAnimalId(null);
+                  }}
+                >
+                  <Text style={styles.subjectModalCancelText}>Cancel</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  onPress={confirmSubjectAndStart}
+                  disabled={!selectedSubject}
+                  style={[{ flex: 2 }, !selectedSubject && styles.subjectModalStartDisabledWrapper]}
+                >
+                  <ExpoLinearGradient
+                    colors={['#5F8C87', '#3B5466']}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 0 }}
+                    style={[
+                      styles.subjectModalStart,
+                      !selectedSubject && styles.subjectModalStartDisabled,
                     ]}
                   >
-                    {subject}
-                  </Text>
+                    <Text style={styles.subjectModalStartText}>Start Timer! ⏱️</Text>
+                  </ExpoLinearGradient>
                 </TouchableOpacity>
-              ))}
+              </View>
             </View>
-
-            <View style={styles.subjectModalButtons}>
-              <TouchableOpacity
-                style={styles.subjectModalCancel}
-                onPress={() => {
-                  setShowSubjectModal(false);
-                  setSelectedSubject(null);
-                  setSelectedAnimalId(null);
-                }}
-              >
-                <Text style={styles.subjectModalCancelText}>Cancel</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                onPress={confirmSubjectAndStart}
-                disabled={!selectedSubject}
-                style={[{ flex: 2 }, !selectedSubject && styles.subjectModalStartDisabledWrapper]}
-              >
-                <ExpoLinearGradient
-                  colors={['#5F8C87', '#3B5466']}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 0 }}
-                  style={[
-                    styles.subjectModalStart,
-                    !selectedSubject && styles.subjectModalStartDisabled,
-                  ]}
-                >
-                  <Text style={styles.subjectModalStartText}>Start Timer! ⏱️</Text>
-                </ExpoLinearGradient>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
+          </TouchableOpacity>
+        </TouchableOpacity>
       </Modal>
 
       {/* Celebration Modal */}
       <Modal visible={showCelebrationModal} transparent animationType="fade">
-        <View style={styles.celebrationOverlay}>
+        <TouchableOpacity style={styles.celebrationOverlay} activeOpacity={1} onPress={closeCelebrationModal}>
+          <TouchableOpacity activeOpacity={1}>
           <ExpoLinearGradient
-            colors={['#A9BDAF', '#5F8C87']}
+            colors={['#8FC4BC', '#4A6A7A']}
             start={{ x: 0, y: 0 }}
             end={{ x: 0, y: 1 }}
             style={styles.celebrationContent}
           >
-            <Text style={styles.celebrationTitle}>Congratulations!</Text>
+            <Text style={styles.celebrationTitle}>Congratulations! 🎉</Text>
             <Text style={styles.celebrationSubtitle}>You hatched a new friend!</Text>
             
             <View style={styles.celebrationAnimalContainer}>
               {hatchedAnimalInfo?.name && getAnimalImage(hatchedAnimalInfo.name) ? (
                 <Image 
                   source={getAnimalImage(hatchedAnimalInfo.name)} 
-                  style={styles.celebrationAnimalImage} 
+                  style={styles.celebrationAnimalImage}
+                  resizeMode="contain"
                 />
               ) : (
                 <Text style={styles.celebrationAnimalEmoji}>
@@ -947,12 +1063,18 @@ export default function TimerScreen() {
             </Text>
 
             {sessionSaveError && (
-              <Text style={{ color: '#2F4A3E', fontSize: 12, textAlign: 'center', marginTop: 6 }}>
+              <Text style={{ color: 'rgba(255,255,255,0.7)', fontSize: 12, textAlign: 'center', marginTop: 6 }}>
                 ⚠️ Session couldn't be saved to the server. Progress may not update.
               </Text>
             )}
             
             <View style={styles.celebrationButtons}>
+              <TouchableOpacity
+                style={styles.celebrationButton}
+                onPress={closeCelebrationModal}
+              >
+                <Text style={styles.celebrationButtonText}>Continue</Text>
+              </TouchableOpacity>
               <TouchableOpacity
                 style={styles.celebrationButtonSecondary}
                 onPress={() => {
@@ -960,22 +1082,11 @@ export default function TimerScreen() {
                   (navigation as any).navigate('Sanctuary');
                 }}
               >
-                <Text style={styles.celebrationButtonSecondaryText}>View Collection</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                onPress={closeCelebrationModal}
-              >
-                <ExpoLinearGradient
-                  colors={['#5F8C87', '#3B5466']}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 0 }}
-                  style={styles.celebrationButton}
-                >
-                  <Text style={styles.celebrationButtonText}>Continue</Text>
-                </ExpoLinearGradient>
+                <Text style={styles.celebrationButtonSecondaryText}>View Collection →</Text>
               </TouchableOpacity>
             </View>
           </ExpoLinearGradient>
+          </TouchableOpacity>
           {showConfetti && (
             <ConfettiCannon
               count={250}
@@ -986,12 +1097,13 @@ export default function TimerScreen() {
               fallSpeed={2500}
             />
           )}
-        </View>
+        </TouchableOpacity>
       </Modal>
 
       {/* Badges Modal */}
       <Modal visible={showBadgesModal} transparent animationType="fade">
-        <View style={styles.celebrationOverlay}>
+        <TouchableOpacity style={styles.celebrationOverlay} activeOpacity={1} onPress={closeBadgesModal}>
+          <TouchableOpacity activeOpacity={1}>
           <ExpoLinearGradient
             colors={['#A9BDAF', '#5F8C87']}
             start={{ x: 0, y: 0 }}
@@ -1038,19 +1150,21 @@ export default function TimerScreen() {
               </TouchableOpacity>
             </View>
           </ExpoLinearGradient>
-        </View>
+          </TouchableOpacity>
+        </TouchableOpacity>
       </Modal>
 
       {/* Egg Death Modal */}
       <Modal visible={showEggDeathModal} transparent animationType="fade">
-        <View style={styles.eggDeathOverlay}>
+        <TouchableOpacity style={styles.eggDeathOverlay} activeOpacity={1} onPress={() => { setShowEggDeathModal(false); setDeadAnimalName(''); setSelectedAnimalId(null); setSelectedSubject(null); resetTimer(); }}>
+          <TouchableOpacity activeOpacity={1}>
           <ExpoLinearGradient
-            colors={deathCause === 'abandoned' ? ['#F7FAF8', '#EDF2EE'] : ['#2F4A3E', '#3B5466']}
+            colors={deathCause === 'abandoned' ? ['#F7FAF8', '#EDF2EE'] : ['#1A1A1A', '#111111']}
             start={{ x: 0, y: 0 }}
             end={{ x: 0, y: 1 }}
             style={styles.eggDeathContent}
           >
-            <Text style={styles.eggDeathIcon}>{deathCause === 'abandoned' ? '🪦' : '💔'}</Text>
+            <Text style={styles.eggDeathIcon}>{deathCause === 'abandoned' ? '🪦' : '🕊️'}</Text>
 
             <Text style={[styles.eggDeathTitle, deathCause === 'abandoned' && { color: '#2C3E3A' }]}>
               {deathCause === 'abandoned'
@@ -1059,12 +1173,7 @@ export default function TimerScreen() {
             </Text>
 
             {deathCause !== 'abandoned' && (
-              <View style={styles.eggDeathCracked}>
-                <Text style={styles.eggDeathCrackedEmoji}>🥚</Text>
-                <View style={styles.eggDeathCrack}>
-                  <Text style={styles.eggDeathCrackEmoji}>💀</Text>
-                </View>
-              </View>
+              <Text style={styles.eggDeathGraveEmoji}>🪦</Text>
             )}
 
             <Text style={[styles.eggDeathMessage, deathCause === 'abandoned' && { color: '#4A5E56' }]}>
@@ -1103,13 +1212,111 @@ export default function TimerScreen() {
               </ExpoLinearGradient>
             </TouchableOpacity>
           </ExpoLinearGradient>
-        </View>
+          </TouchableOpacity>
+        </TouchableOpacity>
+      </Modal>
+
+      {/* Friend Picker Modal */}
+      <Modal visible={showFriendPicker} transparent animationType="fade" onRequestClose={closeFriendPicker}>
+        <TouchableOpacity style={styles.animalModalOverlay} activeOpacity={1} onPress={closeFriendPicker}>
+          <TouchableOpacity activeOpacity={1}>
+            <View style={styles.friendPickerCard}>
+              <Text style={styles.friendPickerTitle}>💚 Hatch Together</Text>
+              <Text style={styles.friendPickerSubtitle}>
+                Pick a friend to co-hatch with — both your study sessions contribute!
+              </Text>
+              <ScrollView style={{ maxHeight: 320 }} showsVerticalScrollIndicator={false}>
+                {friends.length === 0 ? (
+                  <Text style={styles.friendPickerEmpty}>No friends yet — add some first!</Text>
+                ) : (
+                  friends.map(f => (
+                    <TouchableOpacity
+                      key={f.id}
+                      style={styles.friendPickerRow}
+                      onPress={() => sendSharedEggInvite(f.id)}
+                    >
+                      {f.profile_pic_url ? (
+                        <Image source={{ uri: f.profile_pic_url }} style={styles.friendPickerAvatar} />
+                      ) : (
+                        <View style={styles.friendPickerAvatarPlaceholder}>
+                          <Text style={{ fontSize: 20 }}>👤</Text>
+                        </View>
+                      )}
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.friendPickerName}>{f.username || 'Unknown'}</Text>
+                        <Text style={styles.friendPickerStats}>
+                          {f.total_study_minutes >= 60 
+                            ? `${Math.floor(f.total_study_minutes / 60)}h studied` 
+                            : `${f.total_study_minutes}m studied`}
+                        </Text>
+                      </View>
+                      <Text style={{ fontSize: 16, color: colors.primary, fontWeight: '700' }}>Invite</Text>
+                    </TouchableOpacity>
+                  ))
+                )}
+              </ScrollView>
+              <TouchableOpacity style={styles.friendPickerCancel} onPress={closeFriendPicker}>
+                <Text style={styles.friendPickerCancelText}>Cancel</Text>
+              </TouchableOpacity>
+            </View>
+          </TouchableOpacity>
+        </TouchableOpacity>
+      </Modal>
+
+      {/* Shared Hatch Celebration Modal */}
+      <Modal visible={showSharedHatchModal} transparent animationType="fade">
+        <TouchableOpacity style={styles.celebrationOverlay} activeOpacity={1} onPress={closeSharedHatchModal}>
+          <TouchableOpacity activeOpacity={1}>
+            <ExpoLinearGradient
+              colors={['#8FC4BC', '#4A6A7A']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 0, y: 1 }}
+              style={styles.celebrationContent}
+            >
+              <Text style={styles.celebrationTitle}>You did it together! 💚</Text>
+              <Text style={styles.celebrationSubtitle}>
+                You and {sharedHatchResult?.partner_name} hatched a {sharedHatchResult?.animal_name}!
+              </Text>
+              <View style={styles.celebrationAnimalContainer}>
+                {sharedHatchResult?.animal_name && getAnimalImage(sharedHatchResult.animal_name) ? (
+                  <Image
+                    source={getAnimalImage(sharedHatchResult.animal_name)}
+                    style={styles.celebrationAnimalImage}
+                    resizeMode="contain"
+                  />
+                ) : (
+                  <Text style={styles.celebrationAnimalEmoji}>🐾</Text>
+                )}
+              </View>
+              <Text style={styles.celebrationAnimalName}>{sharedHatchResult?.animal_name}</Text>
+              <Text style={styles.celebrationMessage}>
+                This shared animal now lives in both your sanctuaries. Teamwork makes the dream work!
+              </Text>
+              <View style={styles.celebrationButtons}>
+                <TouchableOpacity style={styles.celebrationButton} onPress={closeSharedHatchModal}>
+                  <Text style={styles.celebrationButtonText}>Continue</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.celebrationButtonSecondary}
+                  onPress={() => {
+                    closeSharedHatchModal();
+                    (navigation as any).navigate('Sanctuary');
+                  }}
+                >
+                  <Text style={styles.celebrationButtonSecondaryText}>View Collection →</Text>
+                </TouchableOpacity>
+              </View>
+            </ExpoLinearGradient>
+          </TouchableOpacity>
+          <ConfettiCannon count={250} origin={{ x: width / 2, y: -10 }} autoStart fadeOut explosionSpeed={400} fallSpeed={2500} />
+        </TouchableOpacity>
       </Modal>
 
       {/* Custom Timer Modal */}
-      <Modal visible={showCustomModal} transparent animationType="slide">
-        <View style={styles.customModalOverlay}>
-          <View style={styles.customModalContent}>
+      <Modal visible={showCustomModal} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setShowCustomModal(false)}>
+        <View style={{ flex: 1, backgroundColor: '#fff' }}>
+          <DragHandle />
+          <View style={{ padding: 20 }}>
             <Text style={styles.customModalTitle}>⏱️ Custom Timer</Text>
             <Text style={styles.customModalSubtitle}>Set your own study duration</Text>
             
@@ -1174,18 +1381,18 @@ const styles = StyleSheet.create({
     backgroundColor: colors.background,
   },
   scrollContent: {
-    paddingHorizontal: spacing.md,
-    paddingTop: spacing.xs,
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.lg,
     paddingBottom: spacing.xl,
   },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: spacing.sm,
+    marginBottom: spacing.md,
   },
   title: {
-    fontSize: 24,
+    fontSize: 28,
     fontWeight: '700',
     color: colors.textPrimary,
   },
@@ -1205,6 +1412,17 @@ const styles = StyleSheet.create({
   },
   profileButtonEmoji: {
     fontSize: 22,
+  },
+  tipsDot: {
+    position: 'absolute',
+    top: 2,
+    right: 2,
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: '#FF6B6B',
+    borderWidth: 1.5,
+    borderColor: '#FFFFFF',
   },
   profileButtonImage: {
     width: 44,
@@ -1226,8 +1444,11 @@ const styles = StyleSheet.create({
   },
   timerContainer: {
     alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 20,
     marginBottom: spacing.md,
   },
+  
   timerInner: {
     alignItems: 'center',
     justifyContent: 'center',
@@ -1258,6 +1479,30 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     marginTop: spacing.xs,
     fontWeight: '500',
+  },
+  quoteContainer: {
+    marginHorizontal: spacing.lg,
+    marginBottom: spacing.lg,
+    paddingVertical: 14,
+    paddingHorizontal: 20,
+    backgroundColor: 'rgba(95, 140, 135, 0.08)',
+    borderRadius: 16,
+    borderLeftWidth: 3,
+    borderLeftColor: colors.primary,
+  },
+  quoteText: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: colors.textPrimary,
+    fontStyle: 'italic',
+    lineHeight: 20,
+  },
+  quoteAuthor: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: colors.textMuted,
+    marginTop: 6,
+    textAlign: 'right',
   },
   coinPreview: {
     alignItems: 'center',
@@ -1483,31 +1728,6 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     fontSize: 16,
   },
-  taskSelection: {
-    marginBottom: spacing.md,
-  },
-  taskChip: {
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-    backgroundColor: colors.surface,
-    borderRadius: borderRadius.full,
-    marginRight: spacing.sm,
-    maxWidth: 160,
-    borderWidth: 1.5,
-    borderColor: colors.cardBorder,
-  },
-  taskChipActive: {
-    backgroundColor: colors.primaryLight,
-    borderColor: colors.primary,
-  },
-  taskChipText: {
-    color: colors.textSecondary,
-    fontWeight: '600',
-    fontSize: 14,
-  },
-  taskChipTextActive: {
-    color: colors.primaryDark,
-  },
   controlsContainer: {
     marginBottom: spacing.md,
   },
@@ -1558,16 +1778,18 @@ const styles = StyleSheet.create({
   // Animal Selection Modal Styles
   animalModalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.6)',
-    justifyContent: 'flex-end',
-  },
-  animalModalContent: {
-    backgroundColor: colors.surface,
-    borderTopLeftRadius: borderRadius.xl,
-    borderTopRightRadius: borderRadius.xl,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
     padding: spacing.lg,
-    paddingBottom: spacing.xxl,
-    maxHeight: '85%',
+  },
+  animalModalCard: {
+    backgroundColor: '#fff',
+    borderRadius: 24,
+    padding: 20,
+    width: Dimensions.get('window').width - 40,
+    maxHeight: Dimensions.get('window').height * 0.85,
+    flexShrink: 1,
   },
   animalModalTitle: {
     fontSize: 20,
@@ -1583,14 +1805,15 @@ const styles = StyleSheet.create({
     marginBottom: spacing.lg,
   },
   animalGrid: {
-    maxHeight: 420,
+    flexGrow: 0,
+    flexShrink: 1,
   },
   animalGridInner: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     justifyContent: 'space-between',
     paddingHorizontal: spacing.sm,
-    paddingBottom: spacing.md,
+    paddingBottom: 4,
   },
   animalSlot: {
     width: '30%',
@@ -1625,12 +1848,13 @@ const styles = StyleSheet.create({
     fontSize: 40,
   },
   animalSlotImage: {
-    width: 50,
-    height: 50,
+    width: 60,
+    height: 60,
   },
   lockedContainer: {
     alignItems: 'center',
     justifyContent: 'center',
+    position: 'relative',
   },
   unlockedContainer: {
     alignItems: 'center',
@@ -1645,6 +1869,14 @@ const styles = StyleSheet.create({
   },
   eggEmoji: {
     fontSize: 36,
+  },
+  eggEmojiLocked: {
+    fontSize: 52,
+    opacity: 0.8,
+  },
+  lockOverlay: {
+    fontSize: 20,
+    position: 'absolute',
   },
   lockEmoji: {
     fontSize: 14,
@@ -1668,7 +1900,7 @@ const styles = StyleSheet.create({
   animalModalButtons: {
     flexDirection: 'row',
     gap: spacing.md,
-    marginTop: spacing.lg,
+    marginTop: spacing.md,
   },
   animalModalCancel: {
     flex: 1,
@@ -1710,8 +1942,8 @@ const styles = StyleSheet.create({
     padding: spacing.lg,
   },
   celebrationContent: {
-    borderRadius: borderRadius.xl,
-    padding: spacing.xl,
+    borderRadius: 28,
+    padding: 28,
     alignItems: 'center',
     width: '100%',
     maxWidth: 340,
@@ -1719,26 +1951,28 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   celebrationTitle: {
-    fontSize: 28,
+    fontSize: 30,
     fontWeight: '800',
     color: '#FFFFFF',
     textAlign: 'center',
-    marginBottom: spacing.sm,
+    marginBottom: 6,
+    letterSpacing: -0.5,
   },
   celebrationSubtitle: {
     fontSize: 16,
-    color: '#2F4A3E',
+    color: 'rgba(255,255,255,0.8)',
     textAlign: 'center',
     marginBottom: spacing.xl,
+    fontWeight: '500',
   },
   celebrationAnimalContainer: {
     marginBottom: spacing.lg,
     alignItems: 'center',
-    backgroundColor: 'rgba(255,255,255,0.25)',
-    borderRadius: 100,
-    width: 160,
-    height: 160,
     justifyContent: 'center',
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    borderRadius: 100,
+    width: 170,
+    height: 170,
   },
   celebrationAnimalEmoji: {
     fontSize: 80,
@@ -1748,18 +1982,19 @@ const styles = StyleSheet.create({
     height: 150,
   },
   celebrationAnimalName: {
-    fontSize: 24,
-    fontWeight: '700',
-    color: '#2F4A3E',
+    fontSize: 26,
+    fontWeight: '800',
+    color: '#FFFFFF',
     textAlign: 'center',
     marginBottom: spacing.md,
+    letterSpacing: -0.3,
   },
   celebrationCoins: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(255,255,255,0.30)',
+    backgroundColor: 'rgba(255,255,255,0.15)',
     paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.sm,
+    paddingVertical: 10,
     borderRadius: borderRadius.full,
     marginBottom: spacing.lg,
     gap: 6,
@@ -1770,13 +2005,13 @@ const styles = StyleSheet.create({
   celebrationCoinsText: {
     fontSize: 16,
     fontWeight: '700',
-    color: '#2F4A3E',
+    color: '#FFFFFF',
   },
   celebrationMessage: {
     fontSize: 14,
-    color: '#FFFFFF',
+    color: 'rgba(255,255,255,0.75)',
     textAlign: 'center',
-    marginBottom: spacing.lg,
+    marginBottom: 24,
     lineHeight: 20,
   },
   celebrationButtons: {
@@ -1784,28 +2019,31 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
   },
   celebrationButton: {
-    paddingVertical: 14,
+    paddingVertical: 16,
+    paddingHorizontal: spacing.lg,
     borderRadius: borderRadius.full,
     alignItems: 'center',
+    backgroundColor: '#FFFFFF',
     ...shadows.small,
   },
   celebrationButtonText: {
     fontSize: 16,
     fontWeight: '700',
-    color: colors.textOnPrimary,
+    color: '#4A6A7A',
   },
   celebrationButtonSecondary: {
     backgroundColor: 'transparent',
-    paddingVertical: 14,
+    paddingVertical: 12,
+    paddingHorizontal: spacing.lg,
     borderRadius: borderRadius.full,
     alignItems: 'center',
     borderWidth: 2,
     borderColor: 'rgba(255,255,255,0.5)',
   },
   celebrationButtonSecondaryText: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#FFFFFF',
+    fontSize: 15,
+    fontWeight: '600',
+    color: 'rgba(255,255,255,0.85)',
   },
   newBadgesSection: {
     width: '100%',
@@ -1932,7 +2170,7 @@ const styles = StyleSheet.create({
   // Egg Death Modal Styles
   eggDeathOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(15, 10, 10, 0.85)',
+    backgroundColor: 'rgba(0, 0, 0, 0.88)',
     justifyContent: 'center',
     alignItems: 'center',
     padding: spacing.lg,
@@ -1944,60 +2182,40 @@ const styles = StyleSheet.create({
     width: '100%',
     maxWidth: 340,
     borderWidth: 1,
-    borderColor: 'rgba(255, 60, 60, 0.2)',
+    borderColor: 'rgba(255, 255, 255, 0.08)',
   },
   eggDeathIcon: {
-    fontSize: 48,
+    fontSize: 56,
     marginBottom: spacing.md,
+  },
+  eggDeathGraveEmoji: {
+    fontSize: 64,
+    marginBottom: spacing.lg,
   },
   eggDeathTitle: {
     fontSize: 24,
     fontWeight: '800',
-    color: '#B85C4A',
+    color: '#FFFFFF',
     textAlign: 'center',
     marginBottom: spacing.lg,
   },
-  eggDeathCracked: {
-    width: 100,
-    height: 100,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: spacing.lg,
-    position: 'relative',
-  },
-  eggDeathCrackedEmoji: {
-    fontSize: 64,
-    opacity: 0.4,
-  },
-  eggDeathCrack: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  eggDeathCrackEmoji: {
-    fontSize: 36,
-  },
   eggDeathMessage: {
     fontSize: 15,
-    color: '#A9BDAF',
+    color: 'rgba(255, 255, 255, 0.6)',
     textAlign: 'center',
     lineHeight: 23,
     marginBottom: spacing.md,
   },
   eggDeathSubMessage: {
     fontSize: 13,
-    color: '#B85C4A',
+    color: 'rgba(255, 255, 255, 0.4)',
     textAlign: 'center',
     fontWeight: '600',
     fontStyle: 'italic',
     marginBottom: spacing.lg,
   },
   eggDeathStats: {
-    backgroundColor: 'rgba(255, 60, 60, 0.1)',
+    backgroundColor: 'rgba(255, 255, 255, 0.06)',
     borderRadius: borderRadius.lg,
     paddingVertical: spacing.sm,
     paddingHorizontal: spacing.lg,
@@ -2007,7 +2225,7 @@ const styles = StyleSheet.create({
   },
   eggDeathStatsText: {
     fontSize: 13,
-    color: '#7C8F86',
+    color: 'rgba(255, 255, 255, 0.35)',
     fontWeight: '600',
   },
   eggDeathButton: {
@@ -2034,6 +2252,12 @@ const styles = StyleSheet.create({
     borderTopRightRadius: 24,
     padding: spacing.xl,
     paddingBottom: spacing.xxl,
+  },
+  subjectModalCard: {
+    backgroundColor: '#fff',
+    borderRadius: 24,
+    padding: 20,
+    width: Dimensions.get('window').width - 40,
   },
   subjectModalTitle: {
     fontSize: 24,
@@ -2110,5 +2334,147 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '700',
     color: colors.textOnPrimary,
+  },
+  sharedEggBanner: {
+    backgroundColor: 'rgba(95, 140, 135, 0.1)',
+    borderRadius: 16,
+    padding: 14,
+    marginHorizontal: spacing.sm,
+    marginBottom: spacing.md,
+    borderWidth: 1.5,
+    borderColor: 'rgba(95, 140, 135, 0.25)',
+  },
+  sharedEggBannerTop: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 6,
+  },
+  sharedEggHeart: {
+    fontSize: 18,
+  },
+  sharedEggBannerText: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: colors.primary,
+  },
+  sharedEggAnimalLabel: {
+    fontSize: 13,
+    color: colors.textSecondary,
+    marginBottom: 8,
+  },
+  sharedEggProgressBar: {
+    height: 8,
+    backgroundColor: 'rgba(95, 140, 135, 0.15)',
+    borderRadius: 4,
+    overflow: 'hidden',
+    marginBottom: 4,
+  },
+  sharedEggProgressFill: {
+    height: '100%',
+    backgroundColor: colors.primary,
+    borderRadius: 4,
+  },
+  sharedEggProgressText: {
+    fontSize: 12,
+    color: colors.textMuted,
+    textAlign: 'right',
+  },
+  sharedEggInline: {
+    backgroundColor: 'rgba(95, 140, 135, 0.1)',
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: spacing.md,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(95, 140, 135, 0.2)',
+  },
+  sharedEggInlineText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: colors.primary,
+  },
+  hatchWithFriendBtn: {
+    backgroundColor: 'rgba(95, 140, 135, 0.08)',
+    borderRadius: 12,
+    paddingVertical: 12,
+    marginBottom: spacing.md,
+    alignItems: 'center',
+    borderWidth: 1.5,
+    borderColor: 'rgba(95, 140, 135, 0.2)',
+    borderStyle: 'dashed',
+  },
+  hatchWithFriendText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: colors.primary,
+  },
+  friendPickerCard: {
+    backgroundColor: '#fff',
+    borderRadius: 24,
+    padding: 20,
+    width: Dimensions.get('window').width - 40,
+    maxHeight: Dimensions.get('window').height * 0.7,
+  },
+  friendPickerTitle: {
+    fontSize: 22,
+    fontWeight: '700',
+    color: colors.textPrimary,
+    textAlign: 'center',
+    marginBottom: 6,
+  },
+  friendPickerSubtitle: {
+    fontSize: 14,
+    color: colors.textSecondary,
+    textAlign: 'center',
+    marginBottom: spacing.lg,
+  },
+  friendPickerEmpty: {
+    fontSize: 14,
+    color: colors.textMuted,
+    textAlign: 'center',
+    paddingVertical: 30,
+  },
+  friendPickerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.cardBorder,
+    gap: 12,
+  },
+  friendPickerAvatar: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+  },
+  friendPickerAvatarPlaceholder: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: colors.surfaceAlt,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  friendPickerName: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: colors.textPrimary,
+  },
+  friendPickerStats: {
+    fontSize: 12,
+    color: colors.textMuted,
+    marginTop: 2,
+  },
+  friendPickerCancel: {
+    paddingVertical: 14,
+    alignItems: 'center',
+    marginTop: spacing.sm,
+  },
+  friendPickerCancelText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: colors.textSecondary,
   },
 });

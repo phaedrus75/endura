@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useRef } from 'react';
+import React, { useState, useCallback, useRef, useEffect } from 'react';
 import {
   View,
   Text,
@@ -23,8 +23,9 @@ import { LinearGradient } from 'expo-linear-gradient';
 import Svg, { Circle, Defs, LinearGradient as SvgLinearGradient, Stop } from 'react-native-svg';
 import LottieView from 'lottie-react-native';
 import { colors, shadows, spacing, borderRadius } from '../theme/colors';
+import SwipeDismiss, { DragHandle } from '../components/SwipeDismiss';
 import { useAuth } from '../contexts/AuthContext';
-import { animalsAPI, badgesAPI, donationsAPI, UserAnimal, Animal, DonationLeaderboardEntry } from '../services/api';
+import { animalsAPI, badgesAPI, donationsAPI, UserAnimal, Animal } from '../services/api';
 import { getAnimalImage } from '../assets/animals';
 import { Analytics } from '../services/analytics';
 
@@ -145,7 +146,7 @@ const ProgressRing = ({ progress, size = 80 }: { progress: number; size?: number
 
 const generatePositions = (count: number, containerW: number, containerH: number) => {
   const positions: { left: number; bottom: number; scale: number }[] = [];
-  const animalSize = 62;
+  const animalSize = 80;
   const minGap = 10;
   const padding = 10;
   const usableW = containerW - padding * 2;
@@ -167,7 +168,7 @@ const generatePositions = (count: number, containerW: number, containerH: number
     const centerX = rowStart + col * cellW + cellW / 2 - animalSize / 2 + stagger;
     const left = Math.max(padding, Math.min(centerX, containerW - animalSize - padding));
     const bottom = 16 + row * rowGap;
-    const scale = 0.92 + Math.sin(i * 2.3) * 0.08;
+    const scale = 1;
 
     positions.push({ left, bottom, scale });
   }
@@ -181,6 +182,7 @@ interface ItemAssignment {
   itemId: string;
   x: number;
   y: number;
+  page?: number;
 }
 
 interface DraggableItemProps {
@@ -199,10 +201,8 @@ const DraggableItem = ({ itemId, image, startX, startY, size, onDrop, onDragStar
   const panX = useRef(new Animated.Value(startX)).current;
   const panY = useRef(new Animated.Value(startY)).current;
   const scaleAnim = useRef(new Animated.Value(1)).current;
-  const opacityAnim = useRef(new Animated.Value(1)).current;
   const lastGesture = useRef({ dx: 0, dy: 0 });
   const hasBeenDragged = useRef(false);
-  const startPosRef = useRef({ x: startX, y: startY });
 
   const onDropRef = useRef(onDrop);
   const onDragStartRef = useRef(onDragStart);
@@ -212,8 +212,7 @@ const DraggableItem = ({ itemId, image, startX, startY, size, onDrop, onDragStar
   onDragEndRef.current = onDragEnd;
 
   React.useEffect(() => {
-    if (!hasBeenDragged.current && (startX !== startPosRef.current.x || startY !== startPosRef.current.y)) {
-      startPosRef.current = { x: startX, y: startY };
+    if (!hasBeenDragged.current) {
       currentPos.current = { x: startX, y: startY };
       panX.setValue(startX);
       panY.setValue(startY);
@@ -260,7 +259,6 @@ const DraggableItem = ({ itemId, image, startX, startY, size, onDrop, onDragStar
         {
           width: s + 4,
           height: s + 4,
-          opacity: opacityAnim,
           transform: [
             { translateX: panX },
             { translateY: panY },
@@ -318,9 +316,42 @@ export default function CollectionScreen() {
   const [sanctuaryContentH, setSanctuaryContentH] = useState(0);
   const sanctuaryContentHRef = useRef(0);
   const [isDragging, setIsDragging] = useState(false);
+  const [draggingItemId, setDraggingItemId] = useState<string | null>(null);
+  const [sanctuaryPage, setSanctuaryPage] = useState(0);
+  const [traySlotOrigin, setTraySlotOrigin] = useState({ x: 0, y: 0 });
+  const traySlotOriginRef = useRef({ x: 0, y: 0 });
   const [communityTotal, setCommunityTotal] = useState(0);
-  const [showChampionsModal, setShowChampionsModal] = useState(false);
-  const [donationLeaderboard, setDonationLeaderboard] = useState<DonationLeaderboardEntry[]>([]);
+  const [hasSeenTips, setHasSeenTips] = useState(true);
+  const tipsPulse = useRef(new Animated.Value(1)).current;
+
+  useEffect(() => {
+    const checkTips = async () => {
+      const seen = await AsyncStorage.getItem(`hasSeenTips_${user?.id || 'anon'}`);
+      setHasSeenTips(seen === 'true');
+    };
+    checkTips();
+  }, [user?.id]);
+
+  useEffect(() => {
+    if (!hasSeenTips) {
+      const loop = Animated.loop(
+        Animated.sequence([
+          Animated.timing(tipsPulse, { toValue: 1.25, duration: 800, useNativeDriver: true }),
+          Animated.timing(tipsPulse, { toValue: 1, duration: 800, useNativeDriver: true }),
+        ])
+      );
+      loop.start();
+      return () => loop.stop();
+    }
+  }, [hasSeenTips]);
+
+  const handleOpenTips = async () => {
+    if (!hasSeenTips) {
+      setHasSeenTips(true);
+      await AsyncStorage.setItem(`hasSeenTips_${user?.id || 'anon'}`, 'true');
+    }
+    navigation.navigate('Tips');
+  };
 
   const loadPurchases = async () => {
     try {
@@ -360,12 +391,22 @@ export default function CollectionScreen() {
     }
   };
 
+  const sanctuaryPageRef = useRef(0);
+  useEffect(() => { sanctuaryPageRef.current = sanctuaryPage; }, [sanctuaryPage]);
+
   const handleItemDrop = useCallback(async (itemId: string, x: number, y: number) => {
     const filtered = itemAssignmentsRef.current.filter(a => a.itemId !== itemId);
-    const updated = [...filtered, { itemId, x, y }];
-    itemAssignmentsRef.current = updated;
-    setItemAssignments(updated);
-    await AsyncStorage.setItem(assignmentsKey, JSON.stringify(updated));
+    const trayTop = traySlotOriginRef.current.y - 10;
+    if (y >= trayTop) {
+      itemAssignmentsRef.current = filtered;
+      setItemAssignments(filtered);
+      await AsyncStorage.setItem(assignmentsKey, JSON.stringify(filtered));
+    } else {
+      const updated = [...filtered, { itemId, x, y, page: sanctuaryPageRef.current }];
+      itemAssignmentsRef.current = updated;
+      setItemAssignments(updated);
+      await AsyncStorage.setItem(assignmentsKey, JSON.stringify(updated));
+    }
   }, [assignmentsKey]);
 
   const removeAssignment = async (itemId: string) => {
@@ -375,20 +416,25 @@ export default function CollectionScreen() {
     await AsyncStorage.setItem(assignmentsKey, JSON.stringify(updated));
   };
 
-  const ownedDecorationItems = Object.keys(purchasedItems)
-    .filter(id => (purchasedItems[id] || 0) > 0 && SHOP_IMAGES[id])
-    .flatMap(id => {
-      const count = purchasedItems[id] || 0;
-      return Array.from({ length: count }, (_, i) => ({
-        id: i === 0 ? id : `${id}__${i}`,
-        image: SHOP_IMAGES[id],
-      }));
-    });
+  const ownedDecorationItems = (() => {
+    const all = Object.keys(purchasedItems)
+      .filter(id => (purchasedItems[id] || 0) > 0 && SHOP_IMAGES[id])
+      .reverse()
+      .flatMap(id => {
+        const count = purchasedItems[id] || 0;
+        return Array.from({ length: count }, (_, i) => ({
+          id: i === 0 ? id : `${id}__${i}`,
+          image: SHOP_IMAGES[id],
+        }));
+      });
+    const unplaced = all.filter(item => !itemAssignments.some(a => a.itemId === item.id));
+    const placed = all.filter(item => itemAssignments.some(a => a.itemId === item.id));
+    return [...unplaced, ...placed];
+  })();
 
   const openSanctuary = async () => {
     Analytics.sanctuaryViewed();
-    setSanctuaryContentH(0);
-    sanctuaryContentHRef.current = 0;
+    setSanctuaryPage(0);
     await loadPurchases();
     await loadAssignments();
     setShowSanctuaryModal(true);
@@ -417,10 +463,7 @@ export default function CollectionScreen() {
         setCommunityTotal(data.total_raised || 0);
       }
     } catch (e) {}
-    try {
-      const lb = await donationsAPI.getLeaderboard();
-      setDonationLeaderboard(lb);
-    } catch (e) {}
+    
   };
 
   useFocusEffect(
@@ -494,9 +537,12 @@ export default function CollectionScreen() {
           <View style={{ flexDirection: 'row', gap: 8 }}>
             <TouchableOpacity 
               style={styles.profileButton}
-              onPress={() => navigation.navigate('Tips')}
+              onPress={handleOpenTips}
             >
               <Text style={styles.profileButtonEmoji}>💡</Text>
+              {!hasSeenTips && (
+                <Animated.View style={[styles.tipsDot, { transform: [{ scale: tipsPulse }] }]} />
+              )}
             </TouchableOpacity>
             <TouchableOpacity 
               style={styles.profileButton}
@@ -536,22 +582,33 @@ export default function CollectionScreen() {
           </LinearGradient>
         </TouchableOpacity>
 
-        {/* Conservation Champions Link */}
-        <TouchableOpacity
-          style={styles.championsLink}
-          onPress={() => setShowChampionsModal(true)}
-          activeOpacity={0.7}
-        >
-          <Text style={styles.championsLinkIcon}>🌍</Text>
-          <Text style={styles.championsLinkText}>Conservation Champions</Text>
-          <Text style={styles.championsLinkArrow}>›</Text>
-        </TouchableOpacity>
+        {/* Quick Stats */}
+        <View style={styles.statsRow}>
+          <LinearGradient
+            colors={['#FFFFFF', '#E7EFEA']}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 0, y: 1 }}
+            style={styles.statCard}
+          >
+            <Text style={styles.statNumber}>{myAnimals.length}</Text>
+            <Text style={styles.statLabel}>Animals</Text>
+          </LinearGradient>
+          <LinearGradient
+            colors={['#FFFFFF', '#E7EFEA']}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 0, y: 1 }}
+            style={styles.statCard}
+          >
+            <Text style={styles.statNumber}>{Math.round(collectionProgress * 100)}%</Text>
+            <Text style={styles.statLabel}>of all animals hatched</Text>
+          </LinearGradient>
+        </View>
 
         {/* Animal Sanctuary */}
         {myAnimals.length > 0 && (() => {
           const previewW = SCREEN_WIDTH - spacing.lg * 2;
           const previewH = 200;
-          const previewPositions = generatePositions(Math.min(myAnimals.length, 8), previewW, previewH);
+          const previewPositions = generatePositions(Math.min(myAnimals.length, 6), previewW, previewH);
           return (
             <View style={styles.sanctuarySection}>
               <Text style={styles.sanctuaryTitle}>🌿 My Animal Sanctuary</Text>
@@ -570,7 +627,7 @@ export default function CollectionScreen() {
                     />
                   </View>
                   <View style={styles.sanctuaryAnimals}>
-                    {myAnimals.slice(0, 8).map((userAnimal, index) => {
+                    {myAnimals.slice(0, 6).map((userAnimal, index) => {
                       const imageSource = getAnimalImage(userAnimal.animal.name);
                       const pos = previewPositions[index];
                       return (
@@ -582,7 +639,7 @@ export default function CollectionScreen() {
                           ]}
                         >
                           {imageSource ? (
-                            <Image source={imageSource} style={styles.sanctuaryAnimalImage} />
+                            <Image source={imageSource} style={styles.sanctuaryAnimalImage} resizeMode="contain" />
                           ) : (
                             <Text style={styles.sanctuaryAnimalEmoji}>
                               {animalEmojis[userAnimal.animal.name] || '🦁'}
@@ -593,9 +650,9 @@ export default function CollectionScreen() {
                     })}
                   </View>
                   <View style={styles.sanctuaryGround} />
-                  {myAnimals.length > 8 && (
+                  {myAnimals.length > 6 && (
                     <View style={styles.sanctuaryMoreBadge}>
-                      <Text style={styles.sanctuaryMoreText}>+{myAnimals.length - 8} more</Text>
+                      <Text style={styles.sanctuaryMoreText}>+{myAnimals.length - 6} more</Text>
                     </View>
                   )}
                 </View>
@@ -614,12 +671,7 @@ export default function CollectionScreen() {
                   <Text style={styles.viewSanctuaryBtnTextWhite}>View Whole Sanctuary</Text>
                 </LinearGradient>
               </TouchableOpacity>
-              <Text style={styles.sanctuaryClickHint}>tap to view items</Text>
-              <Text style={styles.sanctuaryCaption}>
-                {myAnimals.length === 1
-                  ? 'Your first friend is settling in!'
-                  : `${myAnimals.length} friends roaming happily in my sanctuary`}
-              </Text>
+              <Text style={styles.sanctuaryClickHint}>tap to view animals wearing accessories</Text>
 
               {/* Shop Entry */}
               <TouchableOpacity
@@ -637,29 +689,6 @@ export default function CollectionScreen() {
             </View>
           );
         })()}
-
-        {/* Progress Card */}
-        <LinearGradient
-          colors={['#FFFFFF', '#E7EFEA']}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 0, y: 1 }}
-          style={styles.progressCard}
-        >
-          <View style={styles.progressLeft}>
-            <ProgressRing progress={collectionProgress} size={42} />
-            <View style={styles.progressTextContainer}>
-              <Text style={styles.progressPercent}>
-                {Math.round(collectionProgress * 100)}%
-              </Text>
-            </View>
-          </View>
-          <View style={styles.progressRight}>
-            <Text style={styles.progressLabel}>Collection Progress</Text>
-            <Text style={styles.progressValue}>
-              {collectedIds.size} of {allAnimals.length} species
-            </Text>
-          </View>
-        </LinearGradient>
 
         {/* My Animals */}
         <View style={styles.sectionHeader}>
@@ -686,15 +715,12 @@ export default function CollectionScreen() {
               return (
                 <TouchableOpacity
                   key={userAnimal.animal.id}
-                  style={[
-                    styles.animalCard,
-                    { borderLeftColor: rarityColors[userAnimal.animal.rarity] },
-                  ]}
+                  style={styles.animalCard}
                   onPress={() => openAnimalDetail(userAnimal)}
                 >
                   <View>
                     {imageSource ? (
-                      <Image source={imageSource} style={styles.animalImage} />
+                      <Image source={imageSource} style={styles.animalImage} resizeMode="contain" />
                     ) : (
                       <Text style={styles.animalEmoji}>
                         {animalEmojis[userAnimal.animal.name] || '🦁'}
@@ -709,87 +735,35 @@ export default function CollectionScreen() {
                   <Text style={styles.animalName} numberOfLines={2}>
                     {userAnimal.nickname || userAnimal.animal.name}
                   </Text>
-                  <Text style={styles.tapToNickname}>tap to nickname</Text>
-                  <View
-                    style={[
-                      styles.rarityBadge,
-                      { backgroundColor: rarityColors[userAnimal.animal.rarity] + '20' },
-                    ]}
-                  >
-                    <Text
-                      style={[
-                        styles.rarityText,
-                        { color: rarityColors[userAnimal.animal.rarity] },
-                      ]}
-                    >
-                      {userAnimal.animal.rarity.toUpperCase()}
-                    </Text>
-                  </View>
+                  {userAnimal.shared_with_username ? (
+                    <Text style={styles.sharedWithLabel} numberOfLines={1}>💚 with {userAnimal.shared_with_username}</Text>
+                  ) : (
+                    <Text style={styles.tapToNickname}>tap to nickname</Text>
+                  )}
                 </TouchableOpacity>
               );
             })}
           </View>
         )}
 
-        {/* All Animals (Dex) */}
-        <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>All Animals</Text>
-        </View>
-        <View style={styles.dexGrid}>
-          {allAnimals.map((animal) => {
-            const isCollected = collectedIds.has(animal.id);
-            const imageSource = getAnimalImage(animal.name);
-            return (
-              <View
-                key={animal.id}
-                style={[
-                  styles.dexCard,
-                  !isCollected && styles.dexCardLocked,
-                ]}
-              >
-                {isCollected && imageSource ? (
-                  <Image source={imageSource} style={styles.dexImage} />
-                ) : (
-                  <Text style={[styles.dexEmoji, !isCollected && styles.dexEmojiLocked]}>
-                    {isCollected ? animalEmojis[animal.name] || '🦁' : '🥚'}
-                  </Text>
-                )}
-                {!isCollected && (
-                  <View style={styles.lockOverlay}>
-                    <Text style={styles.lockEmoji}>🔒</Text>
-                  </View>
-                )}
-                <Text style={[styles.dexName, !isCollected && styles.dexNameLocked]} numberOfLines={2}>
-                  {isCollected ? animal.name : '???'}
-                </Text>
-                {isCollected && (
-                  <View
-                    style={[
-                      styles.dexRarityDot,
-                      { backgroundColor: rarityColors[animal.rarity] },
-                    ]}
-                  />
-                )}
-              </View>
-            );
-          })}
-        </View>
+        
       </ScrollView>
 
       {/* Animal Detail Modal */}
-      <Modal visible={showModal} transparent animationType="slide">
-        <View style={styles.modalOverlay}>
+      <Modal visible={showModal} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setShowModal(false)}>
+        <View style={{ flex: 1 }}>
           <ScrollView 
-            style={styles.modalScrollView}
-            contentContainerStyle={styles.modalScrollContent}
+            style={{ flex: 1 }}
+            contentContainerStyle={{ flexGrow: 1 }}
             showsVerticalScrollIndicator={false}
           >
             <LinearGradient
               colors={['#FFFFFF', '#E7EFEA']}
               start={{ x: 0, y: 0 }}
               end={{ x: 0, y: 1 }}
-              style={styles.modalContent}
+              style={[styles.modalContent, { flex: 1, minHeight: '100%' }]}
             >
+              <DragHandle />
               {selectedAnimal && (
                 <>
                   <View style={styles.modalHeader}>
@@ -805,7 +779,8 @@ export default function CollectionScreen() {
                     {getAnimalImage(selectedAnimal.animal.name) ? (
                       <Image 
                         source={getAnimalImage(selectedAnimal.animal.name)} 
-                        style={styles.modalImage} 
+                        style={styles.modalImage}
+                        resizeMode="contain"
                       />
                     ) : (
                       <Text style={styles.modalEmoji}>
@@ -820,17 +795,6 @@ export default function CollectionScreen() {
                   <Text style={styles.modalSpecies}>
                     {selectedAnimal.animal.species}
                   </Text>
-                  
-                  <View
-                    style={[
-                      styles.modalRarity,
-                      { backgroundColor: rarityColors[selectedAnimal.animal.rarity] },
-                    ]}
-                  >
-                    <Text style={styles.modalRarityText}>
-                      {selectedAnimal.animal.rarity.toUpperCase()}
-                    </Text>
-                  </View>
 
                   {/* Nickname Section */}
                   <View style={styles.nicknameSection}>
@@ -912,8 +876,8 @@ export default function CollectionScreen() {
 
       {/* Full Sanctuary Modal */}
       <Modal visible={showSanctuaryModal} transparent animationType="fade">
-        <View style={styles.sanctuaryModalOverlay}>
-          <View style={styles.sanctuaryModalContent}>
+        <TouchableOpacity style={styles.sanctuaryModalOverlay} activeOpacity={1} onPress={() => setShowSanctuaryModal(false)}>
+          <TouchableOpacity activeOpacity={1} style={styles.sanctuaryModalContent}>
             {/* Header */}
             <View
               style={[styles.sanctuaryModalHeader, { backgroundColor: '#FFFFFF' }]}
@@ -932,135 +896,193 @@ export default function CollectionScreen() {
               </TouchableOpacity>
             </View>
 
-            {/* Scrollable scene + tray wrapper */}
-            <ScrollView
-              style={styles.sanctuaryScroll}
-              contentContainerStyle={styles.sanctuaryScrollContent}
-              scrollEnabled={!isDragging}
-              showsVerticalScrollIndicator={true}
-              bounces={false}
-            >
-              <View
-                style={styles.sanctuaryDragWrapper}
-                onLayout={(e: LayoutChangeEvent) => {
-                  const h = e.nativeEvent.layout.height;
-                  sanctuaryContentHRef.current = h;
-                  if (sanctuaryContentH === 0 || Math.abs(h - sanctuaryContentH) > 5) {
-                    setSanctuaryContentH(h);
-                  }
-                }}
-              >
-                {/* Landscape Scene */}
-                {(() => {
-                  const modalW = SCREEN_WIDTH - 20 - spacing.sm * 2;
-                  const cols = Math.max(2, Math.min(5, Math.floor((modalW - 20) / (62 + 10))));
-                  const rows = Math.ceil(myAnimals.length / cols);
-                  const sceneH = Math.max(SCREEN_HEIGHT * 0.65, rows * 72 + 80);
-                  return (
-                    <View style={[styles.sanctuaryModalScene, { height: sceneH }]}>
-                      <View style={styles.sanctuaryModalLandscapeBg}>
-                        <LottieView
-                          source={require('../assets/nature-landscape.json')}
-                          autoPlay
-                          loop
-                          style={styles.sanctuaryModalLottie}
-                          resizeMode="cover"
-                        />
-                      </View>
+            {/* Paginated sanctuary scenes */}
+            {(() => {
+              const ANIMALS_PER_PAGE = 12;
+              const containerW = SCREEN_WIDTH - 20;
+              const totalPages = Math.max(1, Math.ceil(myAnimals.length / ANIMALS_PER_PAGE));
+              const pages: UserAnimal[][] = [];
+              for (let p = 0; p < totalPages; p++) {
+                pages.push(myAnimals.slice(p * ANIMALS_PER_PAGE, (p + 1) * ANIMALS_PER_PAGE));
+              }
+              const modalW = containerW - spacing.sm * 2;
+              const currentPageAnimals = pages[sanctuaryPage] || pages[0];
+              const cols = Math.max(2, Math.min(4, Math.floor((modalW - 20) / (62 + 10))));
+              const maxRows = Math.ceil(ANIMALS_PER_PAGE / cols);
+              const sceneH = Math.max(SCREEN_HEIGHT * 0.55, maxRows * 80 + 80);
 
-                      {/* Animals */}
-                      <View style={styles.sanctuaryModalAnimals}>
-                        {(() => {
-                          const positions = generatePositions(myAnimals.length, modalW, sceneH);
-                          return myAnimals.map((userAnimal, index) => {
-                            const imageSource = getAnimalImage(userAnimal.animal.name);
-                            const pos = positions[index];
-                            return (
-                              <View
-                                key={userAnimal.id}
-                                style={[
-                                  styles.sanctuaryModalAnimal,
-                                  { bottom: pos.bottom, left: pos.left, transform: [{ scale: pos.scale }] },
-                                ]}
-                              >
-                                {imageSource ? (
-                                  <Image source={imageSource} style={styles.sanctuaryModalAnimalImg} />
-                                ) : (
-                                  <Text style={styles.sanctuaryModalAnimalEmoji}>
-                                    {animalEmojis[userAnimal.animal.name] || '🦁'}
-                                  </Text>
-                                )}
-                                <View style={styles.sanctuaryModalNameTag}>
-                                  <Text style={styles.sanctuaryModalNameText} numberOfLines={1}>
-                                    {userAnimal.nickname || userAnimal.animal.name.split(' ').pop()}
-                                  </Text>
+              return (
+                <View style={{ flex: 1 }}>
+                  <ScrollView
+                    style={styles.sanctuaryScroll}
+                    contentContainerStyle={styles.sanctuaryScrollContent}
+                    scrollEnabled={!isDragging}
+                    showsVerticalScrollIndicator={true}
+                    bounces={false}
+                  >
+                    <View
+                      style={styles.sanctuaryDragWrapper}
+                      onLayout={(e: LayoutChangeEvent) => {
+                        const h = e.nativeEvent.layout.height;
+                        sanctuaryContentHRef.current = h;
+                        if (sanctuaryContentH === 0 || Math.abs(h - sanctuaryContentH) > 5) {
+                          setSanctuaryContentH(h);
+                        }
+                      }}
+                    >
+                      <View style={[styles.sanctuaryModalScene, { height: sceneH }]}>
+                        <View style={styles.sanctuaryModalLandscapeBg}>
+                          <LottieView
+                            source={require('../assets/nature-landscape.json')}
+                            autoPlay
+                            loop
+                            style={styles.sanctuaryModalLottie}
+                            resizeMode="cover"
+                          />
+                        </View>
+
+                        <View style={styles.sanctuaryModalAnimals}>
+                          {(() => {
+                            const positions = generatePositions(currentPageAnimals.length, modalW, sceneH);
+                            return currentPageAnimals.map((userAnimal, index) => {
+                              const imageSource = getAnimalImage(userAnimal.animal.name);
+                              const pos = positions[index];
+                              return (
+                                <View
+                                  key={userAnimal.id}
+                                  style={[
+                                    styles.sanctuaryModalAnimal,
+                                    { bottom: pos.bottom, left: pos.left, transform: [{ scale: pos.scale }] },
+                                  ]}
+                                >
+                                  {imageSource ? (
+                                    <Image source={imageSource} style={styles.sanctuaryModalAnimalImg} resizeMode="contain" />
+                                  ) : (
+                                    <Text style={styles.sanctuaryModalAnimalEmoji}>
+                                      {animalEmojis[userAnimal.animal.name] || '🦁'}
+                                    </Text>
+                                  )}
+                                  <View style={styles.sanctuaryModalNameTag}>
+                                    <Text style={styles.sanctuaryModalNameText} numberOfLines={1}>
+                                      {userAnimal.shared_with_username ? '💚 ' : ''}{userAnimal.nickname || userAnimal.animal.name.split(' ').pop()}
+                                    </Text>
+                                  </View>
                                 </View>
-                              </View>
-                            );
-                          });
-                        })()}
+                              );
+                            });
+                          })()}
+                        </View>
+
+                        <View style={styles.sanctuaryModalGround} />
                       </View>
 
-                      <View style={styles.sanctuaryModalGround} />
-                    </View>
-                  );
-                })()}
-
-                {/* White item tray footer */}
-                {ownedDecorationItems.length > 0 && (
-                  <View style={styles.itemTrayFooter}>
-                    <Text style={styles.itemTrayLabel}>Drag items!</Text>
-                    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.itemTrayRow}>
-                      {ownedDecorationItems.map((item) => {
-                        const isPlaced = itemAssignments.some(a => a.itemId === item.id);
-                        return (
-                          <View key={item.id} style={[styles.itemTraySlot, isPlaced && styles.itemTraySlotEmpty]}>
-                            {!isPlaced && (
-                              <Image source={item.image} style={styles.itemTraySlotImg} resizeMode="contain" />
-                            )}
+                      {/* Page switcher */}
+                      {totalPages > 1 && (
+                        <View style={styles.sanctuaryPageSwitcher}>
+                          <TouchableOpacity
+                            style={[styles.sanctuaryPageArrow, sanctuaryPage === 0 && styles.sanctuaryPageArrowDisabled]}
+                            onPress={() => sanctuaryPage > 0 && setSanctuaryPage(sanctuaryPage - 1)}
+                            disabled={sanctuaryPage === 0}
+                          >
+                            <Text style={[styles.sanctuaryPageArrowText, sanctuaryPage === 0 && { color: 'rgba(95,140,135,0.4)' }]}>‹</Text>
+                          </TouchableOpacity>
+                          <View style={styles.sanctuaryPageDots}>
+                            {pages.map((_, i) => (
+                              <TouchableOpacity key={i} onPress={() => setSanctuaryPage(i)}>
+                                <View
+                                  style={[
+                                    styles.sanctuaryPageDot,
+                                    i === sanctuaryPage && styles.sanctuaryPageDotActive,
+                                  ]}
+                                />
+                              </TouchableOpacity>
+                            ))}
                           </View>
-                        );
-                      })}
-                    </ScrollView>
-                  </View>
-                )}
+                          <TouchableOpacity
+                            style={[styles.sanctuaryPageArrow, sanctuaryPage === totalPages - 1 && styles.sanctuaryPageArrowDisabled]}
+                            onPress={() => sanctuaryPage < totalPages - 1 && setSanctuaryPage(sanctuaryPage + 1)}
+                            disabled={sanctuaryPage === totalPages - 1}
+                          >
+                            <Text style={[styles.sanctuaryPageArrowText, sanctuaryPage === totalPages - 1 && { color: 'rgba(95,140,135,0.4)' }]}>›</Text>
+                          </TouchableOpacity>
+                        </View>
+                      )}
 
-                {/* Draggable items — absolutely positioned over the whole wrapper */}
-                {sanctuaryContentH > 0 && (() => {
-                  const trayTopY = sanctuaryContentHRef.current - 50;
-                  const trayPadLeft = spacing.md + spacing.sm;
-                  const slotSize = 50;
-                  let unplacedIdx = 0;
-                  return ownedDecorationItems.map((item) => {
-                    const existing = itemAssignments.find(a => a.itemId === item.id);
-                    const isDecoration = getBaseItemId(item.id).startsWith('dec_');
-                    let spawnX: number;
-                    let spawnY: number;
-                    if (existing) {
-                      spawnX = existing.x;
-                      spawnY = existing.y;
-                    } else {
-                      spawnX = trayPadLeft + unplacedIdx * slotSize;
-                      spawnY = trayTopY;
-                      unplacedIdx++;
-                    }
-                    return (
-                      <DraggableItem
-                        key={item.id}
-                        itemId={item.id}
-                        image={item.image}
-                        size={isDecoration ? 40 : 24}
-                        startX={spawnX}
-                        startY={spawnY}
-                        onDrop={handleItemDrop}
-                        onDragStart={() => setIsDragging(true)}
-                        onDragEnd={() => setIsDragging(false)}
-                      />
-                    );
-                  });
-                })()}
-              </View>
-            </ScrollView>
+                      {/* Item tray — inside wrapper so coordinates match */}
+                      {ownedDecorationItems.length > 0 && (
+                        <View
+                          style={styles.itemTrayFooter}
+                          onLayout={(e: LayoutChangeEvent) => {
+                            const footerY = e.nativeEvent.layout.y;
+                            const footerX = e.nativeEvent.layout.x;
+                            const paddingTop = 10;
+                            const labelH = 11 + 8;
+                            const slotY = footerY + paddingTop + labelH;
+                            const slotX = footerX + spacing.md;
+                            const origin = { x: slotX, y: slotY };
+                            traySlotOriginRef.current = origin;
+                            setTraySlotOrigin(origin);
+                          }}
+                        >
+                          <Text style={styles.itemTrayLabel}>Drag items!</Text>
+                          <View style={styles.itemTrayRow}>
+                            {ownedDecorationItems.filter(item => !itemAssignments.some(a => a.itemId === item.id)).map((item) => (
+                              <View key={item.id} style={[styles.itemTraySlot, styles.itemTraySlotReady]} />
+                            ))}
+                          </View>
+                        </View>
+                      )}
+
+                      {/* Draggable items — unplaced spawn in their tray slot, placed spawn at saved position */}
+                      {traySlotOrigin.y > 0 && (() => {
+                        const unplacedItems = ownedDecorationItems.filter(
+                          item => !itemAssignments.some(a => a.itemId === item.id)
+                        );
+                        const thisPagePlaced = ownedDecorationItems.filter(
+                          item => itemAssignments.some(a => a.itemId === item.id && (a.page ?? 0) === sanctuaryPage)
+                        );
+                        const draggableItems = [...unplacedItems, ...thisPagePlaced];
+                        const slotW = 44;
+                        const slotGap = 6;
+
+                        return draggableItems.map((item) => {
+                          const existing = itemAssignments.find(a => a.itemId === item.id && (a.page ?? 0) === sanctuaryPage);
+                          const baseId = getBaseItemId(item.id);
+                          const isDecoration = baseId.startsWith('dec_');
+                          const itemSize = isDecoration ? 58 : baseId === 'acc_gradcap' ? 40 : 26;
+
+                          let spawnX: number;
+                          let spawnY: number;
+                          if (existing) {
+                            spawnX = existing.x;
+                            spawnY = existing.y;
+                          } else {
+                            const unplacedIdx = unplacedItems.findIndex(d => d.id === item.id);
+                            const slotCenterX = traySlotOriginRef.current.x + unplacedIdx * (slotW + slotGap) + slotW / 2;
+                            const slotCenterY = traySlotOriginRef.current.y + slotW / 2;
+                            spawnX = slotCenterX - itemSize / 2;
+                            spawnY = slotCenterY - itemSize / 2;
+                          }
+                          return (
+                            <DraggableItem
+                              key={`${item.id}_p${sanctuaryPage}`}
+                              itemId={item.id}
+                              image={item.image}
+                              size={itemSize}
+                              startX={spawnX}
+                              startY={spawnY}
+                              onDrop={handleItemDrop}
+                              onDragStart={() => { setIsDragging(true); setDraggingItemId(item.id); }}
+                              onDragEnd={() => { setIsDragging(false); setDraggingItemId(null); }}
+                            />
+                          );
+                        });
+                      })()}
+                    </View>
+                  </ScrollView>
+                </View>
+              );
+            })()}
 
             {/* Footer */}
             <View style={styles.sanctuaryModalFooter}>
@@ -1078,86 +1100,10 @@ export default function CollectionScreen() {
                 </LinearGradient>
               </TouchableOpacity>
             </View>
-          </View>
-        </View>
+          </TouchableOpacity>
+        </TouchableOpacity>
       </Modal>
 
-      {/* Conservation Champions Modal */}
-      <Modal visible={showChampionsModal} transparent animationType="slide">
-        <View style={styles.championsOverlay}>
-          <View style={styles.championsContent}>
-            <View style={styles.championsHeader}>
-              <View>
-                <Text style={styles.championsTitle}>🌍 Conservation Champions</Text>
-                <Text style={styles.championsSub}>Ranked by total donations to WWF</Text>
-              </View>
-              <TouchableOpacity
-                style={styles.championsClose}
-                onPress={() => setShowChampionsModal(false)}
-              >
-                <Text style={styles.championsCloseText}>✕</Text>
-              </TouchableOpacity>
-            </View>
-
-            <ScrollView
-              showsVerticalScrollIndicator={false}
-              style={styles.championsScroll}
-            >
-              {donationLeaderboard.length === 0 ? (
-                <View style={styles.championsEmpty}>
-                  <Text style={{ fontSize: 48, marginBottom: 12 }}>💚</Text>
-                  <Text style={styles.championsEmptyText}>No donations yet.</Text>
-                  <Text style={styles.championsEmptySub}>Be the first to donate and lead the board!</Text>
-                  <TouchableOpacity
-                    style={styles.championsDonateBtn}
-                    onPress={() => { setShowChampionsModal(false); navigation.navigate('TakeAction'); }}
-                  >
-                    <Text style={styles.championsDonateBtnText}>Donate Now</Text>
-                  </TouchableOpacity>
-                </View>
-              ) : (
-                donationLeaderboard.map((entry) => (
-                  <View
-                    key={entry.user_id}
-                    style={[
-                      styles.championsRow,
-                      entry.is_current_user && styles.championsRowMe,
-                    ]}
-                  >
-                    <Text style={styles.championsRank}>
-                      {entry.rank === 1 ? '🥇' : entry.rank === 2 ? '🥈' : entry.rank === 3 ? '🥉' : `#${entry.rank}`}
-                    </Text>
-                    <View style={styles.championsInfo}>
-                      <Text style={styles.championsName}>
-                        {entry.username}{entry.is_current_user ? ' (You)' : ''}
-                      </Text>
-                      <Text style={styles.championsStats}>
-                        {entry.donation_count} donation{entry.donation_count !== 1 ? 's' : ''}
-                      </Text>
-                    </View>
-                    <Text style={styles.championsAmount}>${entry.total_donated.toFixed(0)}</Text>
-                  </View>
-                ))
-              )}
-            </ScrollView>
-
-            <TouchableOpacity
-              style={styles.championsFooterBtn}
-              onPress={() => { setShowChampionsModal(false); navigation.navigate('TakeAction'); }}
-              activeOpacity={0.8}
-            >
-              <LinearGradient
-                colors={['#2F4A3E', '#1A2F26']}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 0 }}
-                style={styles.championsFooterGradient}
-              >
-                <Text style={styles.championsFooterText}>💚 Donate & Climb the Leaderboard</Text>
-              </LinearGradient>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </Modal>
     </SafeAreaView>
   );
 }
@@ -1178,7 +1124,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: spacing.xs,
+    marginBottom: spacing.md,
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
     borderRadius: borderRadius.lg,
@@ -1210,15 +1156,51 @@ const styles = StyleSheet.create({
   profileButtonEmoji: {
     fontSize: 22,
   },
+  tipsDot: {
+    position: 'absolute' as const,
+    top: 2,
+    right: 2,
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: '#FF6B6B',
+    borderWidth: 1.5,
+    borderColor: '#FFFFFF',
+  },
   profileButtonImage: {
     width: 44,
     height: 44,
     borderRadius: 22,
   },
+  statsRow: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+    marginBottom: spacing.md,
+  },
+  statCard: {
+    flex: 1,
+    borderRadius: borderRadius.md,
+    paddingVertical: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: colors.cardBorder,
+  },
+  statNumber: {
+    fontSize: 24,
+    fontWeight: '800',
+    color: colors.textPrimary,
+  },
+  statLabel: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: colors.textSecondary,
+    marginTop: 1,
+  },
   takeActionWrap: {
     borderRadius: 18,
     overflow: 'hidden',
-    marginBottom: spacing.sm,
+    marginBottom: spacing.md,
     shadowColor: '#2F4A3E',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.2,
@@ -1250,165 +1232,11 @@ const styles = StyleSheet.create({
     fontWeight: '300',
     color: 'rgba(255,255,255,0.7)',
   },
-  championsLink: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#FFFFFF',
-    marginTop: 8,
-    marginBottom: spacing.sm,
-    paddingVertical: 14,
-    paddingHorizontal: 16,
-    borderRadius: 18,
-    ...shadows.small,
-  },
-  championsLinkIcon: {
-    fontSize: 20,
-    marginRight: 10,
-  },
-  championsLinkText: {
-    flex: 1,
-    fontSize: 15,
-    fontWeight: '700',
-    color: colors.textPrimary,
-  },
-  championsLinkArrow: {
-    fontSize: 22,
-    fontWeight: '300',
-    color: colors.textMuted,
-  },
-  championsOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    justifyContent: 'flex-end',
-  },
-  championsContent: {
-    backgroundColor: '#FFFFFF',
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    paddingTop: spacing.lg,
-    paddingBottom: 36,
-    maxHeight: '75%',
-  },
-  championsHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    paddingHorizontal: spacing.lg,
-    marginBottom: spacing.md,
-  },
-  championsTitle: {
-    fontSize: 20,
-    fontWeight: '800',
-    color: colors.textPrimary,
-  },
-  championsSub: {
-    fontSize: 13,
-    color: colors.textMuted,
-    fontWeight: '500',
-    marginTop: 2,
-  },
-  championsClose: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: '#F0F4F2',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  championsCloseText: {
-    fontSize: 16,
-    color: colors.textSecondary,
-  },
-  championsScroll: {
-    paddingHorizontal: spacing.lg,
-  },
-  championsEmpty: {
-    alignItems: 'center',
-    paddingVertical: 40,
-  },
-  championsEmptyText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: colors.textPrimary,
-  },
-  championsEmptySub: {
-    fontSize: 13,
-    color: colors.textMuted,
-    marginTop: 4,
-    marginBottom: 20,
-  },
-  championsDonateBtn: {
-    backgroundColor: '#2F4A3E',
-    borderRadius: 20,
-    paddingHorizontal: 24,
-    paddingVertical: 12,
-  },
-  championsDonateBtnText: {
-    color: '#FFFFFF',
-    fontWeight: '700',
-    fontSize: 14,
-  },
-  championsRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 14,
-    borderBottomWidth: 1,
-    borderBottomColor: '#F0F4F2',
-  },
-  championsRowMe: {
-    backgroundColor: '#E7EFEA',
-    marginHorizontal: -spacing.lg,
-    paddingHorizontal: spacing.lg,
-    borderRadius: 12,
-    borderBottomWidth: 0,
-    marginBottom: 4,
-  },
-  championsRank: {
-    fontSize: 22,
-    width: 40,
-    textAlign: 'center',
-  },
-  championsInfo: {
-    flex: 1,
-    marginLeft: 8,
-  },
-  championsName: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: colors.textPrimary,
-  },
-  championsStats: {
-    fontSize: 12,
-    color: colors.textMuted,
-    fontWeight: '500',
-    marginTop: 1,
-  },
-  championsAmount: {
-    fontSize: 18,
-    fontWeight: '800',
-    color: '#2F4A3E',
-  },
-  championsFooterBtn: {
-    marginHorizontal: spacing.lg,
-    marginTop: spacing.md,
-    borderRadius: 14,
-    overflow: 'hidden',
-  },
-  championsFooterGradient: {
-    paddingVertical: 14,
-    alignItems: 'center',
-    borderRadius: 14,
-  },
-  championsFooterText: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: '#FFFFFF',
-  },
   progressCard: {
     borderRadius: borderRadius.md,
     paddingHorizontal: 14,
     paddingVertical: 10,
-    marginBottom: spacing.sm,
+    marginBottom: spacing.lg,
     flexDirection: 'row',
     alignItems: 'center',
     borderWidth: 1,
@@ -1451,13 +1279,13 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
   },
   sanctuarySection: {
-    marginBottom: spacing.lg,
+    marginBottom: spacing.md,
   },
   sanctuaryTitle: {
     fontSize: 17,
     fontWeight: '700',
     color: colors.textPrimary,
-    marginBottom: spacing.sm,
+    marginBottom: spacing.md,
   },
   sanctuaryContainer: {
     height: 200,
@@ -1491,8 +1319,8 @@ const styles = StyleSheet.create({
     position: 'absolute',
   },
   sanctuaryAnimalImage: {
-    width: 56,
-    height: 56,
+    width: 70,
+    height: 70,
   },
   sanctuaryAnimalEmoji: {
     fontSize: 38,
@@ -1542,17 +1370,18 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
   },
   sanctuaryClickHint: {
-    fontSize: 12,
-    color: colors.textMuted,
+    fontSize: 14,
+    color: colors.textSecondary,
     textAlign: 'center',
-    marginTop: 6,
-    fontStyle: 'italic',
+    marginTop: 8,
+    fontWeight: '500',
   },
   sanctuaryCaption: {
     fontSize: 13,
     color: colors.textSecondary,
     textAlign: 'center',
     marginTop: 4,
+    marginBottom: spacing.sm,
     fontStyle: 'italic',
   },
   // Full Sanctuary Modal
@@ -1626,9 +1455,9 @@ const styles = StyleSheet.create({
   },
   sanctuaryModalLottie: {
     width: '100%',
-    height: '160%',
+    height: '170%',
     position: 'absolute',
-    top: '-55%' as any,
+    top: '-70%' as any,
     left: 0,
   },
   sanctuaryModalCloud1: {
@@ -1664,8 +1493,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   sanctuaryModalAnimalImg: {
-    width: 58,
-    height: 58,
+    width: 74,
+    height: 74,
   },
   sanctuaryModalAnimalEmoji: {
     fontSize: 36,
@@ -1722,30 +1551,81 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: colors.surface,
-    borderRadius: 16,
-    padding: spacing.md,
+    borderRadius: 18,
+    paddingVertical: 18,
+    paddingHorizontal: spacing.lg,
     marginTop: spacing.sm,
     borderWidth: 1,
     borderColor: colors.cardBorder,
-    gap: spacing.sm,
+    gap: spacing.md,
   },
   shopEntryEmoji: {
-    fontSize: 26,
+    fontSize: 30,
   },
   shopEntryTitle: {
-    fontSize: 14,
+    fontSize: 16,
     fontWeight: '700',
     color: colors.textPrimary,
   },
   shopEntrySub: {
-    fontSize: 11,
+    fontSize: 12,
     color: colors.textMuted,
-    marginTop: 1,
+    marginTop: 2,
   },
   shopEntryArrow: {
-    fontSize: 24,
+    fontSize: 28,
     color: colors.textMuted,
     marginLeft: 'auto',
+  },
+  sanctuaryPageSwitcher: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingVertical: 12,
+    gap: 16,
+    marginHorizontal: spacing.sm,
+  },
+  sanctuaryPageArrow: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: '#5F8C87',
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#2F4A3E',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  sanctuaryPageArrowDisabled: {
+    backgroundColor: 'rgba(95,140,135,0.15)',
+    shadowOpacity: 0,
+    elevation: 0,
+  },
+  sanctuaryPageArrowText: {
+    fontSize: 26,
+    fontWeight: '700',
+    color: '#FFFFFF',
+    marginTop: -2,
+  },
+  sanctuaryPageDots: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 8,
+  },
+  sanctuaryPageDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: 'rgba(0,0,0,0.15)',
+  },
+  sanctuaryPageDotActive: {
+    backgroundColor: '#5F8C87',
+    width: 10,
+    height: 10,
+    borderRadius: 5,
   },
   sanctuaryModalFooter: {
     alignItems: 'center',
@@ -1787,51 +1667,59 @@ const styles = StyleSheet.create({
     height: 24,
   },
   itemTrayFooter: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: '#FFFFFFEE',
     marginHorizontal: spacing.sm,
     borderBottomLeftRadius: 16,
     borderBottomRightRadius: 16,
-    paddingTop: 8,
-    paddingBottom: 12,
+    paddingTop: 10,
+    paddingBottom: 14,
     paddingHorizontal: spacing.md,
-    borderTopWidth: 1,
-    borderTopColor: colors.cardBorder + '80',
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.cardBorder + '60',
   },
   itemTrayLabel: {
-    fontSize: 12,
-    fontWeight: '700',
+    fontSize: 11,
+    fontWeight: '600',
     color: colors.textMuted,
     textAlign: 'center',
-    marginBottom: 6,
-    letterSpacing: 0.5,
+    marginBottom: 8,
+    letterSpacing: 1,
     textTransform: 'uppercase',
   },
   itemTrayRow: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     justifyContent: 'flex-start',
-    flexGrow: 1,
-    gap: 8,
+    gap: 6,
   },
   itemTraySlot: {
-    width: 42,
-    height: 42,
-    borderRadius: 12,
-    backgroundColor: colors.cardBorder + '30',
+    width: 44,
+    height: 44,
+    borderRadius: 13,
+    backgroundColor: colors.cardBorder + '20',
     justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 1.5,
-    borderColor: colors.cardBorder + '80',
+    borderColor: colors.cardBorder + '50',
     borderStyle: 'dashed' as any,
   },
-  itemTraySlotEmpty: {
-    borderColor: colors.cardBorder + '40',
+  itemTraySlotReady: {
+    borderStyle: 'solid' as any,
+    borderColor: colors.primary + '40',
+    backgroundColor: colors.surface,
+  },
+  itemTraySlotPlaced: {
+    borderColor: colors.cardBorder + '30',
     backgroundColor: 'transparent',
-    opacity: 0.4,
+    opacity: 0.35,
   },
   itemTraySlotImg: {
-    width: 28,
-    height: 28,
-    opacity: 0.3,
+    width: 30,
+    height: 30,
+    opacity: 0.25,
+  },
+  itemTraySlotImgFull: {
+    opacity: 1,
   },
   itemTrayItem: {
     width: 48,
@@ -1870,7 +1758,7 @@ const styles = StyleSheet.create({
   sectionHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: spacing.md,
+    marginBottom: spacing.lg,
   },
   sectionTitle: {
     fontSize: 18,
@@ -1879,7 +1767,7 @@ const styles = StyleSheet.create({
   },
   countBadge: {
     marginLeft: spacing.sm,
-    backgroundColor: colors.primaryLight,
+    backgroundColor: '#FFFFFF',
     paddingHorizontal: spacing.sm,
     paddingVertical: 2,
     borderRadius: borderRadius.full,
@@ -1968,9 +1856,17 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   tapToNickname: {
-    fontSize: 10,
-    fontStyle: 'italic',
-    color: colors.textMuted,
+    fontSize: 12,
+    fontWeight: '600',
+    color: colors.primary,
+    marginBottom: spacing.sm,
+    textAlign: 'center',
+    letterSpacing: 0.3,
+  },
+  sharedWithLabel: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: colors.primary,
     marginBottom: spacing.sm,
     textAlign: 'center',
   },

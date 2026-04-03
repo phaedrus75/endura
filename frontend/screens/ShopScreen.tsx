@@ -11,16 +11,17 @@ import {
   Image,
   ImageSourcePropType,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { LinearGradient } from 'expo-linear-gradient';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { colors, shadows, spacing, borderRadius } from '../theme/colors';
+import SwipeDismiss, { DragHandle } from '../components/SwipeDismiss';
 import { shopAPI, statsAPI, badgesAPI, UserStats } from '../services/api';
 import { useAuth } from '../contexts/AuthContext';
 import { shopAccessories, shopDecorations } from '../assets/shop';
 
-const { width } = Dimensions.get('window');
+const { width, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
 type ShopCategory = 'accessories' | 'decorations';
 
@@ -62,7 +63,7 @@ function getItemImage(item: ShopItem): ImageSourcePropType | null {
 
 const CATEGORY_INFO: Record<ShopCategory, { label: string; emoji: string; color: string }> = {
   accessories: { label: 'Accessories', emoji: '🎀', color: '#3B5466' },
-  decorations: { label: 'Decorations', emoji: '✨', color: '#5E7F6E' },
+  decorations: { label: 'Decorations', emoji: '🐚', color: '#5E7F6E' },
 };
 
 const RARITY_COLORS: Record<string, string> = {
@@ -77,6 +78,7 @@ const STORAGE_KEY_PREFIX = 'endura_purchased_items_';
 export default function ShopScreen() {
   const navigation = useNavigation<any>();
   const { refreshUser, user } = useAuth();
+  const insets = useSafeAreaInsets();
   const [stats, setStats] = useState<UserStats | null>(null);
   const [activeCategory, setActiveCategory] = useState<ShopCategory>('accessories');
   const [purchasedIds, setPurchasedIds] = useState<Record<string, number>>({});
@@ -152,7 +154,7 @@ export default function ShopScreen() {
   const purchasedCount = Object.values(purchasedIds).reduce((sum, n) => sum + (n || 0), 0);
 
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
         {/* Header */}
         <LinearGradient
@@ -198,26 +200,14 @@ export default function ShopScreen() {
             return (
               <TouchableOpacity
                 key={cat}
-                style={[styles.categoryTab, isActive && { borderColor: info.color }]}
+                style={[styles.categoryTab, isActive && styles.categoryTabActive]}
                 onPress={() => setActiveCategory(cat)}
                 activeOpacity={0.8}
               >
-                {isActive ? (
-                  <LinearGradient
-                    colors={['#7DA9A4', '#5F8C87']}
-                    start={{ x: 0, y: 0 }}
-                    end={{ x: 1, y: 0 }}
-                    style={styles.categoryTabGradient}
-                  >
-                    <Text style={styles.categoryTabEmoji}>{info.emoji}</Text>
-                    <Text style={[styles.categoryTabText, { color: '#FFFFFF', fontWeight: '700' as const }]}>{info.label}</Text>
-                  </LinearGradient>
-                ) : (
-                  <View style={styles.categoryTabInner}>
-                    <Text style={styles.categoryTabEmoji}>{info.emoji}</Text>
-                    <Text style={[styles.categoryTabText, { color: colors.textSecondary }]}>{info.label}</Text>
-                  </View>
-                )}
+                <View style={styles.categoryTabInner}>
+                  <Text style={styles.categoryTabEmoji}>{info.emoji}</Text>
+                  <Text style={[styles.categoryTabText, isActive ? { color: '#FFFFFF', fontWeight: '700' as const } : { color: colors.textSecondary }]}>{info.label}</Text>
+                </View>
               </TouchableOpacity>
             );
           })}
@@ -263,57 +253,67 @@ export default function ShopScreen() {
         </View>
       </ScrollView>
 
-      {/* Item Preview Modal */}
-      <Modal visible={showPreview} transparent animationType="slide">
-        <View style={styles.previewOverlay}>
-          <LinearGradient
-            colors={['#FFFFFF', '#E7EFEA']}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 0, y: 1 }}
-            style={styles.previewContent}
-          >
-            <View style={styles.previewHandle} />
-            {selectedItem && (() => {
-              const ownedCount = purchasedIds[selectedItem.id] || 0;
-              const canAfford = (stats?.current_coins || 0) >= selectedItem.price;
-              const catInfo = CATEGORY_INFO[selectedItem.category];
-              const img = getItemImage(selectedItem);
-              return (
-                <>
-                  <View style={[styles.previewImageCircle, { backgroundColor: catInfo.color + '15' }]}>
-                    {img ? (
-                      <Image source={img} style={styles.previewImage} resizeMode="contain" />
-                    ) : (
-                      <Text style={styles.previewFallbackEmoji}>🎁</Text>
-                    )}
-                  </View>
-                  <Text style={styles.previewName}>{selectedItem.name}</Text>
-                  <View style={[styles.previewRarity, { backgroundColor: RARITY_COLORS[selectedItem.rarity] }]}>
-                    <Text style={styles.previewRarityText}>{selectedItem.rarity.toUpperCase()}</Text>
-                  </View>
-                  <Text style={styles.previewDesc}>{selectedItem.description}</Text>
-                  <View style={styles.previewPriceRow}>
-                    <Text style={styles.previewPriceEmoji}>🍀</Text>
-                    <Text style={styles.previewPriceAmount}>{selectedItem.price}</Text>
-                    <Text style={styles.previewPriceLabel}>eco-credits</Text>
-                  </View>
+      {/* Item Preview Half-Sheet */}
+      <Modal visible={showPreview} animationType="slide" transparent onRequestClose={() => { setShowPreview(false); setSelectedItem(null); }}>
+        <View style={styles.sheetOverlay}>
+          <TouchableOpacity style={StyleSheet.absoluteFill} activeOpacity={1} onPress={() => { setShowPreview(false); setSelectedItem(null); }} />
+          <View style={styles.sheetContainer}>
+            <LinearGradient
+              colors={['#FFFFFF', '#E7EFEA']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 0, y: 1 }}
+              style={{ flex: 1, borderTopLeftRadius: 24, borderTopRightRadius: 24 }}
+            >
+              <DragHandle />
+              <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 12, alignItems: 'center' }} showsVerticalScrollIndicator={false}>
+                {selectedItem && (() => {
+                  const catInfo = CATEGORY_INFO[selectedItem.category];
+                  const img = getItemImage(selectedItem);
+                  const ownedCount = purchasedIds[selectedItem.id] || 0;
+                  const canAfford = (stats?.current_coins || 0) >= selectedItem.price;
+                  return (
+                    <>
+                      <View style={[styles.previewImageCircle, { backgroundColor: catInfo.color + '15' }]}>
+                        {img ? (
+                          <Image source={img} style={styles.previewImage} resizeMode="contain" />
+                        ) : (
+                          <Text style={styles.previewFallbackEmoji}>🎁</Text>
+                        )}
+                      </View>
+                      <Text style={styles.previewName}>{selectedItem.name}</Text>
+                      <View style={[styles.previewRarity, { backgroundColor: RARITY_COLORS[selectedItem.rarity] }]}>
+                        <Text style={styles.previewRarityText}>{selectedItem.rarity.toUpperCase()}</Text>
+                      </View>
+                      <Text style={styles.previewDesc}>{selectedItem.description}</Text>
+                      <View style={styles.previewPriceRow}>
+                        <Text style={styles.previewPriceEmoji}>🍀</Text>
+                        <Text style={styles.previewPriceAmount}>{selectedItem.price}</Text>
+                        <Text style={styles.previewPriceLabel}>eco-credits</Text>
+                      </View>
 
-                  {ownedCount > 0 && (
-                    <View style={styles.previewOwnedMsg}>
-                      <Text style={styles.previewOwnedEmoji}>✅</Text>
-                      <Text style={styles.previewOwnedText}>You own {ownedCount} of this item</Text>
-                    </View>
-                  )}
+                      {ownedCount > 0 && (
+                        <View style={styles.previewOwnedMsg}>
+                          <Text style={styles.previewOwnedEmoji}>✅</Text>
+                          <Text style={styles.previewOwnedText}>You own {ownedCount} of this item</Text>
+                        </View>
+                      )}
 
-                  {!canAfford && (
-                    <View style={styles.previewCantAfford}>
-                      <Text style={styles.previewCantAffordText}>
-                        You need {selectedItem.price - (stats?.current_coins || 0)} more eco-credits
-                      </Text>
-                    </View>
-                  )}
-
-                  <View style={styles.previewButtons}>
+                      {!canAfford && (
+                        <View style={styles.previewCantAfford}>
+                          <Text style={styles.previewCantAffordText}>
+                            You need {selectedItem.price - (stats?.current_coins || 0)} more eco-credits
+                          </Text>
+                        </View>
+                      )}
+                    </>
+                  );
+                })()}
+              </ScrollView>
+              {selectedItem && (() => {
+                const ownedCount = purchasedIds[selectedItem.id] || 0;
+                const canAfford = (stats?.current_coins || 0) >= selectedItem.price;
+                return (
+                  <View style={{ paddingHorizontal: 20, paddingTop: 4, paddingBottom: insets.bottom + 8, gap: 2 }}>
                     <TouchableOpacity
                       style={[styles.buyButton, !canAfford && styles.buyButtonDisabled]}
                       onPress={() => purchaseItem(selectedItem)}
@@ -340,10 +340,10 @@ export default function ShopScreen() {
                       <Text style={styles.previewCloseText}>Maybe Later</Text>
                     </TouchableOpacity>
                   </View>
-                </>
-              );
-            })()}
-          </LinearGradient>
+                );
+              })()}
+            </LinearGradient>
+          </View>
         </View>
       </Modal>
     </SafeAreaView>
@@ -455,6 +455,11 @@ const styles = StyleSheet.create({
     borderColor: colors.cardBorder,
     backgroundColor: colors.surface,
     overflow: 'hidden',
+  },
+  categoryTabActive: {
+    borderWidth: 0,
+    borderColor: 'transparent',
+    backgroundColor: '#6B9E98',
   },
   categoryTabGradient: {
     flexDirection: 'row',
@@ -587,16 +592,16 @@ const styles = StyleSheet.create({
     marginBottom: spacing.lg,
   },
   previewImageCircle: {
-    width: 140,
-    height: 140,
-    borderRadius: 70,
+    width: 100,
+    height: 100,
+    borderRadius: 50,
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: spacing.md,
+    marginBottom: spacing.sm,
   },
   previewImage: {
-    width: 110,
-    height: 110,
+    width: 80,
+    height: 80,
   },
   previewFallbackEmoji: {
     fontSize: 48,
@@ -701,11 +706,23 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
   },
   previewClose: {
-    paddingVertical: 10,
+    paddingVertical: 6,
     alignItems: 'center',
   },
   previewCloseText: {
     fontSize: 14,
     color: colors.textMuted,
+  },
+  sheetOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.4)',
+    justifyContent: 'flex-end',
+  },
+  sheetContainer: {
+    height: SCREEN_HEIGHT * 0.6,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    overflow: 'hidden',
+    backgroundColor: '#E7EFEA',
   },
 });

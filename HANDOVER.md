@@ -33,46 +33,41 @@ endura-v-2/
 
 ## 3. Accounts & Credentials
 
+> **IMPORTANT**: All secrets, API keys, and credentials are stored in a private vault.
+> Do NOT commit secrets to this file. See the team's 1Password vault for:
+> - Every.org API keys and webhook tokens
+> - PostHog SDK and personal API keys
+> - Railway environment variables (DATABASE_URL, SECRET_KEY, ADMIN_API_KEY)
+
 ### GitHub
 - **Repo**: `https://github.com/phaedrus75/endura.git`
 - **Auth**: `gh` CLI authenticated as `phaedrus75` (switch with `gh auth switch --user phaedrus75`)
-- **Important**: The `gh` CLI has TWO accounts (`aseemmunshi` and `phaedrus75`). Always verify active account with `gh auth status`. Git pushes use `gh auth git-credential` as the credential helper.
 
 ### Expo / EAS
 - **Owner**: `phaedrus75`
-- **Project ID**: `5fd638be-4053-4859-b3f4-b4b333d42c66`
 - **Bundle ID**: `com.endura.study`
-- **Apple Team**: `45WAZFV76R` (Aseem Munshi, Individual)
-- **Apple ID for submissions**: `munshiaseem@yahoo.com`
 - **TestFlight build command**: `cd frontend && eas build --platform ios --profile production --non-interactive`
 
 ### Railway (Backend Hosting)
-- **URL**: `https://web-production-34028.up.railway.app`
 - **Deploy**: Auto-deploys on push to `main` (watches the `backend/` directory)
 - **Start command**: `python -m uvicorn main:app --host 0.0.0.0 --port $PORT`
 - **Database**: PostgreSQL on Railway (connection string in Railway env vars)
 
 ### Railway Environment Variables (set via Railway dashboard)
 - `DATABASE_URL` — PostgreSQL connection string
-- `SECRET_KEY` — JWT signing key (was updated from hardcoded to env var)
-- `ADMIN_API_KEY` — Admin dashboard auth key (default fallback: `endura-admin-2024`)
-- `STRIPE_SECRET_KEY` — Stripe API key (optional, for payment intents)
+- `SECRET_KEY` — JWT signing key (required, no default)
+- `ADMIN_API_KEY` — Admin dashboard auth key (required, no default)
 
 ### Vercel (Website)
-- **Account**: `phaedrus75` (login with `npx vercel login`)
-- **Project**: `website` under `phaedrus75s-projects`
 - **Domain**: `www.endura.eco` / `endura.eco`
 - **Deploy**: `cd website && npx vercel --prod --yes`
-- **Important**: There's also an `aseemmunshi` Vercel account — do NOT use it. The domain is linked to the `phaedrus75` account.
 
 ### Every.org (Donations)
-- **API Key**: `pk_live_8913a39d0db6790bf98977221209232b` (label: "endura")
-- **Webhook URL**: `https://web-production-34028.up.railway.app/webhook/every-org`
+- See private vault for API key and webhook token
 - **Fundraising link**: Uses Every.org prefilled donate URLs with `partnerDonationId` for user tracking
 
 ### PostHog (Product Analytics)
-- **SDK Key** (frontend): `phc_qlSNrffxYPTSRAxQy0gC7q7h4DmhMiScXYwriCiTOtr`
-- **Personal API Key** (admin dashboard): Stored in browser localStorage as `phPersonalKey`. Needs scopes: `project:read`, `query:read`, `insight:read`, `person:read`.
+- See private vault for SDK key and personal API key
 
 ---
 
@@ -97,7 +92,7 @@ endura-v-2/
 - **Auth**: JWT via `python-jose`, passwords via `passlib` + `bcrypt`
 - **Rate limiting**: `slowapi`
 - **File**: `backend/main.py` (single file, ~1700 lines — all endpoints)
-- **Models**: `backend/models.py` — User, Task, StudySession, Animal, UserAnimal, Egg, StudyTip, TipView, UserBadge, Friendship, StudyPact, PactDay, StudyGroup, GroupMember, GroupMessage, ActivityEvent, FeedReaction, Donation, ShopItem
+- **Models**: `backend/models.py` — User, Task, StudySession, Animal, UserAnimal, Egg, StudyTip, TipView, UserBadge, Friendship, StudyGroup, GroupMember, GroupMessage, ActivityEvent, FeedReaction, Donation, ShopItem
 
 ### Website (Next.js)
 - **Framework**: Next.js 16.1.6 (App Router)
@@ -282,7 +277,7 @@ cd admin && python3 -m http.server 3002
 - [ ] Move bottom tab bar up (user said it's too low)
 - [ ] Remove light green border above tab bar
 - [ ] Monthly progress charts not populating with data
-- [ ] Friends section: change "all users" to "friends", kill study pact, move leaderboard to buddies tab
+- [ ] Friends section: change "all users" to "friends", move leaderboard to buddies tab
 - [ ] Groups tab: show member profile pictures, fix button formatting, make challenge/leaderboard/streak real modals
 - [ ] Chip colors on home screen (greeny-white gradients, user went through many iterations)
 
@@ -311,7 +306,7 @@ cd admin && python3 -m http.server 3002
 - `/tips`, `/tips/{id}/view`, `/tips/{id}/vote`
 - `/friends/*`, `/leaderboard`, `/stats`
 - `/shop/spend`, `/badges`, `/badges/check`
-- `/pacts/*`, `/groups/*`
+- `/groups/*`
 - `/feed`, `/feed/{id}/react`, `/feed/reactions/new`
 - `/tips/send`
 - `/donations/user/{id}`, `/donations/leaderboard`

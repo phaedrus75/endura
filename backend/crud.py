@@ -6,6 +6,17 @@ import models
 import random
 
 
+def get_effective_streak(user: models.User) -> int:
+    """Return the real-time streak, accounting for missed days since last study."""
+    if not user.last_study_date or not user.current_streak:
+        return 0
+    today = datetime.utcnow().date()
+    last_date = user.last_study_date.date()
+    if last_date == today or last_date == today - timedelta(days=1):
+        return user.current_streak
+    return 0
+
+
 # ============ User CRUD ============
 
 def get_user_by_email(db: Session, email: str) -> Optional[models.User]:
@@ -91,7 +102,7 @@ def delete_task(db: Session, task_id: int, user_id: int) -> bool:
 
 # ============ Study Session CRUD ============
 
-def create_study_session(db: Session, user_id: int, duration_minutes: int, task_id: int = None, animal_name: str = None, subject: str = None) -> tuple[models.StudySession, Optional[models.Animal]]:
+def create_study_session(db: Session, user_id: int, duration_minutes: int, task_id: int = None, animal_name: str = None, subject: str = None) -> tuple:
     # Calculate coins earned (1 coin per minute, bonus for longer sessions)
     coins = duration_minutes
     if duration_minutes >= 25:
@@ -156,9 +167,37 @@ def create_study_session(db: Session, user_id: int, duration_minutes: int, task_
         
         hatched_animal = animal
     
+    # Contribute minutes to active shared egg (if any)
+    shared_hatch_result = None
+    shared_egg = db.query(models.SharedEgg).filter(
+        models.SharedEgg.status == "active",
+        (models.SharedEgg.creator_id == user_id) | (models.SharedEgg.partner_id == user_id)
+    ).first()
+    if shared_egg:
+        if shared_egg.creator_id == user_id:
+            shared_egg.creator_minutes += duration_minutes
+        else:
+            shared_egg.partner_minutes += duration_minutes
+        
+        total = shared_egg.creator_minutes + shared_egg.partner_minutes
+        if total >= shared_egg.minutes_required:
+            se_animal = db.query(models.Animal).filter(models.Animal.name == shared_egg.animal_name).first()
+            if se_animal:
+                for uid, other_uid in [(shared_egg.creator_id, shared_egg.partner_id),
+                                        (shared_egg.partner_id, shared_egg.creator_id)]:
+                    db.add(models.UserAnimal(
+                        user_id=uid, animal_id=se_animal.id,
+                        shared_with_user_id=other_uid, shared_egg_id=shared_egg.id
+                    ))
+                shared_egg.status = "hatched"
+                shared_egg.hatched_at = datetime.utcnow()
+                partner = shared_egg.partner if shared_egg.creator_id == user_id else shared_egg.creator
+                partner_name = partner.username or "a friend"
+                shared_hatch_result = {"animal_name": shared_egg.animal_name, "partner_name": partner_name}
+
     db.commit()
     db.refresh(session)
-    return session, hatched_animal
+    return session, hatched_animal, shared_hatch_result
 
 
 def get_user_sessions(db: Session, user_id: int, limit: int = 50) -> List[models.StudySession]:
@@ -359,7 +398,7 @@ def get_pending_requests(db: Session, user_id: int) -> List[dict]:
                 "id": f.id,
                 "user_id": sender.id,
                 "username": sender.username,
-                "email": sender.email,
+                "profile_pic_url": sender.profile_pic_url,
             })
     return results
 
@@ -418,9 +457,8 @@ def get_friend_suggestions(db: Session, user_id: int, limit: int = 10) -> List[d
         {
             "id": s.id,
             "username": s.username,
-            "email": s.email,
             "total_study_minutes": s.total_study_minutes or 0,
-            "current_streak": s.current_streak or 0,
+            "current_streak": get_effective_streak(s),
             "profile_pic_url": s.profile_pic_url,
             "school": s.school,
         }
@@ -459,7 +497,7 @@ def get_global_leaderboard(db: Session) -> List[dict]:
             "user_id": u.id,
             "username": u.username or u.email.split("@")[0],
             "total_study_minutes": u.total_study_minutes,
-            "current_streak": u.current_streak,
+            "current_streak": get_effective_streak(u),
             "animals_count": 0,
             "total_donated": 0,
             "profile_pic_url": u.profile_pic_url,
@@ -484,7 +522,7 @@ def get_school_leaderboard(db: Session, current_user) -> List[dict]:
             "user_id": u.id,
             "username": u.username or u.email.split("@")[0],
             "total_study_minutes": u.total_study_minutes,
-            "current_streak": u.current_streak,
+            "current_streak": get_effective_streak(u),
             "animals_count": 0,
             "total_donated": 0,
             "profile_pic_url": u.profile_pic_url,
@@ -516,7 +554,7 @@ def get_leaderboard(db: Session, user_id: int, limit: int = 20) -> List[dict]:
             "user_id": user.id,
             "username": user.username or user.email.split("@")[0],
             "total_study_minutes": user.total_study_minutes,
-            "current_streak": user.current_streak,
+            "current_streak": get_effective_streak(user),
             "animals_count": animals_count,
             "total_donated": float(total_donated),
             "profile_pic_url": user.profile_pic_url,
@@ -589,7 +627,7 @@ def get_user_stats(db: Session, user_id: int) -> dict:
         "current_coins": user.current_coins,
         "total_study_minutes": user.total_study_minutes,
         "total_sessions": user.total_sessions,
-        "current_streak": user.current_streak,
+        "current_streak": get_effective_streak(user),
         "longest_streak": user.longest_streak,
         "animals_hatched": animals_count,
         "tasks_completed": tasks_completed,
@@ -597,156 +635,6 @@ def get_user_stats(db: Session, user_id: int) -> dict:
         "monthly_study_minutes": monthly_weekly,
         "study_minutes_by_subject": study_minutes_by_subject
     }
-
-
-# ============ Study Pact CRUD ============
-
-def create_pact(db: Session, creator_id: int, buddy_username: str, daily_minutes: int, duration_days: int, wager_amount: int) -> tuple:
-    buddy = db.query(models.User).filter(models.User.username == buddy_username).first()
-    if not buddy:
-        return None, "User not found"
-    if buddy.id == creator_id:
-        return None, "Cannot create a pact with yourself"
-    friendship = db.query(models.Friendship).filter(
-        models.Friendship.status == "accepted",
-        ((models.Friendship.user_id == creator_id) & (models.Friendship.friend_id == buddy.id)) |
-        ((models.Friendship.user_id == buddy.id) & (models.Friendship.friend_id == creator_id))
-    ).first()
-    if not friendship:
-        return None, "You must be friends first"
-    if wager_amount > 0:
-        creator = db.query(models.User).filter(models.User.id == creator_id).first()
-        if creator.current_coins < wager_amount:
-            return None, "Not enough eco-credits for wager"
-
-    pact = models.StudyPact(
-        creator_id=creator_id, buddy_id=buddy.id,
-        daily_minutes=daily_minutes, duration_days=duration_days,
-        wager_amount=wager_amount, status="pending"
-    )
-    db.add(pact)
-    db.commit()
-    db.refresh(pact)
-    _create_event(db, creator_id, "pact_created",
-                  f"started a study pact with {buddy.username or buddy.email.split('@')[0]}")
-    return pact, None
-
-
-def accept_pact(db: Session, user_id: int, pact_id: int) -> tuple:
-    pact = db.query(models.StudyPact).filter(
-        models.StudyPact.id == pact_id,
-        models.StudyPact.buddy_id == user_id,
-        models.StudyPact.status == "pending"
-    ).first()
-    if not pact:
-        return None, "Pact not found or already accepted"
-    if pact.wager_amount > 0:
-        buddy = db.query(models.User).filter(models.User.id == user_id).first()
-        creator = db.query(models.User).filter(models.User.id == pact.creator_id).first()
-        if buddy.current_coins < pact.wager_amount:
-            return None, "Not enough eco-credits for wager"
-        buddy.current_coins -= pact.wager_amount
-        creator.current_coins -= pact.wager_amount
-
-    pact.status = "active"
-    pact.start_date = datetime.utcnow()
-    pact.end_date = datetime.utcnow() + timedelta(days=pact.duration_days)
-    db.commit()
-    return pact, None
-
-
-def get_user_pacts(db: Session, user_id: int) -> List[dict]:
-    pacts = db.query(models.StudyPact).filter(
-        (models.StudyPact.creator_id == user_id) | (models.StudyPact.buddy_id == user_id)
-    ).order_by(models.StudyPact.created_at.desc()).all()
-
-    results = []
-    for p in pacts:
-        creator = db.query(models.User).filter(models.User.id == p.creator_id).first()
-        buddy = db.query(models.User).filter(models.User.id == p.buddy_id).first()
-        creator_days = db.query(models.PactDay).filter(
-            models.PactDay.pact_id == p.id, models.PactDay.user_id == p.creator_id
-        ).all()
-        buddy_days = db.query(models.PactDay).filter(
-            models.PactDay.pact_id == p.id, models.PactDay.user_id == p.buddy_id
-        ).all()
-        results.append({
-            "id": p.id,
-            "creator_username": creator.username if creator else None,
-            "buddy_username": buddy.username if buddy else None,
-            "creator_id": p.creator_id, "buddy_id": p.buddy_id,
-            "daily_minutes": p.daily_minutes, "duration_days": p.duration_days,
-            "wager_amount": p.wager_amount, "status": p.status,
-            "start_date": p.start_date, "end_date": p.end_date,
-            "created_at": p.created_at,
-            "creator_progress": [{"date": d.date.isoformat(), "minutes_studied": d.minutes_studied, "completed": d.completed} for d in creator_days],
-            "buddy_progress": [{"date": d.date.isoformat(), "minutes_studied": d.minutes_studied, "completed": d.completed} for d in buddy_days],
-        })
-    return results
-
-
-def record_pact_progress(db: Session, user_id: int, session_minutes: int):
-    """Called after a study session to update any active pacts."""
-    today = datetime.utcnow().date()
-    active_pacts = db.query(models.StudyPact).filter(
-        models.StudyPact.status == "active",
-        (models.StudyPact.creator_id == user_id) | (models.StudyPact.buddy_id == user_id)
-    ).all()
-    for pact in active_pacts:
-        existing = db.query(models.PactDay).filter(
-            models.PactDay.pact_id == pact.id,
-            models.PactDay.user_id == user_id,
-            func.date(models.PactDay.date) == today
-        ).first()
-        if existing:
-            existing.minutes_studied += session_minutes
-            if existing.minutes_studied >= pact.daily_minutes:
-                existing.completed = True
-        else:
-            completed = session_minutes >= pact.daily_minutes
-            db.add(models.PactDay(
-                pact_id=pact.id, user_id=user_id,
-                date=datetime.utcnow(), minutes_studied=session_minutes,
-                completed=completed
-            ))
-        if pact.end_date and datetime.utcnow() >= pact.end_date:
-            _finalize_pact(db, pact)
-    db.commit()
-
-
-def _finalize_pact(db: Session, pact):
-    creator_completed = db.query(models.PactDay).filter(
-        models.PactDay.pact_id == pact.id, models.PactDay.user_id == pact.creator_id,
-        models.PactDay.completed == True
-    ).count()
-    buddy_completed = db.query(models.PactDay).filter(
-        models.PactDay.pact_id == pact.id, models.PactDay.user_id == pact.buddy_id,
-        models.PactDay.completed == True
-    ).count()
-    total_pot = pact.wager_amount * 2
-    bonus = max(pact.wager_amount // 2, 10)
-    creator = db.query(models.User).filter(models.User.id == pact.creator_id).first()
-    buddy = db.query(models.User).filter(models.User.id == pact.buddy_id).first()
-
-    c_done = creator_completed >= pact.duration_days
-    b_done = buddy_completed >= pact.duration_days
-
-    if c_done and b_done:
-        creator.current_coins += pact.wager_amount + bonus
-        creator.total_coins += bonus
-        buddy.current_coins += pact.wager_amount + bonus
-        buddy.total_coins += bonus
-        pact.status = "completed"
-    elif c_done and not b_done:
-        creator.current_coins += total_pot + bonus
-        creator.total_coins += pact.wager_amount + bonus
-        pact.status = "completed"
-    elif b_done and not c_done:
-        buddy.current_coins += total_pot + bonus
-        buddy.total_coins += pact.wager_amount + bonus
-        pact.status = "completed"
-    else:
-        pact.status = "failed"
 
 
 # ============ Study Group CRUD ============
@@ -767,7 +655,7 @@ def create_group(db: Session, creator_id: int, name: str, goal_minutes: int, goa
 
 
 def join_group(db: Session, user_id: int, group_id: int) -> tuple:
-    group = db.query(models.StudyGroup).filter(models.StudyGroup.id == group_id).first()
+    group = db.query(models.StudyGroup).filter(models.StudyGroup.id == group_id).with_for_update().first()
     if not group:
         return None, "Group not found"
     existing = db.query(models.GroupMember).filter(
@@ -855,7 +743,13 @@ def send_group_message(db: Session, user_id: int, group_id: int, content: str) -
             "profile_pic_url": u.profile_pic_url if u else None}
 
 
-def get_group_messages(db: Session, group_id: int, limit: int = 50) -> List[dict]:
+def get_group_messages(db: Session, group_id: int, user_id: int, limit: int = 50) -> List[dict]:
+    member = db.query(models.GroupMember).filter(
+        models.GroupMember.group_id == group_id,
+        models.GroupMember.user_id == user_id
+    ).first()
+    if not member:
+        return None
     msgs = db.query(models.GroupMessage).filter(
         models.GroupMessage.group_id == group_id
     ).order_by(models.GroupMessage.created_at.desc()).limit(limit).all()
@@ -919,6 +813,16 @@ def add_reaction(db: Session, user_id: int, event_id: int, reaction: str) -> boo
     event = db.query(models.ActivityEvent).filter(models.ActivityEvent.id == event_id).first()
     if not event:
         return False
+    if event.user_id != user_id:
+        friendship = db.query(models.Friendship).filter(
+            models.Friendship.status == "accepted",
+            (
+                ((models.Friendship.user_id == user_id) & (models.Friendship.friend_id == event.user_id)) |
+                ((models.Friendship.user_id == event.user_id) & (models.Friendship.friend_id == user_id))
+            )
+        ).first()
+        if not friendship:
+            return False
     existing = db.query(models.FeedReaction).filter(
         models.FeedReaction.event_id == event_id,
         models.FeedReaction.user_id == user_id
@@ -1292,3 +1196,114 @@ def check_badges(db: Session, user_id: int, session_hour: int = None, session_mi
         db.commit()
 
     return new_badges
+
+
+# ============ Shared Egg CRUD ============
+
+def create_shared_egg_invite(db: Session, creator_id: int, friend_id: int, animal_name: str) -> tuple:
+    if creator_id == friend_id:
+        return None, "Cannot invite yourself"
+
+    friendship = db.query(models.Friendship).filter(
+        models.Friendship.status == "accepted",
+        ((models.Friendship.user_id == creator_id) & (models.Friendship.friend_id == friend_id)) |
+        ((models.Friendship.user_id == friend_id) & (models.Friendship.friend_id == creator_id))
+    ).first()
+    if not friendship:
+        return None, "You can only invite accepted friends"
+
+    active = db.query(models.SharedEgg).filter(
+        models.SharedEgg.status.in_(["pending", "active"]),
+        (models.SharedEgg.creator_id == creator_id) | (models.SharedEgg.partner_id == creator_id)
+    ).first()
+    if active:
+        return None, "You already have an active shared egg"
+
+    partner_active = db.query(models.SharedEgg).filter(
+        models.SharedEgg.status.in_(["pending", "active"]),
+        (models.SharedEgg.creator_id == friend_id) | (models.SharedEgg.partner_id == friend_id)
+    ).first()
+    if partner_active:
+        return None, "Your friend already has an active shared egg"
+
+    prev_count = db.query(models.SharedEgg).filter(
+        models.SharedEgg.status == "hatched",
+        ((models.SharedEgg.creator_id == creator_id) & (models.SharedEgg.partner_id == friend_id)) |
+        ((models.SharedEgg.creator_id == friend_id) & (models.SharedEgg.partner_id == creator_id))
+    ).count()
+    minutes_required = 60 + (prev_count * 10)
+
+    egg = models.SharedEgg(
+        creator_id=creator_id,
+        partner_id=friend_id,
+        animal_name=animal_name,
+        minutes_required=minutes_required,
+    )
+    db.add(egg)
+    db.commit()
+    db.refresh(egg)
+    return egg, None
+
+
+def accept_shared_egg(db: Session, egg_id: int, user_id: int) -> tuple:
+    egg = db.query(models.SharedEgg).filter(
+        models.SharedEgg.id == egg_id,
+        models.SharedEgg.partner_id == user_id,
+        models.SharedEgg.status == "pending"
+    ).first()
+    if not egg:
+        return False, "Invite not found or already handled"
+    egg.status = "active"
+    db.commit()
+    return True, "Shared egg is now active!"
+
+
+def decline_shared_egg(db: Session, egg_id: int, user_id: int) -> tuple:
+    egg = db.query(models.SharedEgg).filter(
+        models.SharedEgg.id == egg_id,
+        models.SharedEgg.partner_id == user_id,
+        models.SharedEgg.status == "pending"
+    ).first()
+    if not egg:
+        return False, "Invite not found or already handled"
+    egg.status = "declined"
+    db.commit()
+    return True, "Invite declined"
+
+
+def get_active_shared_egg(db: Session, user_id: int) -> Optional[models.SharedEgg]:
+    return db.query(models.SharedEgg).filter(
+        models.SharedEgg.status.in_(["pending", "active"]),
+        (models.SharedEgg.creator_id == user_id) | (models.SharedEgg.partner_id == user_id)
+    ).first()
+
+
+def get_shared_egg_invites(db: Session, user_id: int) -> List[models.SharedEgg]:
+    return db.query(models.SharedEgg).filter(
+        models.SharedEgg.partner_id == user_id,
+        models.SharedEgg.status == "pending"
+    ).all()
+
+
+def format_shared_egg(egg: models.SharedEgg) -> dict:
+    total = egg.creator_minutes + egg.partner_minutes
+    return {
+        "id": egg.id,
+        "creator": {
+            "id": egg.creator.id,
+            "username": egg.creator.username,
+            "profile_pic_url": egg.creator.profile_pic_url,
+        },
+        "partner": {
+            "id": egg.partner.id,
+            "username": egg.partner.username,
+            "profile_pic_url": egg.partner.profile_pic_url,
+        },
+        "animal_name": egg.animal_name,
+        "status": egg.status,
+        "creator_minutes": egg.creator_minutes,
+        "partner_minutes": egg.partner_minutes,
+        "minutes_required": egg.minutes_required,
+        "progress_percent": min(round(total / egg.minutes_required * 100, 1), 100),
+        "created_at": egg.created_at.isoformat(),
+    }

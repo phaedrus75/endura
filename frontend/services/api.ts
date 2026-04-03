@@ -70,6 +70,7 @@ export interface UserAnimal {
   animal: Animal;
   nickname: string | null;
   hatched_at: string;
+  shared_with_username?: string | null;
 }
 
 export interface Egg {
@@ -101,7 +102,6 @@ export interface StudyTip {
 export interface Friend {
   id: number;
   username: string | null;
-  email: string;
   total_study_minutes: number;
   current_streak: number;
   animals_count: number;
@@ -112,7 +112,6 @@ export interface Friend {
 export interface FriendProfile {
   id: number;
   username: string | null;
-  email: string;
   total_study_minutes: number;
   current_streak: number;
   longest_streak: number;
@@ -130,7 +129,6 @@ export interface FriendProfile {
 export interface FriendSuggestion {
   id: number;
   username: string;
-  email: string;
   total_study_minutes: number;
   current_streak: number;
   profile_pic_url: string | null;
@@ -172,34 +170,36 @@ export interface BadgeResponse extends BadgeInfo {
   requirement?: string;
 }
 
+export interface SharedHatchResult {
+  animal_name: string;
+  partner_name: string;
+}
+
 export interface StudySessionWithHatchAndBadges extends StudySessionWithHatch {
   new_badges?: BadgeInfo[];
+  shared_hatch?: SharedHatchResult | null;
+}
+
+export interface SharedEggUser {
+  id: number;
+  username: string | null;
+  profile_pic_url: string | null;
+}
+
+export interface SharedEgg {
+  id: number;
+  creator: SharedEggUser;
+  partner: SharedEggUser;
+  animal_name: string;
+  status: string;
+  creator_minutes: number;
+  partner_minutes: number;
+  minutes_required: number;
+  progress_percent: number;
+  created_at: string;
 }
 
 // ============ Social Types ============
-
-export interface PactDayProgress {
-  date: string;
-  minutes_studied: number;
-  completed: boolean;
-}
-
-export interface StudyPact {
-  id: number;
-  creator_username: string | null;
-  buddy_username: string | null;
-  creator_id: number;
-  buddy_id: number;
-  daily_minutes: number;
-  duration_days: number;
-  wager_amount: number;
-  status: string;
-  start_date: string | null;
-  end_date: string | null;
-  created_at: string;
-  creator_progress: PactDayProgress[];
-  buddy_progress: PactDayProgress[];
-}
 
 export interface StudyGroupMember {
   user_id: number;
@@ -276,7 +276,7 @@ async function apiFetch<T>(
     const response = await fetch(url, {
       ...options,
       headers,
-      redirect: 'follow',
+      redirect: 'error',
     });
     
     if (!response.ok) {
@@ -302,13 +302,27 @@ async function apiFetch<T>(
 // Auth API
 export const authAPI = {
   register: async (email: string, password: string) => {
-    const data = await apiFetch<{ access_token: string }>('/auth/register', {
+    const data = await apiFetch<{ message: string; needs_verification: boolean }>('/auth/register', {
       method: 'POST',
       body: JSON.stringify({ email, password }),
+    });
+    return data;
+  },
+
+  verifyEmail: async (email: string, code: string) => {
+    const data = await apiFetch<{ access_token: string }>('/auth/verify-email', {
+      method: 'POST',
+      body: JSON.stringify({ email, code }),
     });
     await SecureStore.setItemAsync('authToken', data.access_token);
     return data;
   },
+
+  resendVerification: (email: string) =>
+    apiFetch<{ message: string }>('/auth/resend-verification', {
+      method: 'POST',
+      body: JSON.stringify({ email }),
+    }),
   
   login: async (email: string, password: string) => {
     const data = await apiFetch<{ access_token: string }>('/auth/login', {
@@ -343,9 +357,8 @@ export const authAPI = {
   getMe: () => apiFetch<User>('/auth/me'),
   
   setUsername: (username: string) =>
-    apiFetch('/user/username', {
+    apiFetch(`/user/username?username=${encodeURIComponent(username)}`, {
       method: 'POST',
-      body: JSON.stringify(username),
     }),
 
   updateProfile: (data: { school?: string; city?: string; country?: string }) =>
@@ -375,6 +388,9 @@ export const authAPI = {
 
   deleteProfilePic: () =>
     apiFetch<{ message: string }>('/auth/profile-pic', { method: 'DELETE' }),
+
+  deleteAccount: () =>
+    apiFetch<{ message: string }>('/auth/account', { method: 'DELETE' }),
 };
 
 // Tasks API
@@ -471,7 +487,7 @@ export const socialAPI = {
     apiFetch(`/friends/accept/${requestId}`, { method: 'POST' }),
   
   getFriends: () => apiFetch<Friend[]>('/friends'),
-  getPendingRequests: () => apiFetch<{ id: number; user_id: number; username: string | null; email: string }[]>('/friends/pending'),
+  getPendingRequests: () => apiFetch<{ id: number; user_id: number; username: string | null; profile_pic_url: string | null }[]>('/friends/pending'),
 
   removeFriend: (friendId: number) =>
     apiFetch(`/friends/${friendId}`, { method: 'DELETE' }),
@@ -481,6 +497,7 @@ export const socialAPI = {
 
   getLeaderboard: () => apiFetch<LeaderboardEntry[]>('/leaderboard'),
   getGlobalLeaderboard: () => apiFetch<LeaderboardEntry[]>('/leaderboard/global'),
+  getSchoolLeaderboard: () => apiFetch<LeaderboardEntry[]>('/leaderboard/school'),
 
   getFriendSuggestions: () => apiFetch<FriendSuggestion[]>('/friends/suggestions'),
 };
@@ -497,18 +514,6 @@ export const shopAPI = {
       method: 'POST',
       body: JSON.stringify({ amount }),
     }),
-};
-
-// Study Pact API
-export const pactsAPI = {
-  create: (buddyUsername: string, dailyMinutes: number, durationDays: number, wagerAmount: number) =>
-    apiFetch<{ id: number; status: string }>('/pacts', {
-      method: 'POST',
-      body: JSON.stringify({ buddy_username: buddyUsername, daily_minutes: dailyMinutes, duration_days: durationDays, wager_amount: wagerAmount }),
-    }),
-  accept: (pactId: number) =>
-    apiFetch<{ id: number; status: string }>(`/pacts/${pactId}/accept`, { method: 'POST' }),
-  getAll: () => apiFetch<StudyPact[]>('/pacts'),
 };
 
 // Study Group API
@@ -555,6 +560,21 @@ export const feedAPI = {
       event_description: string;
       created_at: string;
     }[]>('/feed/reactions/new'),
+};
+
+// Shared Egg API
+export const sharedEggAPI = {
+  invite: (friendId: number, animalName: string) =>
+    apiFetch<SharedEgg>('/shared-egg/invite', {
+      method: 'POST',
+      body: JSON.stringify({ friend_id: friendId, animal_name: animalName }),
+    }),
+  accept: (eggId: number) =>
+    apiFetch<{ message: string }>(`/shared-egg/${eggId}/accept`, { method: 'POST' }),
+  decline: (eggId: number) =>
+    apiFetch<{ message: string }>(`/shared-egg/${eggId}/decline`, { method: 'POST' }),
+  getActive: () => apiFetch<SharedEgg | null>('/shared-egg/active'),
+  getInvites: () => apiFetch<SharedEgg[]>('/shared-egg/invites'),
 };
 
 // Badges API

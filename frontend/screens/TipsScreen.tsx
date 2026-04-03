@@ -19,6 +19,7 @@ import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { LinearGradient } from 'expo-linear-gradient';
 import { colors, shadows, spacing } from '../theme/colors';
+import SwipeDismiss, { DragHandle } from '../components/SwipeDismiss';
 import { tipsAPI, socialAPI, groupsAPI, StudyTip, Friend, StudyGroup } from '../services/api';
 import { animalImages, getAnimalImage, ANIMAL_NAMES_IN_ORDER } from '../assets/animals';
 import { Analytics } from '../services/analytics';
@@ -66,13 +67,11 @@ const CARD_HEIGHT = SCREEN_HEIGHT - 220;
 const TipCard = React.memo(({
   item,
   onToggleSave,
-  onVote,
   onSendToFriend,
   isSaved,
 }: {
   item: StudyTip;
   onToggleSave: (id: number) => void;
-  onVote: (id: number, vote: 'up' | 'down') => void;
   onSendToFriend: (tip: StudyTip) => void;
   isSaved: boolean;
 }) => {
@@ -82,8 +81,6 @@ const TipCard = React.memo(({
   const animalColor = ANIMAL_COLORS[animalName] || { bg: '#E7EFEA', accent: '#5F8C87' };
   const animalImg = getAnimalImage(animalName) || null;
   const saveScale = useRef(new Animated.Value(1)).current;
-  const upScale = useRef(new Animated.Value(1)).current;
-  const downScale = useRef(new Animated.Value(1)).current;
 
   const bounceAnim = (anim: Animated.Value, cb: () => void) => {
     Animated.sequence([
@@ -105,36 +102,6 @@ const TipCard = React.memo(({
 
             {/* Actions inside bubble */}
             <View style={styles.actionsRow}>
-              <Animated.View style={{ transform: [{ scale: upScale }] }}>
-                <TouchableOpacity
-                  style={[styles.voteBtn, item.user_liked && styles.voteBtnActiveUp]}
-                  onPress={() => bounceAnim(upScale, () => onVote(item.id, 'up'))}
-                  activeOpacity={0.7}
-                >
-                  <Text style={[styles.voteArrow, item.user_liked && styles.voteArrowActiveUp]}>▲</Text>
-                </TouchableOpacity>
-              </Animated.View>
-
-              <Text style={[
-                styles.voteCount,
-                netVotes > 0 && styles.voteCountPositive,
-                netVotes < 0 && styles.voteCountNegative,
-              ]}>
-                {netVotes > 0 ? `+${netVotes}` : netVotes}
-              </Text>
-
-              <Animated.View style={{ transform: [{ scale: downScale }] }}>
-                <TouchableOpacity
-                  style={[styles.voteBtn, item.user_disliked && styles.voteBtnActiveDown]}
-                  onPress={() => bounceAnim(downScale, () => onVote(item.id, 'down'))}
-                  activeOpacity={0.7}
-                >
-                  <Text style={[styles.voteArrow, item.user_disliked && styles.voteArrowActiveDown]}>▼</Text>
-                </TouchableOpacity>
-              </Animated.View>
-
-              <View style={{ flex: 1 }} />
-
               <Animated.View style={{ transform: [{ scale: sendScale }] }}>
                 <TouchableOpacity
                   style={styles.sendBtn}
@@ -170,7 +137,7 @@ const TipCard = React.memo(({
         <View style={styles.animalArea}>
           <View style={[styles.animalImageWrap, { backgroundColor: animalColor.accent + '12' }]}>
             {animalImg ? (
-              <Image source={animalImg} style={styles.animalImage} />
+              <Image source={animalImg} style={styles.animalImage} resizeMode="contain" />
             ) : (
               <Text style={styles.animalFallback}>🐾</Text>
             )}
@@ -248,7 +215,13 @@ export default function TipsScreen() {
     }
   }, []);
 
-  useFocusEffect(useCallback(() => { loadTips(); }, [loadTips]));
+  useFocusEffect(useCallback(() => {
+    loadTips();
+    return () => {
+      Object.values(tipViewTimers.current).forEach(t => clearTimeout(t));
+      tipViewTimers.current = {};
+    };
+  }, [loadTips]));
 
   const onRefresh = async () => {
     setIsRefreshing(true);
@@ -256,11 +229,23 @@ export default function TipsScreen() {
     setIsRefreshing(false);
   };
 
+  const tipViewTimers = useRef<Record<number, NodeJS.Timeout>>({});
+
   const markAsSeen = useCallback((tipId: number) => {
-    if (!seenTipIdsRef.current.has(tipId)) {
+    if (seenTipIdsRef.current.has(tipId)) return;
+    if (tipViewTimers.current[tipId]) return;
+    tipViewTimers.current[tipId] = setTimeout(() => {
       seenTipIdsRef.current.add(tipId);
       persistSeen(seenTipIdsRef.current);
       Analytics.tipViewed(tipId);
+      delete tipViewTimers.current[tipId];
+    }, 10000);
+  }, []);
+
+  const cancelSeenTimer = useCallback((tipId: number) => {
+    if (tipViewTimers.current[tipId]) {
+      clearTimeout(tipViewTimers.current[tipId]);
+      delete tipViewTimers.current[tipId];
     }
   }, []);
 
@@ -344,10 +329,19 @@ export default function TipsScreen() {
     } catch {}
   }, [sendingTip]);
 
+  const currentlyVisibleIds = useRef<Set<number>>(new Set());
   const onViewableItemsChanged = useRef(({ viewableItems }: any) => {
+    const nowVisible = new Set<number>();
     viewableItems.forEach((item: any) => {
-      if (item.item?.id) markAsSeen(item.item.id);
+      if (item.item?.id) {
+        nowVisible.add(item.item.id);
+        markAsSeen(item.item.id);
+      }
     });
+    currentlyVisibleIds.current.forEach(id => {
+      if (!nowVisible.has(id)) cancelSeenTimer(id);
+    });
+    currentlyVisibleIds.current = nowVisible;
   }).current;
 
   const viewabilityConfig = useRef({ viewAreaCoveragePercentThreshold: 50 }).current;
@@ -359,13 +353,12 @@ export default function TipsScreen() {
       item={item}
       isSaved={!!savedIds[item.id]}
       onToggleSave={toggleSave}
-      onVote={handleVote}
       onSendToFriend={openSendModal}
     />
-  ), [savedIds, toggleSave, handleVote, openSendModal]);
+  ), [savedIds, toggleSave, openSendModal]);
 
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
       {/* Header */}
       <View style={styles.header}>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
@@ -443,12 +436,13 @@ export default function TipsScreen() {
           data={savedTips}
           extraData={savedIds}
           renderItem={({ item }: { item: StudyTip }) => (
-            <TipCard item={item} isSaved={true} onToggleSave={toggleSave} onVote={handleVote} onSendToFriend={openSendModal} />
+            <TipCard item={item} isSaved={true} onToggleSave={toggleSave} onSendToFriend={openSendModal} />
           )}
           keyExtractor={(item) => item.id.toString()}
           showsVerticalScrollIndicator={false}
           snapToInterval={CARD_HEIGHT + 16}
           decelerationRate="fast"
+          refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={onRefresh} tintColor={colors.primary} />}
           contentContainerStyle={styles.listContent}
           ListEmptyComponent={
             <View style={styles.emptyState}>
@@ -461,9 +455,10 @@ export default function TipsScreen() {
       )}
 
       {/* Send to Friend Modal */}
-      <Modal visible={showSendModal} transparent animationType="slide">
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
+      <Modal visible={showSendModal} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setShowSendModal(false)}>
+        <View style={{ flex: 1, backgroundColor: '#fff' }}>
+          <DragHandle />
+          <View style={{ flex: 1, padding: 20 }}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>Send tip to...</Text>
               <TouchableOpacity onPress={() => setShowSendModal(false)} style={styles.modalClose}>
@@ -691,9 +686,10 @@ const styles = StyleSheet.create({
   speechBubble: {
     backgroundColor: 'rgba(255,255,255,0.85)',
     borderRadius: 24,
-    paddingHorizontal: 22,
+    paddingHorizontal: 16,
     paddingTop: 20,
     paddingBottom: 14,
+    overflow: 'hidden',
     ...shadows.small,
   },
   speechTailWrap: {
@@ -720,10 +716,25 @@ const styles = StyleSheet.create({
   actionsRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    justifyContent: 'center',
+    gap: 10,
     paddingTop: 12,
     borderTopWidth: 1,
     borderTopColor: 'rgba(0,0,0,0.06)',
+  },
+  likesDisplay: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  likesIcon: {
+    fontSize: 14,
+    color: '#E25B5B',
+  },
+  likesCount: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#8A9A92',
   },
 
   animalArea: {
@@ -819,7 +830,7 @@ const styles = StyleSheet.create({
     color: '#E25B5B',
   },
   saveBtnText: {
-    fontSize: 13,
+    fontSize: 17,
     fontWeight: '600',
     color: '#8A9A92',
   },
@@ -843,7 +854,7 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   sendBtnText: {
-    fontSize: 13,
+    fontSize: 17,
     fontWeight: '600',
     color: '#5F8C87',
   },

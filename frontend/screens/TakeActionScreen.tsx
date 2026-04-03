@@ -16,6 +16,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useNavigation } from '@react-navigation/native';
 import * as WebBrowser from 'expo-web-browser';
+import ConfettiCannon from 'react-native-confetti-cannon';
 import { colors, shadows, spacing, borderRadius } from '../theme/colors';
 import { useAuth } from '../contexts/AuthContext';
 import { animalImages, getAnimalImage } from '../assets/animals';
@@ -42,11 +43,11 @@ interface PersonalStats {
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
 const DONATION_AMOUNTS = [
-  { amount: 2, label: '$2', nudge: 'A coffee for conservation' },
-  { amount: 5, label: '$5', nudge: 'Protect 1 acre of habitat', popular: true },
-  { amount: 10, label: '$10', nudge: 'Feed a rescued animal for a week' },
-  { amount: 25, label: '$25', nudge: 'Fund anti-poaching patrols' },
-  { amount: 50, label: '$50', nudge: 'Rehabilitate an injured animal' },
+  { amount: 2, label: '$2', nudge: 'Instead of a bottle of water' },
+  { amount: 5, label: '$5', nudge: 'Instead of a takeaway coffee', popular: true },
+  { amount: 10, label: '$10', nudge: 'Instead of a quick meal outside' },
+  { amount: 25, label: '$25', nudge: 'Instead of an uber ride' },
+  { amount: 50, label: '$50', nudge: 'Instead of a nice weekend brunch' },
 ];
 
 const IMPACT_FACTS = [
@@ -57,50 +58,59 @@ const IMPACT_FACTS = [
 
 const ENDANGERED_STORIES = [
   {
-    animal: 'Sumatran Orangutan',
-    image: 'sumatran_orangutan',
-    fact: 'Only 14,000 remain in the wild. Their rainforest home is disappearing at an alarming rate.',
+    animal: 'Tapanuli Orangutan',
+    imageName: 'Tapanuli Orangutan',
+    fact: 'Fewer than 800 remain in the wild. Their rainforest home is disappearing at an alarming rate.',
     urgency: 'Critically Endangered',
   },
   {
     animal: 'Amur Leopard',
-    image: 'amur_leopard',
+    imageName: 'Amur Leopard',
     fact: 'Fewer than 100 remain in the wild, making them the world\'s rarest big cat.',
     urgency: 'Critically Endangered',
   },
   {
-    animal: 'Hawksbill Sea Turtle',
-    image: 'hawksbill_sea_turtle',
+    animal: 'Hawksbill Turtle',
+    imageName: 'Hawksbill Turtle',
     fact: 'Their population has declined by 80% in the last century due to habitat loss and poaching.',
     urgency: 'Critically Endangered',
   },
   {
     animal: 'Javan Rhino',
-    image: 'javan_rhino',
+    imageName: 'Javan Rhino',
     fact: 'Only 72 individuals survive. They\'re one step from disappearing forever.',
+    urgency: 'Critically Endangered',
+  },
+  {
+    animal: 'Sunda Island Tiger',
+    imageName: 'Sunda Island Tiger',
+    fact: 'Fewer than 400 survive on the island of Sumatra. Deforestation is their greatest threat.',
     urgency: 'Critically Endangered',
   },
 ];
 
 const FALLBACK_MESSAGES = [
-  '💚 Be the first to donate through Endura!',
+  '🩷 Be the first to donate through Endura!',
   '🐢 Every dollar goes directly to WWF conservation',
-  '🐘 94% of every dollar funds real-world impact',
+  '🐘 Every donation supports real-world conservation',
   '🌱 Your donation protects endangered species worldwide',
 ];
 
-const animalImageMap: Record<string, any> = {
-  sumatran_orangutan: animalImages['Sumatran Orangutan'],
-  amur_leopard: animalImages['Amur Leopard'],
-  hawksbill_sea_turtle: animalImages['Hawksbill Sea Turtle'],
-  javan_rhino: animalImages['Javan Rhino'],
-};
+const MILESTONES = [
+  { amount: 10, label: 'Seed Planter', icon: '🌱', desc: 'First steps for conservation' },
+  { amount: 50, label: 'Habitat Guardian', icon: '🌿', desc: 'Protecting real habitats' },
+  { amount: 100, label: 'Wildlife Protector', icon: '🛡️', desc: 'Funding anti-poaching patrols' },
+  { amount: 250, label: 'Species Saviour', icon: '🦁', desc: 'Rescuing endangered animals' },
+  { amount: 500, label: 'Conservation Hero', icon: '🏆', desc: 'Making a lasting impact' },
+  { amount: 1000, label: 'Planet Champion', icon: '🌍', desc: 'A true force for nature' },
+];
 
 export default function TakeActionScreen() {
   const navigation = useNavigation<any>();
   const { user, profilePic } = useAuth();
-  const [selectedAmount, setSelectedAmount] = useState(2);
+  const [selectedAmount, setSelectedAmount] = useState(5);
   const [showThankYou, setShowThankYou] = useState(false);
+  const [showConfetti, setShowConfetti] = useState(false);
   const [storyIndex, setStoryIndex] = useState(0);
   const [communityStats, setCommunityStats] = useState<CommunityStats | null>(null);
   const [personalStats, setPersonalStats] = useState<PersonalStats | null>(null);
@@ -145,10 +155,10 @@ export default function TakeActionScreen() {
       const recent = communityStats.recent_donations[0];
       msgs.push(`🌱 ${recent.name} just donated $${recent.amount}`);
     }
-    msgs.push(`💚 ${communityStats.this_month_count} donations this month`);
+    msgs.push(`🩷 ${communityStats.this_month_count} donations this month`);
     msgs.push(`🐢 $${communityStats.total_raised.toFixed(0)} raised for conservation`);
     msgs.push(`🐘 ${communityStats.total_donors} donors and counting`);
-    msgs.push(`🔥 94% of every dollar goes directly to WWF`);
+    msgs.push(`🔥 Every donation goes directly to WWF`);
     return msgs;
   }, [communityStats]);
 
@@ -187,7 +197,7 @@ export default function TakeActionScreen() {
 
   const handleDonate = async () => {
     const donationId = user?.id ? `endura-u${user.id}-${Date.now()}` : `endura-${Date.now()}`;
-    const donateUrl = `${EVERY_ORG_WWF_BASE}?amount=0&frequency=ONCE&webhook_token=${EVERY_ORG_WEBHOOK_TOKEN}&partner_donation_id=${donationId}#donate`;
+    const donateUrl = `${EVERY_ORG_WWF_BASE}?amount=${selectedAmount}&frequency=ONCE&method=pay&webhook_token=${EVERY_ORG_WEBHOOK_TOKEN}&partner_donation_id=${donationId}#donate`;
     try {
       await WebBrowser.openBrowserAsync(donateUrl, {
         presentationStyle: WebBrowser.WebBrowserPresentationStyle.FORM_SHEET,
@@ -211,6 +221,7 @@ export default function TakeActionScreen() {
       fetchPersonalStats();
 
       if (confirmed) {
+        setShowConfetti(true);
         setShowThankYou(true);
         thankYouScale.setValue(0);
         Animated.spring(thankYouScale, { toValue: 1, friction: 4, tension: 50, useNativeDriver: true }).start();
@@ -221,10 +232,10 @@ export default function TakeActionScreen() {
   };
 
   const story = ENDANGERED_STORIES[storyIndex];
-  const storyImg = animalImageMap[story.image];
+  const storyImg = getAnimalImage(story.imageName);
 
   return (
-    <SafeAreaView style={styles.container} edges={['top']}>
+    <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
         {/* Header */}
         <View style={styles.header}>
@@ -255,11 +266,11 @@ export default function TakeActionScreen() {
           style={styles.heroSection}
         >
           <Animated.Text style={[styles.heroHeart, { transform: [{ scale: heartPulse }] }]}>
-            💚
+            🩷
           </Animated.Text>
           <Text style={styles.heroTitle}>They Need You</Text>
           <Text style={styles.heroBody}>
-            Your donation goes directly to WWF conservation efforts.{'\n'}94% of every dollar funds real-world impact.
+            Your donation goes directly to WWF conservation efforts.
           </Text>
         </LinearGradient>
 
@@ -352,7 +363,7 @@ export default function TakeActionScreen() {
             {personalStats.history.slice(0, 5).map((d, i) => (
               <View key={i} style={styles.historyRow}>
                 <View style={styles.historyLeft}>
-                  <Text style={styles.historyDot}>💚</Text>
+                  <Text style={styles.historyDot}>🩷</Text>
                   <View>
                     <Text style={styles.historyAmount}>${d.amount.toFixed(2)}</Text>
                     <Text style={styles.historyNonprofit}>to {d.nonprofit}</Text>
@@ -366,61 +377,6 @@ export default function TakeActionScreen() {
           </View>
         )}
 
-        {/* Donation Pot Visual */}
-        <View style={styles.potSection}>
-          <Text style={styles.potTitle}>🫙 Community Conservation Fund</Text>
-          <View style={styles.potContainer}>
-            <View style={styles.potOutline}>
-              <Animated.View
-                style={[
-                  styles.potFill,
-                  {
-                    height: potFill.interpolate({
-                      inputRange: [0, 1],
-                      outputRange: ['0%', '100%'],
-                    }),
-                  },
-                ]}
-              >
-                <LinearGradient
-                  colors={['#A8C8D8', '#5F8C87', '#4A7A62']}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 0, y: 1 }}
-                  style={StyleSheet.absoluteFill}
-                />
-              </Animated.View>
-              <View style={styles.potCoinsOverlay}>
-                <Text style={styles.potCoinsEmoji}>🪙🪙🪙</Text>
-              </View>
-            </View>
-            <Animated.Text
-              style={[
-                styles.coinDropEmoji,
-                {
-                  opacity: coinOpacity,
-                  transform: [
-                    {
-                      translateY: coinAnim.interpolate({
-                        inputRange: [0, 1],
-                        outputRange: [-30, 40],
-                      }),
-                    },
-                  ],
-                },
-              ]}
-            >
-              🪙
-            </Animated.Text>
-          </View>
-          <Text style={styles.potAmount}>
-            ${communityStats ? communityStats.total_raised.toFixed(0) : '0'} raised by our community
-          </Text>
-          <Text style={styles.potGoal}>
-            {communityStats && communityStats.this_month_count > 0
-              ? `${communityStats.this_month_count} donations this month · $${communityStats.this_month_raised.toFixed(0)} raised`
-              : 'Community goal: $10,000 this month'}
-          </Text>
-        </View>
 
         {/* Endangered Animal Story Card */}
         <View style={styles.storyCard}>
@@ -472,47 +428,52 @@ export default function TakeActionScreen() {
 
       {/* Thank You Modal */}
       <Modal visible={showThankYou} transparent animationType="fade">
-        <View style={styles.thankYouOverlay}>
+        <TouchableOpacity style={styles.thankYouOverlay} activeOpacity={1} onPress={() => { setShowThankYou(false); setShowConfetti(false); }}>
+          <TouchableOpacity activeOpacity={1}>
           <Animated.View style={[styles.thankYouCard, { transform: [{ scale: thankYouScale }] }]}>
             <LinearGradient
               colors={['#E7EFEA', '#D4E8DE', '#C2DDD0']}
               style={styles.thankYouGradient}
             >
-              <Text style={styles.thankYouEmoji}>💚</Text>
-              <Text style={styles.thankYouTitle}>Thank You!</Text>
-              <Text style={styles.thankYouBody}>
-                Your donation is making a real difference for endangered species around the world.
-              </Text>
-              {personalStats && personalStats.donation_count > 0 && (
-                <Text style={styles.thankYouStats}>
-                  You've donated ${personalStats.total_donated.toFixed(0)} across {personalStats.donation_count} donation{personalStats.donation_count !== 1 ? 's' : ''}! 🌟
-                </Text>
-              )}
-              {communityStats && communityStats.total_donations > 0 && (
-                <Text style={styles.thankYouStats}>
-                  Together, {communityStats.total_donors} donor{communityStats.total_donors !== 1 ? 's' : ''} have raised ${communityStats.total_raised.toFixed(0)} for conservation 🌿
-                </Text>
-              )}
-              <Text style={styles.thankYouImpact}>
-                You're not just studying — you're saving lives. 🌿
-              </Text>
+              <Text style={styles.thankYouTitle}>Thank You! 🎉</Text>
               <View style={styles.thankYouAnimals}>
-                {['Sumatran Orangutan', 'Amur Leopard', 'Hawksbill Sea Turtle'].map((name) => {
+                {['Sunda Island Tiger', 'Amur Leopard', 'Hawksbill Turtle'].map((name) => {
                   const img = getAnimalImage(name);
                   return img ? (
                     <Image key={name} source={img} style={styles.thankYouAnimalImg} resizeMode="contain" />
                   ) : null;
                 })}
               </View>
+              <View style={styles.thankYouFocalWrap}>
+                <Text style={styles.thankYouImpact}>
+                  You're not just studying{'\n'}— you're saving lives. 🌿
+                </Text>
+              </View>
+              {personalStats && personalStats.donation_count > 0 && (
+                <Text style={styles.thankYouStats}>
+                  You've donated ${personalStats.total_donated.toFixed(0)} across {personalStats.donation_count} donation{personalStats.donation_count !== 1 ? 's' : ''}! 🌟
+                </Text>
+              )}
               <TouchableOpacity
                 style={styles.thankYouClose}
-                onPress={() => setShowThankYou(false)}
+                onPress={() => { setShowThankYou(false); setShowConfetti(false); }}
               >
                 <Text style={styles.thankYouCloseText}>Keep Making a Difference</Text>
               </TouchableOpacity>
             </LinearGradient>
           </Animated.View>
-        </View>
+          </TouchableOpacity>
+          {showConfetti && (
+            <ConfettiCannon
+              count={200}
+              origin={{ x: SCREEN_WIDTH / 2, y: -10 }}
+              autoStart
+              fadeOut
+              explosionSpeed={400}
+              fallSpeed={2500}
+            />
+          )}
+        </TouchableOpacity>
       </Modal>
     </SafeAreaView>
   );
@@ -799,63 +760,99 @@ const styles = StyleSheet.create({
     lineHeight: 13,
   },
 
-  // Pot Section
-  potSection: {
-    alignItems: 'center',
+  // Milestone Tracker
+  milestoneSection: {
     marginHorizontal: spacing.md,
-    marginBottom: 16,
-  },
-  potTitle: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: colors.textPrimary,
-    marginBottom: 12,
-  },
-  potContainer: {
-    alignItems: 'center',
-    position: 'relative',
-  },
-  potOutline: {
-    width: 120,
-    height: 140,
+    backgroundColor: '#FFFFFF',
     borderRadius: 20,
-    borderWidth: 3,
-    borderColor: '#5F8C87',
-    backgroundColor: 'rgba(232, 240, 236, 0.5)',
-    overflow: 'hidden',
-    justifyContent: 'flex-end',
+    padding: 20,
+    marginBottom: 16,
+    ...shadows.medium,
   },
-  potFill: {
-    width: '100%',
-    borderRadius: 16,
-    overflow: 'hidden',
+  milestoneHeader: {
+    fontSize: 17,
+    fontWeight: '800',
+    color: colors.textPrimary,
+    marginBottom: 2,
   },
-  potCoinsOverlay: {
-    position: 'absolute',
-    bottom: 10,
-    left: 0,
-    right: 0,
-    alignItems: 'center',
-  },
-  potCoinsEmoji: {
-    fontSize: 20,
-    letterSpacing: 4,
-  },
-  coinDropEmoji: {
-    position: 'absolute',
-    top: -10,
-    fontSize: 28,
-  },
-  potAmount: {
-    fontSize: 16,
+  milestoneRaised: {
+    fontSize: 24,
     fontWeight: '800',
     color: colors.primary,
-    marginTop: 10,
+    marginBottom: 16,
   },
-  potGoal: {
+  milestoneTrack: {
+    gap: 0,
+  },
+  milestoneItem: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  milestoneLeft: {
+    alignItems: 'center',
+    width: 44,
+  },
+  milestoneIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: '#F0F4F2',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: '#E2EAE5',
+  },
+  milestoneIconUnlocked: {
+    backgroundColor: '#E7F5ED',
+    borderColor: colors.primary,
+  },
+  milestoneBar: {
+    width: 4,
+    flex: 1,
+    backgroundColor: '#E2EAE5',
+    borderRadius: 2,
+    marginVertical: 2,
+    overflow: 'hidden',
+  },
+  milestoneBarFill: {
+    width: '100%',
+    backgroundColor: colors.primary,
+    borderRadius: 2,
+  } as any,
+  milestoneInfo: {
+    flex: 1,
+    paddingBottom: 16,
+    opacity: 0.5,
+  },
+  milestoneInfoUnlocked: {
+    opacity: 1,
+  },
+  milestoneName: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: colors.textPrimary,
+  },
+  milestoneNameUnlocked: {
+    color: colors.primary,
+  },
+  milestoneDesc: {
     fontSize: 12,
     color: colors.textMuted,
+    fontWeight: '500',
+    marginTop: 1,
+  },
+  milestoneTarget: {
+    fontSize: 11,
+    color: colors.textMuted,
+    fontWeight: '600',
     marginTop: 2,
+  },
+  milestoneMonthly: {
+    fontSize: 12,
+    color: colors.textMuted,
+    textAlign: 'center',
+    fontWeight: '500',
+    marginTop: 12,
   },
 
   // Personal Nudge
@@ -1021,48 +1018,47 @@ const styles = StyleSheet.create({
   },
   thankYouGradient: {
     padding: 28,
+    paddingTop: 32,
     alignItems: 'center',
   },
-  thankYouEmoji: {
-    fontSize: 56,
-    marginBottom: 12,
-  },
   thankYouTitle: {
-    fontSize: 28,
+    fontSize: 30,
     fontWeight: '800',
     color: '#2F4A3E',
-    marginBottom: 10,
-  },
-  thankYouBody: {
-    fontSize: 15,
-    lineHeight: 22,
-    color: '#3B5F50',
-    textAlign: 'center',
-    fontWeight: '500',
-    marginBottom: 8,
+    marginBottom: 16,
   },
   thankYouStats: {
     fontSize: 13,
     color: '#5E7F6E',
     textAlign: 'center',
     fontWeight: '600',
-    marginBottom: 8,
+    marginBottom: 16,
     paddingHorizontal: 12,
   },
-  thankYouImpact: {
-    fontSize: 14,
-    color: colors.primary,
-    fontWeight: '700',
+  thankYouFocalWrap: {
+    backgroundColor: 'rgba(47, 74, 62, 0.08)',
+    borderRadius: 16,
+    paddingVertical: 16,
+    paddingHorizontal: 24,
     marginBottom: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(47, 74, 62, 0.12)',
+  },
+  thankYouImpact: {
+    fontSize: 20,
+    color: '#2F4A3E',
+    fontWeight: '800',
+    textAlign: 'center',
+    lineHeight: 28,
   },
   thankYouAnimals: {
     flexDirection: 'row',
-    gap: 12,
+    gap: 16,
     marginBottom: 20,
   },
   thankYouAnimalImg: {
-    width: 50,
-    height: 50,
+    width: 80,
+    height: 80,
   },
   thankYouClose: {
     backgroundColor: '#2F4A3E',

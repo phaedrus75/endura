@@ -133,7 +133,7 @@ export default function BadgesScreen() {
   });
 
   return (
-    <SafeAreaView style={styles.container} edges={['top']}>
+    <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
       <View style={styles.header}>
         <Text style={styles.headerTitle}>Badges</Text>
         <Text style={styles.headerSubtitle}>

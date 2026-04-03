@@ -13,6 +13,7 @@ import {
   Image,
   KeyboardAvoidingView,
   Platform,
+  Animated,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -21,6 +22,7 @@ import ConfettiCannon from 'react-native-confetti-cannon';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import LottieView from 'lottie-react-native';
 import { spacing, borderRadius } from '../theme/colors';
+import SwipeDismiss, { DragHandle } from '../components/SwipeDismiss';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useAuth } from '../contexts/AuthContext';
 import { Analytics } from '../services/analytics';
@@ -64,7 +66,7 @@ const shadows = {
     elevation: 8,
   },
 };
-import { animalsAPI, tasksAPI, statsAPI, badgesAPI, Egg, Task, UserStats, UserAnimal, BadgeResponse } from '../services/api';
+import { animalsAPI, tasksAPI, statsAPI, badgesAPI, sharedEggAPI, Egg, Task, UserStats, UserAnimal, BadgeResponse, SharedEgg } from '../services/api';
 import { animalImages, getAnimalImage } from '../assets/animals';
 
 const { width, height } = Dimensions.get('window');
@@ -121,7 +123,7 @@ const RecentHatchCard = ({ animal }: { animal?: UserAnimal }) => {
       {animal ? (
         <View style={styles.recentHatchContent}>
           {imageSource ? (
-            <Image source={imageSource} style={styles.recentHatchImage} />
+            <Image source={imageSource} style={styles.recentHatchImage} resizeMode="contain" />
           ) : (
             <Text style={styles.recentHatchEmoji}>🐾</Text>
           )}
@@ -133,6 +135,18 @@ const RecentHatchCard = ({ animal }: { animal?: UserAnimal }) => {
       )}
     </View>
   );
+};
+
+const formatStudyTime = (minutes: number) => {
+  if (minutes < 60) return `${minutes}m`;
+  const hours = Math.floor(minutes / 60);
+  const mins = minutes % 60;
+  if (hours >= 24) {
+    const days = Math.floor(hours / 24);
+    const remainHours = hours % 24;
+    return remainHours > 0 ? `${days}d ${remainHours}h` : `${days}d`;
+  }
+  return mins > 0 ? `${hours}h ${mins}m` : `${hours}h`;
 };
 
 export default function HomeScreen() {
@@ -160,9 +174,41 @@ export default function HomeScreen() {
   const [newTaskDueDate, setNewTaskDueDate] = useState<Date | null>(null);
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [newSubjectName, setNewSubjectName] = useState('');
+  const [activeSharedEgg, setActiveSharedEgg] = useState<SharedEgg | null>(null);
+  const [hasSeenTips, setHasSeenTips] = useState(true);
+  const tipsPulse = useRef(new Animated.Value(1)).current;
   const confettiRef = useRef<any>(null);
 
-  // Load custom subjects from storage
+  useEffect(() => {
+    const checkTips = async () => {
+      const seen = await AsyncStorage.getItem(`hasSeenTips_${user?.id || 'anon'}`);
+      setHasSeenTips(seen === 'true');
+    };
+    checkTips();
+  }, [user?.id]);
+
+  useEffect(() => {
+    if (!hasSeenTips) {
+      const loop = Animated.loop(
+        Animated.sequence([
+          Animated.timing(tipsPulse, { toValue: 1.25, duration: 800, useNativeDriver: true }),
+          Animated.timing(tipsPulse, { toValue: 1, duration: 800, useNativeDriver: true }),
+        ])
+      );
+      loop.start();
+      return () => loop.stop();
+    }
+  }, [hasSeenTips]);
+
+  const handleOpenTips = async () => {
+    if (!hasSeenTips) {
+      setHasSeenTips(true);
+      await AsyncStorage.setItem(`hasSeenTips_${user?.id || 'anon'}`, 'true');
+    }
+    navigation.navigate('Tips');
+  };
+
+  // Load subjects from storage, merging with backend study data
   useEffect(() => {
     const loadSubjects = async () => {
       try {
@@ -186,28 +232,48 @@ export default function HomeScreen() {
     }
   };
 
-  const addNewSubject = () => {
-    if (newSubjectName.trim() && !subjects.includes(newSubjectName.trim())) {
-      const updated = [...subjects, newSubjectName.trim()];
+  const addNewSubject = async () => {
+    const name = newSubjectName.trim();
+    if (name && !subjects.includes(name)) {
+      const updated = [...subjects, name];
       saveSubjects(updated);
       setNewSubjectName('');
       setShowAddSubject(false);
+      try {
+        const key = `removedSubjects_${user?.id || 'anon'}`;
+        const stored = await AsyncStorage.getItem(key);
+        if (stored) {
+          const removed: string[] = JSON.parse(stored);
+          const filtered = removed.filter(s => s !== name);
+          await AsyncStorage.setItem(key, JSON.stringify(filtered));
+        }
+      } catch (e) {}
     }
   };
 
-  const removeSubject = (subject: string) => {
+  const removeSubject = async (subject: string) => {
     const updated = subjects.filter(s => s !== subject);
     saveSubjects(updated);
+    try {
+      const key = `removedSubjects_${user?.id || 'anon'}`;
+      const stored = await AsyncStorage.getItem(key);
+      const removed: string[] = stored ? JSON.parse(stored) : [];
+      if (!removed.includes(subject)) {
+        removed.push(subject);
+        await AsyncStorage.setItem(key, JSON.stringify(removed));
+      }
+    } catch (e) {}
   };
 
   const loadData = async () => {
     try {
-      const [eggData, tasksData, statsData, animalsData, badgesData] = await Promise.all([
+      const [eggData, tasksData, statsData, animalsData, badgesData, sharedEgg] = await Promise.all([
         animalsAPI.getEgg(),
         tasksAPI.getTasks(true),
         statsAPI.getStats(),
         animalsAPI.getMyAnimals().catch(() => []),
         badgesAPI.getBadges().catch(() => []),
+        sharedEggAPI.getActive().catch(() => null),
       ]);
       
       setEgg(eggData);
@@ -215,6 +281,27 @@ export default function HomeScreen() {
       setStats(statsData);
       setRecentAnimals(animalsData.slice(0, 3));
       setBadges(badgesData);
+      setActiveSharedEgg(sharedEgg);
+
+      if (statsData?.study_minutes_by_subject) {
+        const backendSubjects = Object.keys(statsData.study_minutes_by_subject);
+        const removedRaw = await AsyncStorage.getItem(`removedSubjects_${user?.id || 'anon'}`).catch(() => null);
+        const removedSubjects: string[] = removedRaw ? JSON.parse(removedRaw) : [];
+        setSubjects(prev => {
+          const merged = [...prev];
+          let changed = false;
+          for (const s of backendSubjects) {
+            if (!merged.includes(s) && !removedSubjects.includes(s)) {
+              merged.push(s);
+              changed = true;
+            }
+          }
+          if (changed) {
+            AsyncStorage.setItem(`customSubjects_${user?.id || 'anon'}`, JSON.stringify(merged)).catch(() => {});
+          }
+          return changed ? merged : prev;
+        });
+      }
     } catch (error) {
       console.error('Failed to load data:', error);
     }
@@ -260,6 +347,28 @@ export default function HomeScreen() {
     } catch (error: any) {
       Alert.alert('Error', error.message);
     }
+  };
+
+  const deleteTask = (task: Task) => {
+    Alert.alert(
+      'Delete To-Do',
+      `Are you sure you want to delete "${task.title}"?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await tasksAPI.deleteTask(task.id);
+              loadData();
+            } catch (error: any) {
+              Alert.alert('Error', error.message);
+            }
+          },
+        },
+      ]
+    );
   };
 
   const handleHatch = async () => {
@@ -315,16 +424,18 @@ export default function HomeScreen() {
         <View style={styles.heroCard}>
           {/* Header */}
           <View style={styles.headerSection}>
-            <View>
-              <Text style={styles.greeting}>Hello, {user?.username || 'Friend'}!</Text>
-              <Text style={styles.title}>Home</Text>
+            <View style={{ flex: 1, marginRight: 10 }}>
+              <Text style={styles.greeting} numberOfLines={1}>Hello, {user?.username || 'Friend'}!</Text>
             </View>
             <View style={{ flexDirection: 'row', gap: 8 }}>
               <TouchableOpacity 
                 style={styles.profileButton}
-                onPress={() => navigation.navigate('Tips')}
+                onPress={handleOpenTips}
               >
                 <Text style={styles.profileButtonEmoji}>💡</Text>
+                {!hasSeenTips && (
+                  <Animated.View style={[styles.tipsDot, { transform: [{ scale: tipsPulse }] }]} />
+                )}
               </TouchableOpacity>
               <TouchableOpacity 
                 style={styles.profileButton}
@@ -411,6 +522,29 @@ export default function HomeScreen() {
           </View>
         </View>
 
+        {/* Shared Egg Progress Card */}
+        {activeSharedEgg && activeSharedEgg.status === 'active' && (
+          <TouchableOpacity
+            style={styles.sharedEggCard}
+            activeOpacity={0.8}
+            onPress={() => navigation.navigate('Timer')}
+          >
+            <View style={styles.sharedEggCardHeader}>
+              <Text style={{ fontSize: 18 }}>💚</Text>
+              <Text style={styles.sharedEggCardTitle}>
+                Hatching with {activeSharedEgg.creator.id === user?.id ? activeSharedEgg.partner.username : activeSharedEgg.creator.username}
+              </Text>
+            </View>
+            <Text style={styles.sharedEggCardAnimal}>{activeSharedEgg.animal_name}</Text>
+            <View style={styles.sharedEggCardBar}>
+              <View style={[styles.sharedEggCardBarFill, { width: `${activeSharedEgg.progress_percent}%` }]} />
+            </View>
+            <Text style={styles.sharedEggCardProgress}>
+              {activeSharedEgg.creator_minutes + activeSharedEgg.partner_minutes} / {activeSharedEgg.minutes_required} min · {Math.round(activeSharedEgg.progress_percent)}%
+            </Text>
+          </TouchableOpacity>
+        )}
+
         {/* Recent Hatches Section - Nestled in Nature Landscape */}
         <View style={styles.recentHatchesSection}>
           <Text style={[styles.sectionTitle, { paddingHorizontal: spacing.lg }]}>My recent hatches</Text>
@@ -436,6 +570,13 @@ export default function HomeScreen() {
           ) : (
             pendingTasks.map((task) => (
               <View key={task.id} style={styles.taskItem}>
+                <TouchableOpacity
+                  style={styles.taskDeleteBtn}
+                  onPress={() => deleteTask(task)}
+                  hitSlop={{ top: 12, bottom: 12, left: 8, right: 8 }}
+                >
+                  <Text style={styles.taskDeleteText}>✕</Text>
+                </TouchableOpacity>
                 <View style={styles.taskInfo}>
                   <Text style={styles.taskTitle}>{task.title}</Text>
                   {task.description ? (
@@ -492,6 +633,13 @@ export default function HomeScreen() {
               ) : (
                 completedTasks.map((task) => (
                   <View key={task.id} style={[styles.taskItem, styles.taskItemCompleted]}>
+                    <TouchableOpacity
+                      style={styles.taskDeleteBtn}
+                      onPress={() => deleteTask(task)}
+                      hitSlop={{ top: 12, bottom: 12, left: 8, right: 8 }}
+                    >
+                      <Text style={styles.taskDeleteText}>✕</Text>
+                    </TouchableOpacity>
                     <View style={styles.taskInfo}>
                       <Text style={[styles.taskTitle, styles.taskTitleCompleted]}>
                         {task.title}
@@ -500,9 +648,13 @@ export default function HomeScreen() {
                         <Text style={[styles.taskSubtitle, { opacity: 0.6 }]}>{task.description}</Text>
                       ) : null}
                     </View>
-                    <View style={[styles.taskCheckbox, styles.taskCheckboxCompleted]}>
+                    <TouchableOpacity
+                      style={[styles.taskCheckbox, styles.taskCheckboxCompleted]}
+                      onPress={() => toggleTask(task)}
+                      hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+                    >
                       <Text style={styles.checkmarkCompleted}>✓</Text>
-                    </View>
+                    </TouchableOpacity>
                   </View>
                 ))
               )}
@@ -513,17 +665,33 @@ export default function HomeScreen() {
       </ScrollView>
 
       {/* Add Task Modal */}
-      <Modal visible={showAddTask} transparent animationType="slide">
+      <Modal visible={showAddTask} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => { setShowAddTask(false); setShowAddSubject(false); setShowDatePicker(false); setNewTaskDueDate(null); }}>
+        <View style={{ flex: 1, backgroundColor: '#fff' }}>
+        <DragHandle />
+        <View style={styles.addTaskHeader}>
+          <TouchableOpacity
+            onPress={() => {
+              setShowAddTask(false);
+              setShowAddSubject(false);
+              setShowDatePicker(false);
+              setNewTaskDueDate(null);
+            }}
+          >
+            <Text style={styles.addTaskHeaderCancel}>Cancel</Text>
+          </TouchableOpacity>
+          <Text style={styles.addTaskHeaderTitle}>New To-Do</Text>
+          <TouchableOpacity onPress={addTask}>
+            <Text style={styles.addTaskHeaderSave}>Add Task</Text>
+          </TouchableOpacity>
+        </View>
         <KeyboardAvoidingView 
           behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-          style={styles.modalOverlay}
+          style={{ flex: 1 }}
         >
           <ScrollView 
-            contentContainerStyle={styles.modalScrollContent}
+            contentContainerStyle={{ padding: 20 }}
             keyboardShouldPersistTaps="handled"
           >
-            <View style={styles.modalContent}>
-              <Text style={styles.modalTitle}>New To-Do</Text>
               
               <Text style={styles.inputLabel}>Task Name</Text>
               <TextInput
@@ -537,31 +705,38 @@ export default function HomeScreen() {
               <Text style={styles.inputLabel}>Subject</Text>
               <View style={styles.subjectGrid}>
                 {subjects.map((subject) => (
-                  <TouchableOpacity
-                    key={subject}
-                    style={[
-                      styles.subjectChip,
-                      newTaskSubject === subject && styles.subjectChipActive,
-                    ]}
-                    onPress={() => setNewTaskSubject(newTaskSubject === subject ? '' : subject)}
-                    onLongPress={() => {
-                      Alert.alert(
-                        'Remove Subject',
-                        `Remove "${subject}" from your subjects?`,
-                        [
-                          { text: 'Cancel', style: 'cancel' },
-                          { text: 'Remove', onPress: () => removeSubject(subject), style: 'destructive' },
-                        ]
-                      );
-                    }}
-                  >
-                    <Text style={[
-                      styles.subjectChipText,
-                      newTaskSubject === subject && styles.subjectChipTextActive,
-                    ]}>
-                      {subject}
-                    </Text>
-                  </TouchableOpacity>
+                  <View key={subject} style={[
+                    styles.subjectChip,
+                    newTaskSubject === subject && styles.subjectChipActive,
+                  ]}>
+                    <TouchableOpacity
+                      style={{ flexDirection: 'row', alignItems: 'center' }}
+                      onPress={() => setNewTaskSubject(newTaskSubject === subject ? '' : subject)}
+                    >
+                      <Text style={[
+                        styles.subjectChipText,
+                        newTaskSubject === subject && styles.subjectChipTextActive,
+                      ]}>
+                        {subject}
+                      </Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={styles.subjectRemoveBtn}
+                      onPress={() => {
+                        Alert.alert(
+                          'Remove Subject',
+                          `Remove "${subject}" from your subjects?`,
+                          [
+                            { text: 'Cancel', style: 'cancel' },
+                            { text: 'Remove', onPress: () => removeSubject(subject), style: 'destructive' },
+                          ]
+                        );
+                      }}
+                      hitSlop={{ top: 8, bottom: 8, left: 4, right: 8 }}
+                    >
+                      <Text style={[styles.subjectRemoveText, newTaskSubject === subject && { color: 'rgba(255,255,255,0.6)' }]}>✕</Text>
+                    </TouchableOpacity>
+                  </View>
                 ))}
                 <TouchableOpacity
                   style={styles.addSubjectChip}
@@ -587,9 +762,7 @@ export default function HomeScreen() {
                 </View>
               )}
 
-              <Text style={styles.subjectHint}>Long press a subject to remove it</Text>
-
-              <Text style={styles.inputLabel}>Due Date (optional)</Text>
+              <Text style={[styles.inputLabel, { marginTop: spacing.lg }]}>Due Date (optional)</Text>
               <View style={styles.dueDateRow}>
                 <TouchableOpacity
                   style={styles.dueDateButton}
@@ -622,34 +795,15 @@ export default function HomeScreen() {
                 />
               )}
 
-              <View style={styles.modalButtons}>
-                <TouchableOpacity 
-                  style={styles.modalButtonCancel}
-                  onPress={() => {
-                    setShowAddTask(false);
-                    setShowAddSubject(false);
-                    setShowDatePicker(false);
-                    setNewTaskDueDate(null);
-                  }}
-                >
-                  <Text style={styles.modalButtonCancelText}>Cancel</Text>
-                </TouchableOpacity>
-                <TouchableOpacity 
-                  style={styles.modalButtonSave}
-                  onPress={addTask}
-                >
-                  <Text style={styles.modalButtonSaveText}>Add Task</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
           </ScrollView>
         </KeyboardAvoidingView>
+        </View>
       </Modal>
 
       {/* Hatch Celebration Modal */}
       <Modal visible={showHatchModal} transparent animationType="fade">
-        <View style={styles.hatchModalOverlay}>
-          <View style={styles.hatchModalContent}>
+        <TouchableOpacity style={styles.hatchModalOverlay} activeOpacity={1} onPress={closeHatchModal}>
+          <TouchableOpacity activeOpacity={1} style={styles.hatchModalContent}>
             <TouchableOpacity style={styles.closeButton} onPress={closeHatchModal}>
               <Text style={styles.closeButtonText}>✕</Text>
             </TouchableOpacity>
@@ -667,14 +821,15 @@ export default function HomeScreen() {
             <Text style={styles.hatchModalSubtitle}>
               And hatched a{'\n'}cute {hatchedAnimal?.name || 'Animal'} :)
             </Text>
-          </View>
-        </View>
+          </TouchableOpacity>
+        </TouchableOpacity>
       </Modal>
 
       {/* Eco-Credits Info Modal */}
-      <Modal visible={showEcoModal} transparent animationType="slide">
-        <View style={styles.modalOverlay}>
-          <View style={styles.streakModalContent}>
+      <Modal visible={showEcoModal} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setShowEcoModal(false)}>
+        <View style={{ flex: 1, backgroundColor: '#fff' }}>
+          <DragHandle />
+          <ScrollView contentContainerStyle={{ padding: 20 }}>
             <TouchableOpacity 
               style={styles.streakModalClose}
               onPress={() => setShowEcoModal(false)}
@@ -703,7 +858,7 @@ export default function HomeScreen() {
               </View>
               <View style={styles.streakStatItem}>
                 <Text style={styles.streakStatValue}>
-                  {stats?.total_study_minutes ? Math.floor(stats.total_study_minutes / 60) : 0}h {(stats?.total_study_minutes || 0) % 60}m
+                  {formatStudyTime(stats?.total_study_minutes || 0)}
                 </Text>
                 <Text style={styles.streakStatLabel}>Total Study Time</Text>
               </View>
@@ -730,13 +885,14 @@ export default function HomeScreen() {
             >
               <Text style={styles.streakCloseButtonText}>Got it!</Text>
             </TouchableOpacity>
-          </View>
+          </ScrollView>
         </View>
       </Modal>
 
       {/* Badges Modal */}
       <Modal visible={showBadgesModal} transparent animationType="fade">
         <View style={styles.badgesModalOverlay}>
+          <TouchableOpacity style={StyleSheet.absoluteFill} activeOpacity={1} onPress={() => setShowBadgesModal(false)} />
           <View style={styles.badgesModalContent}>
             <TouchableOpacity
               style={styles.streakModalClose}
@@ -808,9 +964,10 @@ export default function HomeScreen() {
       </Modal>
 
       {/* Streak Details Modal */}
-      <Modal visible={showStreakModal} transparent animationType="slide">
-        <View style={styles.modalOverlay}>
-          <View style={styles.streakModalContent}>
+      <Modal visible={showStreakModal} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setShowStreakModal(false)}>
+        <View style={{ flex: 1, backgroundColor: '#fff' }}>
+          <DragHandle />
+          <ScrollView contentContainerStyle={{ padding: 20 }}>
             <TouchableOpacity 
               style={styles.streakModalClose}
               onPress={() => setShowStreakModal(false)}
@@ -831,7 +988,7 @@ export default function HomeScreen() {
               </View>
               <View style={styles.streakStatItem}>
                 <Text style={styles.streakStatValue}>
-                  {stats?.total_study_minutes ? Math.floor(stats.total_study_minutes / 60) : 0}h {(stats?.total_study_minutes || 0) % 60}m
+                  {formatStudyTime(stats?.total_study_minutes || 0)}
                 </Text>
                 <Text style={styles.streakStatLabel}>Total Study Time</Text>
               </View>
@@ -869,13 +1026,14 @@ export default function HomeScreen() {
             >
               <Text style={styles.streakCloseButtonText}>Got it!</Text>
             </TouchableOpacity>
-          </View>
+          </ScrollView>
         </View>
       </Modal>
 
       {/* Study Time Statistics Modal */}
       <Modal visible={showStudyTimeModal} transparent animationType="fade">
         <View style={styles.studyTimeModalOverlay}>
+          <TouchableOpacity style={StyleSheet.absoluteFill} activeOpacity={1} onPress={() => setShowStudyTimeModal(false)} />
           <View style={styles.studyTimeModalContent}>
             <TouchableOpacity
               style={styles.studyTimeClose}
@@ -926,7 +1084,7 @@ export default function HomeScreen() {
               <View style={styles.studyTimeStatsGrid}>
                 <View style={styles.studyTimeStatItem}>
                   <Text style={styles.studyTimeStatValue}>
-                    {stats?.total_study_minutes ? Math.floor(stats.total_study_minutes / 60) : 0}h {(stats?.total_study_minutes || 0) % 60}m
+                    {formatStudyTime(stats?.total_study_minutes || 0)}
                   </Text>
                   <Text style={styles.studyTimeStatLabel}>All Time</Text>
                 </View>
@@ -998,9 +1156,9 @@ const styles = StyleSheet.create({
   heroCard: {
     backgroundColor: '#C5DEC9',
     marginHorizontal: spacing.md,
-    marginTop: spacing.sm,
+    marginTop: spacing.md,
     borderRadius: 24,
-    paddingBottom: spacing.lg,
+    paddingBottom: spacing.sm,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.06,
@@ -1026,6 +1184,17 @@ const styles = StyleSheet.create({
   },
   profileButtonEmoji: {
     fontSize: 22,
+  },
+  tipsDot: {
+    position: 'absolute' as const,
+    top: 2,
+    right: 2,
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: '#FF6B6B',
+    borderWidth: 1.5,
+    borderColor: '#FFFFFF',
   },
   profileButtonImage: {
     width: 44,
@@ -1141,6 +1310,49 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.lg,
     marginTop: spacing.lg,
   },
+  sharedEggCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    padding: 16,
+    marginHorizontal: spacing.lg,
+    marginTop: spacing.md,
+    borderWidth: 1.5,
+    borderColor: 'rgba(95, 140, 135, 0.25)',
+    ...shadows.small,
+  },
+  sharedEggCardHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 4,
+  },
+  sharedEggCardTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: colors.textPrimary,
+  },
+  sharedEggCardAnimal: {
+    fontSize: 13,
+    color: colors.textSecondary,
+    marginBottom: 10,
+  },
+  sharedEggCardBar: {
+    height: 8,
+    backgroundColor: 'rgba(95, 140, 135, 0.12)',
+    borderRadius: 4,
+    overflow: 'hidden',
+    marginBottom: 6,
+  },
+  sharedEggCardBarFill: {
+    height: '100%',
+    backgroundColor: colors.primary,
+    borderRadius: 4,
+  },
+  sharedEggCardProgress: {
+    fontSize: 12,
+    color: colors.textMuted,
+    textAlign: 'right',
+  },
   recentHatchesSection: {
     marginTop: spacing.sm,
     paddingHorizontal: 0,
@@ -1209,14 +1421,14 @@ const styles = StyleSheet.create({
   },
   recentHatchPlaceholder: {
     alignItems: 'center',
-    justifyContent: 'flex-end',
+    justifyContent: 'center',
     position: 'relative',
-    height: 110,
-    opacity: 0.8,
+    height: 130,
+    opacity: 1,
   },
   placeholderEmoji: {
-    fontSize: 42,
-    marginBottom: 10,
+    fontSize: 70,
+    marginBottom: 0,
     zIndex: 2,
   },
   placeholderText: {
@@ -1278,6 +1490,20 @@ const styles = StyleSheet.create({
   taskDue: {
     fontSize: 12,
     color: 'rgba(255,255,255,0.6)',
+  },
+  taskDeleteBtn: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 8,
+    opacity: 0.5,
+  },
+  taskDeleteText: {
+    fontSize: 14,
+    color: 'rgba(255,255,255,0.5)',
+    fontWeight: '700',
   },
   taskCheckbox: {
     width: 24,
@@ -1424,6 +1650,30 @@ const styles = StyleSheet.create({
     marginBottom: spacing.lg,
     textAlign: 'center',
   },
+  addTaskHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingBottom: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(0,0,0,0.06)',
+  },
+  addTaskHeaderCancel: {
+    fontSize: 16,
+    color: colors.textSecondary,
+    fontWeight: '500',
+  },
+  addTaskHeaderTitle: {
+    fontSize: 17,
+    fontWeight: '700',
+    color: colors.textPrimary,
+  },
+  addTaskHeaderSave: {
+    fontSize: 16,
+    color: colors.primary,
+    fontWeight: '700',
+  },
   modalInput: {
     backgroundColor: colors.surfaceAlt,
     borderRadius: borderRadius.md,
@@ -1451,12 +1701,29 @@ const styles = StyleSheet.create({
     marginBottom: spacing.sm,
   },
   subjectChip: {
-    paddingHorizontal: spacing.md,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingLeft: spacing.md,
+    paddingRight: 6,
     paddingVertical: spacing.sm,
     backgroundColor: colors.surfaceAlt,
     borderRadius: borderRadius.full,
     borderWidth: 1,
     borderColor: colors.cardBorder,
+    gap: 4,
+  },
+  subjectRemoveBtn: {
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    backgroundColor: 'rgba(0,0,0,0.08)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  subjectRemoveText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: colors.textMuted,
   },
   subjectChipActive: {
     backgroundColor: colors.primary,

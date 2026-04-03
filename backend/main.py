@@ -1,13 +1,14 @@
-from fastapi import FastAPI, Depends, HTTPException, status, Request, Header, UploadFile, File, Form
+from fastapi import FastAPI, Depends, HTTPException, status, Request, Header, UploadFile, File, Form, Query
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 from sqlalchemy import text, func
 from datetime import timedelta, datetime
 from typing import List, Optional
-from slowapi import Limiter
+from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
+from slowapi.middleware import SlowAPIMiddleware
 from fastapi.responses import JSONResponse, Response
 import models
 import schemas
@@ -20,10 +21,8 @@ from auth import (
 import os
 import json as _json
 import logging
-import stripe
 
 logger = logging.getLogger(__name__)
-stripe.api_key = os.environ.get("STRIPE_SECRET_KEY")
 limiter = Limiter(key_func=get_remote_address)
 
 # Create tables (with error handling for Railway)
@@ -54,6 +53,10 @@ _migrations = [
     ("users", "email_verified", "ALTER TABLE users ADD COLUMN email_verified BOOLEAN DEFAULT FALSE"),
     ("users", "verification_code", "ALTER TABLE users ADD COLUMN verification_code VARCHAR"),
     ("users", "verification_code_expires", "ALTER TABLE users ADD COLUMN verification_code_expires TIMESTAMP"),
+    ("users", "token_version", "ALTER TABLE users ADD COLUMN token_version INTEGER DEFAULT 0"),
+    ("uploads", "public_id", "ALTER TABLE uploads ADD COLUMN public_id VARCHAR"),
+    ("user_animals", "shared_with_user_id", "ALTER TABLE user_animals ADD COLUMN shared_with_user_id INTEGER REFERENCES users(id)"),
+    ("user_animals", "shared_egg_id", "ALTER TABLE user_animals ADD COLUMN shared_egg_id INTEGER REFERENCES shared_eggs(id)"),
 ]
 try:
     with engine.connect() as conn:
@@ -75,22 +78,55 @@ try:
         conn.commit()
     except Exception:
         pass
+    # Backfill uploads with missing public_id
+    try:
+        from uuid import uuid4 as _uuid4
+        result = conn.execute(text("SELECT id FROM uploads WHERE public_id IS NULL"))
+        rows = result.fetchall()
+        for row in rows:
+            conn.execute(
+                text("UPDATE uploads SET public_id = :pid WHERE id = :uid"),
+                {"pid": str(_uuid4()), "uid": row[0]}
+            )
+        if rows:
+            conn.commit()
+    except Exception:
+        pass
+    # Add unique constraint on friendships if not exists
+    try:
+        conn.execute(text(
+            "ALTER TABLE friendships ADD CONSTRAINT uq_friendship UNIQUE (user_id, friend_id)"
+        ))
+        conn.commit()
+    except Exception:
+        pass
+    # Add unique constraint on group_members if not exists
+    try:
+        conn.execute(text(
+            "ALTER TABLE group_members ADD CONSTRAINT uq_group_member UNIQUE (group_id, user_id)"
+        ))
+        conn.commit()
+    except Exception:
+        pass
 except Exception:
     pass
 
 app = FastAPI(title="Endura API", description="Gamified Study App Backend")
 app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+app.add_middleware(SlowAPIMiddleware)
 
-@app.exception_handler(RateLimitExceeded)
-async def rate_limit_handler(request: Request, exc: RateLimitExceeded):
-    return JSONResponse(
-        status_code=429,
-        content={"detail": "Too many requests. Please try again later."},
-    )
+_allowed_origins = os.getenv("CORS_ORIGINS", "").split(",") if os.getenv("CORS_ORIGINS") else [
+    "https://web-production-34028.up.railway.app",
+    "https://endura.eco",
+    "https://www.endura.eco",
+]
+if not os.getenv("RAILWAY_ENVIRONMENT"):
+    _allowed_origins += ["http://localhost:3000", "http://localhost:3002", "http://localhost:8000", "http://localhost:8081"]
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=_allowed_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -394,9 +430,8 @@ def register(request: Request, user: schemas.UserCreate, db: Session = Depends(g
     import secrets
     db_user = crud.get_user_by_email(db, user.email)
     if db_user:
-        # Existing user with a username or verified = already registered
         if db_user.username or db_user.email_verified:
-            raise HTTPException(status_code=400, detail="Email already registered")
+            return {"message": "Verification code sent", "needs_verification": True}
         # Truly unverified user re-registering: resend code
         code = f"{secrets.randbelow(1000000):06d}"
         db_user.verification_code = code
@@ -406,7 +441,7 @@ def register(request: Request, user: schemas.UserCreate, db: Session = Depends(g
         sent = _send_verification_email(db_user.email, code)
         resp: dict = {"message": "Verification code sent", "needs_verification": True}
         if not sent:
-            resp["_debug_code"] = code
+            logger.warning(f"Failed to send verification email to {db_user.email}")
         return resp
 
     hashed_password = get_password_hash(user.password)
@@ -421,13 +456,13 @@ def register(request: Request, user: schemas.UserCreate, db: Session = Depends(g
     sent = _send_verification_email(new_user.email, code)
     resp: dict = {"message": "Verification code sent", "needs_verification": True}
     if not sent:
-        resp["_debug_code"] = code
+        logger.warning(f"Failed to send verification email to {new_user.email}")
     return resp
 
 
 class VerifyEmailRequest(BaseModel):
     email: str
-    code: str
+    code: str = Field(..., min_length=6, max_length=6)
 
 @app.post("/auth/verify-email")
 @limiter.limit("10/minute")
@@ -451,7 +486,7 @@ def verify_email(request: Request, body: VerifyEmailRequest, db: Session = Depen
     db.commit()
 
     access_token = create_access_token(
-        data={"sub": user.email},
+        data={"sub": user.email, "tv": user.token_version or 0},
         expires_delta=timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     )
     return {"access_token": access_token, "token_type": "bearer"}
@@ -476,7 +511,7 @@ def resend_verification(request: Request, body: ResendVerificationRequest, db: S
     sent = _send_verification_email(user.email, code)
     resp: dict = {"message": "Verification code sent"}
     if not sent:
-        resp["_debug_code"] = code
+        logger.warning(f"Failed to send verification email to {user.email}")
     return resp
 
 
@@ -523,7 +558,7 @@ def login(request: Request, user: schemas.UserLogin, db: Session = Depends(get_d
         raise HTTPException(status_code=401, detail="Invalid credentials")
     
     access_token = create_access_token(
-        data={"sub": db_user.email},
+        data={"sub": db_user.email, "tv": db_user.token_version or 0},
         expires_delta=timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     )
     return {"access_token": access_token, "token_type": "bearer"}
@@ -532,6 +567,21 @@ def login(request: Request, user: schemas.UserLogin, db: Session = Depends(get_d
 @app.get("/auth/me", response_model=schemas.UserResponse)
 def get_me(current_user: models.User = Depends(get_current_user)):
     return current_user
+
+
+_IMAGE_MAGIC = {
+    b'\xff\xd8\xff': "image/jpeg",
+    b'\x89PNG': "image/png",
+    b'GIF87a': "image/gif",
+    b'GIF89a': "image/gif",
+    b'RIFF': "image/webp",
+}
+
+def _valid_image_magic(data: bytes) -> bool:
+    for magic in _IMAGE_MAGIC:
+        if data[:len(magic)] == magic:
+            return True
+    return False
 
 
 @app.post("/auth/profile-pic")
@@ -545,6 +595,8 @@ async def upload_profile_pic(
     data = await file.read()
     if len(data) > 5 * 1024 * 1024:
         raise HTTPException(400, "File too large (max 5 MB)")
+    if not _valid_image_magic(data):
+        raise HTTPException(400, "File does not appear to be a valid image")
     upload = models.Upload(
         filename=file.filename or "profile.jpg",
         content_type=file.content_type,
@@ -554,7 +606,7 @@ async def upload_profile_pic(
     db.commit()
     db.refresh(upload)
     base = os.getenv("API_BASE_URL", "https://web-production-34028.up.railway.app")
-    pic_url = f"{base}/uploads/{upload.id}"
+    pic_url = f"{base}/uploads/{upload.public_id}"
     user = db.query(models.User).filter(models.User.id == current_user.id).first()
     user.profile_pic_url = pic_url
     db.commit()
@@ -570,6 +622,44 @@ def delete_profile_pic(
     user.profile_pic_url = None
     db.commit()
     return {"message": "Profile picture removed"}
+
+
+@app.delete("/auth/account")
+def delete_account(
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    user_id = current_user.id
+
+    db.query(models.FeedReaction).filter(models.FeedReaction.user_id == user_id).delete()
+    db.query(models.ActivityEvent).filter(models.ActivityEvent.user_id == user_id).delete()
+
+    owned_groups = db.query(models.StudyGroup).filter(models.StudyGroup.creator_id == user_id).all()
+    for group in owned_groups:
+        db.query(models.GroupMessage).filter(models.GroupMessage.group_id == group.id).delete()
+        db.query(models.GroupMember).filter(models.GroupMember.group_id == group.id).delete()
+        db.delete(group)
+
+    db.query(models.GroupMessage).filter(models.GroupMessage.user_id == user_id).delete()
+    db.query(models.GroupMember).filter(models.GroupMember.user_id == user_id).delete()
+    db.query(models.Donation).filter(models.Donation.user_id == user_id).delete()
+    db.query(models.TipView).filter(models.TipView.user_id == user_id).delete()
+    db.query(models.UserBadge).filter(models.UserBadge.user_id == user_id).delete()
+    db.query(models.UserAnimal).filter(models.UserAnimal.user_id == user_id).delete()
+    db.query(models.SharedEgg).filter(
+        (models.SharedEgg.creator_id == user_id) | (models.SharedEgg.partner_id == user_id)
+    ).delete(synchronize_session=False)
+    db.query(models.StudySession).filter(models.StudySession.user_id == user_id).delete()
+    db.query(models.Task).filter(models.Task.user_id == user_id).delete()
+    db.query(models.Friendship).filter(
+        (models.Friendship.user_id == user_id) | (models.Friendship.friend_id == user_id)
+    ).delete(synchronize_session=False)
+    db.query(models.Upload).filter(models.Upload.user_id == user_id).delete()
+    db.query(models.Egg).filter(models.Egg.user_id == user_id).delete()
+    db.query(models.StudyTip).filter(models.StudyTip.user_id == user_id).delete()
+    db.query(models.User).filter(models.User.id == user_id).delete()
+    db.commit()
+    return {"message": "Account deleted successfully"}
 
 
 # ============ Forgot / Reset Password ============
@@ -646,16 +736,21 @@ def reset_password(request: Request, body: ResetPasswordRequest, db: Session = D
         db.commit()
         raise HTTPException(status_code=400, detail="Reset code has expired. Please request a new one.")
 
-    if len(body.new_password) < 6:
-        raise HTTPException(status_code=400, detail="Password must be at least 6 characters")
+    if len(body.new_password) < 8:
+        raise HTTPException(status_code=400, detail="Password must be at least 8 characters")
+    if not any(c.isdigit() for c in body.new_password):
+        raise HTTPException(status_code=400, detail="Password must contain at least one number")
+    if not any(c.isalpha() for c in body.new_password):
+        raise HTTPException(status_code=400, detail="Password must contain at least one letter")
 
     user.hashed_password = get_password_hash(body.new_password)
     user.reset_token = None
     user.reset_token_expires = None
+    user.token_version = (user.token_version or 0) + 1
     db.commit()
 
     access_token = create_access_token(
-        data={"sub": user.email},
+        data={"sub": user.email, "tv": user.token_version},
         expires_delta=timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     )
     return {"message": "Password reset successful", "access_token": access_token, "token_type": "bearer"}
@@ -722,7 +817,8 @@ def search_schools(
 
 @app.post("/schools/seed")
 def seed_schools(
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    _=Depends(verify_admin),
 ):
     """Seed schools from bundled UK data + Hipo university API."""
     existing = db.query(models.School).first()
@@ -840,13 +936,28 @@ def delete_task(
 # ============ Study Session Endpoints ============
 
 @app.post("/sessions", response_model=schemas.StudySessionWithHatchResponse)
+@limiter.limit("12/hour")
 def complete_study_session(
+    request: Request,
     session: schemas.StudySessionCreate,
     current_user: models.User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     import traceback
     try:
+        today_start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+        daily_minutes = db.query(func.coalesce(func.sum(models.StudySession.duration_minutes), 0)).filter(
+            models.StudySession.user_id == current_user.id,
+            models.StudySession.completed_at >= today_start,
+        ).scalar()
+        if daily_minutes + session.duration_minutes > 720:
+            raise HTTPException(status_code=400, detail="Daily study cap of 12 hours reached")
+
+        if session.animal_name:
+            valid_animal = db.query(models.Animal).filter(models.Animal.name == session.animal_name).first()
+            if not valid_animal:
+                session.animal_name = None
+
         task_id = session.task_id
         if task_id is not None:
             task_exists = db.query(models.Task).filter(
@@ -856,7 +967,7 @@ def complete_study_session(
             if not task_exists:
                 task_id = None
 
-        study_session, hatched_animal = crud.create_study_session(
+        study_session, hatched_animal, shared_hatch_result = crud.create_study_session(
             db,
             current_user.id,
             session.duration_minutes,
@@ -875,13 +986,18 @@ def complete_study_session(
         try:
             crud.create_session_event(db, current_user.id, session.duration_minutes,
                                       hatched_animal.name if hatched_animal else None)
-            crud.record_pact_progress(db, current_user.id, session.duration_minutes)
+            if shared_hatch_result:
+                crud._create_event(
+                    db, current_user.id, "shared_hatch",
+                    f"hatched a {shared_hatch_result['animal_name']} together with {shared_hatch_result['partner_name']}!"
+                )
         except Exception:
             pass
         return {
             "session": study_session,
             "hatched_animal": hatched_animal,
-            "new_badges": [crud.BADGE_MAP[bid] for bid in new_badges if bid in crud.BADGE_MAP]
+            "new_badges": [crud.BADGE_MAP[bid] for bid in new_badges if bid in crud.BADGE_MAP],
+            "shared_hatch": shared_hatch_result,
         }
     except Exception as e:
         db.rollback()
@@ -892,7 +1008,7 @@ def complete_study_session(
 
 @app.get("/sessions", response_model=List[schemas.StudySessionResponse])
 def get_sessions(
-    limit: int = 50,
+    limit: int = Query(default=50, ge=1, le=200),
     current_user: models.User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
@@ -947,7 +1063,18 @@ def get_my_animals(
     current_user: models.User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    return crud.get_user_animals(db, current_user.id)
+    animals = crud.get_user_animals(db, current_user.id)
+    result = []
+    for ua in animals:
+        data = {
+            "id": ua.id,
+            "animal": ua.animal,
+            "nickname": ua.nickname,
+            "hatched_at": ua.hatched_at,
+            "shared_with_username": ua.shared_with.username if ua.shared_with else None,
+        }
+        result.append(data)
+    return result
 
 
 @app.put("/my-animals/{animal_id}/name")
@@ -963,11 +1090,69 @@ def name_animal(
     return {"message": "Animal named successfully"}
 
 
+# ============ Shared Egg Endpoints ============
+
+@app.post("/shared-egg/invite", response_model=schemas.SharedEggResponse)
+def invite_shared_egg(
+    invite: schemas.SharedEggInvite,
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    egg, error = crud.create_shared_egg_invite(db, current_user.id, invite.friend_id, invite.animal_name)
+    if error:
+        raise HTTPException(status_code=400, detail=error)
+    return crud.format_shared_egg(egg)
+
+
+@app.post("/shared-egg/{egg_id}/accept")
+def accept_shared_egg(
+    egg_id: int,
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    ok, msg = crud.accept_shared_egg(db, egg_id, current_user.id)
+    if not ok:
+        raise HTTPException(status_code=400, detail=msg)
+    return {"message": msg}
+
+
+@app.post("/shared-egg/{egg_id}/decline")
+def decline_shared_egg(
+    egg_id: int,
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    ok, msg = crud.decline_shared_egg(db, egg_id, current_user.id)
+    if not ok:
+        raise HTTPException(status_code=400, detail=msg)
+    return {"message": msg}
+
+
+@app.get("/shared-egg/active")
+def get_active_shared_egg(
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    egg = crud.get_active_shared_egg(db, current_user.id)
+    if not egg:
+        return None
+    return crud.format_shared_egg(egg)
+
+
+@app.get("/shared-egg/invites")
+def get_shared_egg_invites(
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    eggs = crud.get_shared_egg_invites(db, current_user.id)
+    return [crud.format_shared_egg(e) for e in eggs]
+
+
 # ============ Study Tips Endpoints ============
 
 @app.get("/tips", response_model=List[schemas.StudyTipResponse])
 def get_tips(
-    limit: int = 10,
+    limit: int = Query(default=10, ge=1, le=100),
     current_user: models.User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
@@ -1121,9 +1306,8 @@ def get_friends(
         result.append({
             "id": friend.id,
             "username": friend.username,
-            "email": friend.email,
             "total_study_minutes": friend.total_study_minutes,
-            "current_streak": friend.current_streak,
+            "current_streak": crud.get_effective_streak(friend),
             "animals_count": animals_count,
             "profile_pic_url": friend.profile_pic_url,
             "friends_since": entry["friends_since"].isoformat() if entry["friends_since"] else None,
@@ -1154,9 +1338,8 @@ def get_friend_profile(
     return {
         "id": friend.id,
         "username": friend.username,
-        "email": friend.email,
         "total_study_minutes": friend.total_study_minutes,
-        "current_streak": friend.current_streak,
+        "current_streak": crud.get_effective_streak(friend),
         "longest_streak": friend.longest_streak,
         "total_sessions": friend.total_sessions,
         "animals_count": animals_count,
@@ -1202,9 +1385,8 @@ def get_leaderboard(
     try:
         return crud.get_leaderboard(db, current_user.id)
     except Exception as e:
-        import traceback
-        traceback.print_exc()
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"Leaderboard error for user {current_user.id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to load leaderboard")
 
 
 @app.get("/leaderboard/global", response_model=List[schemas.LeaderboardEntry])
@@ -1236,7 +1418,7 @@ def get_stats(
 # ============ Shop / Spend Coins ============
 
 class SpendRequest(BaseModel):
-    amount: int
+    amount: int = Field(..., ge=1, le=100000)
 
 @app.post("/shop/spend")
 def spend_coins(
@@ -1271,39 +1453,6 @@ def check_badges(
     return {
         "new_badges": [crud.BADGE_MAP[bid] for bid in new_badges if bid in crud.BADGE_MAP]
     }
-
-
-# ============ Study Pact Endpoints ============
-
-@app.post("/pacts")
-def create_pact(
-    data: schemas.PactCreate,
-    current_user: models.User = Depends(get_current_user),
-    db: Session = Depends(get_db)
-):
-    pact, error = crud.create_pact(db, current_user.id, data.buddy_username,
-                                    data.daily_minutes, data.duration_days, data.wager_amount)
-    if error:
-        raise HTTPException(status_code=400, detail=error)
-    return {"id": pact.id, "status": pact.status}
-
-@app.post("/pacts/{pact_id}/accept")
-def accept_pact(
-    pact_id: int,
-    current_user: models.User = Depends(get_current_user),
-    db: Session = Depends(get_db)
-):
-    pact, error = crud.accept_pact(db, current_user.id, pact_id)
-    if error:
-        raise HTTPException(status_code=400, detail=error)
-    return {"id": pact.id, "status": pact.status}
-
-@app.get("/pacts", response_model=List[schemas.PactResponse])
-def get_pacts(
-    current_user: models.User = Depends(get_current_user),
-    db: Session = Depends(get_db)
-):
-    return crud.get_user_pacts(db, current_user.id)
 
 
 # ============ Study Group Endpoints ============
@@ -1363,7 +1512,10 @@ def get_group_messages(
     current_user: models.User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    return crud.get_group_messages(db, group_id)
+    result = crud.get_group_messages(db, group_id, current_user.id)
+    if result is None:
+        raise HTTPException(status_code=403, detail="Not a member of this group")
+    return result
 
 @app.post("/groups/{group_id}/invite")
 def invite_to_group(
@@ -1372,12 +1524,11 @@ def invite_to_group(
     current_user: models.User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    member = db.query(models.GroupMember).filter(
-        models.GroupMember.group_id == group_id,
-        models.GroupMember.user_id == current_user.id
-    ).first()
-    if not member:
-        raise HTTPException(status_code=403, detail="You are not a member of this group")
+    group = db.query(models.StudyGroup).filter(models.StudyGroup.id == group_id).first()
+    if not group:
+        raise HTTPException(status_code=404, detail="Group not found")
+    if group.creator_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Only the group admin can invite members")
     target = None
     if data.user_id:
         target = db.query(models.User).filter(models.User.id == data.user_id).first()
@@ -1402,9 +1553,8 @@ def get_feed(
     try:
         return crud.get_friend_feed(db, current_user.id)
     except Exception as e:
-        import traceback
-        traceback.print_exc()
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"Feed error for user {current_user.id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to load feed")
 
 @app.get("/feed/reactions/new")
 def get_new_reactions(
@@ -1473,54 +1623,44 @@ def send_tip_to_friend(
     if not friend:
         raise HTTPException(status_code=404, detail="Friend not found")
 
-    sender_name = current_user.username or current_user.email.split("@")[0]
+    friendship = db.query(models.Friendship).filter(
+        models.Friendship.status == "accepted",
+        (
+            ((models.Friendship.user_id == current_user.id) & (models.Friendship.friend_id == friend_id)) |
+            ((models.Friendship.user_id == friend_id) & (models.Friendship.friend_id == current_user.id))
+        )
+    ).first()
+    if not friendship:
+        raise HTTPException(status_code=403, detail="You can only send tips to friends")
+
     event = models.ActivityEvent(
         user_id=current_user.id,
         event_type="tip_shared",
         description=f'shared a study tip with you from {animal_name}: "{tip_content}"',
-        extra_data=f'{{"recipient_id": {friend_id}, "animal_name": "{animal_name}"}}',
+        extra_data=_json.dumps({"recipient_id": friend_id, "animal_name": animal_name}),
     )
     db.add(event)
     db.commit()
-    return {"message": f"Tip sent to {friend.username or friend.email}"}
-
-
-# ============ Stripe / Donations ============
-
-class DonationRequest(BaseModel):
-    amount: int
-    currency: str = "usd"
-
-@app.post("/create-payment-intent")
-async def create_payment_intent(req: DonationRequest):
-    if not stripe.api_key:
-        raise HTTPException(status_code=500, detail="Stripe is not configured")
-    try:
-        intent = stripe.PaymentIntent.create(
-            amount=req.amount,
-            currency=req.currency,
-            payment_method_types=["card"],
-        )
-        return {
-            "clientSecret": intent.client_secret,
-            "paymentIntentId": intent.id,
-        }
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+    return {"message": f"Tip sent to {friend.username}"}
 
 
 # ============ Every.org Donation Webhook ============
 
-_last_webhook_payloads = []
+WEBHOOK_SECRET = os.getenv("EVERY_ORG_WEBHOOK_SECRET", "")
 
 @app.post("/webhook/every-org")
-async def every_org_webhook(request: dict, db: Session = Depends(get_db)):
+async def every_org_webhook(
+    request: dict,
+    db: Session = Depends(get_db),
+    x_webhook_secret: Optional[str] = Header(None),
+):
     """Receive donation notifications from Every.org and store them."""
+    if WEBHOOK_SECRET:
+        incoming = x_webhook_secret or request.get("webhookSecret") or ""
+        if incoming != WEBHOOK_SECRET:
+            logger.warning(f"Webhook rejected: invalid secret")
+            raise HTTPException(status_code=403, detail="Invalid webhook secret")
     try:
-        print(f"[WEBHOOK RAW] {_json.dumps(request, default=str)}")
-        _last_webhook_payloads.append(request)
-        if len(_last_webhook_payloads) > 10:
-            _last_webhook_payloads.pop(0)
 
         charge_id = (
             request.get("chargeId")
@@ -1801,7 +1941,7 @@ async def send_push_notification(
     body: str,
     data: Optional[dict] = None,
     db: Session = Depends(get_db),
-    current_user: models.User = Depends(get_current_user),
+    _=Depends(verify_admin),
 ):
     import httpx
 
@@ -1833,7 +1973,12 @@ async def send_push_notification(
 
 # ============ Admin Dashboard API ============
 
-ADMIN_API_KEY = os.getenv("ADMIN_API_KEY", "endura-admin-2024")
+ADMIN_API_KEY = os.getenv("ADMIN_API_KEY")
+if not ADMIN_API_KEY:
+    if os.getenv("RAILWAY_ENVIRONMENT") or os.getenv("DATABASE_URL", "").startswith("postgresql"):
+        raise RuntimeError("ADMIN_API_KEY environment variable is required in production")
+    ADMIN_API_KEY = "dev-only-admin-key"
+    logger.warning("Using insecure dev ADMIN_API_KEY — set ADMIN_API_KEY env var for production")
 
 def verify_admin(x_admin_key: str = Header(...)):
     if x_admin_key != ADMIN_API_KEY:
@@ -1944,7 +2089,7 @@ def admin_users(
             "username": u.username,
             "total_study_minutes": u.total_study_minutes or 0,
             "total_sessions": u.total_sessions or 0,
-            "current_streak": u.current_streak or 0,
+            "current_streak": crud.get_effective_streak(u),
             "longest_streak": u.longest_streak or 0,
             "current_coins": u.current_coins or 0,
             "total_coins": u.total_coins or 0,
@@ -2001,7 +2146,7 @@ async def admin_update_user(
         db.commit()
         db.refresh(upload)
         base = os.getenv("API_BASE_URL", "https://web-production-34028.up.railway.app")
-        user.profile_pic_url = f"{base}/uploads/{upload.id}"
+        user.profile_pic_url = f"{base}/uploads/{upload.public_id}"
 
     db.commit()
     db.refresh(user)
@@ -2059,7 +2204,7 @@ def admin_user_detail(user_id: int, db: Session = Depends(get_db), _=Depends(ver
         "profile_pic_url": user.profile_pic_url,
         "total_study_minutes": user.total_study_minutes or 0,
         "total_sessions": user.total_sessions or 0,
-        "current_streak": user.current_streak or 0,
+        "current_streak": crud.get_effective_streak(user),
         "longest_streak": user.longest_streak or 0,
         "current_coins": user.current_coins or 0,
         "total_coins": user.total_coins or 0,
@@ -2281,12 +2426,18 @@ async def admin_upload_image(
     db.commit()
     db.refresh(upload)
     base = os.getenv("API_BASE_URL", "https://web-production-34028.up.railway.app")
-    return {"id": upload.id, "url": f"{base}/uploads/{upload.id}"}
+    return {"id": upload.id, "url": f"{base}/uploads/{upload.public_id}"}
 
 
-@app.get("/uploads/{upload_id}")
-def serve_upload(upload_id: int, db: Session = Depends(get_db)):
-    upload = db.query(models.Upload).filter(models.Upload.id == upload_id).first()
+@app.get("/uploads/{public_id}")
+def serve_upload(public_id: str, db: Session = Depends(get_db)):
+    upload = db.query(models.Upload).filter(models.Upload.public_id == public_id).first()
+    if not upload:
+        try:
+            int_id = int(public_id)
+            upload = db.query(models.Upload).filter(models.Upload.id == int_id).first()
+        except (ValueError, TypeError):
+            pass
     if not upload:
         raise HTTPException(404, "Not found")
     return Response(
@@ -2298,8 +2449,8 @@ def serve_upload(upload_id: int, db: Session = Depends(get_db)):
 
 @app.get("/admin/tips")
 def admin_tips(
-    limit: int = 200,
-    offset: int = 0,
+    limit: int = Query(default=200, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
     db: Session = Depends(get_db),
     _=Depends(verify_admin),
 ):

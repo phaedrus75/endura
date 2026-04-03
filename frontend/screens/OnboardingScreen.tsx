@@ -115,7 +115,8 @@ const SLIDES: Slide[] = [
 export default function OnboardingScreen() {
   const insets = useSafeAreaInsets();
   const [step, setStep] = useState(0);
-  const fadeA = useRef(new Animated.Value(1)).current;
+  const crossfade = useRef(new Animated.Value(1)).current;
+  const isAnimating = useRef(false);
 
   // Profile setup state
   const [username, setUsername] = useState('');
@@ -131,9 +132,12 @@ export default function OnboardingScreen() {
   const isSetup = step === SLIDES.length;
 
   const go = (next: number) => {
-    Animated.timing(fadeA, { toValue: 0, duration: 180, useNativeDriver: true }).start(() => {
-      setStep(next);
-      Animated.timing(fadeA, { toValue: 1, duration: 280, useNativeDriver: true }).start();
+    if (isAnimating.current) return;
+    isAnimating.current = true;
+    crossfade.setValue(0);
+    setStep(next);
+    Animated.timing(crossfade, { toValue: 1, duration: 300, useNativeDriver: true }).start(() => {
+      isAnimating.current = false;
     });
   };
 
@@ -154,17 +158,17 @@ export default function OnboardingScreen() {
   };
 
   const pickImage = async (src: 'camera' | 'gallery') => {
-    if (src === 'camera') {
-      const p = await ImagePicker.requestCameraPermissionsAsync();
-      if (!p.granted) { Alert.alert('Permission needed', 'Please allow camera access.'); return; }
-      const r = await ImagePicker.launchCameraAsync({ allowsEditing: true, aspect: [1, 1], quality: 0.7 });
-      if (!r.canceled && r.assets[0]) setProfilePicUri(r.assets[0].uri);
-    } else {
-      const p = await ImagePicker.requestMediaLibraryPermissionsAsync();
-      if (!p.granted) { Alert.alert('Permission needed', 'Please allow photo library access.'); return; }
-      const r = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], allowsEditing: true, aspect: [1, 1], quality: 0.7 });
-      if (!r.canceled && r.assets[0]) setProfilePicUri(r.assets[0].uri);
-    }
+    try {
+      if (src === 'camera') {
+        const p = await ImagePicker.requestCameraPermissionsAsync();
+        if (!p.granted) { Alert.alert('Permission needed', 'Please allow camera access in Settings.'); return; }
+        const r = await ImagePicker.launchCameraAsync({ allowsEditing: true, aspect: [1, 1], quality: 0.7 });
+        if (!r.canceled && r.assets[0]) setProfilePicUri(r.assets[0].uri);
+      } else {
+        const r = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], allowsEditing: true, aspect: [1, 1], quality: 0.8 });
+        if (!r.canceled && r.assets[0]) setProfilePicUri(r.assets[0].uri);
+      }
+    } catch { }
   };
   const handleAvatarPress = () => {
     if (Platform.OS === 'ios') {
@@ -272,19 +276,21 @@ export default function OnboardingScreen() {
             ))}
           </View>
 
-          {/* Screenshot blends seamlessly into background */}
-          <Animated.View style={{ flex: 1, opacity: fadeA }}>
+          {/* Screenshot fades in */}
+          <Animated.View style={{ flex: 1, opacity: crossfade }}>
             <ScreenshotSlide source={sl.image} />
           </Animated.View>
         </SafeAreaView>
       </View>
 
-      {/* Instruction card at bottom — outside SafeAreaView so no green bleed */}
-      <Animated.View style={[wb.card, { opacity: fadeA, paddingBottom: Math.max(insets.bottom, 16) }]}>
+      {/* Instruction card at bottom */}
+      <View style={[wb.card, { paddingBottom: Math.max(insets.bottom, 16) }]}>
         <View style={wb.cardHandle} />
-        <Text style={wb.cardTag}>{sl.tag}</Text>
-        <Text style={wb.cardTitle}>{sl.title}</Text>
-        <Text style={wb.cardBody}>{sl.body}</Text>
+        <Animated.View style={{ opacity: crossfade, alignItems: 'center' }}>
+          <Text style={wb.cardTag}>{sl.tag}</Text>
+          <Text style={wb.cardTitle}>{sl.title}</Text>
+          <Text style={wb.cardBody}>{sl.body}</Text>
+        </Animated.View>
 
         <View style={wb.dotsRow}>
           {SLIDES.map((_, i) => (
@@ -293,12 +299,10 @@ export default function OnboardingScreen() {
         </View>
 
         <View style={wb.btnRow}>
-          {step > 0 ? (
+          {step > 0 && (
             <TouchableOpacity style={wb.backBtn} onPress={() => go(step - 1)} activeOpacity={0.8}>
               <Text style={wb.backText}>Back</Text>
             </TouchableOpacity>
-          ) : (
-            <View style={wb.backBtn} />
           )}
           <TouchableOpacity style={wb.nextBtn} onPress={() => go(step + 1)} activeOpacity={0.8}>
             <LinearGradient colors={['#5F8C87', '#3B5466']} style={wb.nextGrad} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}>
@@ -309,7 +313,7 @@ export default function OnboardingScreen() {
         <TouchableOpacity style={{ paddingVertical: 6 }} onPress={() => go(SLIDES.length)}>
           <Text style={wb.skipText}>Skip</Text>
         </TouchableOpacity>
-      </Animated.View>
+      </View>
     </View>
   );
 }

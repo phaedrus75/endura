@@ -1,9 +1,10 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useRef } from 'react';
 import { StatusBar } from 'expo-status-bar';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
-import { View, Text, StyleSheet, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, ActivityIndicator, Platform, Animated } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
@@ -25,9 +26,42 @@ import SocialScreen from './screens/SocialScreen';
 import ProfileScreen from './screens/ProfileScreen';
 import ShopScreen from './screens/ShopScreen';
 import TakeActionScreen from './screens/TakeActionScreen';
+import ReactionOverlay from './components/ReactionOverlay';
 
 const Stack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
+
+const TimerTabButton = () => {
+  const pulse = useRef(new Animated.Value(1)).current;
+
+  useEffect(() => {
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulse, { toValue: 1.25, duration: 1500, useNativeDriver: true }),
+        Animated.timing(pulse, { toValue: 1, duration: 1500, useNativeDriver: true }),
+      ])
+    );
+    loop.start();
+    return () => loop.stop();
+  }, []);
+
+  return (
+    <View style={styles.timerTabWrapper}>
+      <View style={styles.timerTabIconContainer}>
+        <Animated.View style={[styles.timerTabGlow, { transform: [{ scale: pulse }] }]} />
+        <LinearGradient
+          colors={['#B5E0DB', '#7AAFC4']}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={styles.timerTabIcon}
+        >
+          <Text style={styles.timerTabEmoji}>⌛️</Text>
+        </LinearGradient>
+      </View>
+      <Text style={styles.timerTabLabel}>Timer</Text>
+    </View>
+  );
+};
 
 // Tab Icons with proper styling
 const TabIcon = ({ name, focused }: { name: string; focused: boolean }) => {
@@ -38,6 +72,10 @@ const TabIcon = ({ name, focused }: { name: string; focused: boolean }) => {
     Progress: '🏆',
     Friends: '👥',
   };
+
+  if (name === 'Timer') {
+    return <TimerTabButton />;
+  }
 
   return (
     <View style={[styles.tabIcon, focused && styles.tabIconFocused]}>
@@ -63,8 +101,10 @@ function MainTabs() {
       })}
     >
       <Tab.Screen name="Home" component={HomeScreen} />
-      <Tab.Screen name="Timer" component={TimerScreen} />
       <Tab.Screen name="Sanctuary" component={CollectionScreen} />
+      <Tab.Screen name="Timer" component={TimerScreen} options={{
+        tabBarLabel: () => null,
+      }} />
       <Tab.Screen name="Progress" component={ProgressScreen} />
       <Tab.Screen name="Friends" component={SocialScreen} />
     </Tab.Navigator>
@@ -76,6 +116,7 @@ const MainStack = createNativeStackNavigator();
 
 function MainStackNavigator() {
   return (
+    <>
     <MainStack.Navigator screenOptions={{ headerShown: false }}>
       <MainStack.Screen name="Tabs" component={MainTabs} />
       <MainStack.Screen 
@@ -119,6 +160,8 @@ function MainStackNavigator() {
         }}
       />
     </MainStack.Navigator>
+    <ReactionOverlay />
+    </>
   );
 }
 
@@ -128,7 +171,6 @@ function AppNavigator() {
   useEffect(() => {
     if (user) {
       identifyUser(user.id, {
-        email: user.email,
         username: user.username,
         total_study_minutes: user.total_study_minutes,
         current_streak: user.current_streak,
@@ -245,5 +287,50 @@ const styles = StyleSheet.create({
   tabEmojiFocused: {
     opacity: 1,
     transform: [{ scale: 1.1 }],
+  },
+  timerTabWrapper: {
+    alignItems: 'center',
+    marginTop: -16,
+  },
+  timerTabIconContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: 72,
+    height: 72,
+  },
+  timerTabGlow: {
+    position: 'absolute',
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    backgroundColor: '#B5E0DB',
+    opacity: 0.15,
+  },
+  timerTabIcon: {
+    width: 62,
+    height: 62,
+    borderRadius: 31,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 3,
+    borderColor: colors.surface,
+    ...Platform.select({
+      ios: {
+        shadowColor: '#7AAFC4',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.35,
+        shadowRadius: 8,
+      },
+      android: { elevation: 8 },
+    }),
+  },
+  timerTabEmoji: {
+    fontSize: 28,
+  },
+  timerTabLabel: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#7AAFC4',
+    marginTop: 1,
   },
 });

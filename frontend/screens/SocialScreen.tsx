@@ -24,31 +24,22 @@ import SwipeDismiss, { DragHandle } from '../components/SwipeDismiss';
 import { useAuth } from '../contexts/AuthContext';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
-  groupsAPI, feedAPI, socialAPI, tipsAPI,
+  groupsAPI, feedAPI, socialAPI, tipsAPI, sharedEggAPI,
   StudyGroup, GroupMessage, FeedEvent,
-  Friend, FriendProfile, FriendSuggestion, StudyTip, LeaderboardEntry,
+  Friend, FriendProfile, FriendSuggestion, StudyTip, LeaderboardEntry, SharedEgg,
 } from '../services/api';
+import { getAnimalImage } from '../assets/animals';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
-const TABS = ['Buddies', 'Groups', 'Feed'] as const;
+const TABS = ['Friends', 'Leaderboard', 'Groups', 'Feed'] as const;
 type Tab = typeof TABS[number];
 
 const REACTIONS = [
   { key: 'nice', label: 'Nice!', emoji: '👏' },
-  { key: 'keep_going', label: 'Keep going!', emoji: '💪' },
   { key: 'fire', label: 'Fire!', emoji: '🔥' },
-  { key: 'wow', label: 'Wow!', emoji: '🤩' },
   { key: 'heart', label: 'Love!', emoji: '❤️' },
 ];
-
-const REACTION_MESSAGES: Record<string, string[]> = {
-  nice: ['thinks you did great!', 'is cheering you on!', 'clapped for you!'],
-  keep_going: ['believes in you!', 'is rooting for you!', 'says keep pushing!'],
-  fire: ['thinks you\'re on fire!', 'is impressed!', 'says you\'re crushing it!'],
-  wow: ['is amazed by you!', 'can\'t believe it!', 'is blown away!'],
-  heart: ['sent you love!', 'loves what you did!', 'is sending good vibes!'],
-};
 
 function timeAgo(dateStr: string): string {
   const diff = Date.now() - new Date(dateStr).getTime();
@@ -64,19 +55,12 @@ function timeAgo(dateStr: string): string {
 const EVENT_ICONS: Record<string, string> = {
   session_complete: '📚',
   animal_hatched: '🐣',
+  shared_hatch: '💚',
   streak_milestone: '🔥',
   badge_earned: '🏅',
-  pact_created: '🤝',
   group_created: '👥',
   group_goal_met: '🎉',
 };
-
-interface IncomingReaction {
-  id: number;
-  sender_username: string;
-  reaction: string;
-  event_description: string;
-}
 
 const AVATAR_COLORS = [
   '#4ECDC4', '#45B7D1', '#96CEB4', '#FFEAA7', '#DDA0DD',
@@ -123,7 +107,7 @@ function UserAvatar({ id, username, email, profilePicUrl, size = 36 }: { id: num
 export default function SocialScreen() {
   const { user, profilePic } = useAuth();
   const navigation = useNavigation<any>();
-  const [tab, setTab] = useState<Tab>('Buddies');
+  const [tab, setTab] = useState<Tab>('Friends');
   const [refreshing, setRefreshing] = useState(false);
 
   // Groups
@@ -149,9 +133,12 @@ export default function SocialScreen() {
 
   // Friends
   const [friends, setFriends] = useState<Friend[]>([]);
-  const [pendingRequests, setPendingRequests] = useState<{ id: number; user_id: number; username: string | null; email: string }[]>([]);
+  const [pendingRequests, setPendingRequests] = useState<{ id: number; user_id: number; username: string | null; profile_pic_url: string | null }[]>([]);
   const [showAddFriend, setShowAddFriend] = useState(false);
   const [addFriendHandle, setAddFriendHandle] = useState('');
+
+  // Shared egg invites
+  const [sharedEggInvites, setSharedEggInvites] = useState<SharedEgg[]>([]);
 
   // Friend suggestions (same school)
   const [suggestions, setSuggestions] = useState<FriendSuggestion[]>([]);
@@ -164,16 +151,11 @@ export default function SocialScreen() {
   const friendProfileScale = useRef(new Animated.Value(0)).current;
 
   // Leaderboards
-  const [leaderboardTab, setLeaderboardTab] = useState<'all' | 'friends'>('all');
+  const [leaderboardTab, setLeaderboardTab] = useState<'all' | 'friends' | 'school'>('all');
   const [globalLeaderboard, setGlobalLeaderboard] = useState<LeaderboardEntry[]>([]);
   const [friendsLeaderboard, setFriendsLeaderboard] = useState<LeaderboardEntry[]>([]);
+  const [schoolLeaderboard, setSchoolLeaderboard] = useState<LeaderboardEntry[]>([]);
 
-  // Reaction notification
-  const [showReactionModal, setShowReactionModal] = useState(false);
-  const [incomingReactions, setIncomingReactions] = useState<IncomingReaction[]>([]);
-  const reactionScale = useRef(new Animated.Value(0)).current;
-  const reactionOpacity = useRef(new Animated.Value(0)).current;
-  const emojiFloat = useRef(new Animated.Value(0)).current;
   const [hasSeenTips, setHasSeenTips] = useState(true);
   const tipsPulse = useRef(new Animated.Value(1)).current;
 
@@ -206,67 +188,18 @@ export default function SocialScreen() {
     navigation.navigate('Tips');
   };
 
-  const reactionMsgIdx = useRef(0);
-  const showReactionPopup = (reactions: IncomingReaction[]) => {
-    reactionMsgIdx.current = Math.floor(Math.random() * 3);
-    setIncomingReactions(reactions);
-    setShowReactionModal(true);
-    reactionScale.setValue(0);
-    reactionOpacity.setValue(0);
-    emojiFloat.setValue(0);
-    Animated.parallel([
-      Animated.spring(reactionScale, { toValue: 1, friction: 4, tension: 60, useNativeDriver: true }),
-      Animated.timing(reactionOpacity, { toValue: 1, duration: 300, useNativeDriver: true }),
-    ]).start(() => {
-      Animated.loop(
-        Animated.sequence([
-          Animated.timing(emojiFloat, { toValue: -8, duration: 1200, useNativeDriver: true }),
-          Animated.timing(emojiFloat, { toValue: 0, duration: 1200, useNativeDriver: true }),
-        ])
-      ).start();
-    });
-  };
-
-  const dismissReactionModal = () => {
-    Animated.parallel([
-      Animated.timing(reactionScale, { toValue: 0, duration: 200, useNativeDriver: true }),
-      Animated.timing(reactionOpacity, { toValue: 0, duration: 200, useNativeDriver: true }),
-    ]).start(() => {
-      setShowReactionModal(false);
-      setIncomingReactions([]);
-    });
-  };
-
-  const showReactionPopupRef = useRef(showReactionPopup);
-  showReactionPopupRef.current = showReactionPopup;
-
-  const checkNewReactions = useCallback(async () => {
-    try {
-      const newReactions = await feedAPI.getNewReactions();
-      if (newReactions && newReactions.length > 0) {
-        showReactionPopupRef.current(newReactions);
-      }
-    } catch {}
-  }, []);
-
-  useFocusEffect(
-    useCallback(() => {
-      checkNewReactions();
-      const interval = setInterval(checkNewReactions, 30000);
-      return () => clearInterval(interval);
-    }, [checkNewReactions])
-  );
-
   const loadData = useCallback(async () => {
     try {
-      const [g, f, fr, pr, gl, fl, sg] = await Promise.all([
+      const [g, f, fr, pr, gl, fl, sl, sg, sei] = await Promise.all([
         groupsAPI.getAll().catch(() => []),
         feedAPI.getFeed().catch(() => []),
         socialAPI.getFriends().catch(() => []),
         socialAPI.getPendingRequests().catch(() => []),
         socialAPI.getGlobalLeaderboard().catch(() => []),
         socialAPI.getLeaderboard().catch(() => []),
+        socialAPI.getSchoolLeaderboard().catch(() => []),
         socialAPI.getFriendSuggestions().catch(() => []),
+        sharedEggAPI.getInvites().catch(() => []),
       ]);
       setGroups(g);
       setFeed(f);
@@ -274,7 +207,9 @@ export default function SocialScreen() {
       setPendingRequests(pr);
       setGlobalLeaderboard(gl);
       setFriendsLeaderboard(fl);
+      setSchoolLeaderboard(sl);
       setSuggestions(sg);
+      setSharedEggInvites(sei);
     } catch {}
   }, []);
 
@@ -564,6 +499,26 @@ export default function SocialScreen() {
   const isHatchAccept = (content: string) => content.startsWith('🐣 [HATCH_ACCEPT]');
   const isSpecialMessage = (content: string) => isTipMessage(content) || isHatchInvite(content) || isHatchAccept(content);
 
+  // ---- Shared Egg Actions ----
+  const handleAcceptSharedEgg = async (eggId: number) => {
+    try {
+      await sharedEggAPI.accept(eggId);
+      Alert.alert('Accepted!', 'The shared egg is now active. Start studying to contribute!');
+      loadData();
+    } catch (e: any) {
+      Alert.alert('Error', e?.message || 'Could not accept invite');
+    }
+  };
+
+  const handleDeclineSharedEgg = async (eggId: number) => {
+    try {
+      await sharedEggAPI.decline(eggId);
+      loadData();
+    } catch (e: any) {
+      Alert.alert('Error', e?.message || 'Could not decline invite');
+    }
+  };
+
   // ---- Feed Actions ----
   const handleReact = async (eventId: number, reaction: string) => {
     try {
@@ -573,8 +528,72 @@ export default function SocialScreen() {
   };
 
   // ---- Render ----
-  const renderBuddies = () => {
-    const activeList = leaderboardTab === 'all' ? globalLeaderboard : friendsLeaderboard;
+  const renderFriendsTab = () => (
+    <View style={styles.tabContent}>
+      {/* Shared egg invites */}
+      {sharedEggInvites.length > 0 && (
+        <View style={{ marginBottom: spacing.md }}>
+          {sharedEggInvites.map(inv => (
+            <View key={inv.id} style={styles.sharedEggInviteCard}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                <Text style={{ fontSize: 18 }}>💚</Text>
+                <Text style={{ fontSize: 15, fontWeight: '700', color: colors.textPrimary, flex: 1 }}>
+                  {inv.creator.username} wants to hatch together!
+                </Text>
+              </View>
+              <Text style={{ fontSize: 13, color: colors.textSecondary, marginBottom: 12 }}>
+                Animal: {inv.animal_name} · {inv.minutes_required} min to hatch
+              </Text>
+              <View style={{ flexDirection: 'row', gap: 10 }}>
+                <TouchableOpacity
+                  style={{ flex: 1, backgroundColor: colors.primary, paddingVertical: 10, borderRadius: 12, alignItems: 'center' }}
+                  onPress={() => handleAcceptSharedEgg(inv.id)}
+                >
+                  <Text style={{ color: '#fff', fontWeight: '700', fontSize: 14 }}>Accept</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={{ flex: 1, backgroundColor: colors.surfaceAlt, paddingVertical: 10, borderRadius: 12, alignItems: 'center', borderWidth: 1, borderColor: colors.cardBorder }}
+                  onPress={() => handleDeclineSharedEgg(inv.id)}
+                >
+                  <Text style={{ color: colors.textSecondary, fontWeight: '600', fontSize: 14 }}>Decline</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          ))}
+        </View>
+      )}
+
+      {friends.length === 0 ? (
+        <View style={styles.emptyState}>
+          <Text style={styles.emptyIcon}>👥</Text>
+          <Text style={styles.emptyTitle}>No friends yet</Text>
+          <Text style={styles.emptySubtitle}>Add friends to study together!</Text>
+        </View>
+      ) : (
+        friends.map(f => {
+          const name = f.username || f.email?.split('@')[0] || 'Friend';
+          return (
+            <TouchableOpacity key={f.id} style={styles.friendListCard} activeOpacity={0.7} onPress={() => openFriendProfile(f.id)}>
+              <UserAvatar id={f.id} username={f.username} email={f.email} profilePicUrl={f.profile_pic_url} size={40} />
+              <View style={{ flex: 1, marginLeft: 12 }}>
+                <Text style={{ fontSize: 15, fontWeight: '700', color: colors.textPrimary }}>@{name}</Text>
+                <Text style={{ fontSize: 12, color: colors.textMuted, marginTop: 2 }}>{formatStudyTime(f.total_study_minutes)} studied · 🔥 {f.current_streak}</Text>
+              </View>
+              <TouchableOpacity
+                onPress={() => handleRemoveFriend(f.id, name)}
+                style={{ width: 28, height: 28, borderRadius: 14, backgroundColor: '#00000008', justifyContent: 'center', alignItems: 'center' }}
+              >
+                <Text style={{ fontSize: 12, color: '#999', fontWeight: '700' }}>✕</Text>
+              </TouchableOpacity>
+            </TouchableOpacity>
+          );
+        })
+      )}
+    </View>
+  );
+
+  const renderLeaderboard = () => {
+    const activeList = leaderboardTab === 'all' ? globalLeaderboard : leaderboardTab === 'friends' ? friendsLeaderboard : schoolLeaderboard;
     const userRank = activeList.findIndex(e => e.user_id === user?.id);
 
     return (
@@ -582,13 +601,18 @@ export default function SocialScreen() {
         <View style={styles.leaderboardCard}>
           <Text style={styles.leaderboardTitle}>📊 Leaderboard</Text>
 
-          {/* Swatch toggle */}
           <View style={styles.leaderboardSwatch}>
             <TouchableOpacity
               style={[styles.leaderboardSwatchBtn, leaderboardTab === 'all' && styles.leaderboardSwatchBtnActive]}
               onPress={() => setLeaderboardTab('all')}
             >
               <Text style={[styles.leaderboardSwatchText, leaderboardTab === 'all' && styles.leaderboardSwatchTextActive]}>All Users</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.leaderboardSwatchBtn, leaderboardTab === 'school' && styles.leaderboardSwatchBtnActive]}
+              onPress={() => setLeaderboardTab('school')}
+            >
+              <Text style={[styles.leaderboardSwatchText, leaderboardTab === 'school' && styles.leaderboardSwatchTextActive]}>My School</Text>
             </TouchableOpacity>
             <TouchableOpacity
               style={[styles.leaderboardSwatchBtn, leaderboardTab === 'friends' && styles.leaderboardSwatchBtnActive]}
@@ -600,9 +624,13 @@ export default function SocialScreen() {
 
           {activeList.length === 0 ? (
             <View style={{ alignItems: 'center', paddingVertical: 20 }}>
-              <Text style={{ fontSize: 28, marginBottom: 6 }}>{leaderboardTab === 'friends' ? '👥' : '🌍'}</Text>
+              <Text style={{ fontSize: 28, marginBottom: 6 }}>{leaderboardTab === 'friends' ? '👥' : leaderboardTab === 'school' ? '🎓' : '🌍'}</Text>
               <Text style={{ fontSize: 14, color: colors.textMuted, textAlign: 'center' }}>
-                {leaderboardTab === 'friends' ? 'Add friends to see the friends leaderboard!' : 'Start studying to appear on the leaderboard!'}
+                {leaderboardTab === 'friends'
+                  ? 'Add friends to see the friends leaderboard!'
+                  : leaderboardTab === 'school'
+                  ? 'Set your school in Profile to see your school leaderboard!'
+                  : 'Start studying to appear on the leaderboard!'}
               </Text>
             </View>
           ) : (
@@ -621,7 +649,7 @@ export default function SocialScreen() {
                       {isMe ? 'You' : (entry.username || '?')}
                     </Text>
                     <Text style={styles.leaderboardStreak}>🔥 {entry.current_streak}</Text>
-                    <Text style={styles.leaderboardMins}>{entry.total_study_minutes}m</Text>
+                    <Text style={styles.leaderboardMins}>{formatStudyTime(entry.total_study_minutes)}</Text>
                   </View>
                 );
               })}
@@ -634,7 +662,7 @@ export default function SocialScreen() {
                   </View>
                   <Text style={[styles.leaderboardName, styles.leaderboardNameSelf]} numberOfLines={1}>You</Text>
                   <Text style={styles.leaderboardStreak}>🔥 {user?.current_streak || 0}</Text>
-                  <Text style={styles.leaderboardMins}>{user?.total_study_minutes || 0}m</Text>
+                  <Text style={styles.leaderboardMins}>{formatStudyTime(user?.total_study_minutes || 0)}</Text>
                 </View>
               )}
             </>
@@ -745,20 +773,24 @@ export default function SocialScreen() {
     </View>
   );
 
-  const renderFeed = () => (
+  const renderFeed = () => {
+    const hatchFeed = feed.filter(e => e.event_type === 'animal_hatched');
+    return (
     <View style={styles.tabContent}>
       {/* Activity Feed */}
       <Text style={styles.feedSectionTitle}>📣 Friend Activity</Text>
-      {feed.length === 0 ? (
+      {hatchFeed.length === 0 ? (
         <View style={styles.emptyState}>
-          <Text style={styles.emptyIcon}>📣</Text>
-          <Text style={styles.emptyTitle}>No activity yet</Text>
-          <Text style={styles.emptySubtitle}>Add friends to see their activity here!</Text>
+          <Text style={styles.emptyIcon}>🐣</Text>
+          <Text style={styles.emptyTitle}>No hatches yet</Text>
+          <Text style={styles.emptySubtitle}>When your friends hatch animals, they'll appear here!</Text>
         </View>
-      ) : feed.map(e => (
+      ) : hatchFeed.map(e => {
+        const hatchMatch = e.description.match(/^just hatched a (.+)!$/);
+        const hatchedAnimalImage = hatchMatch ? getAnimalImage(hatchMatch[1]) : null;
+        return (
         <View key={e.id} style={styles.feedCard}>
           <View style={styles.feedCardHeader}>
-            <Text style={styles.feedEventIcon}>{EVENT_ICONS[e.event_type] || '📌'}</Text>
             <View style={{ flex: 1 }}>
               <Text style={styles.feedCardText}>
                 <Text style={styles.feedUsername}>{e.username || 'Someone'}</Text>{' '}
@@ -766,6 +798,9 @@ export default function SocialScreen() {
               </Text>
               <Text style={styles.feedTime}>{timeAgo(e.created_at)}</Text>
             </View>
+            {hatchedAnimalImage && (
+              <Image source={hatchedAnimalImage} style={styles.feedAnimalImage} resizeMode="contain" />
+            )}
           </View>
           <View style={styles.reactionRow}>
             {REACTIONS.map(r => {
@@ -784,9 +819,11 @@ export default function SocialScreen() {
             })}
           </View>
         </View>
-      ))}
+        );
+      })}
     </View>
   );
+  };
 
   return (
     <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
@@ -795,7 +832,7 @@ export default function SocialScreen() {
           <Text style={styles.headerTitle}>Friends</Text>
           <Text style={styles.headerSubtitle}>{friends.length} friends</Text>
         </View>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: -4 }}>
           <TouchableOpacity onPress={() => setShowAddFriend(true)}>
             <LinearGradient
               colors={['#5F8C87', '#3B5466']}
@@ -807,109 +844,27 @@ export default function SocialScreen() {
             </LinearGradient>
           </TouchableOpacity>
           <TouchableOpacity
-            style={{ width: 38, height: 38, borderRadius: 19, backgroundColor: '#FFFFFF', justifyContent: 'center', alignItems: 'center' }}
+            style={{ width: 44, height: 44, borderRadius: 22, backgroundColor: '#FFFFFF', justifyContent: 'center', alignItems: 'center', ...shadows.small }}
             onPress={handleOpenTips}
           >
-            <Text style={{ fontSize: 18 }}>💡</Text>
+            <Text style={{ fontSize: 22 }}>💡</Text>
             {!hasSeenTips && (
               <Animated.View style={{
-                position: 'absolute', top: 1, right: 1,
-                width: 9, height: 9, borderRadius: 4.5,
+                position: 'absolute', top: 2, right: 2,
+                width: 10, height: 10, borderRadius: 5,
                 backgroundColor: '#FF6B6B', borderWidth: 1.5, borderColor: '#FFFFFF',
                 transform: [{ scale: tipsPulse }],
               }} />
             )}
           </TouchableOpacity>
           <TouchableOpacity
-            style={{ width: 38, height: 38, borderRadius: 19, backgroundColor: '#FFFFFF', justifyContent: 'center', alignItems: 'center', overflow: 'hidden' }}
+            style={{ width: 44, height: 44, borderRadius: 22, backgroundColor: '#FFFFFF', justifyContent: 'center', alignItems: 'center', overflow: 'hidden', ...shadows.small }}
             onPress={() => navigation.navigate('Profile')}
           >
-            <UserAvatar id={user?.id || 0} username={user?.username} profilePicUrl={profilePic} size={38} />
+            <UserAvatar id={user?.id || 0} username={user?.username} profilePicUrl={profilePic} size={44} />
           </TouchableOpacity>
         </View>
       </View>
-
-      {/* Pending Requests */}
-      <View style={styles.pendingSection}>
-        <Text style={styles.pendingTitle}>
-          Friend Requests {pendingRequests.length > 0 ? `(${pendingRequests.length})` : ''}
-        </Text>
-        {pendingRequests.length === 0 ? (
-          <Text style={styles.pendingEmpty}>No pending requests</Text>
-        ) : (
-          pendingRequests.map(req => (
-            <View key={req.id} style={styles.pendingRow}>
-              <UserAvatar id={req.user_id} username={req.username || undefined} size={32} />
-              <Text style={styles.pendingName}>{req.username || req.email.split('@')[0]}</Text>
-              <TouchableOpacity style={styles.pendingAcceptBtn} onPress={() => handleAcceptFriend(req.id)}>
-                <Text style={styles.pendingAcceptText}>Accept</Text>
-              </TouchableOpacity>
-            </View>
-          ))
-        )}
-
-        {/* Friend Suggestions (same school) */}
-        {suggestions.length > 0 && (
-          <>
-            <View style={styles.suggestionDivider} />
-            <Text style={styles.suggestionTitle}>🎓 People from your school</Text>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.suggestionRow}>
-              {suggestions.map(s => {
-                const sent = sentSuggestionIds.has(s.id);
-                return (
-                  <View key={s.id} style={styles.suggestionChip}>
-                    <UserAvatar id={s.id} username={s.username} profilePicUrl={s.profile_pic_url} size={40} />
-                    <Text style={styles.suggestionName} numberOfLines={1}>@{s.username}</Text>
-                    <Text style={styles.suggestionStats}>{s.total_study_minutes}m · 🔥{s.current_streak}</Text>
-                    <TouchableOpacity
-                      style={[styles.suggestionAddBtn, sent && styles.suggestionSentBtn]}
-                      onPress={() => !sent && handleSuggestionAdd(s)}
-                      activeOpacity={sent ? 1 : 0.7}
-                    >
-                      <Text style={[styles.suggestionAddText, sent && styles.suggestionSentText]}>
-                        {sent ? '✓ Sent' : '+ Add'}
-                      </Text>
-                    </TouchableOpacity>
-                  </View>
-                );
-              })}
-            </ScrollView>
-          </>
-        )}
-      </View>
-
-      {/* Friends */}
-      {friends.length > 0 && (
-        <LinearGradient
-          colors={['#E7EFEA', '#E7EFEA']}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 0, y: 1 }}
-          style={styles.allUsersSection}
-        >
-          <Text style={styles.allUsersTitle}>👥 Friends ({friends.length})</Text>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.allUsersRow}>
-            {friends.map(f => {
-              const name = f.username || f.email?.split('@')[0] || 'Friend';
-              return (
-                <TouchableOpacity key={f.id} style={styles.allUserChip} activeOpacity={0.7} onPress={() => openFriendProfile(f.id)}>
-                  <TouchableOpacity
-                    onPress={() => handleRemoveFriend(f.id, name)}
-                    style={{ position: 'absolute', top: 6, right: 6, zIndex: 1, width: 20, height: 20, borderRadius: 10, backgroundColor: '#00000015', justifyContent: 'center', alignItems: 'center' }}
-                  >
-                    <Text style={{ fontSize: 11, color: '#999', fontWeight: '700' }}>✕</Text>
-                  </TouchableOpacity>
-                  <UserAvatar id={f.id} username={f.username} email={f.email} profilePicUrl={f.profile_pic_url} size={36} />
-                  <Text style={styles.allUserName} numberOfLines={1}>@{name}</Text>
-                  <Text style={styles.allUserStats}>{f.total_study_minutes}m · 🔥{f.current_streak}</Text>
-                  <View style={[styles.allUserActionBtn, styles.allUserFriendBtn]}>
-                    <Text style={styles.allUserFriendText}>✓ Friends</Text>
-                  </View>
-                </TouchableOpacity>
-              );
-            })}
-          </ScrollView>
-        </LinearGradient>
-      )}
 
       {/* Tab Bar */}
       <View style={styles.tabBar}>
@@ -928,10 +883,96 @@ export default function SocialScreen() {
         style={{ flex: 1 }}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
         showsVerticalScrollIndicator={false}
+        nestedScrollEnabled
       >
-        {tab === 'Buddies' && renderBuddies()}
+        {/* Pending Requests — show on Friends tab only */}
+        {tab === 'Friends' && (
+          <View style={styles.pendingSection}>
+            <Text style={styles.pendingTitle}>
+              Friend Requests {pendingRequests.length > 0 ? `(${pendingRequests.length})` : ''}
+            </Text>
+            {pendingRequests.length === 0 ? (
+              <Text style={styles.pendingEmpty}>No pending requests</Text>
+            ) : (
+              pendingRequests.map(req => (
+                <View key={req.id} style={styles.pendingRow}>
+                  <UserAvatar id={req.user_id} username={req.username || undefined} size={32} />
+                  <Text style={styles.pendingName}>{req.username || 'User'}</Text>
+                  <TouchableOpacity style={styles.pendingAcceptBtn} onPress={() => handleAcceptFriend(req.id)}>
+                    <Text style={styles.pendingAcceptText}>Accept</Text>
+                  </TouchableOpacity>
+                </View>
+              ))
+            )}
+
+            {/* Friend Suggestions (same school) */}
+            {suggestions.length > 0 && (
+              <>
+                <View style={styles.suggestionDivider} />
+                <Text style={styles.suggestionTitle}>🎓 People from your school</Text>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.suggestionRow}>
+                  {suggestions.map(s => {
+                    const sent = sentSuggestionIds.has(s.id);
+                    return (
+                      <View key={s.id} style={styles.suggestionChip}>
+                        <UserAvatar id={s.id} username={s.username} profilePicUrl={s.profile_pic_url} size={40} />
+                        <Text style={styles.suggestionName} numberOfLines={1}>@{s.username}</Text>
+                        <Text style={styles.suggestionStats}>{formatStudyTime(s.total_study_minutes)} · 🔥{s.current_streak}</Text>
+                        <TouchableOpacity
+                          style={[styles.suggestionAddBtn, sent && styles.suggestionSentBtn]}
+                          onPress={() => !sent && handleSuggestionAdd(s)}
+                          activeOpacity={sent ? 1 : 0.7}
+                        >
+                          <Text style={[styles.suggestionAddText, sent && styles.suggestionSentText]}>
+                            {sent ? '✓ Sent' : '+ Add'}
+                          </Text>
+                        </TouchableOpacity>
+                      </View>
+                    );
+                  })}
+                </ScrollView>
+              </>
+            )}
+          </View>
+        )}
+
+        {/* Friends horizontal strip — show on Groups tab only */}
+        {tab === 'Groups' && friends.length > 0 && (
+          <LinearGradient
+            colors={['#E7EFEA', '#E7EFEA']}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 0, y: 1 }}
+            style={styles.allUsersSection}
+          >
+            <Text style={styles.allUsersTitle}>👥 Friends ({friends.length})</Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.allUsersRow}>
+              {friends.map(f => {
+                const name = f.username || f.email?.split('@')[0] || 'Friend';
+                return (
+                  <TouchableOpacity key={f.id} style={styles.allUserChip} activeOpacity={0.7} onPress={() => openFriendProfile(f.id)}>
+                    <TouchableOpacity
+                      onPress={() => handleRemoveFriend(f.id, name)}
+                      style={{ position: 'absolute', top: 6, right: 6, zIndex: 1, width: 20, height: 20, borderRadius: 10, backgroundColor: '#00000015', justifyContent: 'center', alignItems: 'center' }}
+                    >
+                      <Text style={{ fontSize: 11, color: '#999', fontWeight: '700' }}>✕</Text>
+                    </TouchableOpacity>
+                    <UserAvatar id={f.id} username={f.username} email={f.email} profilePicUrl={f.profile_pic_url} size={36} />
+                    <Text style={styles.allUserName} numberOfLines={1}>@{name}</Text>
+                    <Text style={styles.allUserStats}>{formatStudyTime(f.total_study_minutes)} · 🔥{f.current_streak}</Text>
+                    <View style={[styles.allUserActionBtn, styles.allUserFriendBtn]}>
+                      <Text style={styles.allUserFriendText}>✓ Friends</Text>
+                    </View>
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+          </LinearGradient>
+        )}
+
+        {tab === 'Friends' && renderFriendsTab()}
         {tab === 'Groups' && renderGroups()}
         {tab === 'Feed' && renderFeed()}
+        {tab === 'Leaderboard' && renderLeaderboard()}
       </ScrollView>
 
       {/* Create Group Modal */}
@@ -960,7 +1001,7 @@ export default function SocialScreen() {
                         >
                           <UserAvatar id={f.id} username={f.username} email={f.email} profilePicUrl={f.profile_pic_url} size={24} />
                           <Text style={[styles.friendSelectName, selected && styles.friendSelectNameActive, { marginLeft: 4 }]}>
-                            {f.username || f.email?.split('@')[0]}
+                            {f.username || 'Friend'}
                           </Text>
                           {selected && <Text style={styles.friendSelectCheck}>✓</Text>}
                         </TouchableOpacity>
@@ -1262,7 +1303,7 @@ export default function SocialScreen() {
                           <UserAvatar id={f.id} username={f.username} email={f.email} profilePicUrl={f.profile_pic_url} size={32} />
                           <View>
                             <Text style={styles.inviteFriendName}>{f.username || f.email?.split('@')[0]}</Text>
-                            <Text style={styles.inviteFriendStats}>🔥 {f.current_streak} · {f.total_study_minutes}m studied</Text>
+                            <Text style={styles.inviteFriendStats}>🔥 {f.current_streak} · {formatStudyTime(f.total_study_minutes)} studied</Text>
                           </View>
                         </View>
                         <TouchableOpacity
@@ -1435,91 +1476,6 @@ export default function SocialScreen() {
         </TouchableOpacity>
       </Modal>
 
-      {/* Reaction Notification Modal */}
-      <Modal visible={showReactionModal} transparent animationType="none">
-        <TouchableOpacity
-          style={styles.reactionModalOverlay}
-          activeOpacity={1}
-          onPress={dismissReactionModal}
-        >
-          <Animated.View style={[
-            styles.reactionModalCard,
-            {
-              opacity: reactionOpacity,
-              transform: [{ scale: reactionScale }],
-            },
-          ]}>
-            <LinearGradient
-              colors={['#FFFFFF', '#E7EFEA']}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 0, y: 1 }}
-              style={styles.reactionModalGradient}
-            >
-              {incomingReactions.length === 1 ? (
-                <>
-                  <Animated.Text style={[styles.reactionModalBigEmoji, { transform: [{ translateY: emojiFloat }] }]}>
-                    {REACTIONS.find(r => r.key === incomingReactions[0].reaction)?.emoji || '💫'}
-                  </Animated.Text>
-                  <Text style={styles.reactionModalSender}>
-                    {incomingReactions[0].sender_username}
-                  </Text>
-                  <Text style={styles.reactionModalMessage}>
-                    {REACTION_MESSAGES[incomingReactions[0].reaction]?.[
-                      reactionMsgIdx.current % (REACTION_MESSAGES[incomingReactions[0].reaction]?.length || 1)
-                    ] || 'reacted to your activity!'}
-                  </Text>
-                  <Text style={styles.reactionModalContext} numberOfLines={2}>
-                    "{incomingReactions[0].event_description}"
-                  </Text>
-                </>
-              ) : (
-                <>
-                  <Animated.View style={[styles.reactionModalEmojiRow, { transform: [{ translateY: emojiFloat }] }]}>
-                    {[...new Set(incomingReactions.map(r => r.reaction))].map((rKey) => (
-                      <Text key={rKey} style={styles.reactionModalBigEmoji}>
-                        {REACTIONS.find(r => r.key === rKey)?.emoji || '💫'}
-                      </Text>
-                    ))}
-                  </Animated.View>
-                  <Text style={styles.reactionModalSender}>
-                    {incomingReactions.length} new reactions!
-                  </Text>
-                  <View style={styles.reactionModalList}>
-                    {incomingReactions.slice(0, 4).map((r) => (
-                      <View key={r.id} style={styles.reactionModalListItem}>
-                        <Text style={styles.reactionModalListEmoji}>
-                          {REACTIONS.find(rx => rx.key === r.reaction)?.emoji || '💫'}
-                        </Text>
-                        <Text style={styles.reactionModalListText} numberOfLines={1}>
-                          <Text style={{ fontWeight: '700' }}>{r.sender_username}</Text>
-                          {' '}{REACTION_MESSAGES[r.reaction]?.[0] || 'reacted!'}
-                        </Text>
-                      </View>
-                    ))}
-                    {incomingReactions.length > 4 && (
-                      <Text style={styles.reactionModalMoreText}>
-                        +{incomingReactions.length - 4} more
-                      </Text>
-                    )}
-                  </View>
-                </>
-              )}
-              <TouchableOpacity style={styles.reactionModalDismiss} onPress={dismissReactionModal}>
-                <LinearGradient
-                  colors={['#A8C8D8', '#5F8C87']}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 0 }}
-                  style={styles.reactionModalDismissGradient}
-                >
-                  <Text style={styles.reactionModalDismissText}>
-                    {incomingReactions.length === 1 ? '🥰 Aww, thanks!' : '🥰 So loved!'}
-                  </Text>
-                </LinearGradient>
-              </TouchableOpacity>
-            </LinearGradient>
-          </Animated.View>
-        </TouchableOpacity>
-      </Modal>
 
       {/* Friend Profile Modal */}
       <Modal visible={showFriendProfile} transparent animationType="fade">
@@ -1657,16 +1613,17 @@ export default function SocialScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
   header: {
-    paddingHorizontal: spacing.lg, paddingTop: spacing.sm, paddingBottom: spacing.xs,
+    paddingHorizontal: spacing.lg, paddingTop: spacing.lg, paddingBottom: spacing.md,
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
   },
-  headerTitle: { fontSize: 28, fontWeight: '800', color: colors.textPrimary },
+  headerTitle: { fontSize: 28, fontWeight: '700', color: colors.textPrimary },
   headerSubtitle: { fontSize: 13, color: colors.textSecondary, marginTop: 2 },
   addFriendButton: {
     borderRadius: borderRadius.full,
-    paddingHorizontal: 16, paddingVertical: 8,
+    paddingHorizontal: 22, paddingVertical: 12,
+    marginRight: 4,
   },
-  addFriendButtonText: { fontSize: 13, fontWeight: '700', color: '#fff' },
+  addFriendButtonText: { fontSize: 16, fontWeight: '800', color: '#fff' },
   pendingSection: {
     marginHorizontal: spacing.lg,
     borderRadius: borderRadius.lg,
@@ -1816,18 +1773,37 @@ const styles = StyleSheet.create({
   },
 
   tabBar: {
-    flexDirection: 'row', marginHorizontal: spacing.lg,
+    flexDirection: 'row', marginHorizontal: spacing.md,
     backgroundColor: '#A9BDAF30', borderRadius: borderRadius.full,
-    padding: 3, marginBottom: spacing.sm,
+    padding: 2, marginTop: spacing.xs, marginBottom: spacing.md,
   },
   tabButton: {
-    flex: 1, paddingVertical: 10, borderRadius: borderRadius.full, alignItems: 'center', justifyContent: 'center',
+    flex: 1, paddingVertical: 8, paddingHorizontal: 2, borderRadius: borderRadius.full, alignItems: 'center', justifyContent: 'center',
   },
   tabButtonActive: { backgroundColor: '#5F8C87', ...shadows.small },
-  tabButtonText: { fontSize: 14, fontWeight: '600', color: colors.textMuted },
+  tabButtonText: { fontSize: 11, fontWeight: '600', color: colors.textMuted },
   tabButtonTextActive: { color: '#FFFFFF', fontWeight: '700' },
 
   tabContent: { paddingHorizontal: spacing.lg, paddingBottom: 40 },
+
+  sharedEggInviteCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 10,
+    borderWidth: 1.5,
+    borderColor: 'rgba(95, 140, 135, 0.3)',
+    ...shadows.small,
+  },
+  friendListCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 14,
+    padding: 14,
+    marginBottom: 8,
+    ...shadows.small,
+  },
 
   // Create buttons
   createButton: {
@@ -1843,32 +1819,6 @@ const styles = StyleSheet.create({
   emptyIcon: { fontSize: 48, marginBottom: spacing.sm },
   emptyTitle: { fontSize: 17, fontWeight: '700', color: colors.textPrimary },
   emptySubtitle: { fontSize: 13, color: colors.textMuted, marginTop: 4 },
-
-  // Pact card
-  pactCard: {
-    backgroundColor: colors.surface, borderRadius: borderRadius.lg,
-    padding: spacing.md, marginBottom: spacing.sm, ...shadows.small,
-  },
-  pactHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 },
-  pactPartner: { fontSize: 15, fontWeight: '700', color: colors.textPrimary },
-  statusBadge: {
-    paddingHorizontal: 10, paddingVertical: 3, borderRadius: 10,
-    backgroundColor: colors.surfaceAlt,
-  },
-  statusActive: { backgroundColor: '#E7EFEA' },
-  statusCompleted: { backgroundColor: '#E7EFEA' },
-  statusFailed: { backgroundColor: '#3B546620' },
-  statusText: { fontSize: 11, fontWeight: '700', color: colors.textSecondary, textTransform: 'capitalize' },
-  pactDetails: { fontSize: 13, color: colors.textSecondary, marginBottom: 8 },
-  pactProgressRow: { flexDirection: 'row', gap: spacing.md },
-  pactProgressItem: { flex: 1, backgroundColor: colors.surfaceAlt, borderRadius: borderRadius.md, padding: 10, alignItems: 'center' },
-  pactProgressLabel: { fontSize: 11, color: colors.textMuted, marginBottom: 2 },
-  pactProgressValue: { fontSize: 18, fontWeight: '800', color: colors.primary },
-  acceptButton: {
-    borderRadius: borderRadius.full,
-    paddingVertical: 10, alignItems: 'center', marginTop: 8,
-  },
-  acceptButtonText: { fontSize: 14, fontWeight: '700', color: '#fff' },
 
   // Group card
   groupCard: {
@@ -2108,96 +2058,6 @@ const styles = StyleSheet.create({
   },
   inviteFriendBtnText: { fontSize: 13, fontWeight: '700', color: '#fff' },
 
-  reactionModalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.4)',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  reactionModalCard: {
-    width: SCREEN_WIDTH * 0.82,
-    borderRadius: 28,
-    overflow: 'hidden',
-    ...shadows.large,
-  },
-  reactionModalGradient: {
-    paddingVertical: 32,
-    paddingHorizontal: 28,
-    alignItems: 'center',
-  },
-  reactionModalBigEmoji: {
-    fontSize: 56,
-    marginBottom: 8,
-  },
-  reactionModalEmojiRow: {
-    flexDirection: 'row',
-    gap: 8,
-    marginBottom: 8,
-  },
-  reactionModalSender: {
-    fontSize: 20,
-    fontWeight: '800',
-    color: colors.textPrimary,
-    textAlign: 'center',
-    marginBottom: 4,
-  },
-  reactionModalMessage: {
-    fontSize: 16,
-    fontWeight: '500',
-    color: colors.textSecondary,
-    textAlign: 'center',
-    marginBottom: 10,
-  },
-  reactionModalContext: {
-    fontSize: 13,
-    fontStyle: 'italic',
-    color: colors.textMuted,
-    textAlign: 'center',
-    marginBottom: 6,
-    paddingHorizontal: 10,
-  },
-  reactionModalList: {
-    width: '100%',
-    marginTop: 8,
-    marginBottom: 4,
-  },
-  reactionModalListItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    paddingVertical: 6,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.divider,
-  },
-  reactionModalListEmoji: { fontSize: 22 },
-  reactionModalListText: {
-    fontSize: 14,
-    color: colors.textPrimary,
-    flex: 1,
-  },
-  reactionModalMoreText: {
-    fontSize: 13,
-    color: colors.textMuted,
-    textAlign: 'center',
-    marginTop: 6,
-  },
-  reactionModalDismiss: {
-    marginTop: 16,
-    width: '100%',
-    borderRadius: borderRadius.full,
-    overflow: 'hidden',
-  },
-  reactionModalDismissGradient: {
-    paddingVertical: 14,
-    alignItems: 'center',
-    borderRadius: borderRadius.full,
-  },
-  reactionModalDismissText: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#fff',
-  },
-
   // Leaderboard
   leaderboardCard: {
     backgroundColor: colors.surface, borderRadius: borderRadius.lg,
@@ -2226,7 +2086,7 @@ const styles = StyleSheet.create({
     elevation: 1,
   },
   leaderboardSwatchText: {
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: '600',
     color: colors.textMuted,
   },
@@ -2256,8 +2116,9 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface, borderRadius: borderRadius.lg,
     padding: spacing.md, marginBottom: spacing.sm, ...shadows.small,
   },
-  feedCardHeader: { flexDirection: 'row', gap: 10, marginBottom: 8 },
+  feedCardHeader: { flexDirection: 'row', gap: 10, marginBottom: 8, alignItems: 'center' },
   feedEventIcon: { fontSize: 22, marginTop: 2 },
+  feedAnimalImage: { width: 58, height: 58, borderRadius: 12, marginLeft: 4, top: 4 },
   feedCardText: { fontSize: 14, color: colors.textPrimary, lineHeight: 20 },
   feedUsername: { fontWeight: '700' },
   feedTime: { fontSize: 11, color: colors.textMuted, marginTop: 3 },

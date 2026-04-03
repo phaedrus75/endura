@@ -1,6 +1,7 @@
-from sqlalchemy import Column, Integer, String, Float, DateTime, Boolean, ForeignKey, Text, LargeBinary
+from sqlalchemy import Column, Integer, String, Float, DateTime, Boolean, ForeignKey, Text, LargeBinary, UniqueConstraint
 from sqlalchemy.orm import relationship
 from datetime import datetime
+from uuid import uuid4
 from database import Base
 
 
@@ -27,6 +28,9 @@ class User(Base):
     # Password reset
     reset_token = Column(String, nullable=True)
     reset_token_expires = Column(DateTime, nullable=True)
+
+    # JWT invalidation on password change
+    token_version = Column(Integer, default=0, nullable=False, server_default="0")
 
     # Email verification
     email_verified = Column(Boolean, default=False)
@@ -108,11 +112,14 @@ class UserAnimal(Base):
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"))
     animal_id = Column(Integer, ForeignKey("animals.id"))
-    nickname = Column(String, nullable=True)  # User-given name
+    nickname = Column(String, nullable=True)
     hatched_at = Column(DateTime, default=datetime.utcnow)
+    shared_with_user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    shared_egg_id = Column(Integer, ForeignKey("shared_eggs.id"), nullable=True)
     
-    user = relationship("User", back_populates="animals")
+    user = relationship("User", foreign_keys=[user_id], back_populates="animals")
     animal = relationship("Animal")
+    shared_with = relationship("User", foreign_keys=[shared_with_user_id])
 
 
 class Egg(Base):
@@ -125,6 +132,25 @@ class Egg(Base):
     coins_required = Column(Integer, default=100)
     animal_id = Column(Integer, ForeignKey("animals.id"), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class SharedEgg(Base):
+    """Shared egg for co-hatching between two friends"""
+    __tablename__ = "shared_eggs"
+
+    id = Column(Integer, primary_key=True, index=True)
+    creator_id = Column(Integer, ForeignKey("users.id"))
+    partner_id = Column(Integer, ForeignKey("users.id"))
+    animal_name = Column(String, nullable=False)
+    status = Column(String, default="pending")  # pending, active, hatched, declined
+    creator_minutes = Column(Integer, default=0)
+    partner_minutes = Column(Integer, default=0)
+    minutes_required = Column(Integer, default=60)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    hatched_at = Column(DateTime, nullable=True)
+
+    creator = relationship("User", foreign_keys=[creator_id])
+    partner = relationship("User", foreign_keys=[partner_id])
 
 
 class StudyTip(Base):
@@ -168,7 +194,10 @@ class UserBadge(Base):
 class Friendship(Base):
     """Friend connections between users"""
     __tablename__ = "friendships"
-    
+    __table_args__ = (
+        UniqueConstraint("user_id", "friend_id", name="uq_friendship"),
+    )
+
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"))
     friend_id = Column(Integer, ForeignKey("users.id"))
@@ -177,39 +206,6 @@ class Friendship(Base):
     
     user = relationship("User", foreign_keys=[user_id], back_populates="friendships")
     friend = relationship("User", foreign_keys=[friend_id])
-
-
-class StudyPact(Base):
-    """Study buddy pact between two users"""
-    __tablename__ = "study_pacts"
-
-    id = Column(Integer, primary_key=True, index=True)
-    creator_id = Column(Integer, ForeignKey("users.id"))
-    buddy_id = Column(Integer, ForeignKey("users.id"))
-    daily_minutes = Column(Integer, nullable=False)
-    duration_days = Column(Integer, nullable=False)
-    wager_amount = Column(Integer, default=0)
-    status = Column(String, default="pending")  # pending, active, completed, failed
-    start_date = Column(DateTime, nullable=True)
-    end_date = Column(DateTime, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
-
-    creator = relationship("User", foreign_keys=[creator_id])
-    buddy = relationship("User", foreign_keys=[buddy_id])
-
-
-class PactDay(Base):
-    """Daily progress for a study pact"""
-    __tablename__ = "pact_days"
-
-    id = Column(Integer, primary_key=True, index=True)
-    pact_id = Column(Integer, ForeignKey("study_pacts.id"))
-    user_id = Column(Integer, ForeignKey("users.id"))
-    date = Column(DateTime, nullable=False)
-    minutes_studied = Column(Integer, default=0)
-    completed = Column(Boolean, default=False)
-
-    pact = relationship("StudyPact")
 
 
 class StudyGroup(Base):
@@ -231,6 +227,9 @@ class StudyGroup(Base):
 class GroupMember(Base):
     """Membership in a study group"""
     __tablename__ = "group_members"
+    __table_args__ = (
+        UniqueConstraint("group_id", "user_id", name="uq_group_member"),
+    )
 
     id = Column(Integer, primary_key=True, index=True)
     group_id = Column(Integer, ForeignKey("study_groups.id"))
@@ -308,6 +307,7 @@ class Upload(Base):
     __tablename__ = "uploads"
 
     id = Column(Integer, primary_key=True, index=True)
+    public_id = Column(String, unique=True, index=True, default=lambda: str(uuid4()))
     filename = Column(String, nullable=False)
     content_type = Column(String, nullable=False)
     data = Column(LargeBinary, nullable=False)

@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useRef } from 'react';
+import React, { useState, useCallback, useRef, useEffect } from 'react';
 import {
   View,
   Text,
@@ -16,6 +16,7 @@ import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import Svg, { Rect, G, Text as SvgText, Defs, LinearGradient, Stop } from 'react-native-svg';
 import { LinearGradient as ExpoLinearGradient } from 'expo-linear-gradient';
 import { colors, shadows, spacing, borderRadius } from '../theme/colors';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useAuth } from '../contexts/AuthContext';
 import { statsAPI, tasksAPI, badgesAPI, UserStats, Task, BadgeResponse } from '../services/api';
 
@@ -34,6 +35,15 @@ const SUBJECT_GRADIENTS = [
 ];
 
 const LABEL_PAD = 20;
+
+const formatMinutes = (mins: number): string => {
+  if (mins >= 60) {
+    const h = Math.floor(mins / 60);
+    const rem = mins % 60;
+    return rem > 0 ? `${h}h${rem}m` : `${h}h`;
+  }
+  return `${mins}m`;
+};
 
 const BarChart = ({ data, height = 150 }: { data: { label: string; value: number; maxValue: number }[]; height?: number }) => {
   const barWidth = (CHART_WIDTH - 60) / data.length - 10;
@@ -77,12 +87,10 @@ const BarChart = ({ data, height = 150 }: { data: { label: string; value: number
                 x={x + barWidth / 2}
                 y={y - 5}
                 fill={colors.textPrimary}
-                fontSize={10}
+                fontSize={12}
                 fontWeight="bold"
                 textAnchor="middle"
-              >
-                {item.value}m
-              </SvgText>
+              >{formatMinutes(item.value)}</SvgText>
             )}
           </G>
         );
@@ -91,7 +99,7 @@ const BarChart = ({ data, height = 150 }: { data: { label: string; value: number
   );
 };
 
-const SubjectBarChart = ({ data, height = 150 }: { data: { label: string; value: number; gradientIndex: number }[]; height?: number }) => {
+const SubjectBarChart = ({ data }: { data: { label: string; value: number; gradientIndex: number }[] }) => {
   const filtered = data.filter(d => d.value > 0);
   if (filtered.length === 0) {
     return (
@@ -102,67 +110,32 @@ const SubjectBarChart = ({ data, height = 150 }: { data: { label: string; value:
   }
 
   const maxVal = Math.max(...filtered.map(d => d.value), 1);
-  const barWidth = Math.min(
-    (CHART_WIDTH - 60) / filtered.length - 10,
-    50,
-  );
-  const drawH = height - LABEL_PAD;
 
   return (
-    <Svg width={CHART_WIDTH} height={height + 40}>
-      <Defs>
-        {filtered.map((item, index) => {
-          const grad = SUBJECT_GRADIENTS[item.gradientIndex % SUBJECT_GRADIENTS.length];
-          return (
-            <LinearGradient key={`sg${index}`} id={`subjGrad${index}`} x1="0%" y1="0%" x2="0%" y2="100%">
-              <Stop offset="0%" stopColor={grad[0]} />
-              <Stop offset="100%" stopColor={grad[1]} />
-            </LinearGradient>
-          );
-        })}
-      </Defs>
+    <View style={{ width: '100%', paddingHorizontal: 4 }}>
       {filtered.map((item, index) => {
-        const barHeight = (item.value / maxVal) * drawH;
-        const totalW = filtered.length * (barWidth + 10) - 10;
-        const startX = (CHART_WIDTH - totalW) / 2;
-        const x = startX + index * (barWidth + 10);
-        const y = LABEL_PAD + drawH - barHeight;
-
+        const pct = (item.value / maxVal) * 100;
+        const grad = SUBJECT_GRADIENTS[item.gradientIndex % SUBJECT_GRADIENTS.length];
         return (
-          <G key={index}>
-            <Rect
-              x={x}
-              y={y}
-              width={barWidth}
-              height={barHeight || 2}
-              fill={`url(#subjGrad${index})`}
-              rx={6}
-            />
-            <SvgText
-              x={x + barWidth / 2}
-              y={height + 16}
-              fill={colors.textSecondary}
-              fontSize={9}
-              textAnchor="middle"
-            >
-              {item.label.length > 8 ? item.label.slice(0, 7) + '…' : item.label}
-            </SvgText>
-            {item.value > 0 && (
-              <SvgText
-                x={x + barWidth / 2}
-                y={y - 5}
-                fill={colors.textPrimary}
-                fontSize={10}
-                fontWeight="bold"
-                textAnchor="middle"
-              >
-                {item.value}m
-              </SvgText>
-            )}
-          </G>
+          <View key={index} style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 14 }}>
+            <Text style={{ width: 72, fontSize: 12, color: colors.textSecondary, fontWeight: '500' }} numberOfLines={1}>
+              {item.label}
+            </Text>
+            <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', marginLeft: 10, marginRight: 4 }}>
+              <ExpoLinearGradient
+                colors={[grad[0], grad[1]]}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 0 }}
+                style={{ width: `${Math.max(Math.min(pct, 72), 8)}%`, height: 22, borderRadius: 11 }}
+              />
+              <Text style={{ fontSize: 12, fontWeight: '700', color: colors.textPrimary, marginLeft: 8, flexShrink: 0 }}>
+                {formatMinutes(item.value)}
+              </Text>
+            </View>
+          </View>
         );
       })}
-    </Svg>
+    </View>
   );
 };
 
@@ -201,6 +174,37 @@ export default function ProgressScreen() {
   const [badges, setBadges] = useState<BadgeResponse[]>([]);
   const [selectedBadge, setSelectedBadge] = useState<BadgeResponse | null>(null);
   const modalScale = useRef(new Animated.Value(0)).current;
+  const [hasSeenTips, setHasSeenTips] = useState(true);
+  const tipsPulse = useRef(new Animated.Value(1)).current;
+
+  useEffect(() => {
+    const checkTips = async () => {
+      const seen = await AsyncStorage.getItem(`hasSeenTips_${user?.id || 'anon'}`);
+      setHasSeenTips(seen === 'true');
+    };
+    checkTips();
+  }, [user?.id]);
+
+  useEffect(() => {
+    if (!hasSeenTips) {
+      const loop = Animated.loop(
+        Animated.sequence([
+          Animated.timing(tipsPulse, { toValue: 1.25, duration: 800, useNativeDriver: true }),
+          Animated.timing(tipsPulse, { toValue: 1, duration: 800, useNativeDriver: true }),
+        ])
+      );
+      loop.start();
+      return () => loop.stop();
+    }
+  }, [hasSeenTips]);
+
+  const handleOpenTips = async () => {
+    if (!hasSeenTips) {
+      setHasSeenTips(true);
+      await AsyncStorage.setItem(`hasSeenTips_${user?.id || 'anon'}`, 'true');
+    }
+    navigation.navigate('Tips');
+  };
 
   const loadData = async () => {
     try {
@@ -284,11 +288,13 @@ export default function ProgressScreen() {
   });
 
   // Prepare subject pie chart data
-  const subjectChartData = Object.entries(subjectStudyTime).map(([subject, minutes], index) => ({
-    label: subject,
-    value: minutes,
-    gradientIndex: index,
-  }));
+  const subjectChartData = Object.entries(subjectStudyTime)
+    .sort(([, a], [, b]) => b - a)
+    .map(([subject, minutes], index) => ({
+      label: subject,
+      value: minutes,
+      gradientIndex: index,
+    }));
 
   return (
     <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
@@ -308,14 +314,16 @@ export default function ProgressScreen() {
         <View style={styles.header}>
           <View>
             <Text style={styles.title}>My Progress</Text>
-            <Text style={styles.subtitle}>Track your study journey 📈</Text>
           </View>
           <View style={{ flexDirection: 'row', gap: 8 }}>
             <TouchableOpacity 
               style={styles.profileButton}
-              onPress={() => navigation.navigate('Tips')}
+              onPress={handleOpenTips}
             >
               <Text style={styles.profileButtonEmoji}>💡</Text>
+              {!hasSeenTips && (
+                <Animated.View style={[styles.tipsDot, { transform: [{ scale: tipsPulse }] }]} />
+              )}
             </TouchableOpacity>
             <TouchableOpacity 
               style={styles.profileButton}
@@ -358,7 +366,7 @@ export default function ProgressScreen() {
 
         {/* Weekly Study Bar Chart */}
         <View style={[styles.chartCard, { alignItems: 'center' }]}>
-          <Text style={[styles.chartTitle, { alignSelf: 'flex-start' }]}>📅 This Past Week</Text>
+          <Text style={[styles.chartTitle, { alignSelf: 'flex-start' }]}>This Past Week</Text>
           <BarChart 
             data={(() => {
               const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
@@ -376,7 +384,7 @@ export default function ProgressScreen() {
 
         {/* Monthly Study Bar Chart */}
         <View style={[styles.chartCard, { alignItems: 'center' }]}>
-          <Text style={[styles.chartTitle, { alignSelf: 'flex-start' }]}>📆 This Past Month</Text>
+          <Text style={[styles.chartTitle, { alignSelf: 'flex-start' }]}>This Past Month</Text>
           <BarChart 
             data={(() => {
               const weeks = ['Week 1', 'Week 2', 'Week 3', 'This Week'];
@@ -397,72 +405,10 @@ export default function ProgressScreen() {
         </View>
 
         {/* Subject Distribution Bar Chart */}
-        <View style={[styles.chartCard, { alignItems: 'center' }]}>
-          <Text style={[styles.chartTitle, { alignSelf: 'flex-start' }]}>📚 Study Time by Subject</Text>
-          <SubjectBarChart data={subjectChartData} />
-          <Text style={styles.chartSubtext}>Minutes studied per subject</Text>
-        </View>
-
-        {/* Progress Bars */}
         <View style={styles.chartCard}>
-          <Text style={styles.chartTitle}>🎯 Goals Progress</Text>
-          <ProgressBar 
-            value={stats?.current_streak || 0} 
-            maxValue={Math.max(stats?.longest_streak || 7, 7)} 
-            label="🔥 Streak Goal" 
-            color={colors.streakActive}
-          />
-          <ProgressBar 
-            value={stats?.animals_hatched || 0} 
-            maxValue={21} 
-            label="🦁 Animal Collection" 
-            color={colors.epic}
-          />
-          <ProgressBar 
-            value={Math.floor((stats?.total_study_minutes || 0) / 60)} 
-            maxValue={100} 
-            label="⏱️ Study Hours" 
-            color={colors.primary}
-          />
-          <ProgressBar 
-            value={stats?.total_coins || 0} 
-            maxValue={5000} 
-            label="🍀 Eco-Credits Earned" 
-            color={colors.rare}
-          />
-          <ProgressBar 
-            value={stats?.tasks_completed || 0} 
-            maxValue={100} 
-            label="✅ Tasks Completed" 
-            color="#5E7F6E"
-          />
-        </View>
-
-        {/* Achievement Summary */}
-        <View style={styles.achievementCard}>
-          <Text style={styles.achievementTitle}>🏆 Achievements</Text>
-          <View style={styles.achievementGrid}>
-            <View style={styles.achievementItem}>
-              <Text style={styles.achievementEmoji}>📖</Text>
-              <Text style={styles.achievementValue}>{stats?.total_sessions || 0}</Text>
-              <Text style={styles.achievementLabel}>Study Sessions</Text>
-            </View>
-            <View style={styles.achievementItem}>
-              <Text style={styles.achievementEmoji}>🦁</Text>
-              <Text style={styles.achievementValue}>{stats?.animals_hatched || 0}</Text>
-              <Text style={styles.achievementLabel}>Animals Hatched</Text>
-            </View>
-            <View style={styles.achievementItem}>
-              <Text style={styles.achievementEmoji}>✅</Text>
-              <Text style={styles.achievementValue}>{stats?.tasks_completed || 0}</Text>
-              <Text style={styles.achievementLabel}>Tasks Done</Text>
-            </View>
-            <View style={styles.achievementItem}>
-              <Text style={styles.achievementEmoji}>⭐</Text>
-              <Text style={styles.achievementValue}>{stats?.longest_streak || 0}</Text>
-              <Text style={styles.achievementLabel}>Best Streak</Text>
-            </View>
-          </View>
+          <Text style={styles.chartTitle}>Study Time by Subject</Text>
+          <SubjectBarChart data={subjectChartData} />
+          <Text style={[styles.chartSubtext, { marginTop: 4 }]}>Minutes studied per subject</Text>
         </View>
 
         {/* Badges Section */}
@@ -611,7 +557,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: spacing.lg,
+    marginBottom: spacing.md,
   },
   title: {
     fontSize: 28,
@@ -634,6 +580,17 @@ const styles = StyleSheet.create({
   },
   profileButtonEmoji: {
     fontSize: 22,
+  },
+  tipsDot: {
+    position: 'absolute' as const,
+    top: 2,
+    right: 2,
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: '#FF6B6B',
+    borderWidth: 1.5,
+    borderColor: '#FFFFFF',
   },
   profileButtonImage: {
     width: 44,
@@ -681,10 +638,11 @@ const styles = StyleSheet.create({
     marginBottom: spacing.md,
   },
   chartSubtext: {
-    fontSize: 11,
-    color: colors.textMuted,
+    fontSize: 13,
+    color: colors.textSecondary,
     textAlign: 'center',
     marginTop: spacing.sm,
+    fontWeight: '600',
   },
   progressBarContainer: {
     marginBottom: spacing.md,

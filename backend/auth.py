@@ -20,7 +20,7 @@ if not SECRET_KEY:
     logger.warning("Using insecure dev SECRET_KEY — set SECRET_KEY env var for production")
 
 ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24 * 7  # 7 days
+ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24  # 24 hours
 
 security = HTTPBearer()
 
@@ -78,6 +78,9 @@ def get_current_user(
             detail="User not found - please register again",
             headers={"WWW-Authenticate": "Bearer"},
         )
+    token_ver = payload.get("tv", 0)
+    if token_ver != (user.token_version or 0):
+        raise credentials_exception
     return user
 
 

@@ -78,8 +78,6 @@ endura-v-2/
 | `tip_views` | Tip interactions (view/like/dislike) | Belongs to user + tip |
 | `user_badges` | Earned badges | Belongs to user |
 | `friendships` | Friend connections (pending/accepted) | User ↔ User |
-| `study_pacts` | 1-on-1 study commitments with wagers | Creator ↔ Buddy |
-| `pact_days` | Daily progress within a pact | Belongs to pact + user |
 | `study_groups` | Group study rooms | Has many: members, messages |
 | `group_members` | Group membership (admin/member) | Belongs to group + user |
 | `group_messages` | Group chat messages | Belongs to group + user |
@@ -125,8 +123,7 @@ endura-v-2/
 - `GET /friends/pending` — Pending requests
 - `GET /leaderboard` — Study leaderboard (friends + you)
 
-**Study Pacts & Groups**
-- `POST /pacts` — Create 1-on-1 study pact with coin wager
+**Study Groups**
 - `POST /groups` — Create study group
 - `POST /groups/{id}/join` — Join group
 - `GET /groups/{id}/messages` — Group chat
@@ -208,7 +205,7 @@ Root Stack
 | `TimerScreen` | Study timer (5–60 min), subject selection, session completion → coins + animal hatch chance |
 | `CollectionScreen` | My Sanctuary (animal habitat preview), Take Action CTA, Conservation Champions, animal grid, detail modals with naming |
 | `ProgressScreen` | Stats overview, badge collection, weekly bar charts, subject breakdown |
-| `SocialScreen` | 3-tab layout: Buddies (pacts), Groups (chat), Feed (activity + reactions) |
+| `SocialScreen` | Multi-tab layout: Friends, Leaderboard, Groups (chat), Feed (activity + reactions) |
 | `TipsScreen` | Swipeable card feed of study tips, vote/share functionality |
 | `TakeActionScreen` | Donation flow: amount selector, Every.org integration, personal + community stats, endangered species stories |
 | `ProfileScreen` | User info, donation impact card, study leaderboard, Conservation Champions leaderboard, friends list, logout |
@@ -294,15 +291,14 @@ Code Push (GitHub)
 |----------|---------|
 | `DATABASE_URL` | PostgreSQL connection string |
 | `SECRET_KEY` | JWT signing key (required in production) |
-| `STRIPE_SECRET_KEY` | Stripe API key |
 
-**Frontend (hardcoded):**
-| Variable | Value |
+**Frontend (hardcoded in source):**
+| Variable | Notes |
 |----------|-------|
-| API URL | `https://web-production-34028.up.railway.app` |
-| PostHog Key | `phc_qlSNr...` |
+| API URL | Railway backend HTTPS URL |
+| PostHog Key | PostHog project API key (see vault) |
 | PostHog Host | `https://us.i.posthog.com` |
-| Every.org Webhook Token | `9f29c612e6f8` |
+| Every.org Webhook Token | See vault |
 
 ---
 
@@ -325,7 +321,6 @@ Tap "Take Action" → Select amount → Every.org (WWF)
 ### 3. Social Loop
 ```
 Add Friend → See their activity → React with emoji
-→ Study Pacts (1v1 commitments with coin wagers)
 → Study Groups (shared goals + group chat)
 → Leaderboard competition (study time, streaks, donations)
 ```
@@ -340,7 +335,7 @@ Add Friend → See their activity → React with emoji
 ## Key Design Decisions
 
 1. **SQLAlchemy inline migrations** over Alembic — simpler for a small team, column-existence checks at startup
-2. **Every.org for donations** over direct Stripe — no PCI compliance burden, tax receipts handled by Every.org, 94% pass-through to WWF
+2. **Every.org for donations** — no PCI compliance burden, tax receipts handled by Every.org, 94% pass-through to WWF
 3. **expo-secure-store for JWT** over AsyncStorage — encrypted on-device storage
 4. **PostHog over Mixpanel/Amplitude** — open-source friendly, React Native SDK, autocapture
 5. **Single `main.py`** over split routers — faster iteration for a small codebase, all endpoints visible in one file

@@ -17,6 +17,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import LottieView from 'lottie-react-native';
 import { colors, shadows, spacing, borderRadius } from '../theme/colors';
+import SwipeDismiss, { DragHandle } from '../components/SwipeDismiss';
 import { useAuth } from '../contexts/AuthContext';
 import { authAPI } from '../services/api';
 
@@ -41,6 +42,13 @@ export default function AuthScreen() {
   const [isLoading, setIsLoading] = useState(false);
   const { login, register, checkAuth } = useAuth();
 
+  // Email verification state
+  const [showVerification, setShowVerification] = useState(false);
+  const [verifyCode, setVerifyCode] = useState(['', '', '', '', '', '']);
+  const [verifyLoading, setVerifyLoading] = useState(false);
+  const verifyInputRefs = useRef<(TextInput | null)[]>([]);
+
+  // Forgot password state
   const [showForgotModal, setShowForgotModal] = useState(false);
   const [forgotStep, setForgotStep] = useState<'email' | 'code'>('email');
   const [forgotEmail, setForgotEmail] = useState('');
@@ -119,14 +127,59 @@ export default function AuthScreen() {
     }
   };
 
-  // Clear any stored auth data on mount (debug)
+  // Verification code handlers
+  const handleVerifyCodeChange = (text: string, index: number) => {
+    if (text.length > 1) text = text.slice(-1);
+    const newCode = [...verifyCode];
+    newCode[index] = text;
+    setVerifyCode(newCode);
+    if (text && index < 5) {
+      verifyInputRefs.current[index + 1]?.focus();
+    }
+  };
+
+  const handleVerifyCodeKeyPress = (e: any, index: number) => {
+    if (e.nativeEvent.key === 'Backspace' && !verifyCode[index] && index > 0) {
+      verifyInputRefs.current[index - 1]?.focus();
+    }
+  };
+
+  const handleVerifySubmit = async () => {
+    const code = verifyCode.join('');
+    if (code.length !== 6) {
+      Alert.alert('Error', 'Please enter the full 6-digit code');
+      return;
+    }
+    setVerifyLoading(true);
+    try {
+      await authAPI.verifyEmail(email, code);
+      await checkAuth();
+    } catch (error: any) {
+      Alert.alert('Error', error.message || 'Invalid or expired code');
+    } finally {
+      setVerifyLoading(false);
+    }
+  };
+
+  const handleResendVerification = async () => {
+    setVerifyLoading(true);
+    try {
+      await authAPI.resendVerification(email);
+      Alert.alert('Code Sent', 'A new verification code has been sent to your email.');
+      setVerifyCode(['', '', '', '', '', '']);
+    } catch (error: any) {
+      Alert.alert('Error', error.message || 'Could not resend code');
+    } finally {
+      setVerifyLoading(false);
+    }
+  };
+
   useEffect(() => {
     const clearOldData = async () => {
       try {
         await SecureStore.deleteItemAsync('authToken');
-        console.log('🗑️ Cleared old auth token');
       } catch (e) {
-        console.log('No old token to clear');
+        // No old token to clear
       }
     };
     clearOldData();
@@ -144,6 +197,7 @@ export default function AuthScreen() {
         await login(email, password);
       } else {
         await register(email, password);
+        setShowVerification(true);
       }
     } catch (error: any) {
       Alert.alert('Error', error.message || 'Something went wrong');
@@ -167,13 +221,11 @@ export default function AuthScreen() {
     return (
       <SafeAreaView style={styles.container}>
         <View style={styles.welcomeContent}>
-          {/* Brand Area */}
           <View style={styles.brandContainer}>
             <Text style={styles.brandName}>endura</Text>
             <AnimatedEggLogo />
           </View>
 
-          {/* Buttons */}
           <View style={styles.buttonsContainer}>
             <TouchableOpacity
               style={styles.primaryButton}
@@ -194,6 +246,86 @@ export default function AuthScreen() {
     );
   }
 
+  // Email verification screen
+  if (showVerification) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          style={styles.keyboardView}
+        >
+          <ScrollView
+            contentContainerStyle={styles.scrollContent}
+            keyboardShouldPersistTaps="handled"
+            showsVerticalScrollIndicator={false}
+          >
+            <TouchableOpacity
+              style={styles.backButton}
+              onPress={() => {
+                setShowVerification(false);
+                setVerifyCode(['', '', '', '', '', '']);
+              }}
+            >
+              <Text style={styles.backButtonText}>← Back</Text>
+            </TouchableOpacity>
+
+            <View style={styles.verifyHeader}>
+              <View style={styles.verifyIconWrap}>
+                <Text style={styles.verifyIcon}>✉️</Text>
+              </View>
+              <Text style={styles.formTitle}>Verify Your Email</Text>
+              <Text style={styles.verifySubtitle}>
+                We sent a 6-digit code to{'\n'}
+                <Text style={{ fontWeight: '700', color: colors.textPrimary }}>{email}</Text>
+              </Text>
+            </View>
+
+            <View style={styles.formContainer}>
+              <View style={styles.codeRow}>
+                {verifyCode.map((digit, i) => (
+                  <TextInput
+                    key={i}
+                    ref={ref => { verifyInputRefs.current[i] = ref; }}
+                    style={[
+                      styles.codeInput,
+                      digit ? styles.codeInputFilled : null,
+                    ]}
+                    value={digit}
+                    onChangeText={text => handleVerifyCodeChange(text, i)}
+                    onKeyPress={e => handleVerifyCodeKeyPress(e, i)}
+                    keyboardType="number-pad"
+                    maxLength={1}
+                    selectTextOnFocus
+                  />
+                ))}
+              </View>
+
+              <TouchableOpacity
+                style={[styles.submitButton, verifyLoading && styles.buttonDisabled]}
+                onPress={handleVerifySubmit}
+                disabled={verifyLoading}
+              >
+                {verifyLoading ? (
+                  <ActivityIndicator color={colors.textOnPrimary} />
+                ) : (
+                  <Text style={styles.submitButtonText}>Verify & Continue</Text>
+                )}
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.resendButton}
+                onPress={handleResendVerification}
+                disabled={verifyLoading}
+              >
+                <Text style={styles.resendText}>Didn't receive it? <Text style={{ fontWeight: '700', color: colors.primary }}>Resend code</Text></Text>
+              </TouchableOpacity>
+            </View>
+          </ScrollView>
+        </KeyboardAvoidingView>
+      </SafeAreaView>
+    );
+  }
+
   // Login/Register form
   return (
     <SafeAreaView style={styles.container}>
@@ -206,7 +338,6 @@ export default function AuthScreen() {
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
         >
-          {/* Back button */}
           <TouchableOpacity 
             style={styles.backButton}
             onPress={() => setShowForm(false)}
@@ -214,7 +345,6 @@ export default function AuthScreen() {
             <Text style={styles.backButtonText}>← Back</Text>
           </TouchableOpacity>
 
-          {/* Header */}
           <View style={styles.formHeader}>
             <Text style={styles.formTitle}>
               {isLogin ? 'Welcome Back!' : 'Create Account'}
@@ -226,7 +356,6 @@ export default function AuthScreen() {
             </Text>
           </View>
 
-          {/* Form */}
           <View style={styles.formContainer}>
             <View style={styles.inputContainer}>
               <Text style={styles.inputLabel}>Email</Text>
@@ -281,7 +410,6 @@ export default function AuthScreen() {
             )}
           </View>
 
-          {/* Toggle between login/register */}
           <TouchableOpacity
             style={styles.toggleButton}
             onPress={() => setIsLogin(!isLogin)}
@@ -298,9 +426,11 @@ export default function AuthScreen() {
         </ScrollView>
       </KeyboardAvoidingView>
 
-      <Modal visible={showForgotModal} animationType="slide" transparent>
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalBox}>
+      <Modal visible={showForgotModal} animationType="slide" presentationStyle="pageSheet" onRequestClose={closeForgotModal}>
+        <View style={{ flex: 1, backgroundColor: '#fff' }}>
+          <DragHandle />
+          <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}>
+          <ScrollView contentContainerStyle={{ padding: 20 }} keyboardShouldPersistTaps="handled">
             <TouchableOpacity style={styles.modalClose} onPress={closeForgotModal}>
               <Text style={{ fontSize: 22, color: colors.textMuted }}>✕</Text>
             </TouchableOpacity>
@@ -406,7 +536,8 @@ export default function AuthScreen() {
                 </TouchableOpacity>
               </>
             )}
-          </View>
+          </ScrollView>
+          </KeyboardAvoidingView>
         </View>
       </Modal>
     </SafeAreaView>
@@ -612,8 +743,43 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: colors.textPrimary,
   },
+  codeInputFilled: {
+    borderColor: colors.primary,
+    backgroundColor: '#fff',
+  },
   resendButton: {
     alignItems: 'center',
-    marginTop: spacing.md,
+    marginTop: spacing.lg,
+    padding: spacing.sm,
+  },
+  resendText: {
+    fontSize: 14,
+    color: colors.textMuted,
+  },
+
+  // Verification screen
+  verifyHeader: {
+    alignItems: 'center',
+    marginBottom: spacing.xl,
+  },
+  verifyIconWrap: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: colors.surface,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: spacing.lg,
+    ...shadows.medium,
+  },
+  verifyIcon: {
+    fontSize: 36,
+  },
+  verifySubtitle: {
+    fontSize: 15,
+    color: colors.textSecondary,
+    textAlign: 'center',
+    lineHeight: 22,
+    marginTop: spacing.sm,
   },
 });

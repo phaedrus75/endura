@@ -47,9 +47,9 @@ class UserResponse(BaseModel):
 
 
 class UpdateProfileRequest(BaseModel):
-    school: Optional[str] = None
-    city: Optional[str] = None
-    country: Optional[str] = None
+    school: Optional[str] = Field(None, max_length=200)
+    city: Optional[str] = Field(None, max_length=100)
+    country: Optional[str] = Field(None, max_length=100)
 
 
 class SchoolSearchResult(BaseModel):
@@ -154,10 +154,15 @@ class BadgeResponse(BaseModel):
     earned_at: Optional[str] = None
     requirement: Optional[str] = None
 
+class SharedHatchResult(BaseModel):
+    animal_name: str
+    partner_name: str
+
 class StudySessionWithHatchResponse(BaseModel):
     session: StudySessionResponse
     hatched_animal: Optional[AnimalResponse] = None
     new_badges: Optional[List[BadgeInfo]] = None
+    shared_hatch: Optional[SharedHatchResult] = None
 
 
 class UserAnimalResponse(BaseModel):
@@ -165,6 +170,7 @@ class UserAnimalResponse(BaseModel):
     animal: AnimalResponse
     nickname: Optional[str]
     hatched_at: datetime
+    shared_with_username: Optional[str] = None
 
     class Config:
         from_attributes = True
@@ -188,11 +194,35 @@ class HatchResult(BaseModel):
     message: str
 
 
+# ============ Shared Egg Schemas ============
+
+class SharedEggInvite(BaseModel):
+    friend_id: int
+    animal_name: str = Field(..., min_length=1, max_length=100)
+
+class SharedEggUserInfo(BaseModel):
+    id: int
+    username: Optional[str]
+    profile_pic_url: Optional[str] = None
+
+class SharedEggResponse(BaseModel):
+    id: int
+    creator: SharedEggUserInfo
+    partner: SharedEggUserInfo
+    animal_name: str
+    status: str
+    creator_minutes: int
+    partner_minutes: int
+    minutes_required: int
+    progress_percent: float
+    created_at: datetime
+
+
 # ============ Study Tips Schemas ============
 
 class StudyTipCreate(BaseModel):
-    content: str
-    category: str = "general"
+    content: str = Field(..., min_length=1, max_length=2000)
+    category: str = Field("general", max_length=50)
 
 
 class StudyTipResponse(BaseModel):
@@ -219,7 +249,6 @@ class FriendRequest(BaseModel):
 class FriendResponse(BaseModel):
     id: int
     username: Optional[str]
-    email: str
     total_study_minutes: int
     current_streak: int
     animals_count: int
@@ -233,7 +262,6 @@ class FriendResponse(BaseModel):
 class FriendProfileResponse(BaseModel):
     id: int
     username: Optional[str]
-    email: str
     total_study_minutes: int
     current_streak: int
     longest_streak: int
@@ -262,41 +290,11 @@ class LeaderboardEntry(BaseModel):
     profile_pic_url: Optional[str] = None
 
 
-# ============ Study Pact Schemas ============
-
-class PactCreate(BaseModel):
-    buddy_username: str
-    daily_minutes: int = 30
-    duration_days: int = 7
-    wager_amount: int = 0
-
-class PactDayResponse(BaseModel):
-    date: str
-    minutes_studied: int
-    completed: bool
-
-class PactResponse(BaseModel):
-    id: int
-    creator_username: Optional[str]
-    buddy_username: Optional[str]
-    creator_id: int
-    buddy_id: int
-    daily_minutes: int
-    duration_days: int
-    wager_amount: int
-    status: str
-    start_date: Optional[datetime]
-    end_date: Optional[datetime]
-    created_at: datetime
-    creator_progress: List[PactDayResponse] = []
-    buddy_progress: List[PactDayResponse] = []
-
-
 # ============ Study Group Schemas ============
 
 class GroupCreate(BaseModel):
-    name: str
-    goal_minutes: int = 500
+    name: str = Field(..., min_length=1, max_length=100)
+    goal_minutes: int = Field(500, ge=1, le=100000)
     goal_deadline: Optional[datetime] = None
 
 class GroupMemberResponse(BaseModel):
@@ -326,7 +324,7 @@ class GroupResponse(BaseModel):
     goal_met: bool = False
 
 class GroupMessageCreate(BaseModel):
-    content: str
+    content: str = Field(..., min_length=1, max_length=5000)
 
 class GroupInvite(BaseModel):
     username: Optional[str] = None
@@ -345,7 +343,7 @@ class ActivityEventResponse(BaseModel):
     reactions: List[dict] = []
 
 class ReactionCreate(BaseModel):
-    reaction: str
+    reaction: str = Field(..., max_length=20)
 
 
 # ============ Stats Schemas ============

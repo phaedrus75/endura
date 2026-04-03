@@ -28,7 +28,7 @@ const FEATURES = [
     emoji: "👥",
     title: "Study With Friends",
     description:
-      "Create study pacts, join groups, compete on leaderboards, and react to friends' achievements. Studying is better together.",
+      "Join groups, compete on leaderboards, and react to friends' achievements. Studying is better together.",
     color: "from-leaf/15 to-forest-light/15",
   },
 ];

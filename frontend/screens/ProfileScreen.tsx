@@ -174,6 +174,8 @@ export default function ProfileScreen() {
   const [editCountry, setEditCountry] = useState('');
   const [schoolSuggestions, setSchoolSuggestions] = useState<SchoolSearchResult[]>([]);
   const [showSchoolSuggestions, setShowSchoolSuggestions] = useState(false);
+  const [filteredCountries, setFilteredCountries] = useState<string[]>([]);
+  const [showCountrySuggestions, setShowCountrySuggestions] = useState(false);
   const schoolSearchTimeout = React.useRef<NodeJS.Timeout | null>(null);
 
   const openEditProfile = () => {
@@ -388,11 +390,52 @@ export default function ProfileScreen() {
     ]);
   };
 
+  const handleDeleteAccount = () => {
+    Alert.alert(
+      'Delete Account',
+      'Are you sure you want to permanently delete your account? All your data including study history, animals, badges, and friends will be lost forever. This action cannot be undone.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete My Account',
+          style: 'destructive',
+          onPress: () => {
+            Alert.alert(
+              'Final Confirmation',
+              'This is irreversible. Are you absolutely sure?',
+              [
+                { text: 'Go Back', style: 'cancel' },
+                {
+                  text: 'Yes, Delete',
+                  style: 'destructive',
+                  onPress: async () => {
+                    try {
+                      await authAPI.deleteAccount();
+                      logout();
+                    } catch (e) {
+                      Alert.alert('Error', 'Failed to delete account. Please try again.');
+                    }
+                  },
+                },
+              ]
+            );
+          },
+        },
+      ]
+    );
+  };
+
   const formatTime = (minutes: number) => {
+    if (minutes < 60) return `${minutes}m`;
     const hours = Math.floor(minutes / 60);
     const mins = minutes % 60;
+    if (hours >= 24) {
+      const days = Math.floor(hours / 24);
+      const remainHours = hours % 24;
+      return remainHours > 0 ? `${days}d ${remainHours}h` : `${days}d`;
+    }
     if (hours > 0) {
-      return `${hours}h ${mins}m`;
+      return mins > 0 ? `${hours}h ${mins}m` : `${hours}h`;
     }
     return `${mins}m`;
   };
@@ -570,145 +613,14 @@ export default function ProfileScreen() {
           </TouchableOpacity>
         </ExpoLinearGradient>
 
-        {/* Leaderboard */}
-        <View style={styles.section}>
-          <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>🏆 Leaderboard</Text>
-            <TouchableOpacity
-              style={styles.addFriendButton}
-              onPress={() => setShowFriendModal(true)}
-              activeOpacity={0.8}
-            >
-              <ExpoLinearGradient
-                colors={['#5F8C87', '#3B5466']}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 0 }}
-                style={styles.addFriendButtonGradient}
-              >
-                <Text style={styles.addFriendText}>+ Add Friend</Text>
-              </ExpoLinearGradient>
-            </TouchableOpacity>
-          </View>
-
-          {leaderboard.length === 0 ? (
-            <View style={styles.emptyCard}>
-              <Text style={styles.emptyEmoji}>👥</Text>
-              <Text style={styles.emptyText}>Add friends to compete!</Text>
-            </View>
-          ) : (
-            leaderboard.map((entry, index) => {
-              const isMe = entry.user_id === user?.id;
-              return isMe ? (
-                <ExpoLinearGradient
-                  key={entry.user_id}
-                  colors={['rgba(231, 239, 234, 0.3)', 'rgba(168, 200, 216, 0.3)']}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 0, y: 1 }}
-                  style={styles.leaderboardRowMe}
-                >
-                  <Text style={styles.leaderboardRank}>
-                    {index === 0 ? '🥇' : index === 1 ? '🥈' : index === 2 ? '🥉' : `${entry.rank}`}
-                  </Text>
-                  <View style={styles.leaderboardInfo}>
-                    <Text style={styles.leaderboardName}>
-                      {entry.username || 'Anonymous'}
-                      {' (You)'}
-                    </Text>
-                    <Text style={styles.leaderboardStats}>
-                      {formatTime(entry.total_study_minutes)} • 🔥 {entry.current_streak} • 🦁 {entry.animals_count}{entry.total_donated > 0 ? ` • 💚 $${entry.total_donated.toFixed(0)}` : ''}
-                    </Text>
-                  </View>
-                </ExpoLinearGradient>
-              ) : (
-                <View
-                  key={entry.user_id}
-                  style={styles.leaderboardRow}
-                >
-                  <Text style={styles.leaderboardRank}>
-                    {index === 0 ? '🥇' : index === 1 ? '🥈' : index === 2 ? '🥉' : `${entry.rank}`}
-                  </Text>
-                  <View style={styles.leaderboardInfo}>
-                    <Text style={styles.leaderboardName}>
-                      {entry.username || 'Anonymous'}
-                    </Text>
-                    <Text style={styles.leaderboardStats}>
-                      {formatTime(entry.total_study_minutes)} • 🔥 {entry.current_streak} • 🦁 {entry.animals_count}{entry.total_donated > 0 ? ` • 💚 $${entry.total_donated.toFixed(0)}` : ''}
-                    </Text>
-                  </View>
-                </View>
-              );
-            })
-          )}
-        </View>
-
-        {/* Donation Leaderboard */}
-        {donationLeaderboard.length > 0 && (
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>🌍 Conservation Champions</Text>
-            {donationLeaderboard.map((entry) => (
-              entry.is_current_user ? (
-                <ExpoLinearGradient
-                  key={entry.user_id}
-                  colors={['rgba(231, 239, 234, 0.3)', 'rgba(168, 200, 216, 0.3)']}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 0, y: 1 }}
-                  style={styles.leaderboardRowMe}
-                >
-                  <Text style={styles.leaderboardRank}>
-                    {entry.rank === 1 ? '🥇' : entry.rank === 2 ? '🥈' : entry.rank === 3 ? '🥉' : `${entry.rank}`}
-                  </Text>
-                  <View style={styles.leaderboardInfo}>
-                    <Text style={styles.leaderboardName}>{entry.username} (You)</Text>
-                    <Text style={styles.leaderboardStats}>
-                      ${entry.total_donated.toFixed(0)} donated • {entry.donation_count} donation{entry.donation_count !== 1 ? 's' : ''}
-                    </Text>
-                  </View>
-                </ExpoLinearGradient>
-              ) : (
-                <View key={entry.user_id} style={styles.leaderboardRow}>
-                  <Text style={styles.leaderboardRank}>
-                    {entry.rank === 1 ? '🥇' : entry.rank === 2 ? '🥈' : entry.rank === 3 ? '🥉' : `${entry.rank}`}
-                  </Text>
-                  <View style={styles.leaderboardInfo}>
-                    <Text style={styles.leaderboardName}>{entry.username}</Text>
-                    <Text style={styles.leaderboardStats}>
-                      ${entry.total_donated.toFixed(0)} donated • {entry.donation_count} donation{entry.donation_count !== 1 ? 's' : ''}
-                    </Text>
-                  </View>
-                </View>
-              )
-            ))}
-          </View>
-        )}
-
-        {/* Friends List */}
-        {friends.length > 0 && (
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>👥 Friends ({friends.length})</Text>
-            {friends.map((friend) => (
-              <View key={friend.id} style={styles.friendRow}>
-                <View style={styles.friendAvatar}>
-                  <Text style={styles.friendAvatarText}>👤</Text>
-                </View>
-                <View style={styles.friendInfo}>
-                  <Text style={styles.friendName}>
-                    {friend.username || friend.email.split('@')[0]}
-                  </Text>
-                  <Text style={styles.friendStats}>
-                    {formatTime(friend.total_study_minutes)} studied
-                  </Text>
-                </View>
-                <View style={styles.friendStreak}>
-                  <Text style={styles.friendStreakText}>🔥 {friend.current_streak}</Text>
-                </View>
-              </View>
-            ))}
-          </View>
-        )}
-
         {/* Logout */}
         <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
           <Text style={styles.logoutText}>Logout</Text>
+        </TouchableOpacity>
+
+        {/* Delete Account */}
+        <TouchableOpacity style={styles.deleteAccountButton} onPress={handleDeleteAccount}>
+          <Text style={styles.deleteAccountText}>Delete Account</Text>
         </TouchableOpacity>
 
         {/* App Info */}
@@ -772,7 +684,7 @@ export default function ProfileScreen() {
               <Text style={styles.epLabel}>School</Text>
               <TextInput
                 style={styles.epInput}
-                placeholder="e.g. Westminster School"
+                placeholder="e.g. Southbank International School"
                 placeholderTextColor={colors.textMuted}
                 value={editSchool}
                 onChangeText={handleSchoolSearch}
@@ -982,30 +894,32 @@ const styles = StyleSheet.create({
   statsGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    justifyContent: 'space-between',
+    gap: 10,
     marginBottom: spacing.xl,
   },
   statBox: {
-    width: '31%',
-    borderRadius: borderRadius.lg,
-    padding: spacing.md,
+    width: (width - spacing.lg * 2 - 20) / 3,
+    borderRadius: 18,
+    paddingVertical: 18,
+    paddingHorizontal: 8,
     alignItems: 'center',
-    marginBottom: spacing.md,
+    justifyContent: 'center',
     borderWidth: 1,
     borderColor: colors.cardBorder,
     ...shadows.small,
   },
   statValue: {
-    fontSize: 18,
-    fontWeight: '700',
+    fontSize: 22,
+    fontWeight: '800',
     color: colors.primary,
-    marginBottom: spacing.xs,
+    marginBottom: 4,
   },
   statLabel: {
     fontSize: 11,
     color: colors.textSecondary,
     textAlign: 'center',
-    fontWeight: '500',
+    fontWeight: '600',
+    lineHeight: 14,
   },
   donationCard: {
     flexDirection: 'row',
@@ -1253,6 +1167,20 @@ const styles = StyleSheet.create({
     borderColor: colors.error,
   },
   logoutText: {
+    color: colors.error,
+    fontWeight: '600',
+    fontSize: 16,
+  },
+  deleteAccountButton: {
+    backgroundColor: colors.error + '15',
+    borderRadius: borderRadius.md,
+    padding: spacing.md,
+    alignItems: 'center',
+    marginBottom: spacing.md,
+    borderWidth: 1,
+    borderColor: colors.error,
+  },
+  deleteAccountText: {
     color: colors.error,
     fontWeight: '600',
     fontSize: 16,

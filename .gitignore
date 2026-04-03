@@ -1,9 +1,15 @@
+# Environment / Secrets
+*.env
+*.env.local
+*.env.production
+*.env.staging
+.env.*
+
 # Python Backend
 backend/__pycache__/
 backend/*.py[cod]
 backend/venv/
 backend/*.db
-backend/.env
 
 # React Native Frontend
 frontend/node_modules/

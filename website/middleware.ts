@@ -18,7 +18,10 @@ export function middleware(request: NextRequest) {
   }
 
   const base64 = authHeader.split(' ')[1];
-  const [user, pass] = atob(base64).split(':');
+  const decoded = atob(base64);
+  const colonIdx = decoded.indexOf(':');
+  const user = decoded.substring(0, colonIdx);
+  const pass = decoded.substring(colonIdx + 1);
 
   if (user !== adminUser || pass !== adminPass) {
     return new NextResponse('Invalid credentials', {

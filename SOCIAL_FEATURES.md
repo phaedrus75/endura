@@ -1,20 +1,6 @@
 # Social Features – Ideas for Endura
 
-## 1. Study Buddy System
-
-- Two friends commit to a study schedule (e.g. 30 min/day for 7 days)
-- Both put up a small eco-credit wager
-- If both complete it, both get their credits back + a bonus
-- If one fails, the other gets the full pot
-- Visual progress tracker showing both users side by side
-
-Also you can have a special pact to study together in real time.
-- Pair up with a friend to co-study in real time (both timers run simultaneously)
-- See a live indicator that your buddy is currently studying
-- Both earn a bonus 10% eco-credits when completing a session together
-- If one person quits early, the other gets a notification: *"Your buddy's egg is in danger!"*
-
-## 2. Study Groups
+## 1. Study Groups
 - Create a named group (e.g. "Bio Exam Crew") with up to 10 friends
 - Shared group goal: collective study minutes toward a target (e.g. 500 min this week)
 - Group unlocks a special rare animal or decoration when the goal is met
