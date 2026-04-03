@@ -220,6 +220,14 @@ export default function BadgesScreen() {
                     <Text style={[styles.modalTierText, { color: tier.border }]}>{tier.label}</Text>
                   </View>
                   <Text style={styles.modalDesc}>"{selectedBadge.description}"</Text>
+                  {selectedBadge.requirement ? (
+                    <View style={styles.modalRequirementSection}>
+                      <Text style={styles.modalRequirementLabel}>
+                        {selectedBadge.earned ? 'How you earned it' : 'How to earn'}
+                      </Text>
+                      <Text style={styles.modalRequirementText}>{selectedBadge.requirement}</Text>
+                    </View>
+                  ) : null}
                   {selectedBadge.earned ? (
                     <View style={styles.modalEarnedRow}>
                       <Text style={styles.modalEarnedIcon}>✅</Text>
@@ -442,5 +450,29 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: colors.textMuted,
     fontWeight: '500',
+  },
+  modalRequirementSection: {
+    backgroundColor: colors.primaryLight + '15',
+    borderRadius: 12,
+    padding: 12,
+    marginTop: 4,
+    marginBottom: 8,
+    width: '100%',
+    alignItems: 'center',
+  },
+  modalRequirementLabel: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: colors.textMuted,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    marginBottom: 4,
+  },
+  modalRequirementText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: colors.textPrimary,
+    textAlign: 'center',
+    lineHeight: 20,
   },
 });
