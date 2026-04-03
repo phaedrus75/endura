@@ -815,6 +815,18 @@ def search_schools(
     ]
 
 
+ADMIN_API_KEY = os.getenv("ADMIN_API_KEY")
+if not ADMIN_API_KEY:
+    if os.getenv("RAILWAY_ENVIRONMENT") or os.getenv("DATABASE_URL", "").startswith("postgresql"):
+        raise RuntimeError("ADMIN_API_KEY environment variable is required in production")
+    ADMIN_API_KEY = "dev-only-admin-key"
+    logger.warning("Using insecure dev ADMIN_API_KEY — set ADMIN_API_KEY env var for production")
+
+def verify_admin(x_admin_key: str = Header(...)):
+    if x_admin_key != ADMIN_API_KEY:
+        raise HTTPException(status_code=403, detail="Invalid admin key")
+
+
 @app.post("/schools/seed")
 def seed_schools(
     db: Session = Depends(get_db),
@@ -1972,18 +1984,6 @@ async def send_push_notification(
 
 
 # ============ Admin Dashboard API ============
-
-ADMIN_API_KEY = os.getenv("ADMIN_API_KEY")
-if not ADMIN_API_KEY:
-    if os.getenv("RAILWAY_ENVIRONMENT") or os.getenv("DATABASE_URL", "").startswith("postgresql"):
-        raise RuntimeError("ADMIN_API_KEY environment variable is required in production")
-    ADMIN_API_KEY = "dev-only-admin-key"
-    logger.warning("Using insecure dev ADMIN_API_KEY — set ADMIN_API_KEY env var for production")
-
-def verify_admin(x_admin_key: str = Header(...)):
-    if x_admin_key != ADMIN_API_KEY:
-        raise HTTPException(status_code=403, detail="Invalid admin key")
-
 
 @app.get("/admin/overview")
 def admin_overview(db: Session = Depends(get_db), _=Depends(verify_admin)):
