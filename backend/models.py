@@ -54,7 +54,7 @@ class User(Base):
     # Relationships
     tasks = relationship("Task", back_populates="user")
     study_sessions = relationship("StudySession", back_populates="user")
-    animals = relationship("UserAnimal", back_populates="user")
+    animals = relationship("UserAnimal", foreign_keys="UserAnimal.user_id", back_populates="user")
     badges = relationship("UserBadge", back_populates="user")
     friendships = relationship("Friendship", foreign_keys="Friendship.user_id", back_populates="user")
 
