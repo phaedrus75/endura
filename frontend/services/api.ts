@@ -564,10 +564,10 @@ export const feedAPI = {
 
 // Shared Egg API
 export const sharedEggAPI = {
-  invite: (friendId: number, animalName: string) =>
+  invite: (friendId: number, animalName: string, durationMinutes: number) =>
     apiFetch<SharedEgg>('/shared-egg/invite', {
       method: 'POST',
-      body: JSON.stringify({ friend_id: friendId, animal_name: animalName }),
+      body: JSON.stringify({ friend_id: friendId, animal_name: animalName, duration_minutes: durationMinutes }),
     }),
   accept: (eggId: number) =>
     apiFetch<{ message: string }>(`/shared-egg/${eggId}/accept`, { method: 'POST' }),

@@ -1200,7 +1200,7 @@ def check_badges(db: Session, user_id: int, session_hour: int = None, session_mi
 
 # ============ Shared Egg CRUD ============
 
-def create_shared_egg_invite(db: Session, creator_id: int, friend_id: int, animal_name: str) -> tuple:
+def create_shared_egg_invite(db: Session, creator_id: int, friend_id: int, animal_name: str, duration_minutes: int = 60) -> tuple:
     if creator_id == friend_id:
         return None, "Cannot invite yourself"
 
@@ -1238,18 +1238,11 @@ def create_shared_egg_invite(db: Session, creator_id: int, friend_id: int, anima
         db.add(animal)
         db.flush()
 
-    prev_count = db.query(models.SharedEgg).filter(
-        models.SharedEgg.status == "hatched",
-        ((models.SharedEgg.creator_id == creator_id) & (models.SharedEgg.partner_id == friend_id)) |
-        ((models.SharedEgg.creator_id == friend_id) & (models.SharedEgg.partner_id == creator_id))
-    ).count()
-    minutes_required = 60 + (prev_count * 10)
-
     egg = models.SharedEgg(
         creator_id=creator_id,
         partner_id=friend_id,
         animal_name=animal_name,
-        minutes_required=minutes_required,
+        minutes_required=duration_minutes,
     )
     db.add(egg)
     db.commit()

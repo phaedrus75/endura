@@ -1031,7 +1031,7 @@ def invite_shared_egg(
     current_user: models.User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    egg, error = crud.create_shared_egg_invite(db, current_user.id, invite.friend_id, invite.animal_name)
+    egg, error = crud.create_shared_egg_invite(db, current_user.id, invite.friend_id, invite.animal_name, invite.duration_minutes)
     if error:
         raise HTTPException(status_code=400, detail=error)
     return crud.format_shared_egg(egg)

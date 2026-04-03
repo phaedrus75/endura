@@ -633,7 +633,7 @@ export default function TimerScreen() {
     const animalObj = ENDANGERED_ANIMALS.find(a => a.id === selectedAnimalId);
     if (!animalObj) return;
     try {
-      const egg = await sharedEggAPI.invite(friendId, animalObj.name);
+      const egg = await sharedEggAPI.invite(friendId, animalObj.name, selectedMinutes);
       setActiveSharedEgg(egg);
       setShowFriendPicker(false);
       setTimeout(() => setShowSubjectModal(true), 300);

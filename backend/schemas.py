@@ -199,6 +199,7 @@ class HatchResult(BaseModel):
 class SharedEggInvite(BaseModel):
     friend_id: int
     animal_name: str = Field(..., min_length=1, max_length=100)
+    duration_minutes: int = 60
 
 class SharedEggUserInfo(BaseModel):
     id: int
