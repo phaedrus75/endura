@@ -24,7 +24,7 @@ import Slider from '@react-native-community/slider';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { colors, shadows, spacing, borderRadius } from '../theme/colors';
 import SwipeDismiss, { DragHandle } from '../components/SwipeDismiss';
-import { sessionsAPI, animalsAPI, BadgeInfo, sharedEggAPI, socialAPI, SharedEgg, Friend } from '../services/api';
+import { sessionsAPI, animalsAPI, BadgeInfo } from '../services/api';
 import { useAuth } from '../contexts/AuthContext';
 import { getAnimalImage } from '../assets/animals';
 import { Analytics } from '../services/analytics';
@@ -191,15 +191,9 @@ export default function TimerScreen() {
   const [showEggDeathModal, setShowEggDeathModal] = useState(false);
   const [deadAnimalName, setDeadAnimalName] = useState('');
   const [deathCause, setDeathCause] = useState<'timeout' | 'abandoned'>('timeout');
-  const [activeSharedEgg, setActiveSharedEgg] = useState<SharedEgg | null>(null);
-  const [showFriendPicker, setShowFriendPicker] = useState(false);
-  const [friends, setFriends] = useState<Friend[]>([]);
-  const [sharedHatchResult, setSharedHatchResult] = useState<{ animal_name: string; partner_name: string } | null>(null);
-  const [showSharedHatchModal, setShowSharedHatchModal] = useState(false);
   const [quoteIndex, setQuoteIndex] = useState(0);
   const [hasSeenTips, setHasSeenTips] = useState(true);
   const tipsPulse = useRef(new Animated.Value(1)).current;
-  const sharedGlowAnim = useRef(new Animated.Value(1)).current;
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
   const appState = useRef(AppState.currentState);
   const backgroundTimestamp = useRef<number | null>(null);
@@ -211,19 +205,6 @@ export default function TimerScreen() {
   useEffect(() => { isRunningRef.current = isRunning; }, [isRunning]);
   useEffect(() => { timeLeftRef.current = timeLeft; }, [timeLeft]);
   useEffect(() => { isPausedRef.current = isPaused; }, [isPaused]);
-
-  useEffect(() => {
-    if (showSharedHatchModal) {
-      const loop = Animated.loop(
-        Animated.sequence([
-          Animated.timing(sharedGlowAnim, { toValue: 1.3, duration: 1200, useNativeDriver: true }),
-          Animated.timing(sharedGlowAnim, { toValue: 1, duration: 1200, useNativeDriver: true }),
-        ])
-      );
-      loop.start();
-      return () => loop.stop();
-    }
-  }, [showSharedHatchModal]);
 
   useEffect(() => {
     if (isRunning) {
@@ -286,39 +267,6 @@ export default function TimerScreen() {
     };
     loadUnlockedAnimals();
   }, [user?.id]);
-
-  // Load active shared egg on focus; auto-setup timer for partner who just accepted
-  const hasAutoSetup = useRef(false);
-  useFocusEffect(
-    useCallback(() => {
-      const load = async () => {
-        try {
-          const egg = await sharedEggAPI.getActive();
-          setActiveSharedEgg(egg);
-
-          if (
-            egg &&
-            egg.status === 'active' &&
-            egg.partner.id === user?.id &&
-            egg.partner_minutes === 0 &&
-            !isRunning &&
-            !hasAutoSetup.current
-          ) {
-            hasAutoSetup.current = true;
-            const match = ENDANGERED_ANIMALS.find(a => a.name === egg.animal_name);
-            if (match) {
-              setSelectedAnimalId(match.id);
-            }
-            setSelectedMinutes(egg.minutes_required);
-            setTimeLeft(egg.minutes_required * TIME_MULTIPLIER);
-            setIsRunning(true);
-            setIsPaused(false);
-          }
-        } catch (_) {}
-      };
-      load();
-    }, [user?.id, isRunning])
-  );
 
   // Reload subjects every time the Timer tab is focused
   useFocusEffect(
@@ -535,9 +483,6 @@ export default function TimerScreen() {
         if (Array.isArray(result?.new_badges) && result.new_badges.length > 0) {
           setNewBadges(result.new_badges);
         }
-        if (result?.shared_hatch) {
-          setSharedHatchResult(result.shared_hatch);
-        }
       }
     } catch (error: any) {
       if (__DEV__) console.warn('Session save failed (celebration still showing):', error?.message || error);
@@ -556,9 +501,7 @@ export default function TimerScreen() {
     setShowConfetti(false);
     setHatchedAnimalInfo(null);
     setSessionSaveError(false);
-    if (sharedHatchResult) {
-      setTimeout(() => setShowSharedHatchModal(true), 400);
-    } else if (newBadges.length > 0) {
+    if (newBadges.length > 0) {
       setPendingBadges([...newBadges]);
       setNewBadges([]);
       setTimeout(() => setShowBadgesModal(true), 400);
@@ -568,19 +511,6 @@ export default function TimerScreen() {
     setSelectedAnimalId(null);
     setSelectedSubject(null);
     resetTimer();
-    sharedEggAPI.getActive().then(e => setActiveSharedEgg(e)).catch(() => {});
-  };
-
-  const closeSharedHatchModal = () => {
-    setShowSharedHatchModal(false);
-    setSharedHatchResult(null);
-    if (newBadges.length > 0) {
-      setPendingBadges([...newBadges]);
-      setNewBadges([]);
-      setTimeout(() => setShowBadgesModal(true), 400);
-    } else {
-      setNewBadges([]);
-    }
   };
 
   const closeBadgesModal = () => {
@@ -612,55 +542,6 @@ export default function TimerScreen() {
     Analytics.sessionStarted(selectedMinutes, selectedSubject);
     setIsRunning(true);
     setIsPaused(false);
-  };
-
-  const openFriendPicker = async () => {
-    setShowSubjectModal(false);
-    try {
-      const list = await socialAPI.getFriends();
-      setFriends(list);
-      setTimeout(() => setShowFriendPicker(true), 300);
-    } catch (e: any) {
-      Alert.alert('Error', 'Could not load friends');
-      setShowSubjectModal(true);
-    }
-  };
-
-  const cancelSharedEgg = () => {
-    Alert.alert('Cancel Shared Egg', 'Are you sure you want to cancel this shared hatching?', [
-      { text: 'Keep it', style: 'cancel' },
-      {
-        text: 'Cancel it',
-        style: 'destructive',
-        onPress: async () => {
-          try {
-            await sharedEggAPI.cancel();
-            setActiveSharedEgg(null);
-          } catch (e: any) {
-            Alert.alert('Error', e?.message || 'Could not cancel');
-          }
-        },
-      },
-    ]);
-  };
-
-  const closeFriendPicker = () => {
-    setShowFriendPicker(false);
-    setTimeout(() => setShowSubjectModal(true), 300);
-  };
-
-  const sendSharedEggInvite = async (friendId: number) => {
-    const animalObj = ENDANGERED_ANIMALS.find(a => a.id === selectedAnimalId);
-    if (!animalObj) return;
-    try {
-      const egg = await sharedEggAPI.invite(friendId, animalObj.name, selectedMinutes);
-      setActiveSharedEgg(egg);
-      setShowFriendPicker(false);
-      setTimeout(() => setShowSubjectModal(true), 300);
-      Alert.alert('Invite Sent!', `Your friend has been invited to hatch a ${animalObj.name} together. Start studying to contribute!`);
-    } catch (e: any) {
-      Alert.alert('Could not send invite', e?.message || 'Try again later');
-    }
   };
 
   const startTimer = () => {
@@ -756,30 +637,6 @@ export default function TimerScreen() {
             </View>
           </CircularProgress>
         </View>
-
-        {/* Growing with [friend] banner */}
-        {activeSharedEgg && activeSharedEgg.status === 'active' && (
-          <View style={styles.sharedEggBanner}>
-            <View style={styles.sharedEggBannerTop}>
-              <Text style={styles.sharedEggHeart}>💚</Text>
-              <Text style={styles.sharedEggBannerText}>
-                Growing with {activeSharedEgg.creator.id === user?.id ? activeSharedEgg.partner.username : activeSharedEgg.creator.username}
-              </Text>
-              <TouchableOpacity onPress={cancelSharedEgg} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-                <Text style={{ fontSize: 14, color: colors.textMuted, fontWeight: '600' }}>✕</Text>
-              </TouchableOpacity>
-            </View>
-            <Text style={styles.sharedEggAnimalLabel}>
-              Hatching: {activeSharedEgg.animal_name}
-            </Text>
-            <View style={styles.sharedEggProgressBar}>
-              <View style={[styles.sharedEggProgressFill, { width: `${activeSharedEgg.progress_percent}%` }]} />
-            </View>
-            <Text style={styles.sharedEggProgressText}>
-              {activeSharedEgg.creator_minutes + activeSharedEgg.partner_minutes} / {activeSharedEgg.minutes_required} min
-            </Text>
-          </View>
-        )}
 
         {/* Motivational Quote - only while running */}
         {isRunning && (
@@ -1028,25 +885,6 @@ export default function TimerScreen() {
                 ))}
               </View>
 
-              {/* Hatch with a friend */}
-              {activeSharedEgg && activeSharedEgg.status === 'active' ? (
-                <View style={styles.sharedEggInline}>
-                  <Text style={styles.sharedEggInlineText}>
-                    💚 Hatching {activeSharedEgg.animal_name} with {activeSharedEgg.creator.id === user?.id ? activeSharedEgg.partner.username : activeSharedEgg.creator.username}
-                  </Text>
-                </View>
-              ) : activeSharedEgg && activeSharedEgg.status === 'pending' ? (
-                <View style={styles.sharedEggInline}>
-                  <Text style={styles.sharedEggInlineText}>
-                    💚 Invite sent to {activeSharedEgg.partner.username || 'friend'} — waiting for them to accept
-                  </Text>
-                </View>
-              ) : !activeSharedEgg ? (
-                <TouchableOpacity style={styles.hatchWithFriendBtn} onPress={openFriendPicker}>
-                  <Text style={styles.hatchWithFriendText}>💚 Hatch with a friend</Text>
-                </TouchableOpacity>
-              ) : null}
-
               <View style={styles.subjectModalButtons}>
                 <TouchableOpacity
                   style={styles.subjectModalCancel}
@@ -1275,134 +1113,6 @@ export default function TimerScreen() {
           </ExpoLinearGradient>
           </TouchableOpacity>
         </TouchableOpacity>
-      </Modal>
-
-      {/* Friend Picker Modal */}
-      <Modal visible={showFriendPicker} transparent animationType="fade" onRequestClose={closeFriendPicker}>
-        <TouchableOpacity style={styles.animalModalOverlay} activeOpacity={1} onPress={closeFriendPicker}>
-          <TouchableOpacity activeOpacity={1}>
-            <View style={styles.friendPickerCard}>
-              <Text style={styles.friendPickerTitle}>💚 Hatch Together</Text>
-              <Text style={styles.friendPickerSubtitle}>
-                Pick a friend to co-hatch with — both your study sessions contribute!
-              </Text>
-              <ScrollView style={{ maxHeight: 320 }} showsVerticalScrollIndicator={false}>
-                {friends.length === 0 ? (
-                  <Text style={styles.friendPickerEmpty}>No friends yet — add some first!</Text>
-                ) : (
-                  friends.map(f => (
-                    <TouchableOpacity
-                      key={f.id}
-                      style={styles.friendPickerRow}
-                      onPress={() => sendSharedEggInvite(f.id)}
-                    >
-                      {f.profile_pic_url ? (
-                        <Image source={{ uri: f.profile_pic_url }} style={styles.friendPickerAvatar} />
-                      ) : (
-                        <View style={styles.friendPickerAvatarPlaceholder}>
-                          <Text style={{ fontSize: 20 }}>👤</Text>
-                        </View>
-                      )}
-                      <View style={{ flex: 1 }}>
-                        <Text style={styles.friendPickerName}>{f.username || 'Unknown'}</Text>
-                        <Text style={styles.friendPickerStats}>
-                          {f.total_study_minutes >= 60 
-                            ? `${Math.floor(f.total_study_minutes / 60)}h studied` 
-                            : `${f.total_study_minutes}m studied`}
-                        </Text>
-                      </View>
-                      <Text style={{ fontSize: 16, color: colors.primary, fontWeight: '700' }}>Invite</Text>
-                    </TouchableOpacity>
-                  ))
-                )}
-              </ScrollView>
-              <TouchableOpacity style={styles.friendPickerCancel} onPress={closeFriendPicker}>
-                <Text style={styles.friendPickerCancelText}>Cancel</Text>
-              </TouchableOpacity>
-            </View>
-          </TouchableOpacity>
-        </TouchableOpacity>
-      </Modal>
-
-      {/* Shared Hatch Celebration Modal */}
-      <Modal visible={showSharedHatchModal} transparent animationType="fade" onRequestClose={closeSharedHatchModal}>
-        <View style={styles.celebrationOverlay}>
-          <View style={styles.sharedCelebrationCard}>
-            {/* Split gradient background */}
-            <View style={styles.sharedCelebrationBg}>
-              <ExpoLinearGradient
-                colors={['#7DD4C0', '#5F8C87']}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 0.5, y: 1 }}
-                style={styles.sharedCelebrationBgLeft}
-              />
-              <ExpoLinearGradient
-                colors={['#E8A0BF', '#BA7BA1']}
-                start={{ x: 0.5, y: 0 }}
-                end={{ x: 1, y: 1 }}
-                style={styles.sharedCelebrationBgRight}
-              />
-            </View>
-
-            <Text style={styles.sharedCelebrationTitle}>Hatched Together!</Text>
-
-            {/* Duo usernames with heart */}
-            <View style={styles.sharedCelebrationUsers}>
-              <View style={styles.sharedCelebrationUserPill}>
-                <Text style={styles.sharedCelebrationUserText}>{user?.username || 'You'}</Text>
-              </View>
-              <Text style={styles.sharedCelebrationHeart}>💚</Text>
-              <View style={styles.sharedCelebrationUserPill}>
-                <Text style={styles.sharedCelebrationUserText}>{sharedHatchResult?.partner_name}</Text>
-              </View>
-            </View>
-
-            {/* Animal with duo silhouette + glow */}
-            <View style={styles.sharedCelebrationAnimalWrap}>
-              <Animated.View style={[styles.sharedCelebrationGlow, {
-                transform: [{ scale: sharedGlowAnim }],
-                opacity: sharedGlowAnim.interpolate({ inputRange: [1, 1.3], outputRange: [0.4, 0.15] }),
-              }]} />
-              {sharedHatchResult?.animal_name && getAnimalImage(sharedHatchResult.animal_name) ? (
-                <>
-                  <Image
-                    source={getAnimalImage(sharedHatchResult.animal_name)}
-                    style={styles.sharedCelebrationShadow}
-                    resizeMode="contain"
-                  />
-                  <Image
-                    source={getAnimalImage(sharedHatchResult.animal_name)}
-                    style={styles.sharedCelebrationAnimalImg}
-                    resizeMode="contain"
-                  />
-                </>
-              ) : (
-                <Text style={{ fontSize: 80 }}>🐾</Text>
-              )}
-            </View>
-
-            <Text style={styles.sharedCelebrationAnimalName}>{sharedHatchResult?.animal_name}</Text>
-            <Text style={styles.sharedCelebrationMsg}>
-              Together, you brought a {sharedHatchResult?.animal_name} into the world!
-            </Text>
-
-            <View style={styles.sharedCelebrationBtns}>
-              <TouchableOpacity
-                style={styles.sharedCelebrationBtnPrimary}
-                onPress={() => {
-                  closeSharedHatchModal();
-                  (navigation as any).navigate('Sanctuary');
-                }}
-              >
-                <Text style={styles.sharedCelebrationBtnPrimaryText}>View in Sanctuary</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.sharedCelebrationBtnSecondary} onPress={closeSharedHatchModal}>
-                <Text style={styles.sharedCelebrationBtnSecondaryText}>Continue</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-          <ConfettiCannon count={300} origin={{ x: width / 2, y: -10 }} autoStart fadeOut explosionSpeed={350} fallSpeed={2800} colors={['#7DD4C0', '#E8A0BF', '#FFD700', '#fff', '#BA7BA1', '#5F8C87']} />
-        </View>
       </Modal>
 
       {/* Custom Timer Modal */}
@@ -2427,266 +2137,5 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '700',
     color: colors.textOnPrimary,
-  },
-  sharedEggBanner: {
-    backgroundColor: 'rgba(95, 140, 135, 0.1)',
-    borderRadius: 16,
-    padding: 14,
-    marginHorizontal: spacing.sm,
-    marginBottom: spacing.md,
-    borderWidth: 1.5,
-    borderColor: 'rgba(95, 140, 135, 0.25)',
-  },
-  sharedEggBannerTop: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    marginBottom: 6,
-  },
-  sharedEggHeart: {
-    fontSize: 18,
-  },
-  sharedEggBannerText: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: colors.primary,
-  },
-  sharedEggAnimalLabel: {
-    fontSize: 13,
-    color: colors.textSecondary,
-    marginBottom: 8,
-  },
-  sharedEggProgressBar: {
-    height: 8,
-    backgroundColor: 'rgba(95, 140, 135, 0.15)',
-    borderRadius: 4,
-    overflow: 'hidden',
-    marginBottom: 4,
-  },
-  sharedEggProgressFill: {
-    height: '100%',
-    backgroundColor: colors.primary,
-    borderRadius: 4,
-  },
-  sharedEggProgressText: {
-    fontSize: 12,
-    color: colors.textMuted,
-    textAlign: 'right',
-  },
-  sharedEggInline: {
-    backgroundColor: 'rgba(95, 140, 135, 0.1)',
-    borderRadius: 12,
-    padding: 12,
-    marginBottom: spacing.md,
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: 'rgba(95, 140, 135, 0.2)',
-  },
-  sharedEggInlineText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: colors.primary,
-  },
-  hatchWithFriendBtn: {
-    backgroundColor: 'rgba(95, 140, 135, 0.08)',
-    borderRadius: 12,
-    paddingVertical: 12,
-    marginBottom: spacing.md,
-    alignItems: 'center',
-    borderWidth: 1.5,
-    borderColor: 'rgba(95, 140, 135, 0.2)',
-    borderStyle: 'dashed',
-  },
-  hatchWithFriendText: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: colors.primary,
-  },
-  friendPickerCard: {
-    backgroundColor: '#fff',
-    borderRadius: 24,
-    padding: 20,
-    width: Dimensions.get('window').width - 40,
-    maxHeight: Dimensions.get('window').height * 0.7,
-  },
-  friendPickerTitle: {
-    fontSize: 22,
-    fontWeight: '700',
-    color: colors.textPrimary,
-    textAlign: 'center',
-    marginBottom: 6,
-  },
-  friendPickerSubtitle: {
-    fontSize: 14,
-    color: colors.textSecondary,
-    textAlign: 'center',
-    marginBottom: spacing.lg,
-  },
-  friendPickerEmpty: {
-    fontSize: 14,
-    color: colors.textMuted,
-    textAlign: 'center',
-    paddingVertical: 30,
-  },
-  friendPickerRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 12,
-    paddingHorizontal: 8,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.cardBorder,
-    gap: 12,
-  },
-  friendPickerAvatar: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-  },
-  friendPickerAvatarPlaceholder: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: colors.surfaceAlt,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  friendPickerName: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: colors.textPrimary,
-  },
-  friendPickerStats: {
-    fontSize: 12,
-    color: colors.textMuted,
-    marginTop: 2,
-  },
-  friendPickerCancel: {
-    paddingVertical: 14,
-    alignItems: 'center',
-    marginTop: spacing.sm,
-  },
-  friendPickerCancelText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: colors.textSecondary,
-  },
-  sharedCelebrationCard: {
-    width: width - 48,
-    borderRadius: 28,
-    overflow: 'hidden',
-    alignItems: 'center',
-    paddingTop: 32,
-    paddingBottom: 28,
-    paddingHorizontal: 24,
-  },
-  sharedCelebrationBg: {
-    ...StyleSheet.absoluteFillObject,
-    flexDirection: 'row',
-  },
-  sharedCelebrationBgLeft: {
-    flex: 1,
-  },
-  sharedCelebrationBgRight: {
-    flex: 1,
-  },
-  sharedCelebrationTitle: {
-    fontSize: 28,
-    fontWeight: '800',
-    color: '#fff',
-    textAlign: 'center',
-    marginBottom: 12,
-    textShadowColor: 'rgba(0,0,0,0.2)',
-    textShadowOffset: { width: 0, height: 2 },
-    textShadowRadius: 4,
-  },
-  sharedCelebrationUsers: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 20,
-    gap: 8,
-  },
-  sharedCelebrationUserPill: {
-    backgroundColor: 'rgba(255,255,255,0.25)',
-    paddingHorizontal: 14,
-    paddingVertical: 6,
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.4)',
-  },
-  sharedCelebrationUserText: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: '#fff',
-  },
-  sharedCelebrationHeart: {
-    fontSize: 20,
-  },
-  sharedCelebrationAnimalWrap: {
-    width: 160,
-    height: 160,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 12,
-  },
-  sharedCelebrationGlow: {
-    position: 'absolute',
-    width: 160,
-    height: 160,
-    borderRadius: 80,
-    backgroundColor: 'rgba(255,255,255,0.35)',
-  },
-  sharedCelebrationShadow: {
-    position: 'absolute',
-    width: 110,
-    height: 110,
-    opacity: 0.3,
-    transform: [{ rotate: '-12deg' }, { translateX: -14 }, { translateY: 6 }],
-  },
-  sharedCelebrationAnimalImg: {
-    width: 120,
-    height: 120,
-    transform: [{ rotate: '5deg' }],
-  },
-  sharedCelebrationAnimalName: {
-    fontSize: 22,
-    fontWeight: '800',
-    color: '#fff',
-    textAlign: 'center',
-    marginBottom: 6,
-    textShadowColor: 'rgba(0,0,0,0.15)',
-    textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 3,
-  },
-  sharedCelebrationMsg: {
-    fontSize: 15,
-    fontWeight: '500',
-    color: 'rgba(255,255,255,0.9)',
-    textAlign: 'center',
-    marginBottom: 24,
-    lineHeight: 22,
-  },
-  sharedCelebrationBtns: {
-    width: '100%',
-    gap: 10,
-  },
-  sharedCelebrationBtnPrimary: {
-    backgroundColor: '#fff',
-    paddingVertical: 14,
-    borderRadius: 16,
-    alignItems: 'center',
-  },
-  sharedCelebrationBtnPrimaryText: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#5F8C87',
-  },
-  sharedCelebrationBtnSecondary: {
-    paddingVertical: 12,
-    alignItems: 'center',
-  },
-  sharedCelebrationBtnSecondaryText: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: 'rgba(255,255,255,0.8)',
   },
 });

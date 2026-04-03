@@ -24,9 +24,9 @@ import SwipeDismiss, { DragHandle } from '../components/SwipeDismiss';
 import { useAuth } from '../contexts/AuthContext';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
-  groupsAPI, feedAPI, socialAPI, tipsAPI, sharedEggAPI,
+  groupsAPI, feedAPI, socialAPI, tipsAPI,
   StudyGroup, GroupMessage, FeedEvent,
-  Friend, FriendProfile, FriendSuggestion, StudyTip, LeaderboardEntry, SharedEgg,
+  Friend, FriendProfile, FriendSuggestion, StudyTip, LeaderboardEntry,
 } from '../services/api';
 import { getAnimalImage } from '../assets/animals';
 
@@ -137,9 +137,6 @@ export default function SocialScreen() {
   const [showAddFriend, setShowAddFriend] = useState(false);
   const [addFriendHandle, setAddFriendHandle] = useState('');
 
-  // Shared egg invites
-  const [sharedEggInvites, setSharedEggInvites] = useState<SharedEgg[]>([]);
-
   // Friend suggestions (same school)
   const [suggestions, setSuggestions] = useState<FriendSuggestion[]>([]);
   const [sentSuggestionIds, setSentSuggestionIds] = useState<Set<number>>(new Set());
@@ -190,7 +187,7 @@ export default function SocialScreen() {
 
   const loadData = useCallback(async () => {
     try {
-      const [g, f, fr, pr, gl, fl, sl, sg, sei] = await Promise.all([
+      const [g, f, fr, pr, gl, fl, sl, sg] = await Promise.all([
         groupsAPI.getAll().catch(() => []),
         feedAPI.getFeed().catch(() => []),
         socialAPI.getFriends().catch(() => []),
@@ -199,7 +196,6 @@ export default function SocialScreen() {
         socialAPI.getLeaderboard().catch(() => []),
         socialAPI.getSchoolLeaderboard().catch(() => []),
         socialAPI.getFriendSuggestions().catch(() => []),
-        sharedEggAPI.getInvites().catch(() => []),
       ]);
       setGroups(g);
       setFeed(f);
@@ -209,7 +205,6 @@ export default function SocialScreen() {
       setFriendsLeaderboard(fl);
       setSchoolLeaderboard(sl);
       setSuggestions(sg);
-      setSharedEggInvites(sei);
     } catch {}
   }, []);
 
@@ -499,29 +494,6 @@ export default function SocialScreen() {
   const isHatchAccept = (content: string) => content.startsWith('🐣 [HATCH_ACCEPT]');
   const isSpecialMessage = (content: string) => isTipMessage(content) || isHatchInvite(content) || isHatchAccept(content);
 
-  // ---- Shared Egg Actions ----
-  const handleAcceptSharedEgg = async (eggId: number) => {
-    try {
-      await sharedEggAPI.accept(eggId);
-      loadData();
-      Alert.alert('Accepted!', 'Start studying whenever you\'re ready — the animal hatches once you both finish!', [
-        { text: 'Go to Timer', onPress: () => navigation.navigate('Timer' as never) },
-        { text: 'Later', style: 'cancel' },
-      ]);
-    } catch (e: any) {
-      Alert.alert('Error', e?.message || 'Could not accept invite');
-    }
-  };
-
-  const handleDeclineSharedEgg = async (eggId: number) => {
-    try {
-      await sharedEggAPI.decline(eggId);
-      loadData();
-    } catch (e: any) {
-      Alert.alert('Error', e?.message || 'Could not decline invite');
-    }
-  };
-
   // ---- Feed Actions ----
   const handleReact = async (eventId: number, reaction: string) => {
     try {
@@ -533,39 +505,6 @@ export default function SocialScreen() {
   // ---- Render ----
   const renderFriendsTab = () => (
     <View style={styles.tabContent}>
-      {/* Shared egg invites */}
-      {sharedEggInvites.length > 0 && (
-        <View style={{ marginBottom: spacing.md }}>
-          {sharedEggInvites.map(inv => (
-            <View key={inv.id} style={styles.sharedEggInviteCard}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-                <Text style={{ fontSize: 18 }}>💚</Text>
-                <Text style={{ fontSize: 15, fontWeight: '700', color: colors.textPrimary, flex: 1 }}>
-                  {inv.creator.username} wants to hatch together!
-                </Text>
-              </View>
-              <Text style={{ fontSize: 13, color: colors.textSecondary, marginBottom: 12 }}>
-                Animal: {inv.animal_name} · {inv.minutes_required} min to hatch
-              </Text>
-              <View style={{ flexDirection: 'row', gap: 10 }}>
-                <TouchableOpacity
-                  style={{ flex: 1, backgroundColor: colors.primary, paddingVertical: 10, borderRadius: 12, alignItems: 'center' }}
-                  onPress={() => handleAcceptSharedEgg(inv.id)}
-                >
-                  <Text style={{ color: '#fff', fontWeight: '700', fontSize: 14 }}>Accept</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={{ flex: 1, backgroundColor: colors.surfaceAlt, paddingVertical: 10, borderRadius: 12, alignItems: 'center', borderWidth: 1, borderColor: colors.cardBorder }}
-                  onPress={() => handleDeclineSharedEgg(inv.id)}
-                >
-                  <Text style={{ color: colors.textSecondary, fontWeight: '600', fontSize: 14 }}>Decline</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-          ))}
-        </View>
-      )}
-
       {friends.length === 0 ? (
         <View style={styles.emptyState}>
           <Text style={styles.emptyIcon}>👥</Text>
@@ -1789,15 +1728,6 @@ const styles = StyleSheet.create({
 
   tabContent: { paddingHorizontal: spacing.lg, paddingBottom: 40 },
 
-  sharedEggInviteCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    padding: 16,
-    marginBottom: 10,
-    borderWidth: 1.5,
-    borderColor: 'rgba(95, 140, 135, 0.3)',
-    ...shadows.small,
-  },
   friendListCard: {
     flexDirection: 'row',
     alignItems: 'center',

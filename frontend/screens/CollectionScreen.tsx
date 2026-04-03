@@ -298,38 +298,6 @@ const SHOP_IMAGES: Record<string, any> = {
   dec_bamboo: require('../assets/shop/decorations/bamboo.png'),
 };
 
-const SanctuarySparkle = () => {
-  const sparkle1 = useRef(new Animated.Value(0)).current;
-  const sparkle2 = useRef(new Animated.Value(0)).current;
-
-  useEffect(() => {
-    Animated.loop(
-      Animated.sequence([
-        Animated.timing(sparkle1, { toValue: 1, duration: 1400, useNativeDriver: true }),
-        Animated.timing(sparkle1, { toValue: 0, duration: 1400, useNativeDriver: true }),
-      ])
-    ).start();
-    Animated.loop(
-      Animated.sequence([
-        Animated.delay(700),
-        Animated.timing(sparkle2, { toValue: 1, duration: 1400, useNativeDriver: true }),
-        Animated.timing(sparkle2, { toValue: 0, duration: 1400, useNativeDriver: true }),
-      ])
-    ).start();
-  }, []);
-
-  return (
-    <>
-      <Animated.Text style={{ position: 'absolute', top: -6, right: -2, fontSize: 10, opacity: sparkle1 }}>
-        ✨
-      </Animated.Text>
-      <Animated.Text style={{ position: 'absolute', bottom: 14, left: -4, fontSize: 8, opacity: sparkle2 }}>
-        ✨
-      </Animated.Text>
-    </>
-  );
-};
-
 export default function CollectionScreen() {
   const navigation = useNavigation<any>();
   const { profilePic, user } = useAuth();
@@ -744,20 +712,13 @@ export default function CollectionScreen() {
           <View style={styles.grid}>
             {groupedAnimals.map(({ userAnimal, count }) => {
               const imageSource = getAnimalImage(userAnimal.animal.name);
-              const isShared = !!userAnimal.shared_with_username;
               return (
                 <TouchableOpacity
                   key={userAnimal.animal.id}
-                  style={[styles.animalCard, isShared && styles.animalCardShared]}
+                  style={styles.animalCard}
                   onPress={() => openAnimalDetail(userAnimal)}
                 >
-                  {isShared && (
-                    <View style={styles.sharedCardBorderOverlay} pointerEvents="none" />
-                  )}
                   <View>
-                    {isShared && imageSource && (
-                      <Image source={imageSource} style={styles.sharedShadowCompanion} resizeMode="contain" />
-                    )}
                     {imageSource ? (
                       <Image source={imageSource} style={styles.animalImage} resizeMode="contain" />
                     ) : (
@@ -774,16 +735,8 @@ export default function CollectionScreen() {
                   <Text style={styles.animalName} numberOfLines={2}>
                     {userAnimal.nickname || userAnimal.animal.name}
                   </Text>
-                  {isShared ? (
-                    <View style={styles.sharedBadgePill}>
-                      <View style={styles.sharedBadgeInitial}>
-                        <Text style={styles.sharedBadgeInitialText}>{(user?.username || 'Y')[0].toUpperCase()}</Text>
-                      </View>
-                      <View style={styles.sharedBadgeLine} />
-                      <View style={[styles.sharedBadgeInitial, { backgroundColor: '#E8A0BF' }]}>
-                        <Text style={styles.sharedBadgeInitialText}>{(userAnimal.shared_with_username || 'F')[0].toUpperCase()}</Text>
-                      </View>
-                    </View>
+                  {userAnimal.shared_with_username ? (
+                    <Text style={styles.sharedWithLabel}>💚 with {userAnimal.shared_with_username}</Text>
                   ) : (
                     <Text style={styles.tapToNickname}>tap to nickname</Text>
                   )}
@@ -994,7 +947,6 @@ export default function CollectionScreen() {
                             return currentPageAnimals.map((userAnimal, index) => {
                               const imageSource = getAnimalImage(userAnimal.animal.name);
                               const pos = positions[index];
-                              const isSharedAnimal = !!userAnimal.shared_with_username;
                               return (
                                 <View
                                   key={userAnimal.id}
@@ -1003,12 +955,6 @@ export default function CollectionScreen() {
                                     { bottom: pos.bottom, left: pos.left, transform: [{ scale: pos.scale }] },
                                   ]}
                                 >
-                                  {isSharedAnimal && (
-                                    <SanctuarySparkle />
-                                  )}
-                                  {isSharedAnimal && imageSource && (
-                                    <Image source={imageSource} style={styles.sanctuaryShadowCompanion} resizeMode="contain" />
-                                  )}
                                   {imageSource ? (
                                     <Image source={imageSource} style={styles.sanctuaryModalAnimalImg} resizeMode="contain" />
                                   ) : (
@@ -1016,24 +962,11 @@ export default function CollectionScreen() {
                                       {animalEmojis[userAnimal.animal.name] || '🦁'}
                                     </Text>
                                   )}
-                                  {isSharedAnimal ? (
-                                    <View style={styles.sanctuarySharedNameTag}>
-                                      <Text style={styles.sanctuarySharedNameText} numberOfLines={1}>
-                                        {userAnimal.nickname || userAnimal.animal.name.split(' ').pop()}
-                                      </Text>
-                                      <View style={styles.sanctuarySharedDuo}>
-                                        <View style={styles.sanctuarySharedDot} />
-                                        <View style={styles.sanctuarySharedDotLine} />
-                                        <View style={[styles.sanctuarySharedDot, { backgroundColor: '#E8A0BF' }]} />
-                                      </View>
-                                    </View>
-                                  ) : (
-                                    <View style={styles.sanctuaryModalNameTag}>
-                                      <Text style={styles.sanctuaryModalNameText} numberOfLines={1}>
-                                        {userAnimal.nickname || userAnimal.animal.name.split(' ').pop()}
-                                      </Text>
-                                    </View>
-                                  )}
+                                  <View style={styles.sanctuaryModalNameTag}>
+                                    <Text style={styles.sanctuaryModalNameText} numberOfLines={1}>
+                                      {userAnimal.shared_with_username ? '💚 ' : ''}{userAnimal.nickname || userAnimal.animal.name.split(' ').pop()}
+                                    </Text>
+                                  </View>
                                 </View>
                               );
                             });
@@ -2187,100 +2120,5 @@ const styles = StyleSheet.create({
     color: colors.primaryDark,
     lineHeight: 20,
     fontStyle: 'italic',
-  },
-  animalCardShared: {
-    borderColor: '#7DD4C0',
-    borderWidth: 2,
-    borderLeftWidth: 4,
-    borderLeftColor: '#E8A0BF',
-    position: 'relative',
-  },
-  sharedCardBorderOverlay: {
-    position: 'absolute',
-    top: 1,
-    left: 1,
-    right: 1,
-    bottom: 1,
-    borderRadius: borderRadius.lg - 2,
-    borderWidth: 1.5,
-    borderColor: '#E8A0BF40',
-    borderStyle: 'dashed',
-  },
-  sharedShadowCompanion: {
-    position: 'absolute',
-    width: 55,
-    height: 55,
-    opacity: 0.25,
-    transform: [{ rotate: '-10deg' }, { translateX: -10 }, { translateY: 4 }],
-  },
-  sharedBadgePill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#F0FAF7',
-    borderRadius: 12,
-    paddingHorizontal: 6,
-    paddingVertical: 3,
-    marginTop: 2,
-    gap: 3,
-  },
-  sharedBadgeInitial: {
-    width: 18,
-    height: 18,
-    borderRadius: 9,
-    backgroundColor: '#7DD4C0',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  sharedBadgeInitialText: {
-    fontSize: 10,
-    fontWeight: '700',
-    color: '#fff',
-  },
-  sharedBadgeLine: {
-    width: 8,
-    height: 2,
-    backgroundColor: '#D0E8E2',
-    borderRadius: 1,
-  },
-  sanctuaryShadowCompanion: {
-    position: 'absolute',
-    width: 60,
-    height: 60,
-    opacity: 0.25,
-    transform: [{ rotate: '-12deg' }, { translateX: -12 }, { translateY: 6 }],
-  },
-  sanctuarySharedNameTag: {
-    backgroundColor: 'rgba(255,255,255,0.92)',
-    paddingHorizontal: 6,
-    paddingVertical: 3,
-    borderRadius: 8,
-    marginTop: 2,
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: '#7DD4C040',
-  },
-  sanctuarySharedNameText: {
-    fontSize: 9,
-    fontWeight: '700',
-    color: colors.textPrimary,
-    maxWidth: 70,
-  },
-  sanctuarySharedDuo: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: 2,
-    gap: 2,
-  },
-  sanctuarySharedDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: '#7DD4C0',
-  },
-  sanctuarySharedDotLine: {
-    width: 6,
-    height: 1.5,
-    backgroundColor: '#D0E8E2',
-    borderRadius: 1,
   },
 });

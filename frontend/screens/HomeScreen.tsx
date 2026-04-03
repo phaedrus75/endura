@@ -66,7 +66,7 @@ const shadows = {
     elevation: 8,
   },
 };
-import { animalsAPI, tasksAPI, statsAPI, badgesAPI, sharedEggAPI, Egg, Task, UserStats, UserAnimal, BadgeResponse, SharedEgg } from '../services/api';
+import { animalsAPI, tasksAPI, statsAPI, badgesAPI, Egg, Task, UserStats, UserAnimal, BadgeResponse } from '../services/api';
 import { animalImages, getAnimalImage } from '../assets/animals';
 
 const { width, height } = Dimensions.get('window');
@@ -174,7 +174,6 @@ export default function HomeScreen() {
   const [newTaskDueDate, setNewTaskDueDate] = useState<Date | null>(null);
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [newSubjectName, setNewSubjectName] = useState('');
-  const [activeSharedEgg, setActiveSharedEgg] = useState<SharedEgg | null>(null);
   const [hasSeenTips, setHasSeenTips] = useState(true);
   const tipsPulse = useRef(new Animated.Value(1)).current;
   const confettiRef = useRef<any>(null);
@@ -267,13 +266,12 @@ export default function HomeScreen() {
 
   const loadData = async () => {
     try {
-      const [eggData, tasksData, statsData, animalsData, badgesData, sharedEgg] = await Promise.all([
+      const [eggData, tasksData, statsData, animalsData, badgesData] = await Promise.all([
         animalsAPI.getEgg(),
         tasksAPI.getTasks(true),
         statsAPI.getStats(),
         animalsAPI.getMyAnimals().catch(() => []),
         badgesAPI.getBadges().catch(() => []),
-        sharedEggAPI.getActive().catch(() => null),
       ]);
       
       setEgg(eggData);
@@ -281,7 +279,6 @@ export default function HomeScreen() {
       setStats(statsData);
       setRecentAnimals(animalsData.slice(0, 3));
       setBadges(badgesData);
-      setActiveSharedEgg(sharedEgg);
 
       if (statsData?.study_minutes_by_subject) {
         const backendSubjects = Object.keys(statsData.study_minutes_by_subject);
@@ -521,29 +518,6 @@ export default function HomeScreen() {
             </TouchableOpacity>
           </View>
         </View>
-
-        {/* Shared Egg Progress Card */}
-        {activeSharedEgg && activeSharedEgg.status === 'active' && (
-          <TouchableOpacity
-            style={styles.sharedEggCard}
-            activeOpacity={0.8}
-            onPress={() => navigation.navigate('Timer')}
-          >
-            <View style={styles.sharedEggCardHeader}>
-              <Text style={{ fontSize: 18 }}>💚</Text>
-              <Text style={styles.sharedEggCardTitle}>
-                Hatching with {activeSharedEgg.creator.id === user?.id ? activeSharedEgg.partner.username : activeSharedEgg.creator.username}
-              </Text>
-            </View>
-            <Text style={styles.sharedEggCardAnimal}>{activeSharedEgg.animal_name}</Text>
-            <View style={styles.sharedEggCardBar}>
-              <View style={[styles.sharedEggCardBarFill, { width: `${activeSharedEgg.progress_percent}%` }]} />
-            </View>
-            <Text style={styles.sharedEggCardProgress}>
-              {activeSharedEgg.creator_minutes + activeSharedEgg.partner_minutes} / {activeSharedEgg.minutes_required} min · {Math.round(activeSharedEgg.progress_percent)}%
-            </Text>
-          </TouchableOpacity>
-        )}
 
         {/* Recent Hatches Section - Nestled in Nature Landscape */}
         <View style={styles.recentHatchesSection}>
@@ -1309,49 +1283,6 @@ const styles = StyleSheet.create({
   section: {
     paddingHorizontal: spacing.lg,
     marginTop: spacing.lg,
-  },
-  sharedEggCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    padding: 16,
-    marginHorizontal: spacing.lg,
-    marginTop: spacing.md,
-    borderWidth: 1.5,
-    borderColor: 'rgba(95, 140, 135, 0.25)',
-    ...shadows.small,
-  },
-  sharedEggCardHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    marginBottom: 4,
-  },
-  sharedEggCardTitle: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: colors.textPrimary,
-  },
-  sharedEggCardAnimal: {
-    fontSize: 13,
-    color: colors.textSecondary,
-    marginBottom: 10,
-  },
-  sharedEggCardBar: {
-    height: 8,
-    backgroundColor: 'rgba(95, 140, 135, 0.12)',
-    borderRadius: 4,
-    overflow: 'hidden',
-    marginBottom: 6,
-  },
-  sharedEggCardBarFill: {
-    height: '100%',
-    backgroundColor: colors.primary,
-    borderRadius: 4,
-  },
-  sharedEggCardProgress: {
-    fontSize: 12,
-    color: colors.textMuted,
-    textAlign: 'right',
   },
   recentHatchesSection: {
     marginTop: spacing.sm,

@@ -568,9 +568,6 @@ def delete_account(
     db.query(models.TipView).filter(models.TipView.user_id == user_id).delete()
     db.query(models.UserBadge).filter(models.UserBadge.user_id == user_id).delete()
     db.query(models.UserAnimal).filter(models.UserAnimal.user_id == user_id).delete()
-    db.query(models.SharedEgg).filter(
-        (models.SharedEgg.creator_id == user_id) | (models.SharedEgg.partner_id == user_id)
-    ).delete(synchronize_session=False)
     db.query(models.StudySession).filter(models.StudySession.user_id == user_id).delete()
     db.query(models.Task).filter(models.Task.user_id == user_id).delete()
     db.query(models.Friendship).filter(
@@ -900,7 +897,7 @@ def complete_study_session(
             if not task_exists:
                 task_id = None
 
-        study_session, hatched_animal, shared_hatch_result = crud.create_study_session(
+        study_session, hatched_animal = crud.create_study_session(
             db,
             current_user.id,
             session.duration_minutes,
@@ -919,18 +916,12 @@ def complete_study_session(
         try:
             crud.create_session_event(db, current_user.id, session.duration_minutes,
                                       hatched_animal.name if hatched_animal else None)
-            if shared_hatch_result:
-                crud._create_event(
-                    db, current_user.id, "shared_hatch",
-                    f"hatched a {shared_hatch_result['animal_name']} together with {shared_hatch_result['partner_name']}!"
-                )
         except Exception:
             pass
         return {
             "session": study_session,
             "hatched_animal": hatched_animal,
             "new_badges": [crud.BADGE_MAP[bid] for bid in new_badges if bid in crud.BADGE_MAP],
-            "shared_hatch": shared_hatch_result,
         }
     except Exception as e:
         db.rollback()
@@ -1004,7 +995,6 @@ def get_my_animals(
             "animal": ua.animal,
             "nickname": ua.nickname,
             "hatched_at": ua.hatched_at,
-            "shared_with_username": ua.shared_with.username if ua.shared_with else None,
         }
         result.append(data)
     return result
@@ -1021,120 +1011,6 @@ def name_animal(
     if not animal:
         raise HTTPException(status_code=404, detail="Animal not found")
     return {"message": "Animal named successfully"}
-
-
-# ============ Shared Egg Endpoints ============
-
-@app.post("/shared-egg/invite", response_model=schemas.SharedEggResponse)
-def invite_shared_egg(
-    invite: schemas.SharedEggInvite,
-    current_user: models.User = Depends(get_current_user),
-    db: Session = Depends(get_db),
-):
-    egg, error = crud.create_shared_egg_invite(db, current_user.id, invite.friend_id, invite.animal_name, invite.duration_minutes)
-    if error:
-        raise HTTPException(status_code=400, detail=error)
-    return crud.format_shared_egg(egg)
-
-
-@app.post("/shared-egg/{egg_id}/accept")
-async def accept_shared_egg(
-    egg_id: int,
-    current_user: models.User = Depends(get_current_user),
-    db: Session = Depends(get_db),
-):
-    ok, msg = crud.accept_shared_egg(db, egg_id, current_user.id)
-    if not ok:
-        raise HTTPException(status_code=400, detail=msg)
-
-    egg = db.query(models.SharedEgg).filter(models.SharedEgg.id == egg_id).first()
-    if egg:
-        await _send_push(
-            db,
-            egg.creator_id,
-            f"{current_user.username} accepted!",
-            f"Start studying to grow your {egg.animal_name} together!",
-            {"screen": "Timer"},
-        )
-
-    return {"message": msg}
-
-
-@app.post("/shared-egg/{egg_id}/decline")
-def decline_shared_egg(
-    egg_id: int,
-    current_user: models.User = Depends(get_current_user),
-    db: Session = Depends(get_db),
-):
-    ok, msg = crud.decline_shared_egg(db, egg_id, current_user.id)
-    if not ok:
-        raise HTTPException(status_code=400, detail=msg)
-    return {"message": msg}
-
-
-@app.get("/shared-egg/active")
-def get_active_shared_egg(
-    current_user: models.User = Depends(get_current_user),
-    db: Session = Depends(get_db),
-):
-    egg = crud.get_active_shared_egg(db, current_user.id)
-    if not egg:
-        return None
-    return crud.format_shared_egg(egg)
-
-
-@app.get("/shared-egg/invites")
-def get_shared_egg_invites(
-    current_user: models.User = Depends(get_current_user),
-    db: Session = Depends(get_db),
-):
-    eggs = crud.get_shared_egg_invites(db, current_user.id)
-    return [crud.format_shared_egg(e) for e in eggs]
-
-
-@app.post("/shared-egg/cancel")
-def cancel_shared_egg(
-    current_user: models.User = Depends(get_current_user),
-    db: Session = Depends(get_db),
-):
-    egg = crud.get_active_shared_egg(db, current_user.id)
-    if not egg:
-        raise HTTPException(status_code=404, detail="No active shared egg")
-    egg.status = "cancelled"
-    db.commit()
-    return {"message": "Shared egg cancelled"}
-
-
-class NotifyStartRequest(BaseModel):
-    duration_minutes: int
-
-
-@app.post("/shared-egg/notify-start")
-async def notify_shared_egg_start(
-    req: NotifyStartRequest,
-    current_user: models.User = Depends(get_current_user),
-    db: Session = Depends(get_db),
-):
-    egg = crud.get_active_shared_egg(db, current_user.id)
-    if not egg:
-        raise HTTPException(status_code=404, detail="No active shared egg")
-
-    partner_id = egg.partner_id if egg.creator_id == current_user.id else egg.creator_id
-
-    await _send_push(
-        db,
-        partner_id,
-        f"{current_user.username} started studying!",
-        f"Tap to join and grow your {egg.animal_name} together ({req.duration_minutes}min)",
-        {
-            "screen": "Timer",
-            "sharedDuration": req.duration_minutes,
-            "sharedAnimal": egg.animal_name,
-            "autoStart": True,
-        },
-    )
-
-    return {"message": "Partner notified"}
 
 
 # ============ Study Tips Endpoints ============

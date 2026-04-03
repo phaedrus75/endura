@@ -154,15 +154,10 @@ class BadgeResponse(BaseModel):
     earned_at: Optional[str] = None
     requirement: Optional[str] = None
 
-class SharedHatchResult(BaseModel):
-    animal_name: str
-    partner_name: str
-
 class StudySessionWithHatchResponse(BaseModel):
     session: StudySessionResponse
     hatched_animal: Optional[AnimalResponse] = None
     new_badges: Optional[List[BadgeInfo]] = None
-    shared_hatch: Optional[SharedHatchResult] = None
 
 
 class UserAnimalResponse(BaseModel):
@@ -170,8 +165,6 @@ class UserAnimalResponse(BaseModel):
     animal: AnimalResponse
     nickname: Optional[str]
     hatched_at: datetime
-    shared_with_username: Optional[str] = None
-
     class Config:
         from_attributes = True
 
@@ -192,31 +185,6 @@ class HatchResult(BaseModel):
     success: bool
     animal: Optional[AnimalResponse] = None
     message: str
-
-
-# ============ Shared Egg Schemas ============
-
-class SharedEggInvite(BaseModel):
-    friend_id: int
-    animal_name: str = Field(..., min_length=1, max_length=100)
-    duration_minutes: int = 60
-
-class SharedEggUserInfo(BaseModel):
-    id: int
-    username: Optional[str]
-    profile_pic_url: Optional[str] = None
-
-class SharedEggResponse(BaseModel):
-    id: int
-    creator: SharedEggUserInfo
-    partner: SharedEggUserInfo
-    animal_name: str
-    status: str
-    creator_minutes: int
-    partner_minutes: int
-    minutes_required: int
-    progress_percent: float
-    created_at: datetime
 
 
 # ============ Study Tips Schemas ============

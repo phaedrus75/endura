@@ -170,33 +170,8 @@ export interface BadgeResponse extends BadgeInfo {
   requirement?: string;
 }
 
-export interface SharedHatchResult {
-  animal_name: string;
-  partner_name: string;
-}
-
 export interface StudySessionWithHatchAndBadges extends StudySessionWithHatch {
   new_badges?: BadgeInfo[];
-  shared_hatch?: SharedHatchResult | null;
-}
-
-export interface SharedEggUser {
-  id: number;
-  username: string | null;
-  profile_pic_url: string | null;
-}
-
-export interface SharedEgg {
-  id: number;
-  creator: SharedEggUser;
-  partner: SharedEggUser;
-  animal_name: string;
-  status: string;
-  creator_minutes: number;
-  partner_minutes: number;
-  minutes_required: number;
-  progress_percent: number;
-  created_at: string;
 }
 
 // ============ Social Types ============
@@ -560,28 +535,6 @@ export const feedAPI = {
       event_description: string;
       created_at: string;
     }[]>('/feed/reactions/new'),
-};
-
-// Shared Egg API
-export const sharedEggAPI = {
-  invite: (friendId: number, animalName: string, durationMinutes: number) =>
-    apiFetch<SharedEgg>('/shared-egg/invite', {
-      method: 'POST',
-      body: JSON.stringify({ friend_id: friendId, animal_name: animalName, duration_minutes: durationMinutes }),
-    }),
-  accept: (eggId: number) =>
-    apiFetch<{ message: string }>(`/shared-egg/${eggId}/accept`, { method: 'POST' }),
-  decline: (eggId: number) =>
-    apiFetch<{ message: string }>(`/shared-egg/${eggId}/decline`, { method: 'POST' }),
-  getActive: () => apiFetch<SharedEgg | null>('/shared-egg/active'),
-  getInvites: () => apiFetch<SharedEgg[]>('/shared-egg/invites'),
-  cancel: () =>
-    apiFetch<{ message: string }>('/shared-egg/cancel', { method: 'POST' }),
-  notifyStart: (durationMinutes: number) =>
-    apiFetch<{ message: string }>('/shared-egg/notify-start', {
-      method: 'POST',
-      body: JSON.stringify({ duration_minutes: durationMinutes }),
-    }),
 };
 
 // Badges API
