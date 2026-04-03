@@ -1038,7 +1038,7 @@ def invite_shared_egg(
 
 
 @app.post("/shared-egg/{egg_id}/accept")
-def accept_shared_egg(
+async def accept_shared_egg(
     egg_id: int,
     current_user: models.User = Depends(get_current_user),
     db: Session = Depends(get_db),
@@ -1046,6 +1046,17 @@ def accept_shared_egg(
     ok, msg = crud.accept_shared_egg(db, egg_id, current_user.id)
     if not ok:
         raise HTTPException(status_code=400, detail=msg)
+
+    egg = db.query(models.SharedEgg).filter(models.SharedEgg.id == egg_id).first()
+    if egg:
+        await _send_push(
+            db,
+            egg.creator_id,
+            f"{current_user.username} accepted!",
+            f"Start studying to grow your {egg.animal_name} together!",
+            {"screen": "Timer"},
+        )
+
     return {"message": msg}
 
 
@@ -1079,6 +1090,51 @@ def get_shared_egg_invites(
 ):
     eggs = crud.get_shared_egg_invites(db, current_user.id)
     return [crud.format_shared_egg(e) for e in eggs]
+
+
+@app.post("/shared-egg/cancel")
+def cancel_shared_egg(
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    egg = crud.get_active_shared_egg(db, current_user.id)
+    if not egg:
+        raise HTTPException(status_code=404, detail="No active shared egg")
+    egg.status = "cancelled"
+    db.commit()
+    return {"message": "Shared egg cancelled"}
+
+
+class NotifyStartRequest(BaseModel):
+    duration_minutes: int
+
+
+@app.post("/shared-egg/notify-start")
+async def notify_shared_egg_start(
+    req: NotifyStartRequest,
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    egg = crud.get_active_shared_egg(db, current_user.id)
+    if not egg:
+        raise HTTPException(status_code=404, detail="No active shared egg")
+
+    partner_id = egg.partner_id if egg.creator_id == current_user.id else egg.creator_id
+
+    await _send_push(
+        db,
+        partner_id,
+        f"{current_user.username} started studying!",
+        f"Tap to join and grow your {egg.animal_name} together ({req.duration_minutes}min)",
+        {
+            "screen": "Timer",
+            "sharedDuration": req.duration_minutes,
+            "sharedAnimal": egg.animal_name,
+            "autoStart": True,
+        },
+    )
+
+    return {"message": "Partner notified"}
 
 
 # ============ Study Tips Endpoints ============
@@ -1866,6 +1922,34 @@ def get_notification_prefs(
     }
 
 EXPO_PUSH_URL = "https://exp.host/--/api/v2/push/send"
+
+
+async def _send_push(db: Session, user_id: int, title: str, body: str, data: Optional[dict] = None):
+    import httpx
+
+    user = db.query(models.User).filter(models.User.id == user_id).first()
+    if not user or not user.push_token:
+        return {"sent": 0}
+    if hasattr(user, "notification_enabled") and not user.notification_enabled:
+        return {"sent": 0}
+
+    message = {
+        "to": user.push_token,
+        "title": title,
+        "body": body,
+        "data": data or {},
+        "sound": "default",
+        "priority": "high",
+    }
+
+    try:
+        async with httpx.AsyncClient() as client:
+            resp = await client.post(EXPO_PUSH_URL, json=[message])
+        return {"sent": 1, "response": resp.json()}
+    except Exception as e:
+        print(f"Push notification error: {e}")
+        return {"sent": 0, "error": str(e)}
+
 
 @app.post("/notifications/send")
 async def send_push_notification(

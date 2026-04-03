@@ -199,6 +199,7 @@ export default function TimerScreen() {
   const [quoteIndex, setQuoteIndex] = useState(0);
   const [hasSeenTips, setHasSeenTips] = useState(true);
   const tipsPulse = useRef(new Animated.Value(1)).current;
+  const sharedGlowAnim = useRef(new Animated.Value(1)).current;
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
   const appState = useRef(AppState.currentState);
   const backgroundTimestamp = useRef<number | null>(null);
@@ -210,6 +211,19 @@ export default function TimerScreen() {
   useEffect(() => { isRunningRef.current = isRunning; }, [isRunning]);
   useEffect(() => { timeLeftRef.current = timeLeft; }, [timeLeft]);
   useEffect(() => { isPausedRef.current = isPaused; }, [isPaused]);
+
+  useEffect(() => {
+    if (showSharedHatchModal) {
+      const loop = Animated.loop(
+        Animated.sequence([
+          Animated.timing(sharedGlowAnim, { toValue: 1.3, duration: 1200, useNativeDriver: true }),
+          Animated.timing(sharedGlowAnim, { toValue: 1, duration: 1200, useNativeDriver: true }),
+        ])
+      );
+      loop.start();
+      return () => loop.stop();
+    }
+  }, [showSharedHatchModal]);
 
   useEffect(() => {
     if (isRunning) {
@@ -592,6 +606,24 @@ export default function TimerScreen() {
     }
   };
 
+  const cancelSharedEgg = () => {
+    Alert.alert('Cancel Shared Egg', 'Are you sure you want to cancel this shared hatching?', [
+      { text: 'Keep it', style: 'cancel' },
+      {
+        text: 'Cancel it',
+        style: 'destructive',
+        onPress: async () => {
+          try {
+            await sharedEggAPI.cancel();
+            setActiveSharedEgg(null);
+          } catch (e: any) {
+            Alert.alert('Error', e?.message || 'Could not cancel');
+          }
+        },
+      },
+    ]);
+  };
+
   const closeFriendPicker = () => {
     setShowFriendPicker(false);
     setTimeout(() => setShowSubjectModal(true), 300);
@@ -713,6 +745,9 @@ export default function TimerScreen() {
               <Text style={styles.sharedEggBannerText}>
                 Growing with {activeSharedEgg.creator.id === user?.id ? activeSharedEgg.partner.username : activeSharedEgg.creator.username}
               </Text>
+              <TouchableOpacity onPress={cancelSharedEgg} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+                <Text style={{ fontSize: 14, color: colors.textMuted, fontWeight: '600' }}>✕</Text>
+              </TouchableOpacity>
             </View>
             <Text style={styles.sharedEggAnimalLabel}>
               Hatching: {activeSharedEgg.animal_name}
@@ -1271,51 +1306,83 @@ export default function TimerScreen() {
 
       {/* Shared Hatch Celebration Modal */}
       <Modal visible={showSharedHatchModal} transparent animationType="fade" onRequestClose={closeSharedHatchModal}>
-        <TouchableOpacity style={styles.celebrationOverlay} activeOpacity={1} onPress={closeSharedHatchModal}>
-          <TouchableOpacity activeOpacity={1}>
-            <ExpoLinearGradient
-              colors={['#8FC4BC', '#4A6A7A']}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 0, y: 1 }}
-              style={styles.celebrationContent}
-            >
-              <Text style={styles.celebrationTitle}>You did it together! 💚</Text>
-              <Text style={styles.celebrationSubtitle}>
-                You and {sharedHatchResult?.partner_name} hatched a {sharedHatchResult?.animal_name}!
-              </Text>
-              <View style={styles.celebrationAnimalContainer}>
-                {sharedHatchResult?.animal_name && getAnimalImage(sharedHatchResult.animal_name) ? (
+        <View style={styles.celebrationOverlay}>
+          <View style={styles.sharedCelebrationCard}>
+            {/* Split gradient background */}
+            <View style={styles.sharedCelebrationBg}>
+              <ExpoLinearGradient
+                colors={['#7DD4C0', '#5F8C87']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 0.5, y: 1 }}
+                style={styles.sharedCelebrationBgLeft}
+              />
+              <ExpoLinearGradient
+                colors={['#E8A0BF', '#BA7BA1']}
+                start={{ x: 0.5, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={styles.sharedCelebrationBgRight}
+              />
+            </View>
+
+            <Text style={styles.sharedCelebrationTitle}>Hatched Together!</Text>
+
+            {/* Duo usernames with heart */}
+            <View style={styles.sharedCelebrationUsers}>
+              <View style={styles.sharedCelebrationUserPill}>
+                <Text style={styles.sharedCelebrationUserText}>{user?.username || 'You'}</Text>
+              </View>
+              <Text style={styles.sharedCelebrationHeart}>💚</Text>
+              <View style={styles.sharedCelebrationUserPill}>
+                <Text style={styles.sharedCelebrationUserText}>{sharedHatchResult?.partner_name}</Text>
+              </View>
+            </View>
+
+            {/* Animal with duo silhouette + glow */}
+            <View style={styles.sharedCelebrationAnimalWrap}>
+              <Animated.View style={[styles.sharedCelebrationGlow, {
+                transform: [{ scale: sharedGlowAnim }],
+                opacity: sharedGlowAnim.interpolate({ inputRange: [1, 1.3], outputRange: [0.4, 0.15] }),
+              }]} />
+              {sharedHatchResult?.animal_name && getAnimalImage(sharedHatchResult.animal_name) ? (
+                <>
                   <Image
                     source={getAnimalImage(sharedHatchResult.animal_name)}
-                    style={styles.celebrationAnimalImage}
+                    style={styles.sharedCelebrationShadow}
                     resizeMode="contain"
                   />
-                ) : (
-                  <Text style={styles.celebrationAnimalEmoji}>🐾</Text>
-                )}
-              </View>
-              <Text style={styles.celebrationAnimalName}>{sharedHatchResult?.animal_name}</Text>
-              <Text style={styles.celebrationMessage}>
-                This shared animal now lives in both your sanctuaries. Teamwork makes the dream work!
-              </Text>
-              <View style={styles.celebrationButtons}>
-                <TouchableOpacity style={styles.celebrationButton} onPress={closeSharedHatchModal}>
-                  <Text style={styles.celebrationButtonText}>Continue</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={styles.celebrationButtonSecondary}
-                  onPress={() => {
-                    closeSharedHatchModal();
-                    (navigation as any).navigate('Sanctuary');
-                  }}
-                >
-                  <Text style={styles.celebrationButtonSecondaryText}>View Collection →</Text>
-                </TouchableOpacity>
-              </View>
-            </ExpoLinearGradient>
-          </TouchableOpacity>
-          <ConfettiCannon count={250} origin={{ x: width / 2, y: -10 }} autoStart fadeOut explosionSpeed={400} fallSpeed={2500} />
-        </TouchableOpacity>
+                  <Image
+                    source={getAnimalImage(sharedHatchResult.animal_name)}
+                    style={styles.sharedCelebrationAnimalImg}
+                    resizeMode="contain"
+                  />
+                </>
+              ) : (
+                <Text style={{ fontSize: 80 }}>🐾</Text>
+              )}
+            </View>
+
+            <Text style={styles.sharedCelebrationAnimalName}>{sharedHatchResult?.animal_name}</Text>
+            <Text style={styles.sharedCelebrationMsg}>
+              Together, you brought a {sharedHatchResult?.animal_name} into the world!
+            </Text>
+
+            <View style={styles.sharedCelebrationBtns}>
+              <TouchableOpacity
+                style={styles.sharedCelebrationBtnPrimary}
+                onPress={() => {
+                  closeSharedHatchModal();
+                  (navigation as any).navigate('Sanctuary');
+                }}
+              >
+                <Text style={styles.sharedCelebrationBtnPrimaryText}>View in Sanctuary</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.sharedCelebrationBtnSecondary} onPress={closeSharedHatchModal}>
+                <Text style={styles.sharedCelebrationBtnSecondaryText}>Continue</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+          <ConfettiCannon count={300} origin={{ x: width / 2, y: -10 }} autoStart fadeOut explosionSpeed={350} fallSpeed={2800} colors={['#7DD4C0', '#E8A0BF', '#FFD700', '#fff', '#BA7BA1', '#5F8C87']} />
+        </View>
       </Modal>
 
       {/* Custom Timer Modal */}
@@ -2482,5 +2549,124 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
     color: colors.textSecondary,
+  },
+  sharedCelebrationCard: {
+    width: width - 48,
+    borderRadius: 28,
+    overflow: 'hidden',
+    alignItems: 'center',
+    paddingTop: 32,
+    paddingBottom: 28,
+    paddingHorizontal: 24,
+  },
+  sharedCelebrationBg: {
+    ...StyleSheet.absoluteFillObject,
+    flexDirection: 'row',
+  },
+  sharedCelebrationBgLeft: {
+    flex: 1,
+  },
+  sharedCelebrationBgRight: {
+    flex: 1,
+  },
+  sharedCelebrationTitle: {
+    fontSize: 28,
+    fontWeight: '800',
+    color: '#fff',
+    textAlign: 'center',
+    marginBottom: 12,
+    textShadowColor: 'rgba(0,0,0,0.2)',
+    textShadowOffset: { width: 0, height: 2 },
+    textShadowRadius: 4,
+  },
+  sharedCelebrationUsers: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 20,
+    gap: 8,
+  },
+  sharedCelebrationUserPill: {
+    backgroundColor: 'rgba(255,255,255,0.25)',
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.4)',
+  },
+  sharedCelebrationUserText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#fff',
+  },
+  sharedCelebrationHeart: {
+    fontSize: 20,
+  },
+  sharedCelebrationAnimalWrap: {
+    width: 160,
+    height: 160,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 12,
+  },
+  sharedCelebrationGlow: {
+    position: 'absolute',
+    width: 160,
+    height: 160,
+    borderRadius: 80,
+    backgroundColor: 'rgba(255,255,255,0.35)',
+  },
+  sharedCelebrationShadow: {
+    position: 'absolute',
+    width: 110,
+    height: 110,
+    opacity: 0.3,
+    transform: [{ rotate: '-12deg' }, { translateX: -14 }, { translateY: 6 }],
+  },
+  sharedCelebrationAnimalImg: {
+    width: 120,
+    height: 120,
+    transform: [{ rotate: '5deg' }],
+  },
+  sharedCelebrationAnimalName: {
+    fontSize: 22,
+    fontWeight: '800',
+    color: '#fff',
+    textAlign: 'center',
+    marginBottom: 6,
+    textShadowColor: 'rgba(0,0,0,0.15)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 3,
+  },
+  sharedCelebrationMsg: {
+    fontSize: 15,
+    fontWeight: '500',
+    color: 'rgba(255,255,255,0.9)',
+    textAlign: 'center',
+    marginBottom: 24,
+    lineHeight: 22,
+  },
+  sharedCelebrationBtns: {
+    width: '100%',
+    gap: 10,
+  },
+  sharedCelebrationBtnPrimary: {
+    backgroundColor: '#fff',
+    paddingVertical: 14,
+    borderRadius: 16,
+    alignItems: 'center',
+  },
+  sharedCelebrationBtnPrimaryText: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#5F8C87',
+  },
+  sharedCelebrationBtnSecondary: {
+    paddingVertical: 12,
+    alignItems: 'center',
+  },
+  sharedCelebrationBtnSecondaryText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: 'rgba(255,255,255,0.8)',
   },
 });

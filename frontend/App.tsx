@@ -1,6 +1,6 @@
 import React, { useEffect, useRef } from 'react';
 import { StatusBar } from 'expo-status-bar';
-import { NavigationContainer } from '@react-navigation/native';
+import { NavigationContainer, useNavigationContainerRef } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { View, Text, StyleSheet, ActivityIndicator, Platform, Animated } from 'react-native';
@@ -13,6 +13,7 @@ import { NotificationProvider } from './contexts/NotificationContext';
 import { colors, shadows, spacing } from './theme/colors';
 import { PostHogProvider } from 'posthog-react-native';
 import { posthogClient, identifyUser, resetUser, Analytics } from './services/analytics';
+import { registerForPushNotifications, addNotificationResponseListener } from './services/pushNotifications';
 
 // Screens
 import AuthScreen from './screens/AuthScreen';
@@ -165,7 +166,7 @@ function MainStackNavigator() {
   );
 }
 
-function AppNavigator() {
+function AppNavigator({ navigationRef }: { navigationRef: any }) {
   const { isAuthenticated, isLoading, user } = useAuth();
 
   useEffect(() => {
@@ -176,10 +177,23 @@ function AppNavigator() {
         current_streak: user.current_streak,
       });
       Analytics.appOpened();
+      registerForPushNotifications(user.id).catch(() => {});
     } else {
       resetUser();
     }
   }, [user?.id]);
+
+  useEffect(() => {
+    const sub = addNotificationResponseListener((response) => {
+      const data = response.notification.request.content.data;
+      if (data?.screen === 'Timer') {
+        const nav = navigationRef.current;
+        if (!nav) return;
+        nav.navigate('Main', { screen: 'Tabs', params: { screen: 'Timer' } });
+      }
+    });
+    return () => sub.remove();
+  }, []);
   
   if (isLoading) {
     return (
@@ -207,15 +221,17 @@ function AppNavigator() {
 }
 
 export default function App() {
+  const navigationRef = useNavigationContainerRef();
+
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <SafeAreaProvider>
         <AuthProvider>
           <NotificationProvider>
-            <NavigationContainer>
+            <NavigationContainer ref={navigationRef}>
               <PostHogProvider client={posthogClient} autocapture={false}>
                 <StatusBar style="dark" />
-                <AppNavigator />
+                <AppNavigator navigationRef={navigationRef} />
               </PostHogProvider>
             </NavigationContainer>
           </NotificationProvider>

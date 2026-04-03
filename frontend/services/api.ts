@@ -575,6 +575,13 @@ export const sharedEggAPI = {
     apiFetch<{ message: string }>(`/shared-egg/${eggId}/decline`, { method: 'POST' }),
   getActive: () => apiFetch<SharedEgg | null>('/shared-egg/active'),
   getInvites: () => apiFetch<SharedEgg[]>('/shared-egg/invites'),
+  cancel: () =>
+    apiFetch<{ message: string }>('/shared-egg/cancel', { method: 'POST' }),
+  notifyStart: (durationMinutes: number) =>
+    apiFetch<{ message: string }>('/shared-egg/notify-start', {
+      method: 'POST',
+      body: JSON.stringify({ duration_minutes: durationMinutes }),
+    }),
 };
 
 // Badges API

@@ -503,8 +503,11 @@ export default function SocialScreen() {
   const handleAcceptSharedEgg = async (eggId: number) => {
     try {
       await sharedEggAPI.accept(eggId);
-      Alert.alert('Accepted!', 'The shared egg is now active. Start studying to contribute!');
       loadData();
+      Alert.alert('Accepted!', 'Start studying whenever you\'re ready — the animal hatches once you both finish!', [
+        { text: 'Go to Timer', onPress: () => navigation.navigate('Timer' as never) },
+        { text: 'Later', style: 'cancel' },
+      ]);
     } catch (e: any) {
       Alert.alert('Error', e?.message || 'Could not accept invite');
     }
