@@ -29,6 +29,7 @@ import {
   Friend, FriendProfile, FriendSuggestion, StudyTip, LeaderboardEntry,
 } from '../services/api';
 import { getAnimalImage } from '../assets/animals';
+import ConfettiCannon from 'react-native-confetti-cannon';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -124,9 +125,13 @@ export default function SocialScreen() {
   const [showTipsPicker, setShowTipsPicker] = useState(false);
   const [savedTips, setSavedTips] = useState<StudyTip[]>([]);
   const [showChatActions, setShowChatActions] = useState(false);
+  const [showEditGoal, setShowEditGoal] = useState<StudyGroup | null>(null);
+  const [editGoalValue, setEditGoalValue] = useState('');
+  const [showGoalCongrats, setShowGoalCongrats] = useState<StudyGroup | null>(null);
+  const [celebratedGroupIds, setCelebratedGroupIds] = useState<Set<number>>(new Set());
 
-  // Feature modals (challenge, leaderboard, streak, hatch)
-  const [featureModal, setFeatureModal] = useState<{ type: 'challenge' | 'leaderboard' | 'streak' | 'hatch'; group: StudyGroup } | null>(null);
+  // Feature modals (challenge, leaderboard, streak)
+  const [featureModal, setFeatureModal] = useState<{ type: 'challenge' | 'leaderboard' | 'streak'; group: StudyGroup } | null>(null);
 
   // Feed
   const [feed, setFeed] = useState<FeedEvent[]>([]);
@@ -174,8 +179,15 @@ export default function SocialScreen() {
       setFriendsLeaderboard(fl);
       setSchoolLeaderboard(sl);
       setSuggestions(sg);
+      const completed = (g as StudyGroup[]).find(
+        grp => grp.goal_met && !celebratedGroupIds.has(grp.id)
+      );
+      if (completed) {
+        setCelebratedGroupIds(prev => new Set([...prev, completed.id]));
+        setShowGoalCongrats(completed);
+      }
     } catch {}
-  }, [leaderboardPeriod]);
+  }, [leaderboardPeriod, celebratedGroupIds]);
 
   useFocusEffect(useCallback(() => { loadData(); }, [loadData]));
 
@@ -451,31 +463,22 @@ export default function SocialScreen() {
     } catch {}
   };
 
-  const sendHatchInvite = async () => {
-    if (!selectedGroup) return;
-    const content = `🥚 [HATCH_INVITE] wants to hatch an animal together! Tap to accept the challenge — study together to hatch a shared egg! 🐣`;
+  const handleUpdateGoal = async () => {
+    if (!showEditGoal) return;
+    const mins = parseInt(editGoalValue);
+    if (!mins || mins < 1) { Alert.alert('Invalid', 'Please enter a valid number of minutes.'); return; }
     try {
-      await groupsAPI.sendMessage(selectedGroup.id, content);
-      setShowChatActions(false);
-      const msgs = await groupsAPI.getMessages(selectedGroup.id);
-      setMessages(msgs);
-    } catch {}
-  };
-
-  const acceptHatchInvite = async (senderName: string) => {
-    if (!selectedGroup) return;
-    const content = `🐣 [HATCH_ACCEPT] accepted the hatch challenge from ${senderName}! Let's study and hatch this egg together! 🎉`;
-    try {
-      await groupsAPI.sendMessage(selectedGroup.id, content);
-      const msgs = await groupsAPI.getMessages(selectedGroup.id);
-      setMessages(msgs);
-    } catch {}
+      await groupsAPI.updateGoal(showEditGoal.id, mins);
+      setShowEditGoal(null);
+      setEditGoalValue('');
+      loadData();
+    } catch (e: any) {
+      Alert.alert('Error', e.message || 'Could not update goal');
+    }
   };
 
   const isTipMessage = (content: string) => content.startsWith('📚 [TIP] ');
-  const isHatchInvite = (content: string) => content.startsWith('🥚 [HATCH_INVITE]');
-  const isHatchAccept = (content: string) => content.startsWith('🐣 [HATCH_ACCEPT]');
-  const isSpecialMessage = (content: string) => isTipMessage(content) || isHatchInvite(content) || isHatchAccept(content);
+  const isSpecialMessage = (content: string) => isTipMessage(content);
 
   // ---- Feed Actions ----
   const handleReact = async (eventId: number, reaction: string) => {
@@ -528,16 +531,16 @@ export default function SocialScreen() {
 
           <View style={styles.periodSwatch}>
             <TouchableOpacity
-              style={[styles.periodSwatchBtn, leaderboardPeriod === 'week' && styles.periodSwatchBtnActive]}
-              onPress={() => setLeaderboardPeriod('week')}
-            >
-              <Text style={[styles.periodSwatchText, leaderboardPeriod === 'week' && styles.periodSwatchTextActive]}>This Week</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
               style={[styles.periodSwatchBtn, leaderboardPeriod === 'all_time' && styles.periodSwatchBtnActive]}
               onPress={() => setLeaderboardPeriod('all_time')}
             >
               <Text style={[styles.periodSwatchText, leaderboardPeriod === 'all_time' && styles.periodSwatchTextActive]}>All Time</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.periodSwatchBtn, leaderboardPeriod === 'week' && styles.periodSwatchBtnActive]}
+              onPress={() => setLeaderboardPeriod('week')}
+            >
+              <Text style={[styles.periodSwatchText, leaderboardPeriod === 'week' && styles.periodSwatchTextActive]}>This Week</Text>
             </TouchableOpacity>
           </View>
 
@@ -634,13 +637,18 @@ export default function SocialScreen() {
         </View>
       ) : groups.map(g => {
         const progress = g.goal_minutes > 0 ? Math.min((g.total_minutes / g.goal_minutes) * 100, 100) : 0;
-        const memberIds = new Set(g.members.map(m => m.user_id));
-        const invitableFriends = friends.filter(f => !memberIds.has(f.id));
+        const goalHours = Math.floor(g.goal_minutes / 60);
+        const goalMins = g.goal_minutes % 60;
+        const totalHours = Math.floor(g.total_minutes / 60);
+        const totalMins = g.total_minutes % 60;
+        const goalLabel = goalHours > 0 ? `${goalHours}h ${goalMins}m` : `${goalMins}m`;
+        const totalLabel = totalHours > 0 ? `${totalHours}h ${totalMins}m` : `${totalMins}m`;
         return (
           <View key={g.id} style={styles.groupCard}>
             <TouchableOpacity onPress={() => openGroupChat(g)} activeOpacity={0.7}>
               <View style={styles.groupHeader}>
                 <Text style={styles.groupName}>{g.name}</Text>
+                {g.goal_met && <Text style={styles.goalMetBadge}>Goal reached!</Text>}
               </View>
               <View style={styles.groupMembersRow}>
                 {g.members.slice(0, 5).map(m => {
@@ -670,6 +678,28 @@ export default function SocialScreen() {
               </View>
             </TouchableOpacity>
 
+            {/* Group Goal Progress */}
+            <View style={styles.goalSection}>
+              <View style={styles.goalHeaderRow}>
+                <Text style={styles.goalLabel}>🎯 Group Goal</Text>
+                <TouchableOpacity onPress={() => { setShowEditGoal(g); setEditGoalValue(String(g.goal_minutes)); }}>
+                  <Text style={styles.goalEditBtn}>Edit</Text>
+                </TouchableOpacity>
+              </View>
+              <View style={styles.goalProgressBarOuter}>
+                <LinearGradient
+                  colors={g.goal_met ? ['#6FCF97', '#27AE60'] : ['#A9CECA', '#5F8C87']}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 0 }}
+                  style={[styles.goalProgressBarFill, { width: `${Math.max(progress, 2)}%` }]}
+                />
+              </View>
+              <View style={styles.goalStatsRow}>
+                <Text style={styles.goalStatsText}>{totalLabel} / {goalLabel}</Text>
+                <Text style={[styles.goalPercentText, g.goal_met && { color: '#27AE60' }]}>{Math.round(progress)}%</Text>
+              </View>
+            </View>
+
             <View style={styles.groupActionsGrid}>
               <View style={styles.groupActionsTopRow}>
                 <TouchableOpacity
@@ -692,7 +722,7 @@ export default function SocialScreen() {
 
                 <TouchableOpacity
                   style={styles.groupActionBtnHighlight}
-                  onPress={() => setFeatureModal({ type: 'hatch', group: g })}
+                  onPress={() => { setShowEditGoal(g); setEditGoalValue(String(g.goal_minutes)); }}
                   activeOpacity={0.7}
                 >
                   <LinearGradient
@@ -701,8 +731,8 @@ export default function SocialScreen() {
                     end={{ x: 1, y: 0 }}
                     style={styles.groupActionBtnGradient}
                   >
-                    <Text style={styles.groupActionEmoji}>🥚</Text>
-                    <Text style={styles.groupActionTextWhite}>Hatch</Text>
+                    <Text style={styles.groupActionEmoji}>🎯</Text>
+                    <Text style={styles.groupActionTextWhite}>Goal</Text>
                   </LinearGradient>
                 </TouchableOpacity>
               </View>
@@ -912,6 +942,19 @@ export default function SocialScreen() {
               <TextInput style={styles.input} placeholder="Physics Study Group" placeholderTextColor={colors.textMuted}
                 value={groupName} onChangeText={setGroupName} />
 
+              <Text style={styles.inputLabel}>Group goal (combined minutes)</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="e.g. 500"
+                placeholderTextColor={colors.textMuted}
+                value={groupGoal}
+                onChangeText={setGroupGoal}
+                keyboardType="number-pad"
+              />
+              <Text style={{ fontSize: 11, color: colors.textMuted, marginTop: 4 }}>
+                All members' study time contributes toward this goal
+              </Text>
+
               {friends.length > 0 && (
                 <>
                   <Text style={styles.inputLabel}>Add friends to group</Text>
@@ -1020,47 +1063,6 @@ export default function SocialScreen() {
                   );
                 }
 
-                if (isHatchInvite(item.content)) {
-                  return (
-                    <View style={[styles.chatSpecialBubble, isMine ? { alignSelf: 'flex-end' } : { alignSelf: 'flex-start' }]}>
-                      {!isMine && <Text style={styles.chatSpecialSender}>{item.username || 'Someone'}</Text>}
-                      <LinearGradient
-                        colors={['#A8C8D8', '#5F8C87']}
-                        start={{ x: 0, y: 0 }}
-                        end={{ x: 1, y: 1 }}
-                        style={styles.chatHatchCard}
-                      >
-                        <Text style={styles.chatHatchEmoji}>🥚</Text>
-                        <Text style={styles.chatHatchTitle}>Hatch Together Invite!</Text>
-                        <Text style={styles.chatHatchDesc}>Study together to hatch a shared animal egg</Text>
-                        {!isMine && (
-                          <TouchableOpacity
-                            style={styles.chatHatchAcceptBtn}
-                            onPress={() => acceptHatchInvite(item.username || 'Someone')}
-                          >
-                            <Text style={styles.chatHatchAcceptText}>🐣 Accept Challenge</Text>
-                          </TouchableOpacity>
-                        )}
-                      </LinearGradient>
-                      <Text style={styles.chatSpecialTime}>{timeAgo(item.created_at)}</Text>
-                    </View>
-                  );
-                }
-
-                if (isHatchAccept(item.content)) {
-                  return (
-                    <View style={[styles.chatSpecialBubble, { alignSelf: 'center' }]}>
-                      <View style={styles.chatHatchAcceptedBanner}>
-                        <Text style={styles.chatHatchAcceptedText}>
-                          🎉 {isMine ? 'You' : (item.username || 'Someone')} accepted the hatch challenge!
-                        </Text>
-                        <Text style={styles.chatHatchAcceptedSub}>Study together to hatch your shared egg 🐣</Text>
-                      </View>
-                      <Text style={[styles.chatSpecialTime, { textAlign: 'center' }]}>{timeAgo(item.created_at)}</Text>
-                    </View>
-                  );
-                }
-
                 return (
                   <View style={[styles.chatBubbleWrap, isMine ? styles.chatBubbleWrapMine : styles.chatBubbleWrapTheirs]}>
                     {!isMine && (
@@ -1097,16 +1099,6 @@ export default function SocialScreen() {
                   >
                     <Text style={styles.chatActionEmoji}>📚</Text>
                     <Text style={styles.chatActionLabel}>Share Tip</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={styles.chatActionItem}
-                    onPress={() => {
-                      setShowChatActions(false);
-                      sendHatchInvite();
-                    }}
-                  >
-                    <Text style={styles.chatActionEmoji}>🥚</Text>
-                    <Text style={styles.chatActionLabel}>Hatch Together</Text>
                   </TouchableOpacity>
                 </View>
                 <Text style={{ fontSize: 12, fontWeight: '700', color: colors.textMuted, marginBottom: 6 }}>Members</Text>
@@ -1367,31 +1359,6 @@ export default function SocialScreen() {
                 </View>
               </>
             )}
-            {featureModal?.type === 'hatch' && (
-              <>
-                <Text style={styles.featureModalIcon}>🥚</Text>
-                <Text style={styles.featureModalTitle}>Hatch Together</Text>
-                <Text style={styles.featureModalBody}>
-                  Start a group study session! When your group hits the study goal, everyone shares custody of a rare animal.{'\n\n'}
-                  Keep studying as a group to unlock it!
-                </Text>
-                <TouchableOpacity
-                  onPress={() => {
-                    setFeatureModal(null);
-                    openGroupChat(featureModal.group);
-                  }}
-                >
-                  <LinearGradient
-                    colors={['#5F8C87', '#3B5466']}
-                    start={{ x: 0, y: 0 }}
-                    end={{ x: 1, y: 0 }}
-                    style={styles.featureModalActionBtn}
-                  >
-                    <Text style={styles.featureModalActionText}>Start Session</Text>
-                  </LinearGradient>
-                </TouchableOpacity>
-              </>
-            )}
             <TouchableOpacity
               style={styles.featureModalCloseBtn}
               onPress={() => setFeatureModal(null)}
@@ -1402,6 +1369,77 @@ export default function SocialScreen() {
         </TouchableOpacity>
       </Modal>
 
+
+      {/* Edit Goal Modal */}
+      <Modal visible={!!showEditGoal} transparent animationType="fade">
+        <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => setShowEditGoal(null)}>
+          <TouchableOpacity activeOpacity={1} style={styles.modalContent}>
+            <Text style={styles.modalTitle}>🎯 Set Group Goal</Text>
+            <Text style={styles.inputLabel}>Combined study minutes</Text>
+            <TextInput
+              style={styles.input}
+              placeholder="e.g. 500"
+              placeholderTextColor={colors.textMuted}
+              value={editGoalValue}
+              onChangeText={setEditGoalValue}
+              keyboardType="number-pad"
+            />
+            <Text style={{ fontSize: 11, color: colors.textMuted, marginTop: 6, textAlign: 'center' }}>
+              Every member's study sessions count toward this shared goal
+            </Text>
+            <TouchableOpacity onPress={handleUpdateGoal}>
+              <LinearGradient
+                colors={['#5F8C87', '#3B5466']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 0 }}
+                style={styles.modalPrimary}
+              >
+                <Text style={styles.modalPrimaryText}>Save Goal</Text>
+              </LinearGradient>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.modalCancel} onPress={() => setShowEditGoal(null)}>
+              <Text style={styles.modalCancelText}>Cancel</Text>
+            </TouchableOpacity>
+          </TouchableOpacity>
+        </TouchableOpacity>
+      </Modal>
+
+      {/* Goal Reached Congratulations Modal */}
+      <Modal visible={!!showGoalCongrats} transparent animationType="fade">
+        <View style={styles.modalOverlay}>
+          {showGoalCongrats && (
+            <ConfettiCannon count={120} origin={{ x: SCREEN_WIDTH / 2, y: -20 }} fadeOut autoStart />
+          )}
+          <View style={styles.goalCongratsCard}>
+            <Text style={{ fontSize: 52, marginBottom: 8 }}>🎉</Text>
+            <Text style={styles.goalCongratsTitle}>Goal Reached!</Text>
+            <Text style={styles.goalCongratsBody}>
+              Your group "{showGoalCongrats?.name}" hit the {showGoalCongrats ? `${showGoalCongrats.goal_minutes} minute` : ''} goal!{'\n'}Amazing teamwork!
+            </Text>
+            <LinearGradient
+              colors={['#6FCF97', '#27AE60']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 0 }}
+              style={styles.goalCongratsProgressBar}
+            >
+              <Text style={styles.goalCongratsProgressText}>100%</Text>
+            </LinearGradient>
+            <TouchableOpacity
+              onPress={() => setShowGoalCongrats(null)}
+              style={styles.goalCongratsDismiss}
+            >
+              <LinearGradient
+                colors={['#5F8C87', '#3B5466']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 0 }}
+                style={styles.goalCongratsDismissGradient}
+              >
+                <Text style={styles.goalCongratsDismissText}>Awesome!</Text>
+              </LinearGradient>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
 
       {/* Friend Profile Modal */}
       <Modal visible={showFriendProfile} transparent animationType="fade">
@@ -1750,6 +1788,102 @@ const styles = StyleSheet.create({
   },
   groupProgressFill: { height: '100%', backgroundColor: colors.primary, borderRadius: 4 },
   groupProgressText: { fontSize: 12, color: colors.textMuted, marginBottom: 8 },
+  goalSection: {
+    backgroundColor: '#F4F9F7',
+    borderRadius: 12,
+    padding: 12,
+    marginTop: 8,
+    marginBottom: 4,
+  },
+  goalHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  goalLabel: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: colors.textPrimary,
+  },
+  goalEditBtn: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#5F8C87',
+  },
+  goalProgressBarOuter: {
+    height: 12,
+    backgroundColor: '#E2EBE7',
+    borderRadius: 6,
+    overflow: 'hidden',
+    marginBottom: 6,
+  },
+  goalProgressBarFill: {
+    height: '100%',
+    borderRadius: 6,
+  } as any,
+  goalStatsRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  goalStatsText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: colors.textSecondary,
+  },
+  goalPercentText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#5F8C87',
+  },
+  goalCongratsCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 24,
+    padding: 32,
+    marginHorizontal: 28,
+    alignItems: 'center',
+    ...shadows.large,
+  },
+  goalCongratsTitle: {
+    fontSize: 24,
+    fontWeight: '800',
+    color: colors.textPrimary,
+    marginBottom: 10,
+  },
+  goalCongratsBody: {
+    fontSize: 15,
+    lineHeight: 22,
+    color: colors.textSecondary,
+    textAlign: 'center',
+    marginBottom: 18,
+  },
+  goalCongratsProgressBar: {
+    width: '100%',
+    height: 14,
+    borderRadius: 7,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 20,
+  },
+  goalCongratsProgressText: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#fff',
+  },
+  goalCongratsDismiss: {
+    width: '100%',
+  },
+  goalCongratsDismissGradient: {
+    borderRadius: 50,
+    paddingVertical: 14,
+    alignItems: 'center',
+  },
+  goalCongratsDismissText: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#fff',
+  },
   groupMembersRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 6 },
   memberChip: {
     flexDirection: 'row', alignItems: 'center', backgroundColor: colors.surfaceAlt,

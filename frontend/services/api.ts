@@ -529,6 +529,11 @@ export const groupsAPI = {
     }),
   removeMember: (groupId: number, userId: number) =>
     apiFetch<{ message: string }>(`/groups/${groupId}/members/${userId}`, { method: 'DELETE' }),
+  updateGoal: (groupId: number, goalMinutes: number) =>
+    apiFetch<{ message: string; goal_minutes: number }>(`/groups/${groupId}/goal`, {
+      method: 'PUT',
+      body: JSON.stringify({ goal_minutes: goalMinutes }),
+    }),
 };
 
 // Activity Feed API

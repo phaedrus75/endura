@@ -1361,6 +1361,29 @@ def create_group(
     group = crud.create_group(db, current_user.id, data.name, data.goal_minutes, data.goal_deadline)
     return {"id": group.id, "name": group.name}
 
+@app.put("/groups/{group_id}/goal")
+def update_group_goal(
+    group_id: int,
+    data: dict,
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    group = db.query(models.StudyGroup).filter(models.StudyGroup.id == group_id).first()
+    if not group:
+        raise HTTPException(status_code=404, detail="Group not found")
+    member = db.query(models.GroupMember).filter(
+        models.GroupMember.group_id == group_id,
+        models.GroupMember.user_id == current_user.id
+    ).first()
+    if not member:
+        raise HTTPException(status_code=403, detail="Not a member of this group")
+    goal = data.get("goal_minutes")
+    if not goal or not isinstance(goal, int) or goal < 1:
+        raise HTTPException(status_code=400, detail="Invalid goal")
+    group.goal_minutes = goal
+    db.commit()
+    return {"message": "Goal updated", "goal_minutes": goal}
+
 @app.post("/groups/{group_id}/join")
 def join_group(
     group_id: int,
