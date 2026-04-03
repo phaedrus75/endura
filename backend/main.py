@@ -19,6 +19,7 @@ from auth import (
     get_current_user, ACCESS_TOKEN_EXPIRE_MINUTES
 )
 import os
+import html
 import json as _json
 import logging
 
@@ -50,8 +51,8 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=_allowed_origins,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type"],
 )
 
 @app.get("/")
@@ -393,7 +394,12 @@ def verify_email(request: Request, body: VerifyEmailRequest, db: Session = Depen
     if not user or not user.verification_code:
         raise HTTPException(status_code=400, detail="Invalid or expired verification code")
 
+    if (user.verification_attempts or 0) >= 5:
+        raise HTTPException(status_code=429, detail="Too many attempts. Please request a new code.")
+
     if user.verification_code != body.code:
+        user.verification_attempts = (user.verification_attempts or 0) + 1
+        db.commit()
         raise HTTPException(status_code=400, detail="Invalid verification code")
 
     if user.verification_code_expires and user.verification_code_expires < datetime.utcnow():
@@ -405,6 +411,7 @@ def verify_email(request: Request, body: VerifyEmailRequest, db: Session = Depen
     user.email_verified = True
     user.verification_code = None
     user.verification_code_expires = None
+    user.verification_attempts = 0
     db.commit()
 
     access_token = create_access_token(
@@ -428,6 +435,7 @@ def resend_verification(request: Request, body: ResendVerificationRequest, db: S
     code = f"{secrets.randbelow(1000000):06d}"
     user.verification_code = code
     user.verification_code_expires = datetime.utcnow() + timedelta(minutes=15)
+    user.verification_attempts = 0
     db.commit()
 
     sent = _send_verification_email(user.email, code)
@@ -468,7 +476,7 @@ def _send_verification_email(email: str, code: str) -> bool:
             logger.error(f"Failed to send verification email to {email}: {e}", exc_info=True)
             return False
     else:
-        logger.warning(f"RESEND_API_KEY not set — verification code for {email}: {code}")
+        logger.warning("RESEND_API_KEY not set — verification email could not be sent")
         return False
 
 
@@ -478,6 +486,9 @@ def login(request: Request, user: schemas.UserLogin, db: Session = Depends(get_d
     db_user = crud.get_user_by_email(db, user.email)
     if not db_user or not verify_password(user.password, db_user.hashed_password):
         raise HTTPException(status_code=401, detail="Invalid credentials")
+    
+    if not db_user.email_verified:
+        raise HTTPException(status_code=403, detail="Please verify your email before logging in")
     
     access_token = create_access_token(
         data={"sub": db_user.email, "tv": db_user.token_version or 0},
@@ -489,6 +500,13 @@ def login(request: Request, user: schemas.UserLogin, db: Session = Depends(get_d
 @app.get("/auth/me", response_model=schemas.UserResponse)
 def get_me(current_user: models.User = Depends(get_current_user)):
     return current_user
+
+
+@app.post("/auth/logout")
+def logout(current_user: models.User = Depends(get_current_user), db: Session = Depends(get_db)):
+    current_user.token_version = (current_user.token_version or 0) + 1
+    db.commit()
+    return {"message": "Logged out"}
 
 
 _IMAGE_MAGIC = {
@@ -602,6 +620,7 @@ def forgot_password(request: Request, body: ForgotPasswordRequest, db: Session =
     code = f"{secrets.randbelow(1000000):06d}"
     user.reset_token = code
     user.reset_token_expires = datetime.utcnow() + timedelta(minutes=15)
+    user.reset_attempts = 0
     db.commit()
 
     resend_key = os.getenv("RESEND_API_KEY")
@@ -633,7 +652,7 @@ def forgot_password(request: Request, body: ForgotPasswordRequest, db: Session =
         except Exception as e:
             logger.error(f"Failed to send reset email via Resend: {e}")
     else:
-        logger.warning(f"RESEND_API_KEY not set — reset code for {body.email}: {code}")
+        logger.warning("RESEND_API_KEY not set — reset email could not be sent")
 
     return {"message": "If that email exists, a reset code has been sent."}
 
@@ -645,7 +664,12 @@ def reset_password(request: Request, body: ResetPasswordRequest, db: Session = D
     if not user or not user.reset_token:
         raise HTTPException(status_code=400, detail="Invalid or expired reset code")
 
+    if (user.reset_attempts or 0) >= 5:
+        raise HTTPException(status_code=429, detail="Too many attempts. Please request a new code.")
+
     if user.reset_token != body.code:
+        user.reset_attempts = (user.reset_attempts or 0) + 1
+        db.commit()
         raise HTTPException(status_code=400, detail="Invalid or expired reset code")
 
     if user.reset_token_expires and user.reset_token_expires < datetime.utcnow():
@@ -664,6 +688,7 @@ def reset_password(request: Request, body: ResetPasswordRequest, db: Session = D
     user.hashed_password = get_password_hash(body.new_password)
     user.reset_token = None
     user.reset_token_expires = None
+    user.reset_attempts = 0
     user.token_version = (user.token_version or 0) + 1
     db.commit()
 
@@ -1112,7 +1137,9 @@ def create_tip(
     current_user: models.User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    return crud.create_study_tip(db, current_user.id, tip.content, tip.category)
+    content = html.escape(tip.content)
+    category = html.escape(tip.category)
+    return crud.create_study_tip(db, current_user.id, content, category)
 
 
 # ============ Social Endpoints ============
@@ -1244,11 +1271,12 @@ def remove_group_member(
 
 @app.get("/leaderboard", response_model=List[schemas.LeaderboardEntry])
 def get_leaderboard(
+    period: str = "all_time",
     current_user: models.User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     try:
-        return crud.get_leaderboard(db, current_user.id)
+        return crud.get_leaderboard(db, current_user.id, period=period)
     except Exception as e:
         logger.error(f"Leaderboard error for user {current_user.id}: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to load leaderboard")
@@ -1256,18 +1284,20 @@ def get_leaderboard(
 
 @app.get("/leaderboard/global", response_model=List[schemas.LeaderboardEntry])
 def get_global_leaderboard(
+    period: str = "all_time",
     current_user: models.User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    return crud.get_global_leaderboard(db)
+    return crud.get_global_leaderboard(db, period=period)
 
 
 @app.get("/leaderboard/school", response_model=List[schemas.LeaderboardEntry])
 def get_school_leaderboard(
+    period: str = "all_time",
     current_user: models.User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    return crud.get_school_leaderboard(db, current_user)
+    return crud.get_school_leaderboard(db, current_user, period=period)
 
 
 # ============ Stats Endpoints ============
@@ -1366,7 +1396,8 @@ def send_group_message(
     current_user: models.User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    result = crud.send_group_message(db, current_user.id, group_id, data.content)
+    content = html.escape(data.content)
+    result = crud.send_group_message(db, current_user.id, group_id, content)
     if not result:
         raise HTTPException(status_code=403, detail="Not a member of this group")
     return result
@@ -1511,6 +1542,7 @@ def send_tip_to_friend(
 
 # ============ Every.org Donation Webhook ============
 
+_last_webhook_payloads = []
 WEBHOOK_SECRET = os.getenv("EVERY_ORG_WEBHOOK_SECRET", "")
 
 @app.post("/webhook/every-org")
@@ -1726,7 +1758,7 @@ def get_donation_leaderboard(
         leaderboard.append({
             "rank": rank,
             "user_id": user.id,
-            "username": user.username or user.email.split("@")[0],
+            "username": user.username or f"User {user.id}",
             "total_donated": float(row.total),
             "donation_count": int(row.count),
             "is_current_user": user.id == current_user.id,
@@ -1951,7 +1983,8 @@ def admin_users(
             (models.User.username.ilike(pattern)) | (models.User.email.ilike(pattern))
         )
 
-    sort_col = getattr(models.User, sort, models.User.created_at)
+    ALLOWED_SORT_COLS = {"created_at", "username", "total_study_minutes", "current_streak", "last_study_date"}
+    sort_col = getattr(models.User, sort, models.User.created_at) if sort in ALLOWED_SORT_COLS else models.User.created_at
     q = q.order_by(sort_col.desc() if order == "desc" else sort_col.asc())
     total = q.count()
     users = q.offset(offset).limit(limit).all()
@@ -2314,12 +2347,6 @@ async def admin_upload_image(
 def serve_upload(public_id: str, db: Session = Depends(get_db)):
     upload = db.query(models.Upload).filter(models.Upload.public_id == public_id).first()
     if not upload:
-        try:
-            int_id = int(public_id)
-            upload = db.query(models.Upload).filter(models.Upload.id == int_id).first()
-        except (ValueError, TypeError):
-            pass
-    if not upload:
         raise HTTPException(404, "Not found")
     return Response(
         content=upload.data,
@@ -2373,9 +2400,9 @@ class TipUpdate(BaseModel):
 @app.post("/admin/tips")
 def admin_create_tip(body: TipCreate, db: Session = Depends(get_db), _=Depends(verify_admin)):
     tip = models.StudyTip(
-        content=body.content,
-        category=body.category,
-        animal_name=body.animal_name,
+        content=html.escape(body.content),
+        category=html.escape(body.category),
+        animal_name=html.escape(body.animal_name) if body.animal_name else None,
     )
     db.add(tip)
     db.commit()

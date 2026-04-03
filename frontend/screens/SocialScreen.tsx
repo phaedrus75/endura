@@ -149,41 +149,10 @@ export default function SocialScreen() {
 
   // Leaderboards
   const [leaderboardTab, setLeaderboardTab] = useState<'all' | 'friends' | 'school'>('all');
+  const [leaderboardPeriod, setLeaderboardPeriod] = useState<'all_time' | 'week'>('all_time');
   const [globalLeaderboard, setGlobalLeaderboard] = useState<LeaderboardEntry[]>([]);
   const [friendsLeaderboard, setFriendsLeaderboard] = useState<LeaderboardEntry[]>([]);
   const [schoolLeaderboard, setSchoolLeaderboard] = useState<LeaderboardEntry[]>([]);
-
-  const [hasSeenTips, setHasSeenTips] = useState(true);
-  const tipsPulse = useRef(new Animated.Value(1)).current;
-
-  useEffect(() => {
-    const checkTips = async () => {
-      const seen = await AsyncStorage.getItem(`hasSeenTips_${user?.id || 'anon'}`);
-      setHasSeenTips(seen === 'true');
-    };
-    checkTips();
-  }, [user?.id]);
-
-  useEffect(() => {
-    if (!hasSeenTips) {
-      const loop = Animated.loop(
-        Animated.sequence([
-          Animated.timing(tipsPulse, { toValue: 1.25, duration: 800, useNativeDriver: true }),
-          Animated.timing(tipsPulse, { toValue: 1, duration: 800, useNativeDriver: true }),
-        ])
-      );
-      loop.start();
-      return () => loop.stop();
-    }
-  }, [hasSeenTips]);
-
-  const handleOpenTips = async () => {
-    if (!hasSeenTips) {
-      setHasSeenTips(true);
-      await AsyncStorage.setItem(`hasSeenTips_${user?.id || 'anon'}`, 'true');
-    }
-    navigation.navigate('Tips');
-  };
 
   const loadData = useCallback(async () => {
     try {
@@ -192,9 +161,9 @@ export default function SocialScreen() {
         feedAPI.getFeed().catch(() => []),
         socialAPI.getFriends().catch(() => []),
         socialAPI.getPendingRequests().catch(() => []),
-        socialAPI.getGlobalLeaderboard().catch(() => []),
-        socialAPI.getLeaderboard().catch(() => []),
-        socialAPI.getSchoolLeaderboard().catch(() => []),
+        socialAPI.getGlobalLeaderboard(leaderboardPeriod).catch(() => []),
+        socialAPI.getLeaderboard(leaderboardPeriod).catch(() => []),
+        socialAPI.getSchoolLeaderboard(leaderboardPeriod).catch(() => []),
         socialAPI.getFriendSuggestions().catch(() => []),
       ]);
       setGroups(g);
@@ -206,9 +175,23 @@ export default function SocialScreen() {
       setSchoolLeaderboard(sl);
       setSuggestions(sg);
     } catch {}
-  }, []);
+  }, [leaderboardPeriod]);
 
   useFocusEffect(useCallback(() => { loadData(); }, [loadData]));
+
+  useEffect(() => {
+    const refreshLeaderboards = async () => {
+      const [gl, fl, sl] = await Promise.all([
+        socialAPI.getGlobalLeaderboard(leaderboardPeriod).catch(() => []),
+        socialAPI.getLeaderboard(leaderboardPeriod).catch(() => []),
+        socialAPI.getSchoolLeaderboard(leaderboardPeriod).catch(() => []),
+      ]);
+      setGlobalLeaderboard(gl);
+      setFriendsLeaderboard(fl);
+      setSchoolLeaderboard(sl);
+    };
+    refreshLeaderboards();
+  }, [leaderboardPeriod]);
 
   const onRefresh = async () => {
     setRefreshing(true);
@@ -543,6 +526,21 @@ export default function SocialScreen() {
         <View style={styles.leaderboardCard}>
           <Text style={styles.leaderboardTitle}>📊 Leaderboard</Text>
 
+          <View style={styles.periodSwatch}>
+            <TouchableOpacity
+              style={[styles.periodSwatchBtn, leaderboardPeriod === 'week' && styles.periodSwatchBtnActive]}
+              onPress={() => setLeaderboardPeriod('week')}
+            >
+              <Text style={[styles.periodSwatchText, leaderboardPeriod === 'week' && styles.periodSwatchTextActive]}>This Week</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.periodSwatchBtn, leaderboardPeriod === 'all_time' && styles.periodSwatchBtnActive]}
+              onPress={() => setLeaderboardPeriod('all_time')}
+            >
+              <Text style={[styles.periodSwatchText, leaderboardPeriod === 'all_time' && styles.periodSwatchTextActive]}>All Time</Text>
+            </TouchableOpacity>
+          </View>
+
           <View style={styles.leaderboardSwatch}>
             <TouchableOpacity
               style={[styles.leaderboardSwatchBtn, leaderboardTab === 'all' && styles.leaderboardSwatchBtnActive]}
@@ -604,7 +602,7 @@ export default function SocialScreen() {
                   </View>
                   <Text style={[styles.leaderboardName, styles.leaderboardNameSelf]} numberOfLines={1}>You</Text>
                   <Text style={styles.leaderboardStreak}>🔥 {user?.current_streak || 0}</Text>
-                  <Text style={styles.leaderboardMins}>{formatStudyTime(user?.total_study_minutes || 0)}</Text>
+                  <Text style={styles.leaderboardMins}>{formatStudyTime(activeList[userRank]?.total_study_minutes ?? user?.total_study_minutes ?? 0)}</Text>
                 </View>
               )}
             </>
@@ -784,20 +782,6 @@ export default function SocialScreen() {
             >
               <Text style={styles.addFriendButtonText}>+ Add</Text>
             </LinearGradient>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={{ width: 44, height: 44, borderRadius: 22, backgroundColor: '#FFFFFF', justifyContent: 'center', alignItems: 'center', ...shadows.small }}
-            onPress={handleOpenTips}
-          >
-            <Text style={{ fontSize: 22 }}>💡</Text>
-            {!hasSeenTips && (
-              <Animated.View style={{
-                position: 'absolute', top: 2, right: 2,
-                width: 10, height: 10, borderRadius: 5,
-                backgroundColor: '#FF6B6B', borderWidth: 1.5, borderColor: '#FFFFFF',
-                transform: [{ scale: tipsPulse }],
-              }} />
-            )}
           </TouchableOpacity>
           <TouchableOpacity
             style={{ width: 44, height: 44, borderRadius: 22, backgroundColor: '#FFFFFF', justifyContent: 'center', alignItems: 'center', overflow: 'hidden', ...shadows.small }}
@@ -1997,6 +1981,36 @@ const styles = StyleSheet.create({
     padding: spacing.md, marginBottom: spacing.md, ...shadows.small,
   },
   leaderboardTitle: { fontSize: 15, fontWeight: '700', color: colors.textPrimary, marginBottom: 10 },
+  periodSwatch: {
+    flexDirection: 'row',
+    backgroundColor: '#E8F0ED',
+    borderRadius: 10,
+    padding: 3,
+    marginBottom: 10,
+  },
+  periodSwatchBtn: {
+    flex: 1,
+    paddingVertical: 7,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  periodSwatchBtnActive: {
+    backgroundColor: '#5F8C87',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    elevation: 1,
+  },
+  periodSwatchText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: colors.textMuted,
+  },
+  periodSwatchTextActive: {
+    color: '#fff',
+    fontWeight: '700',
+  },
   leaderboardSwatch: {
     flexDirection: 'row',
     backgroundColor: '#F0F4F2',

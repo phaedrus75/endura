@@ -255,12 +255,15 @@ async function apiFetch<T>(
     });
     
     if (!response.ok) {
-      const error = await response.json().catch(() => ({ detail: 'An error occurred' }));
-      
       if (response.status === 401) {
         await SecureStore.deleteItemAsync('authToken');
       }
-      
+
+      if (response.status >= 500) {
+        throw new Error('Something went wrong. Please try again later.');
+      }
+
+      const error = await response.json().catch(() => ({ detail: 'An error occurred' }));
       const detail = Array.isArray(error.detail)
         ? error.detail.map((e: any) => e.msg || JSON.stringify(e)).join('; ')
         : error.detail || `HTTP ${response.status}`;
@@ -309,6 +312,11 @@ export const authAPI = {
   },
   
   logout: async () => {
+    try {
+      await apiFetch('/auth/logout', { method: 'POST' });
+    } catch (e) {
+      // Best-effort — clear local token even if server call fails
+    }
     await SecureStore.deleteItemAsync('authToken');
   },
 
@@ -356,7 +364,11 @@ export const authAPI = {
       method: 'POST',
       headers: { Authorization: `Bearer ${token}` },
       body: formData,
+      redirect: 'error',
     });
+    if (response.status === 401) {
+      await SecureStore.deleteItemAsync('authToken');
+    }
     if (!response.ok) throw new Error('Failed to upload profile picture');
     return response.json();
   },
@@ -470,9 +482,9 @@ export const socialAPI = {
   getFriendProfile: (friendId: number) =>
     apiFetch<FriendProfile>(`/friends/${friendId}/profile`),
 
-  getLeaderboard: () => apiFetch<LeaderboardEntry[]>('/leaderboard'),
-  getGlobalLeaderboard: () => apiFetch<LeaderboardEntry[]>('/leaderboard/global'),
-  getSchoolLeaderboard: () => apiFetch<LeaderboardEntry[]>('/leaderboard/school'),
+  getLeaderboard: (period: string = 'all_time') => apiFetch<LeaderboardEntry[]>(`/leaderboard?period=${period}`),
+  getGlobalLeaderboard: (period: string = 'all_time') => apiFetch<LeaderboardEntry[]>(`/leaderboard/global?period=${period}`),
+  getSchoolLeaderboard: (period: string = 'all_time') => apiFetch<LeaderboardEntry[]>(`/leaderboard/school?period=${period}`),
 
   getFriendSuggestions: () => apiFetch<FriendSuggestion[]>('/friends/suggestions'),
 };
@@ -557,6 +569,5 @@ export const donationsAPI = {
 };
 
 export const setApiUrl = (url: string) => {
-  // This would be used for dynamic API URL configuration
-  console.log('API URL set to:', url);
+  if (__DEV__) console.log('API URL set to:', url);
 };

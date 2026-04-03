@@ -457,17 +457,62 @@ def remove_group_member(db: Session, admin_user_id: int, group_id: int, target_u
     return True, "Member removed"
 
 
-def get_global_leaderboard(db: Session) -> List[dict]:
+def _week_start() -> datetime:
+    now = datetime.utcnow()
+    return datetime(now.year, now.month, now.day) - timedelta(days=now.weekday())
+
+
+def _weekly_minutes_map(db: Session, user_ids: List[int] | None = None):
+    """Return {user_id: total_minutes_this_week}."""
+    start = _week_start()
+    q = db.query(
+        models.StudySession.user_id,
+        func.coalesce(func.sum(models.StudySession.duration_minutes), 0),
+    ).filter(models.StudySession.started_at >= start)
+    if user_ids is not None:
+        q = q.filter(models.StudySession.user_id.in_(user_ids))
+    rows = q.group_by(models.StudySession.user_id).all()
+    return {uid: int(mins) for uid, mins in rows}
+
+
+def get_global_leaderboard(db: Session, period: str = "all_time") -> List[dict]:
+    if period == "week":
+        weekly = _weekly_minutes_map(db)
+        user_ids = list(weekly.keys())
+        if not user_ids:
+            return []
+        users_by_id = {
+            u.id: u
+            for u in db.query(models.User).filter(models.User.id.in_(user_ids)).all()
+        }
+        sorted_ids = sorted(user_ids, key=lambda uid: weekly.get(uid, 0), reverse=True)[:100]
+        leaderboard = []
+        for rank, uid in enumerate(sorted_ids, 1):
+            u = users_by_id.get(uid)
+            if not u:
+                continue
+            leaderboard.append({
+                "rank": rank,
+                "user_id": u.id,
+                "username": u.username or f"User {u.id}",
+                "total_study_minutes": weekly.get(uid, 0),
+                "current_streak": get_effective_streak(u),
+                "animals_count": 0,
+                "total_donated": 0,
+                "profile_pic_url": u.profile_pic_url,
+            })
+        return leaderboard
+
     users = db.query(models.User).order_by(
         models.User.total_study_minutes.desc()
-    ).all()
+    ).limit(100).all()
 
     leaderboard = []
     for rank, u in enumerate(users, 1):
         leaderboard.append({
             "rank": rank,
             "user_id": u.id,
-            "username": u.username or u.email.split("@")[0],
+            "username": u.username or f"User {u.id}",
             "total_study_minutes": u.total_study_minutes,
             "current_streak": get_effective_streak(u),
             "animals_count": 0,
@@ -477,22 +522,41 @@ def get_global_leaderboard(db: Session) -> List[dict]:
     return leaderboard
 
 
-def get_school_leaderboard(db: Session, current_user) -> List[dict]:
-    from sqlalchemy import func
+def get_school_leaderboard(db: Session, current_user, period: str = "all_time") -> List[dict]:
     if not current_user.school:
         return []
     school_lower = current_user.school.strip().lower()
     users = db.query(models.User).filter(
         models.User.school.isnot(None),
         func.lower(func.trim(models.User.school)) == school_lower
-    ).order_by(models.User.total_study_minutes.desc()).all()
+    ).limit(100).all()
 
+    if period == "week":
+        user_ids = [u.id for u in users]
+        weekly = _weekly_minutes_map(db, user_ids)
+        users_with_mins = [(u, weekly.get(u.id, 0)) for u in users]
+        users_with_mins.sort(key=lambda x: x[1], reverse=True)
+        leaderboard = []
+        for rank, (u, mins) in enumerate(users_with_mins, 1):
+            leaderboard.append({
+                "rank": rank,
+                "user_id": u.id,
+                "username": u.username or f"User {u.id}",
+                "total_study_minutes": mins,
+                "current_streak": get_effective_streak(u),
+                "animals_count": 0,
+                "total_donated": 0,
+                "profile_pic_url": u.profile_pic_url,
+            })
+        return leaderboard
+
+    users_sorted = sorted(users, key=lambda u: u.total_study_minutes, reverse=True)
     leaderboard = []
-    for rank, u in enumerate(users, 1):
+    for rank, u in enumerate(users_sorted, 1):
         leaderboard.append({
             "rank": rank,
             "user_id": u.id,
-            "username": u.username or u.email.split("@")[0],
+            "username": u.username or f"User {u.id}",
             "total_study_minutes": u.total_study_minutes,
             "current_streak": get_effective_streak(u),
             "animals_count": 0,
@@ -502,21 +566,28 @@ def get_school_leaderboard(db: Session, current_user) -> List[dict]:
     return leaderboard
 
 
-def get_leaderboard(db: Session, user_id: int, limit: int = 20) -> List[dict]:
+def get_leaderboard(db: Session, user_id: int, limit: int = 20, period: str = "all_time") -> List[dict]:
     friends = get_friends(db, user_id)
     friend_ids = [entry["user"].id for entry in friends] + [user_id]
-    
+
     users = db.query(models.User).filter(
         models.User.id.in_(friend_ids)
-    ).order_by(models.User.total_study_minutes.desc()).limit(limit).all()
-    
+    ).limit(limit).all()
+
+    if period == "week":
+        weekly = _weekly_minutes_map(db, friend_ids)
+        users_with_mins = [(u, weekly.get(u.id, 0)) for u in users]
+        users_with_mins.sort(key=lambda x: x[1], reverse=True)
+    else:
+        users_with_mins = [(u, u.total_study_minutes) for u in users]
+        users_with_mins.sort(key=lambda x: x[1], reverse=True)
+
     leaderboard = []
-    for rank, user in enumerate(users, 1):
+    for rank, (user, mins) in enumerate(users_with_mins, 1):
         animals_count = db.query(models.UserAnimal).filter(
             models.UserAnimal.user_id == user.id
         ).count()
 
-        from sqlalchemy import func
         total_donated = db.query(
             func.coalesce(func.sum(models.Donation.amount), 0)
         ).filter(models.Donation.user_id == user.id).scalar()
@@ -524,14 +595,14 @@ def get_leaderboard(db: Session, user_id: int, limit: int = 20) -> List[dict]:
         leaderboard.append({
             "rank": rank,
             "user_id": user.id,
-            "username": user.username or user.email.split("@")[0],
-            "total_study_minutes": user.total_study_minutes,
+            "username": user.username or f"User {user.id}",
+            "total_study_minutes": mins,
             "current_streak": get_effective_streak(user),
             "animals_count": animals_count,
             "total_donated": float(total_donated),
             "profile_pic_url": user.profile_pic_url,
         })
-    
+
     return leaderboard
 
 
