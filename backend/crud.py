@@ -1226,6 +1226,18 @@ def create_shared_egg_invite(db: Session, creator_id: int, friend_id: int, anima
     if partner_active:
         return None, "Your friend already has an active shared egg"
 
+    animal = db.query(models.Animal).filter(models.Animal.name == animal_name).first()
+    if not animal:
+        animal = models.Animal(
+            name=animal_name,
+            species=f"{animal_name} species",
+            rarity="common",
+            conservation_status="Endangered",
+            description=f"A beautiful {animal_name}",
+        )
+        db.add(animal)
+        db.flush()
+
     prev_count = db.query(models.SharedEgg).filter(
         models.SharedEgg.status == "hatched",
         ((models.SharedEgg.creator_id == creator_id) & (models.SharedEgg.partner_id == friend_id)) |

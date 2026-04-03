@@ -980,6 +980,12 @@ export default function TimerScreen() {
                     💚 Hatching {activeSharedEgg.animal_name} with {activeSharedEgg.creator.id === user?.id ? activeSharedEgg.partner.username : activeSharedEgg.creator.username}
                   </Text>
                 </View>
+              ) : activeSharedEgg && activeSharedEgg.status === 'pending' ? (
+                <View style={styles.sharedEggInline}>
+                  <Text style={styles.sharedEggInlineText}>
+                    💚 Invite sent to {activeSharedEgg.partner.username || 'friend'} — waiting for them to accept
+                  </Text>
+                </View>
               ) : !activeSharedEgg ? (
                 <TouchableOpacity style={styles.hatchWithFriendBtn} onPress={openFriendPicker}>
                   <Text style={styles.hatchWithFriendText}>💚 Hatch with a friend</Text>
@@ -1264,7 +1270,7 @@ export default function TimerScreen() {
       </Modal>
 
       {/* Shared Hatch Celebration Modal */}
-      <Modal visible={showSharedHatchModal} transparent animationType="fade">
+      <Modal visible={showSharedHatchModal} transparent animationType="fade" onRequestClose={closeSharedHatchModal}>
         <TouchableOpacity style={styles.celebrationOverlay} activeOpacity={1} onPress={closeSharedHatchModal}>
           <TouchableOpacity activeOpacity={1}>
             <ExpoLinearGradient

@@ -13,3 +13,4 @@ bcrypt==5.0.0
 httpx
 slowapi
 resend
+alembic

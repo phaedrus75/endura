@@ -25,91 +25,13 @@ import logging
 logger = logging.getLogger(__name__)
 limiter = Limiter(key_func=get_remote_address)
 
-# Create tables (with error handling for Railway)
-try:
-    Base.metadata.create_all(bind=engine)
-except Exception as e:
-    print(f"Warning: Could not create tables on startup: {e}")
-
-# Migrate: add columns that create_all won't add to existing tables
-_migrations = [
-    ("study_sessions", "subject", "ALTER TABLE study_sessions ADD COLUMN subject VARCHAR"),
-    ("feed_reactions", "seen", "ALTER TABLE feed_reactions ADD COLUMN seen BOOLEAN DEFAULT FALSE"),
-    ("study_tips", "animal_name", "ALTER TABLE study_tips ADD COLUMN animal_name VARCHAR"),
-    ("study_tips", "dislikes_count", "ALTER TABLE study_tips ADD COLUMN dislikes_count INTEGER DEFAULT 0"),
-    ("tip_views", "disliked", "ALTER TABLE tip_views ADD COLUMN disliked BOOLEAN DEFAULT FALSE"),
-    ("users", "push_token", "ALTER TABLE users ADD COLUMN push_token VARCHAR"),
-    ("users", "notification_enabled", "ALTER TABLE users ADD COLUMN notification_enabled BOOLEAN DEFAULT TRUE"),
-    ("users", "study_reminder_hour", "ALTER TABLE users ADD COLUMN study_reminder_hour INTEGER"),
-    ("users", "study_reminder_minute", "ALTER TABLE users ADD COLUMN study_reminder_minute INTEGER"),
-    ("donations", "user_id", "ALTER TABLE donations ADD COLUMN user_id INTEGER REFERENCES users(id)"),
-    ("donations", "partner_donation_id", "ALTER TABLE donations ADD COLUMN partner_donation_id VARCHAR"),
-    ("users", "reset_token", "ALTER TABLE users ADD COLUMN reset_token VARCHAR"),
-    ("users", "reset_token_expires", "ALTER TABLE users ADD COLUMN reset_token_expires TIMESTAMP"),
-    ("users", "profile_pic_url", "ALTER TABLE users ADD COLUMN profile_pic_url VARCHAR"),
-    ("users", "school", "ALTER TABLE users ADD COLUMN school VARCHAR"),
-    ("users", "city", "ALTER TABLE users ADD COLUMN city VARCHAR"),
-    ("users", "country", "ALTER TABLE users ADD COLUMN country VARCHAR"),
-    ("users", "email_verified", "ALTER TABLE users ADD COLUMN email_verified BOOLEAN DEFAULT FALSE"),
-    ("users", "verification_code", "ALTER TABLE users ADD COLUMN verification_code VARCHAR"),
-    ("users", "verification_code_expires", "ALTER TABLE users ADD COLUMN verification_code_expires TIMESTAMP"),
-    ("users", "token_version", "ALTER TABLE users ADD COLUMN token_version INTEGER DEFAULT 0"),
-    ("uploads", "public_id", "ALTER TABLE uploads ADD COLUMN public_id VARCHAR"),
-    ("user_animals", "shared_with_user_id", "ALTER TABLE user_animals ADD COLUMN shared_with_user_id INTEGER REFERENCES users(id)"),
-    ("user_animals", "shared_egg_id", "ALTER TABLE user_animals ADD COLUMN shared_egg_id INTEGER REFERENCES shared_eggs(id)"),
-]
-try:
-    with engine.connect() as conn:
-        for table, col, sql in _migrations:
-            result = conn.execute(
-                text("SELECT column_name FROM information_schema.columns "
-                     "WHERE table_name=:tbl AND column_name=:col"),
-                {"tbl": table, "col": col}
-            )
-            if result.fetchone() is None:
-                conn.execute(text(sql))
-                conn.commit()
-    # Backfill: mark pre-existing users (who have a username) as verified
+# Schema migrations are handled by Alembic (run `alembic upgrade head` before starting).
+# For local dev without Alembic, create_all bootstraps a fresh SQLite DB from models.
+if SQLALCHEMY_DATABASE_URL.startswith("sqlite"):
     try:
-        conn.execute(text(
-            "UPDATE users SET email_verified = TRUE "
-            "WHERE username IS NOT NULL AND (email_verified IS NULL OR email_verified = FALSE)"
-        ))
-        conn.commit()
-    except Exception:
-        pass
-    # Backfill uploads with missing public_id
-    try:
-        from uuid import uuid4 as _uuid4
-        result = conn.execute(text("SELECT id FROM uploads WHERE public_id IS NULL"))
-        rows = result.fetchall()
-        for row in rows:
-            conn.execute(
-                text("UPDATE uploads SET public_id = :pid WHERE id = :uid"),
-                {"pid": str(_uuid4()), "uid": row[0]}
-            )
-        if rows:
-            conn.commit()
-    except Exception:
-        pass
-    # Add unique constraint on friendships if not exists
-    try:
-        conn.execute(text(
-            "ALTER TABLE friendships ADD CONSTRAINT uq_friendship UNIQUE (user_id, friend_id)"
-        ))
-        conn.commit()
-    except Exception:
-        pass
-    # Add unique constraint on group_members if not exists
-    try:
-        conn.execute(text(
-            "ALTER TABLE group_members ADD CONSTRAINT uq_group_member UNIQUE (group_id, user_id)"
-        ))
-        conn.commit()
-    except Exception:
-        pass
-except Exception:
-    pass
+        Base.metadata.create_all(bind=engine)
+    except Exception as e:
+        print(f"Warning: Could not create tables on startup: {e}")
 
 app = FastAPI(title="Endura API", description="Gamified Study App Backend")
 app.state.limiter = limiter
@@ -654,7 +576,6 @@ def delete_account(
     db.query(models.Friendship).filter(
         (models.Friendship.user_id == user_id) | (models.Friendship.friend_id == user_id)
     ).delete(synchronize_session=False)
-    db.query(models.Upload).filter(models.Upload.user_id == user_id).delete()
     db.query(models.Egg).filter(models.Egg.user_id == user_id).delete()
     db.query(models.StudyTip).filter(models.StudyTip.user_id == user_id).delete()
     db.query(models.User).filter(models.User.id == user_id).delete()
