@@ -32,23 +32,21 @@ def upgrade() -> None:
         sa.Column('hatched_at', sa.DateTime(), nullable=True),
     )
 
-    with op.batch_alter_table('user_animals') as batch_op:
-        batch_op.add_column(
-            sa.Column('shared_with_user_id', sa.Integer(), nullable=True))
-        batch_op.add_column(
-            sa.Column('shared_egg_id', sa.Integer(), nullable=True))
-        batch_op.create_foreign_key(
-            'fk_user_animals_shared_with', 'users',
-            ['shared_with_user_id'], ['id'])
-        batch_op.create_foreign_key(
-            'fk_user_animals_shared_egg', 'shared_eggs',
-            ['shared_egg_id'], ['id'])
+    op.add_column('user_animals',
+        sa.Column('shared_with_user_id', sa.Integer(), nullable=True))
+    op.add_column('user_animals',
+        sa.Column('shared_egg_id', sa.Integer(), nullable=True))
+    op.create_foreign_key(
+        'fk_user_animals_shared_with', 'user_animals', 'users',
+        ['shared_with_user_id'], ['id'])
+    op.create_foreign_key(
+        'fk_user_animals_shared_egg', 'user_animals', 'shared_eggs',
+        ['shared_egg_id'], ['id'])
 
 
 def downgrade() -> None:
-    with op.batch_alter_table('user_animals') as batch_op:
-        batch_op.drop_constraint('fk_user_animals_shared_egg', type_='foreignkey')
-        batch_op.drop_constraint('fk_user_animals_shared_with', type_='foreignkey')
-        batch_op.drop_column('shared_egg_id')
-        batch_op.drop_column('shared_with_user_id')
+    op.drop_constraint('fk_user_animals_shared_egg', 'user_animals', type_='foreignkey')
+    op.drop_constraint('fk_user_animals_shared_with', 'user_animals', type_='foreignkey')
+    op.drop_column('user_animals', 'shared_egg_id')
+    op.drop_column('user_animals', 'shared_with_user_id')
     op.drop_table('shared_eggs')
