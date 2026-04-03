@@ -287,17 +287,36 @@ export default function TimerScreen() {
     loadUnlockedAnimals();
   }, [user?.id]);
 
-  // Load active shared egg on focus
+  // Load active shared egg on focus; auto-setup timer for partner who just accepted
+  const hasAutoSetup = useRef(false);
   useFocusEffect(
     useCallback(() => {
       const load = async () => {
         try {
           const egg = await sharedEggAPI.getActive();
           setActiveSharedEgg(egg);
+
+          if (
+            egg &&
+            egg.status === 'active' &&
+            egg.partner.id === user?.id &&
+            egg.partner_minutes === 0 &&
+            !isRunning &&
+            !hasAutoSetup.current
+          ) {
+            hasAutoSetup.current = true;
+            const match = ENDANGERED_ANIMALS.find(a => a.name === egg.animal_name);
+            if (match) {
+              setSelectedAnimalId(match.id);
+            }
+            setSelectedMinutes(egg.minutes_required);
+            setTimeLeft(egg.minutes_required * TIME_MULTIPLIER);
+            setTimeout(() => setShowSubjectModal(true), 400);
+          }
         } catch (_) {}
       };
       load();
-    }, [])
+    }, [user?.id, isRunning])
   );
 
   // Reload subjects every time the Timer tab is focused
