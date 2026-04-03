@@ -1035,7 +1035,7 @@ export default function TimerScreen() {
                   end={{ x: 1, y: 0 }}
                   style={styles.badgesModalPrimaryBtn}
                 >
-                  <Text style={styles.celebrationButtonText}>Awesome!</Text>
+                  <Text style={[styles.celebrationButtonText, { color: '#fff' }]}>Awesome!</Text>
                 </ExpoLinearGradient>
               </TouchableOpacity>
               <TouchableOpacity
