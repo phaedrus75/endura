@@ -13,7 +13,6 @@ import { NotificationProvider } from './contexts/NotificationContext';
 import { colors, shadows, spacing } from './theme/colors';
 import { PostHogProvider } from 'posthog-react-native';
 import { posthogClient, identifyUser, resetUser, Analytics } from './services/analytics';
-import { registerForPushNotifications } from './services/pushNotifications';
 
 // Screens
 import AuthScreen from './screens/AuthScreen';
@@ -177,7 +176,6 @@ function AppNavigator() {
         current_streak: user.current_streak,
       });
       Analytics.appOpened();
-      registerForPushNotifications(user.id).catch(() => {});
     } else {
       resetUser();
     }
