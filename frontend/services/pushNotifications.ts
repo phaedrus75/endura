@@ -16,7 +16,7 @@ Notifications.setNotificationHandler({
 
 export async function registerForPushNotifications(userId: number): Promise<string | null> {
   if (!Device.isDevice) {
-    console.log('Push notifications require a physical device');
+    if (__DEV__) console.log('Push notifications require a physical device');
     return null;
   }
 
@@ -29,7 +29,7 @@ export async function registerForPushNotifications(userId: number): Promise<stri
   }
 
   if (finalStatus !== 'granted') {
-    console.log('Push notification permission not granted');
+    if (__DEV__) console.log('Push notification permission not granted');
     return null;
   }
 
@@ -46,7 +46,7 @@ export async function registerForPushNotifications(userId: number): Promise<stri
     ?? Constants.easConfig?.projectId;
 
   if (!projectId) {
-    console.log('No EAS project ID found');
+    if (__DEV__) console.log('No EAS project ID found');
     return null;
   }
 
@@ -55,7 +55,7 @@ export async function registerForPushNotifications(userId: number): Promise<stri
     await savePushToken(userId, token);
     return token;
   } catch (error) {
-    console.error('Error getting push token:', error);
+    if (__DEV__) console.error('Error getting push token:', error);
     return null;
   }
 }

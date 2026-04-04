@@ -171,6 +171,7 @@ export default function SocialScreen() {
         socialAPI.getSchoolLeaderboard(leaderboardPeriod).catch(() => []),
         socialAPI.getFriendSuggestions().catch(() => []),
       ]);
+      const prevGroups = groups;
       setGroups(g);
       setFeed(f);
       setFriends(fr);
@@ -179,15 +180,18 @@ export default function SocialScreen() {
       setFriendsLeaderboard(fl);
       setSchoolLeaderboard(sl);
       setSuggestions(sg);
-      const completed = (g as StudyGroup[]).find(
-        grp => grp.goal_met && !celebratedGroupIds.has(grp.id)
-      );
-      if (completed) {
-        setCelebratedGroupIds(prev => new Set([...prev, completed.id]));
-        setShowGoalCongrats(completed);
+      const newlyCompleted = (g as StudyGroup[]).find(grp => {
+        if (!grp.goal_met) return false;
+        if (celebratedGroupIds.has(grp.id)) return false;
+        const prev = prevGroups.find(p => p.id === grp.id);
+        return prev && !prev.goal_met;
+      });
+      if (newlyCompleted) {
+        setCelebratedGroupIds(prev => new Set([...prev, newlyCompleted.id]));
+        setShowGoalCongrats(newlyCompleted);
       }
     } catch {}
-  }, [leaderboardPeriod, celebratedGroupIds]);
+  }, [leaderboardPeriod, celebratedGroupIds, groups]);
 
   useFocusEffect(useCallback(() => { loadData(); }, [loadData]));
 
@@ -465,13 +469,22 @@ export default function SocialScreen() {
 
   const handleUpdateGoal = async () => {
     if (!showEditGoal) return;
+    const groupId = showEditGoal.id;
     const mins = parseInt(editGoalValue);
     if (!mins || mins < 1) { Alert.alert('Invalid', 'Please enter a valid number of minutes.'); return; }
     try {
-      await groupsAPI.updateGoal(showEditGoal.id, mins);
+      await groupsAPI.updateGoal(groupId, mins);
       setShowEditGoal(null);
       setEditGoalValue('');
-      loadData();
+      const freshGroups = await groupsAPI.getAll().catch(() => []);
+      setGroups(freshGroups);
+      const completed = freshGroups.find(
+        (grp: StudyGroup) => grp.id === groupId && grp.goal_met
+      );
+      if (completed) {
+        setCelebratedGroupIds(prev => new Set([...prev, completed.id]));
+        setTimeout(() => setShowGoalCongrats(completed), 400);
+      }
     } catch (e: any) {
       Alert.alert('Error', e.message || 'Could not update goal');
     }
@@ -1406,39 +1419,48 @@ export default function SocialScreen() {
 
       {/* Goal Reached Congratulations Modal */}
       <Modal visible={!!showGoalCongrats} transparent animationType="fade">
-        <View style={styles.modalOverlay}>
+        <TouchableOpacity style={styles.goalCongratsOverlay} activeOpacity={1} onPress={() => setShowGoalCongrats(null)}>
+          <TouchableOpacity activeOpacity={1}>
+            <LinearGradient
+              colors={['#8FC4BC', '#4A6A7A']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 0, y: 1 }}
+              style={styles.goalCongratsCard}
+            >
+              <Text style={styles.goalCongratsTitle}>Congratulations! 🎉</Text>
+              <Text style={styles.goalCongratsSubtitle}>Your group hit the goal!</Text>
+
+              <View style={styles.goalCongratsIconWrap}>
+                <Text style={{ fontSize: 56 }}>🎯</Text>
+              </View>
+
+              <Text style={styles.goalCongratsGroupName}>{showGoalCongrats?.name}</Text>
+
+              <View style={styles.goalCongratsStatsRow}>
+                <Text style={styles.goalCongratsStatsEmoji}>⏱️</Text>
+                <Text style={styles.goalCongratsStatsText}>
+                  {showGoalCongrats ? `${showGoalCongrats.goal_minutes} minutes` : ''} of combined study completed
+                </Text>
+              </View>
+
+              <Text style={styles.goalCongratsMessage}>
+                Amazing teamwork! Set a new goal and keep the momentum going!
+              </Text>
+
+              <View style={styles.goalCongratsButtons}>
+                <TouchableOpacity
+                  style={styles.goalCongratsButton}
+                  onPress={() => setShowGoalCongrats(null)}
+                >
+                  <Text style={styles.goalCongratsButtonText}>Awesome!</Text>
+                </TouchableOpacity>
+              </View>
+            </LinearGradient>
+          </TouchableOpacity>
           {showGoalCongrats && (
             <ConfettiCannon count={120} origin={{ x: SCREEN_WIDTH / 2, y: -20 }} fadeOut autoStart />
           )}
-          <View style={styles.goalCongratsCard}>
-            <Text style={{ fontSize: 52, marginBottom: 8 }}>🎉</Text>
-            <Text style={styles.goalCongratsTitle}>Goal Reached!</Text>
-            <Text style={styles.goalCongratsBody}>
-              Your group "{showGoalCongrats?.name}" hit the {showGoalCongrats ? `${showGoalCongrats.goal_minutes} minute` : ''} goal!{'\n'}Amazing teamwork!
-            </Text>
-            <LinearGradient
-              colors={['#6FCF97', '#27AE60']}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 0 }}
-              style={styles.goalCongratsProgressBar}
-            >
-              <Text style={styles.goalCongratsProgressText}>100%</Text>
-            </LinearGradient>
-            <TouchableOpacity
-              onPress={() => setShowGoalCongrats(null)}
-              style={styles.goalCongratsDismiss}
-            >
-              <LinearGradient
-                colors={['#5F8C87', '#3B5466']}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 0 }}
-                style={styles.goalCongratsDismissGradient}
-              >
-                <Text style={styles.goalCongratsDismissText}>Awesome!</Text>
-              </LinearGradient>
-            </TouchableOpacity>
-          </View>
-        </View>
+        </TouchableOpacity>
       </Modal>
 
       {/* Friend Profile Modal */}
@@ -1837,52 +1859,94 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#5F8C87',
   },
-  goalCongratsCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 24,
-    padding: 32,
-    marginHorizontal: 28,
+  goalCongratsOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.7)',
+    justifyContent: 'center',
     alignItems: 'center',
-    ...shadows.large,
+    padding: spacing.lg,
   },
-  goalCongratsTitle: {
-    fontSize: 24,
-    fontWeight: '800',
-    color: colors.textPrimary,
-    marginBottom: 10,
-  },
-  goalCongratsBody: {
-    fontSize: 15,
-    lineHeight: 22,
-    color: colors.textSecondary,
-    textAlign: 'center',
-    marginBottom: 18,
-  },
-  goalCongratsProgressBar: {
+  goalCongratsCard: {
+    borderRadius: 28,
+    padding: 28,
+    alignItems: 'center',
     width: '100%',
-    height: 14,
-    borderRadius: 7,
+    maxWidth: 340,
+    ...shadows.large,
+    overflow: 'hidden',
+  } as any,
+  goalCongratsTitle: {
+    fontSize: 30,
+    fontWeight: '800',
+    color: '#FFFFFF',
+    textAlign: 'center',
+    marginBottom: 6,
+    letterSpacing: -0.5,
+  },
+  goalCongratsSubtitle: {
+    fontSize: 16,
+    color: 'rgba(255,255,255,0.8)',
+    textAlign: 'center',
+    marginBottom: 20,
+    fontWeight: '500',
+  },
+  goalCongratsIconWrap: {
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    backgroundColor: 'rgba(255,255,255,0.15)',
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 20,
+    marginBottom: 16,
   },
-  goalCongratsProgressText: {
-    fontSize: 10,
-    fontWeight: '800',
-    color: '#fff',
+  goalCongratsGroupName: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#FFFFFF',
+    textAlign: 'center',
+    marginBottom: 12,
   },
-  goalCongratsDismiss: {
-    width: '100%',
-  },
-  goalCongratsDismissGradient: {
-    borderRadius: 50,
-    paddingVertical: 14,
+  goalCongratsStatsRow: {
+    flexDirection: 'row',
     alignItems: 'center',
+    backgroundColor: 'rgba(255,255,255,0.15)',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 20,
+    gap: 8,
+    marginBottom: 16,
   },
-  goalCongratsDismissText: {
+  goalCongratsStatsEmoji: {
+    fontSize: 18,
+  },
+  goalCongratsStatsText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#FFFFFF',
+  },
+  goalCongratsMessage: {
+    fontSize: 14,
+    color: 'rgba(255,255,255,0.75)',
+    textAlign: 'center',
+    marginBottom: 24,
+    lineHeight: 20,
+  },
+  goalCongratsButtons: {
+    width: '100%',
+    gap: spacing.sm,
+  },
+  goalCongratsButton: {
+    paddingVertical: 16,
+    paddingHorizontal: spacing.lg,
+    borderRadius: borderRadius.full,
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    ...shadows.small,
+  },
+  goalCongratsButtonText: {
     fontSize: 16,
     fontWeight: '700',
-    color: '#fff',
+    color: '#4A6A7A',
   },
   groupMembersRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 6 },
   memberChip: {

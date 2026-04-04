@@ -36,6 +36,10 @@ class User(Base):
     email_verified = Column(Boolean, default=False)
     verification_code = Column(String, nullable=True)
     verification_code_expires = Column(DateTime, nullable=True)
+    verification_attempts = Column(Integer, default=0)
+
+    # Password reset brute-force protection
+    reset_attempts = Column(Integer, default=0)
 
     # Profile picture URL (stored in uploads table)
     profile_pic_url = Column(String, nullable=True)

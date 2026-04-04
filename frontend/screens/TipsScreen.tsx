@@ -186,7 +186,7 @@ export default function TipsScreen() {
         }
         if (seenRaw) seenTipIdsRef.current = new Set(JSON.parse(seenRaw));
       } catch {
-        console.log('Failed to load saved/seen tips');
+        if (__DEV__) console.log('Failed to load saved/seen tips');
       }
     };
     load();
@@ -211,7 +211,7 @@ export default function TipsScreen() {
       });
       setTips(sorted);
     } catch (error) {
-      console.error('Failed to load tips:', error);
+      if (__DEV__) console.error('Failed to load tips:', error);
     }
   }, []);
 
@@ -276,7 +276,7 @@ export default function TipsScreen() {
         } : t
       ));
     } catch (error) {
-      console.error('Vote failed:', error);
+      if (__DEV__) console.error('Vote failed:', error);
     }
   }, []);
 

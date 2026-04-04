@@ -87,7 +87,7 @@ export default function BadgesScreen() {
       const data = await badgesAPI.getBadges();
       setBadges(data);
     } catch (e) {
-      console.warn('Failed to load badges:', e);
+      if (__DEV__) console.warn('Failed to load badges:', e);
     }
   }, []);
 

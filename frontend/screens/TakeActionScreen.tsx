@@ -23,7 +23,6 @@ import { animalImages, getAnimalImage } from '../assets/animals';
 import { API_URL, donationsAPI } from '../services/api';
 
 const EVERY_ORG_WWF_BASE = 'https://www.every.org/wwf';
-const EVERY_ORG_WEBHOOK_TOKEN = '9f29c612e6f8';
 
 interface CommunityStats {
   total_raised: number;
@@ -197,7 +196,7 @@ export default function TakeActionScreen() {
 
   const handleDonate = async () => {
     const donationId = user?.id ? `endura-u${user.id}-${Date.now()}` : `endura-${Date.now()}`;
-    const donateUrl = `${EVERY_ORG_WWF_BASE}?amount=${selectedAmount}&frequency=ONCE&method=pay&webhook_token=${EVERY_ORG_WEBHOOK_TOKEN}&partner_donation_id=${donationId}#donate`;
+    const donateUrl = `${EVERY_ORG_WWF_BASE}?amount=${selectedAmount}&frequency=ONCE&method=pay&partner_donation_id=${donationId}#donate`;
     try {
       await WebBrowser.openBrowserAsync(donateUrl, {
         presentationStyle: WebBrowser.WebBrowserPresentationStyle.FORM_SHEET,

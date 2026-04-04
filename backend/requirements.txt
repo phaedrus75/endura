@@ -1,8 +1,7 @@
 fastapi==0.128.0
 uvicorn==0.40.0
 sqlalchemy==2.0.45
-python-jose[cryptography]==3.4.0
-passlib[bcrypt]==1.7.4
+PyJWT[crypto]==2.9.0
 python-dotenv==1.2.1
 pydantic==2.12.5
 python-multipart==0.0.20
@@ -10,7 +9,7 @@ httptools==0.7.1
 email-validator==2.3.0
 psycopg2-binary==2.9.9
 bcrypt==5.0.0
-httpx
-slowapi
-resend
-alembic
+httpx==0.28.1
+slowapi==0.1.9
+resend==2.27.0
+alembic==1.18.4

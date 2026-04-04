@@ -13,7 +13,6 @@ import {
   Image,
   KeyboardAvoidingView,
   Platform,
-  Animated,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -66,7 +65,7 @@ const shadows = {
     elevation: 8,
   },
 };
-import { animalsAPI, tasksAPI, statsAPI, badgesAPI, Egg, Task, UserStats, UserAnimal, BadgeResponse } from '../services/api';
+import { animalsAPI, tasksAPI, statsAPI, Egg, Task, UserStats, UserAnimal } from '../services/api';
 import { animalImages, getAnimalImage } from '../assets/animals';
 
 const { width, height } = Dimensions.get('window');
@@ -92,7 +91,7 @@ const EggInNest = () => (
         source={require('../assets/egg-animation.json')}
         autoPlay
         loop
-        style={{ width: 270, height: 270 }}
+        style={{ width: 230, height: 230 }}
       />
     </View>
     <Text style={styles.nestEmoji}>🪹</Text>
@@ -164,48 +163,12 @@ export default function HomeScreen() {
   const [hatchedAnimal, setHatchedAnimal] = useState<any>(null);
   const [showAddTask, setShowAddTask] = useState(false);
   const [showCompleted, setShowCompleted] = useState(false);
-  const [showStreakModal, setShowStreakModal] = useState(false);
-  const [showEcoModal, setShowEcoModal] = useState(false);
-  const [showBadgesModal, setShowBadgesModal] = useState(false);
-  const [showStudyTimeModal, setShowStudyTimeModal] = useState(false);
-  const [badges, setBadges] = useState<BadgeResponse[]>([]);
   const [subjects, setSubjects] = useState<string[]>(['Math', 'Science', 'English', 'History']);
   const [showAddSubject, setShowAddSubject] = useState(false);
   const [newTaskDueDate, setNewTaskDueDate] = useState<Date | null>(null);
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [newSubjectName, setNewSubjectName] = useState('');
-  const [hasSeenTips, setHasSeenTips] = useState(true);
-  const tipsPulse = useRef(new Animated.Value(1)).current;
   const confettiRef = useRef<any>(null);
-
-  useEffect(() => {
-    const checkTips = async () => {
-      const seen = await AsyncStorage.getItem(`hasSeenTips_${user?.id || 'anon'}`);
-      setHasSeenTips(seen === 'true');
-    };
-    checkTips();
-  }, [user?.id]);
-
-  useEffect(() => {
-    if (!hasSeenTips) {
-      const loop = Animated.loop(
-        Animated.sequence([
-          Animated.timing(tipsPulse, { toValue: 1.25, duration: 800, useNativeDriver: true }),
-          Animated.timing(tipsPulse, { toValue: 1, duration: 800, useNativeDriver: true }),
-        ])
-      );
-      loop.start();
-      return () => loop.stop();
-    }
-  }, [hasSeenTips]);
-
-  const handleOpenTips = async () => {
-    if (!hasSeenTips) {
-      setHasSeenTips(true);
-      await AsyncStorage.setItem(`hasSeenTips_${user?.id || 'anon'}`, 'true');
-    }
-    navigation.navigate('Tips');
-  };
 
   // Load subjects from storage, merging with backend study data
   useEffect(() => {
@@ -216,7 +179,7 @@ export default function HomeScreen() {
           setSubjects(JSON.parse(stored));
         }
       } catch (e) {
-        console.log('Failed to load subjects');
+        if (__DEV__) console.log('Failed to load subjects');
       }
     };
     loadSubjects();
@@ -227,7 +190,7 @@ export default function HomeScreen() {
       await AsyncStorage.setItem(`customSubjects_${user?.id || 'anon'}`, JSON.stringify(newSubjects));
       setSubjects(newSubjects);
     } catch (e) {
-      console.log('Failed to save subjects');
+      if (__DEV__) console.log('Failed to save subjects');
     }
   };
 
@@ -266,19 +229,17 @@ export default function HomeScreen() {
 
   const loadData = async () => {
     try {
-      const [eggData, tasksData, statsData, animalsData, badgesData] = await Promise.all([
+      const [eggData, tasksData, statsData, animalsData] = await Promise.all([
         animalsAPI.getEgg(),
         tasksAPI.getTasks(true),
         statsAPI.getStats(),
         animalsAPI.getMyAnimals().catch(() => []),
-        badgesAPI.getBadges().catch(() => []),
       ]);
       
       setEgg(eggData);
       setTasks(tasksData);
       setStats(statsData);
       setRecentAnimals(animalsData.slice(0, 3));
-      setBadges(badgesData);
 
       if (statsData?.study_minutes_by_subject) {
         const backendSubjects = Object.keys(statsData.study_minutes_by_subject);
@@ -300,7 +261,7 @@ export default function HomeScreen() {
         });
       }
     } catch (error) {
-      console.error('Failed to load data:', error);
+      if (__DEV__) console.error('Failed to load data:', error);
     }
   };
 
@@ -419,86 +380,61 @@ export default function HomeScreen() {
       >
         {/* Hero Card — header, chips, egg & CTA */}
         <View style={styles.heroCard}>
-          {/* Header */}
-          <View style={styles.headerSection}>
-            <View style={{ flex: 1, marginRight: 10 }}>
-              <Text style={styles.greeting} numberOfLines={1}>Hello, {user?.username || 'Friend'}!</Text>
-            </View>
-            <View style={{ flexDirection: 'row', gap: 8 }}>
-              <TouchableOpacity 
-                style={styles.profileButton}
-                onPress={handleOpenTips}
-              >
-                <Text style={styles.profileButtonEmoji}>💡</Text>
-                {!hasSeenTips && (
-                  <Animated.View style={[styles.tipsDot, { transform: [{ scale: tipsPulse }] }]} />
-                )}
-              </TouchableOpacity>
-              <TouchableOpacity 
-                style={styles.profileButton}
-                onPress={() => navigation.navigate('Profile')}
-              >
-                {profilePic ? (
-                  <Image source={{ uri: profilePic }} style={styles.profileButtonImage} />
-                ) : (
-                  <Text style={styles.profileButtonEmoji}>👤</Text>
-                )}
-              </TouchableOpacity>
-            </View>
+          {/* Profile pic — top right corner */}
+          <TouchableOpacity 
+            style={styles.profileButton}
+            onPress={() => navigation.navigate('Profile')}
+          >
+            {profilePic ? (
+              <Image source={{ uri: profilePic }} style={styles.profileButtonImage} />
+            ) : (
+              <Text style={styles.profileButtonEmoji}>👤</Text>
+            )}
+          </TouchableOpacity>
+
+          {/* Brand */}
+          <View style={styles.brandRow}>
+            <Image source={require('../assets/icon.png')} style={styles.brandLogo} />
+            <Text style={styles.brandName}>endura</Text>
           </View>
 
-          {/* User Stats Pills */}
+          {/* Greeting */}
+          <View style={styles.headerSection}>
+            <Text style={styles.greeting} numberOfLines={1}>Hello, {user?.username || 'Friend'}!</Text>
+          </View>
+
+          {/* Stats Chips */}
           <View style={styles.statsPills}>
-            <TouchableOpacity style={styles.statPillWrap} onPress={() => setShowStreakModal(true)}>
-              <LinearGradient
-                colors={['#FFFFFF', '#D0E2D5']}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 1 }}
-                style={styles.statPillGradient}
-              >
+            <View style={styles.statPillCol}>
+              <View style={styles.statPillGlass}>
                 <Text style={styles.statPillIcon}>🔥</Text>
                 <Text style={styles.statPillText}>{stats?.current_streak || 0}</Text>
-              </LinearGradient>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.statPillWrap} onPress={() => navigation.navigate('Sanctuary')}>
-              <LinearGradient
-                colors={['#FFFFFF', '#D0E2D5']}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 1 }}
-                style={styles.statPillGradient}
-              >
-                <Text style={styles.statPillIcon}>🐾</Text>
-                <Text style={styles.statPillText}>{stats?.animals_hatched || 0}</Text>
-              </LinearGradient>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.statPillWrap} onPress={() => setShowBadgesModal(true)}>
-              <LinearGradient
-                colors={['#FFFFFF', '#D0E2D5']}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 1 }}
-                style={styles.statPillGradient}
-              >
-                <Text style={styles.statPillIcon}>🏅</Text>
-                <Text style={styles.statPillText}>
-                  {badges.filter(b => b.earned).length}
-                </Text>
-              </LinearGradient>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.statPillWrap} onPress={() => setShowStudyTimeModal(true)}>
-              <LinearGradient
-                colors={['#FFFFFF', '#D0E2D5']}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 1 }}
-                style={styles.statPillGradient}
-              >
+              </View>
+              <Text style={styles.statPillLabel}>streak</Text>
+            </View>
+            <View style={styles.statPillCol}>
+              <View style={styles.statPillGlass}>
                 <Text style={styles.statPillIcon}>📖</Text>
                 <Text style={styles.statPillText}>
-                  {stats?.weekly_study_minutes
-                    ? Math.floor((Array.isArray(stats.weekly_study_minutes) ? stats.weekly_study_minutes.reduce((a: number, b: number) => a + b, 0) : 0) / 60)
-                    : 0}h
+                  {(() => {
+                    const total = stats?.weekly_study_minutes
+                      ? (Array.isArray(stats.weekly_study_minutes) ? stats.weekly_study_minutes.reduce((a: number, b: number) => a + b, 0) : 0)
+                      : 0;
+                    const h = Math.floor(total / 60);
+                    const m = total % 60;
+                    return h > 0 ? `${h}h ${m}m` : `${m}m`;
+                  })()}
                 </Text>
-              </LinearGradient>
-            </TouchableOpacity>
+              </View>
+              <Text style={styles.statPillLabel}>this week</Text>
+            </View>
+            <View style={styles.statPillCol}>
+              <View style={styles.statPillGlass}>
+                <Text style={styles.statPillIcon}>🐾</Text>
+                <Text style={styles.statPillText}>{stats?.animals_hatched || 0}</Text>
+              </View>
+              <Text style={styles.statPillLabel}>hatched</Text>
+            </View>
           </View>
 
           {/* Egg Section nestled in Cozy Nest */}
@@ -799,319 +735,6 @@ export default function HomeScreen() {
         </TouchableOpacity>
       </Modal>
 
-      {/* Eco-Credits Info Modal */}
-      <Modal visible={showEcoModal} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setShowEcoModal(false)}>
-        <View style={{ flex: 1, backgroundColor: '#fff' }}>
-          <DragHandle />
-          <ScrollView contentContainerStyle={{ padding: 20 }}>
-            <TouchableOpacity 
-              style={styles.streakModalClose}
-              onPress={() => setShowEcoModal(false)}
-            >
-              <Text style={styles.streakModalCloseText}>✕</Text>
-            </TouchableOpacity>
-
-            <View style={styles.streakHeader}>
-              <Text style={styles.streakFireEmoji}>🍀</Text>
-              <Text style={styles.streakBigNumber}>{stats?.current_coins || 0}</Text>
-              <Text style={styles.streakDaysLabel}>eco-credits</Text>
-            </View>
-
-            <View style={styles.streakStatsGrid}>
-              <View style={styles.streakStatItem}>
-                <Text style={styles.streakStatValue}>{stats?.total_coins || 0}</Text>
-                <Text style={styles.streakStatLabel}>Total Earned</Text>
-              </View>
-              <View style={styles.streakStatItem}>
-                <Text style={styles.streakStatValue}>{stats?.total_sessions || 0}</Text>
-                <Text style={styles.streakStatLabel}>Study Sessions</Text>
-              </View>
-              <View style={styles.streakStatItem}>
-                <Text style={styles.streakStatValue}>{stats?.animals_hatched || 0}</Text>
-                <Text style={styles.streakStatLabel}>Animals Hatched</Text>
-              </View>
-              <View style={styles.streakStatItem}>
-                <Text style={styles.streakStatValue}>
-                  {formatStudyTime(stats?.total_study_minutes || 0)}
-                </Text>
-                <Text style={styles.streakStatLabel}>Total Study Time</Text>
-              </View>
-            </View>
-
-            <View style={styles.ecoInfoCard}>
-              <Text style={styles.ecoInfoTitle}>What are eco-credits?</Text>
-              <Text style={styles.ecoInfoText}>
-                Eco-credits are earned every time you complete a study session. The longer you study, the more you earn! Spend them in the Sanctuary Shop on habitats, paths, and accessories for your animals.
-              </Text>
-            </View>
-
-            <TouchableOpacity 
-              style={styles.shopLinkButton}
-              onPress={() => { setShowEcoModal(false); navigation.navigate('Shop'); }}
-            >
-              <Text style={styles.shopLinkEmoji}>🛍️</Text>
-              <Text style={styles.shopLinkText}>Visit Sanctuary Shop</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity 
-              style={styles.streakCloseButton}
-              onPress={() => setShowEcoModal(false)}
-            >
-              <Text style={styles.streakCloseButtonText}>Got it!</Text>
-            </TouchableOpacity>
-          </ScrollView>
-        </View>
-      </Modal>
-
-      {/* Badges Modal */}
-      <Modal visible={showBadgesModal} transparent animationType="fade">
-        <View style={styles.badgesModalOverlay}>
-          <TouchableOpacity style={StyleSheet.absoluteFill} activeOpacity={1} onPress={() => setShowBadgesModal(false)} />
-          <View style={styles.badgesModalContent}>
-            <TouchableOpacity
-              style={styles.streakModalClose}
-              onPress={() => setShowBadgesModal(false)}
-            >
-              <Text style={styles.streakModalCloseText}>✕</Text>
-            </TouchableOpacity>
-
-            <View style={styles.streakHeader}>
-              <Text style={styles.streakFireEmoji}>🏅</Text>
-              <Text style={styles.streakBigNumber}>
-                {badges.filter(b => b.earned).length}
-              </Text>
-              <Text style={styles.streakDaysLabel}>
-                of {badges.length} badges earned
-              </Text>
-            </View>
-
-            <View style={styles.badgesProgressBar}>
-              <View style={styles.badgesProgressTrack}>
-                <View
-                  style={[
-                    styles.badgesProgressFill,
-                    {
-                      width: badges.length > 0
-                        ? `${(badges.filter(b => b.earned).length / badges.length) * 100}%`
-                        : '0%',
-                    },
-                  ]}
-                />
-              </View>
-            </View>
-
-            <ScrollView
-              style={styles.badgesScrollView}
-              showsVerticalScrollIndicator={true}
-              nestedScrollEnabled={true}
-              bounces={true}
-            >
-              {badges.filter(b => b.earned).length === 0 ? (
-                <View style={styles.badgesEmptyState}>
-                  <Text style={styles.badgesEmptyIcon}>🔒</Text>
-                  <Text style={styles.badgesEmptyText}>
-                    Complete study sessions to start earning badges!
-                  </Text>
-                </View>
-              ) : (
-                <View style={styles.badgesGrid}>
-                  {badges.filter(b => b.earned).map(b => (
-                    <View key={b.id} style={styles.badgeItem}>
-                      <Text style={styles.badgeItemIcon}>{b.icon}</Text>
-                      <Text style={styles.badgeItemName}>
-                        {b.name}
-                      </Text>
-                    </View>
-                  ))}
-                </View>
-              )}
-            </ScrollView>
-
-            <TouchableOpacity
-              style={{ paddingVertical: 12, paddingHorizontal: 24 }}
-              onPress={() => setShowBadgesModal(false)}
-            >
-              <Text style={{ fontSize: 15, fontWeight: '700', color: '#5E7F6E' }}>Close</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </Modal>
-
-      {/* Streak Details Modal */}
-      <Modal visible={showStreakModal} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setShowStreakModal(false)}>
-        <View style={{ flex: 1, backgroundColor: '#fff' }}>
-          <DragHandle />
-          <ScrollView contentContainerStyle={{ padding: 20 }}>
-            <TouchableOpacity 
-              style={styles.streakModalClose}
-              onPress={() => setShowStreakModal(false)}
-            >
-              <Text style={styles.streakModalCloseText}>✕</Text>
-            </TouchableOpacity>
-
-            <View style={styles.streakHeader}>
-              <Text style={styles.streakFireEmoji}>🔥</Text>
-              <Text style={styles.streakBigNumber}>{stats?.current_streak || 0}</Text>
-              <Text style={styles.streakDaysLabel}>day streak</Text>
-            </View>
-
-            <View style={styles.streakStatsGrid}>
-              <View style={styles.streakStatItem}>
-                <Text style={styles.streakStatValue}>{stats?.longest_streak || 0}</Text>
-                <Text style={styles.streakStatLabel}>Longest Streak</Text>
-              </View>
-              <View style={styles.streakStatItem}>
-                <Text style={styles.streakStatValue}>
-                  {formatStudyTime(stats?.total_study_minutes || 0)}
-                </Text>
-                <Text style={styles.streakStatLabel}>Total Study Time</Text>
-              </View>
-              <View style={styles.streakStatItem}>
-                <Text style={styles.streakStatValue}>{stats?.total_sessions || 0}</Text>
-                <Text style={styles.streakStatLabel}>Study Sessions</Text>
-              </View>
-              <View style={styles.streakStatItem}>
-                <Text style={styles.streakStatValue}>{stats?.total_coins || 0}</Text>
-                <Text style={styles.streakStatLabel}>Total Eco-Credits</Text>
-              </View>
-              <View style={styles.streakStatItem}>
-                <Text style={styles.streakStatValue}>{stats?.tasks_completed || 0}</Text>
-                <Text style={styles.streakStatLabel}>Tasks Completed</Text>
-              </View>
-              <View style={styles.streakStatItem}>
-                <Text style={styles.streakStatValue}>
-                  {stats?.weekly_study_minutes ? Math.floor((Array.isArray(stats.weekly_study_minutes) ? stats.weekly_study_minutes.reduce((a: number, b: number) => a + b, 0) : 0) / 60) : 0}h
-                </Text>
-                <Text style={styles.streakStatLabel}>This Week</Text>
-              </View>
-            </View>
-
-            <View style={styles.streakMotivation}>
-              <Text style={styles.streakMotivationText}>
-                {stats?.current_streak && stats.current_streak > 0 
-                  ? "Keep it up! You're on fire! 🔥"
-                  : "Start studying today to begin your streak!"}
-              </Text>
-            </View>
-
-            <TouchableOpacity 
-              style={styles.streakCloseButton}
-              onPress={() => setShowStreakModal(false)}
-            >
-              <Text style={styles.streakCloseButtonText}>Got it!</Text>
-            </TouchableOpacity>
-          </ScrollView>
-        </View>
-      </Modal>
-
-      {/* Study Time Statistics Modal */}
-      <Modal visible={showStudyTimeModal} transparent animationType="fade">
-        <View style={styles.studyTimeModalOverlay}>
-          <TouchableOpacity style={StyleSheet.absoluteFill} activeOpacity={1} onPress={() => setShowStudyTimeModal(false)} />
-          <View style={styles.studyTimeModalContent}>
-            <TouchableOpacity
-              style={styles.studyTimeClose}
-              onPress={() => setShowStudyTimeModal(false)}
-            >
-              <Text style={styles.streakModalCloseText}>✕</Text>
-            </TouchableOpacity>
-
-            <ScrollView showsVerticalScrollIndicator={false}>
-              <View style={styles.studyTimeHeader}>
-                <Text style={{ fontSize: 36 }}>📖</Text>
-                <Text style={styles.studyTimeBigNumber}>
-                  {stats?.weekly_study_minutes
-                    ? Math.floor((Array.isArray(stats.weekly_study_minutes) ? stats.weekly_study_minutes.reduce((a: number, b: number) => a + b, 0) : 0) / 60)
-                    : 0}h {stats?.weekly_study_minutes
-                    ? (Array.isArray(stats.weekly_study_minutes) ? stats.weekly_study_minutes.reduce((a: number, b: number) => a + b, 0) : 0) % 60
-                    : 0}m
-                </Text>
-                <Text style={styles.studyTimeSubLabel}>studied this week</Text>
-              </View>
-
-              <View style={styles.weeklyChart}>
-                <Text style={styles.weeklyChartTitle}>Daily Breakdown</Text>
-                <View style={styles.weeklyBars}>
-                  {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((day, i) => {
-                    const mins = Array.isArray(stats?.weekly_study_minutes) ? (stats.weekly_study_minutes[i] || 0) : 0;
-                    const maxMins = Array.isArray(stats?.weekly_study_minutes)
-                      ? Math.max(...stats.weekly_study_minutes, 1)
-                      : 1;
-                    const barHeight = Math.max((mins / maxMins) * 60, 4);
-                    const today = new Date().getDay();
-                    const dayIdx = today === 0 ? 6 : today - 1;
-                    return (
-                      <View key={day} style={styles.weeklyBarCol}>
-                        <Text style={styles.weeklyBarMins}>{mins > 0 ? `${mins}m` : ''}</Text>
-                        <View style={[
-                          styles.weeklyBar,
-                          { height: barHeight },
-                          i === dayIdx && styles.weeklyBarToday,
-                        ]} />
-                        <Text style={[styles.weeklyBarLabel, i === dayIdx && styles.weeklyBarLabelToday]}>{day}</Text>
-                      </View>
-                    );
-                  })}
-                </View>
-              </View>
-
-              <View style={styles.studyTimeStatsGrid}>
-                <View style={styles.studyTimeStatItem}>
-                  <Text style={styles.studyTimeStatValue}>
-                    {formatStudyTime(stats?.total_study_minutes || 0)}
-                  </Text>
-                  <Text style={styles.studyTimeStatLabel}>All Time</Text>
-                </View>
-                <View style={styles.studyTimeStatItem}>
-                  <Text style={styles.studyTimeStatValue}>{stats?.total_sessions || 0}</Text>
-                  <Text style={styles.studyTimeStatLabel}>Total Sessions</Text>
-                </View>
-                <View style={styles.studyTimeStatItem}>
-                  <Text style={styles.studyTimeStatValue}>
-                    {stats?.total_study_minutes && stats?.total_sessions
-                      ? Math.round(stats.total_study_minutes / stats.total_sessions)
-                      : 0}m
-                  </Text>
-                  <Text style={styles.studyTimeStatLabel}>Avg per Session</Text>
-                </View>
-                <View style={styles.studyTimeStatItem}>
-                  <Text style={styles.studyTimeStatValue}>{stats?.current_streak || 0}</Text>
-                  <Text style={styles.studyTimeStatLabel}>Current Streak</Text>
-                </View>
-              </View>
-
-              {stats?.study_minutes_by_subject && Object.keys(stats.study_minutes_by_subject).length > 0 && (
-                <View style={styles.subjectBreakdown}>
-                  <Text style={styles.weeklyChartTitle}>By Subject</Text>
-                  {Object.entries(stats.study_minutes_by_subject)
-                    .sort(([, a], [, b]) => b - a)
-                    .slice(0, 6)
-                    .map(([subject, mins]) => {
-                      const totalMins = Object.values(stats.study_minutes_by_subject).reduce((a, b) => a + b, 0);
-                      const pct = totalMins > 0 ? (mins / totalMins) * 100 : 0;
-                      return (
-                        <View key={subject} style={styles.subjectRow}>
-                          <Text style={styles.subjectName} numberOfLines={1}>{subject}</Text>
-                          <View style={styles.subjectBarBg}>
-                            <View style={[styles.subjectBarFill, { width: `${Math.max(pct, 3)}%` }]} />
-                          </View>
-                          <Text style={styles.subjectMins}>{Math.floor(mins / 60)}h {mins % 60}m</Text>
-                        </View>
-                      );
-                    })}
-                </View>
-              )}
-
-              <TouchableOpacity 
-                style={styles.studyTimeCloseButton}
-                onPress={() => setShowStudyTimeModal(false)}
-              >
-                <Text style={styles.streakCloseButtonText}>Got it!</Text>
-              </TouchableOpacity>
-            </ScrollView>
-          </View>
-        </View>
-      </Modal>
     </SafeAreaView>
   );
 }
@@ -1132,43 +755,51 @@ const styles = StyleSheet.create({
     marginHorizontal: spacing.md,
     marginTop: spacing.md,
     borderRadius: 24,
-    paddingBottom: spacing.sm,
+    paddingBottom: spacing.xl,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.06,
     shadowRadius: 12,
     elevation: 3,
   },
-  headerSection: {
+  brandRow: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
     paddingHorizontal: spacing.lg,
     paddingTop: spacing.lg,
+    gap: 8,
+  },
+  brandLogo: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+  },
+  brandName: {
+    fontSize: 26,
+    fontWeight: '800',
+    color: '#2D3B36',
+    letterSpacing: -0.5,
+  },
+  headerSection: {
+    paddingHorizontal: spacing.lg,
+    paddingTop: 6,
     paddingBottom: spacing.xs,
   },
   profileButton: {
+    position: 'absolute',
+    top: spacing.md,
+    right: spacing.md,
     width: 44,
     height: 44,
     borderRadius: 22,
     backgroundColor: colors.surface,
     justifyContent: 'center',
     alignItems: 'center',
+    zIndex: 10,
     ...shadows.small,
   },
   profileButtonEmoji: {
     fontSize: 22,
-  },
-  tipsDot: {
-    position: 'absolute' as const,
-    top: 2,
-    right: 2,
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    backgroundColor: '#FF6B6B',
-    borderWidth: 1.5,
-    borderColor: '#FFFFFF',
   },
   profileButtonImage: {
     width: 44,
@@ -1176,10 +807,10 @@ const styles = StyleSheet.create({
     borderRadius: 22,
   },
   greeting: {
-    fontSize: 22,
+    fontSize: 18,
     fontWeight: '700',
+    fontStyle: 'italic',
     color: colors.textPrimary,
-    marginBottom: 2,
   },
   title: {
     fontSize: 14,
@@ -1189,51 +820,51 @@ const styles = StyleSheet.create({
   statsPills: {
     flexDirection: 'row',
     paddingHorizontal: spacing.lg,
-    justifyContent: 'space-between',
-    marginTop: spacing.sm,
-    marginBottom: spacing.xs,
+    justifyContent: 'center',
+    gap: 12,
+    marginTop: spacing.sm + 4,
+    marginBottom: spacing.xs - 4,
     zIndex: 20,
   },
-  statPillWrap: {
-    flex: 1,
-    marginHorizontal: 3,
-    borderRadius: borderRadius.full,
-    overflow: 'hidden',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.7)',
-    shadowColor: '#2D3B36',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 3,
-    elevation: 2,
+  statPillCol: {
+    alignItems: 'center',
   },
-  statPillGradient: {
+  statPillGlass: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 10,
-    borderRadius: borderRadius.full,
-    gap: 5,
+    height: 48,
+    paddingHorizontal: 16,
+    borderRadius: 24,
+    gap: 6,
+    backgroundColor: 'rgba(255, 255, 255, 0.4)',
+    borderWidth: 0,
   },
   statPillIcon: {
-    fontSize: 14,
+    fontSize: 16,
   },
   statPillText: {
-    fontSize: 14,
+    fontSize: 16,
     fontWeight: '800',
     color: '#2D3B36',
   },
+  statPillLabel: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#3D5249',
+    marginTop: 4,
+  },
   eggSection: {
     alignItems: 'center',
-    marginTop: -28,
+    marginTop: -38,
     paddingBottom: 0,
   },
   eggNestContainer: {
     alignItems: 'center',
     justifyContent: 'center',
     position: 'relative',
-    height: 270,
-    width: 310,
+    height: 210,
+    width: 270,
   },
   eggWrapper: {
     position: 'absolute',
@@ -1243,16 +874,16 @@ const styles = StyleSheet.create({
     zIndex: 10,
   },
   nestEmoji: {
-    fontSize: 170,
+    fontSize: 150,
     position: 'absolute',
-    bottom: -36,
+    bottom: -54,
     textAlign: 'center',
     opacity: 0.92,
   },
   buttonContainer: {
     alignItems: 'center',
-    paddingTop: spacing.lg,
-    paddingBottom: spacing.sm,
+    paddingTop: spacing.lg + 14,
+    paddingBottom: 0,
   },
   hatchButton: {
     flexDirection: 'row',
@@ -1833,368 +1464,5 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     fontStyle: 'italic',
     lineHeight: 38,
-  },
-  // Streak Modal Styles
-  streakModalContent: {
-    backgroundColor: colors.surface,
-    borderTopLeftRadius: borderRadius.xl,
-    borderTopRightRadius: borderRadius.xl,
-    padding: spacing.lg,
-    paddingBottom: spacing.xxl + 20,
-  },
-  streakModalClose: {
-    position: 'absolute',
-    top: spacing.md,
-    right: spacing.md,
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: colors.surfaceAlt,
-    justifyContent: 'center',
-    alignItems: 'center',
-    zIndex: 10,
-  },
-  streakModalCloseText: {
-    fontSize: 16,
-    color: colors.textSecondary,
-  },
-  streakHeader: {
-    alignItems: 'center',
-    marginBottom: spacing.xl,
-    paddingTop: spacing.md,
-  },
-  streakFireEmoji: {
-    fontSize: 60,
-    marginBottom: spacing.sm,
-  },
-  streakBigNumber: {
-    fontSize: 72,
-    fontWeight: '700',
-    color: colors.primary,
-    lineHeight: 80,
-  },
-  streakDaysLabel: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: colors.textSecondary,
-    marginTop: -4,
-  },
-  streakStatsGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'space-between',
-    marginBottom: spacing.lg,
-  },
-  streakStatItem: {
-    width: '48%',
-    backgroundColor: colors.surfaceAlt,
-    borderRadius: borderRadius.lg,
-    padding: spacing.md,
-    alignItems: 'center',
-    marginBottom: spacing.sm,
-  },
-  streakStatValue: {
-    fontSize: 22,
-    fontWeight: '700',
-    color: colors.textPrimary,
-    marginBottom: 4,
-  },
-  streakStatLabel: {
-    fontSize: 12,
-    color: colors.textSecondary,
-    textAlign: 'center',
-  },
-  streakMotivation: {
-    backgroundColor: colors.primaryLight,
-    borderRadius: borderRadius.lg,
-    padding: spacing.lg,
-    alignItems: 'center',
-    marginBottom: spacing.lg,
-  },
-  streakMotivationText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: colors.primaryDark,
-    textAlign: 'center',
-  },
-  streakCloseButton: {
-    backgroundColor: colors.primary,
-    paddingVertical: spacing.md,
-    borderRadius: borderRadius.lg,
-    alignItems: 'center',
-    ...shadows.small,
-  },
-  streakCloseButtonText: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: colors.textOnPrimary,
-  },
-  ecoInfoCard: {
-    backgroundColor: colors.surfaceAlt,
-    borderRadius: borderRadius.lg,
-    padding: spacing.md,
-    marginBottom: spacing.lg,
-    width: '100%',
-  },
-  ecoInfoTitle: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: colors.textPrimary,
-    marginBottom: spacing.xs,
-  },
-  ecoInfoText: {
-    fontSize: 14,
-    color: colors.textSecondary,
-    lineHeight: 20,
-  },
-  shopLinkButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: colors.primary + '12',
-    paddingVertical: 12,
-    borderRadius: 14,
-    marginBottom: spacing.sm,
-    gap: 8,
-  },
-  shopLinkEmoji: {
-    fontSize: 18,
-  },
-  shopLinkText: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: colors.primary,
-  },
-  badgesModalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  badgesModalContent: {
-    backgroundColor: colors.surface,
-    borderRadius: 28,
-    padding: spacing.xl,
-    paddingBottom: spacing.lg,
-    width: '90%',
-    maxHeight: '85%',
-    alignItems: 'center',
-    ...shadows.large,
-  },
-  badgesProgressBar: {
-    width: '100%',
-    marginBottom: spacing.md,
-  },
-  badgesProgressTrack: {
-    height: 8,
-    backgroundColor: colors.cardBorder,
-    borderRadius: 4,
-    overflow: 'hidden' as const,
-  },
-  badgesProgressFill: {
-    height: '100%',
-    backgroundColor: '#E8B86D',
-    borderRadius: 4,
-  },
-  badgesScrollView: {
-    width: '100%',
-    maxHeight: 500,
-    marginBottom: spacing.md,
-  },
-  badgesGrid: {
-    flexDirection: 'row' as const,
-    flexWrap: 'wrap' as const,
-    justifyContent: 'space-between' as const,
-    paddingHorizontal: 2,
-  },
-  badgeItem: {
-    width: '31%' as any,
-    alignItems: 'center' as const,
-    paddingVertical: 12,
-    paddingHorizontal: 6,
-    backgroundColor: '#E7EFEA',
-    borderRadius: borderRadius.lg,
-    borderWidth: 1,
-    borderColor: '#A9BDAF40',
-    marginBottom: spacing.sm,
-  },
-  badgeItemIcon: {
-    fontSize: 28,
-    marginBottom: 4,
-  },
-  badgeItemName: {
-    fontSize: 10,
-    fontWeight: '700' as const,
-    color: colors.textPrimary,
-    textAlign: 'center' as const,
-  },
-  badgesEmptyState: {
-    alignItems: 'center' as const,
-    paddingVertical: spacing.xl,
-  },
-  badgesEmptyIcon: {
-    fontSize: 40,
-    marginBottom: spacing.sm,
-  },
-  badgesEmptyText: {
-    fontSize: 14,
-    color: colors.textMuted,
-    textAlign: 'center' as const,
-  },
-
-  // Study Time Modal
-  studyTimeModalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 20,
-  },
-  studyTimeModalContent: {
-    backgroundColor: colors.surface,
-    borderRadius: 24,
-    padding: spacing.lg,
-    width: '100%',
-    maxHeight: '75%',
-  },
-  studyTimeClose: {
-    position: 'absolute',
-    top: 14,
-    right: 14,
-    zIndex: 10,
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: colors.surfaceAlt,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  studyTimeHeader: {
-    alignItems: 'center',
-    marginBottom: 16,
-    marginTop: 4,
-  },
-  studyTimeBigNumber: {
-    fontSize: 40,
-    fontWeight: '800',
-    color: colors.textPrimary,
-    marginTop: 4,
-  },
-  studyTimeSubLabel: {
-    fontSize: 14,
-    color: colors.textMuted,
-    fontWeight: '500',
-    marginTop: 2,
-  },
-  studyTimeStatsGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-    marginBottom: 16,
-  },
-  studyTimeStatItem: {
-    width: '47%',
-    backgroundColor: colors.surfaceAlt,
-    borderRadius: borderRadius.md,
-    padding: 10,
-    alignItems: 'center',
-  },
-  studyTimeStatValue: {
-    fontSize: 18,
-    fontWeight: '800',
-    color: colors.primary,
-  },
-  studyTimeStatLabel: {
-    fontSize: 11,
-    color: colors.textMuted,
-    marginTop: 2,
-  },
-  studyTimeCloseButton: {
-    backgroundColor: colors.primary,
-    borderRadius: borderRadius.full,
-    paddingVertical: 12,
-    alignItems: 'center',
-    marginTop: 4,
-  },
-  weeklyChart: {
-    width: '100%',
-    marginBottom: spacing.md,
-  },
-  weeklyChartTitle: {
-    fontSize: 14,
-    fontWeight: '700' as const,
-    color: colors.textPrimary,
-    marginBottom: 12,
-  },
-  weeklyBars: {
-    flexDirection: 'row' as const,
-    alignItems: 'flex-end' as const,
-    justifyContent: 'space-between' as const,
-    height: 90,
-    paddingBottom: 4,
-  },
-  weeklyBarCol: {
-    flex: 1,
-    alignItems: 'center' as const,
-    justifyContent: 'flex-end' as const,
-  },
-  weeklyBarMins: {
-    fontSize: 9,
-    fontWeight: '600' as const,
-    color: colors.textMuted,
-    marginBottom: 4,
-  },
-  weeklyBar: {
-    width: 20,
-    borderRadius: 6,
-    backgroundColor: colors.primaryLight,
-  },
-  weeklyBarToday: {
-    backgroundColor: colors.primary,
-  },
-  weeklyBarLabel: {
-    fontSize: 11,
-    fontWeight: '500' as const,
-    color: colors.textMuted,
-    marginTop: 6,
-  },
-  weeklyBarLabelToday: {
-    fontWeight: '700' as const,
-    color: colors.primary,
-  },
-  subjectBreakdown: {
-    width: '100%',
-    marginBottom: spacing.md,
-  },
-  subjectRow: {
-    flexDirection: 'row' as const,
-    alignItems: 'center' as const,
-    marginBottom: 10,
-  },
-  subjectName: {
-    width: 70,
-    fontSize: 12,
-    fontWeight: '600' as const,
-    color: colors.textSecondary,
-  },
-  subjectBarBg: {
-    flex: 1,
-    height: 10,
-    backgroundColor: colors.cardBorder,
-    borderRadius: 5,
-    overflow: 'hidden' as const,
-    marginHorizontal: 8,
-  },
-  subjectBarFill: {
-    height: '100%' as const,
-    backgroundColor: colors.primary,
-    borderRadius: 5,
-  },
-  subjectMins: {
-    fontSize: 11,
-    fontWeight: '600' as const,
-    color: colors.textMuted,
-    width: 52,
-    textAlign: 'right' as const,
   },
 });

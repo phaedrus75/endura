@@ -105,7 +105,7 @@ export default function ShopScreen() {
         setPurchasedIds({});
       }
     } catch (e) {
-      console.error('Failed to load shop data:', e);
+      if (__DEV__) console.error('Failed to load shop data:', e);
     }
   };
 

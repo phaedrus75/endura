@@ -58,7 +58,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         await loadProfilePicForUser(userData);
       }
     } catch (error) {
-      console.log('Auth check failed:', error);
+      if (__DEV__) console.log('Auth check failed:', error);
       await SecureStore.deleteItemAsync('authToken');
       setUser(null);
       setProfilePicState(null);
@@ -81,7 +81,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setProfilePicState(res.profile_pic_url);
         await AsyncStorage.setItem(profilePicKey(user.id), res.profile_pic_url);
       } catch (e) {
-        console.log('Failed to upload profile pic to server:', e);
+        if (__DEV__) console.log('Failed to upload profile pic to server:', e);
       }
     } else {
       await AsyncStorage.removeItem(profilePicKey(user.id));
@@ -111,7 +111,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const userData = await authAPI.getMe();
       setUser(userData);
     } catch (error) {
-      console.log('Failed to refresh user:', error);
+      if (__DEV__) console.log('Failed to refresh user:', error);
     }
   };
 

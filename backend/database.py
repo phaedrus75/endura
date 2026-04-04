@@ -19,7 +19,7 @@ else:
         max_overflow=20,
         pool_pre_ping=True,
         pool_recycle=300,
-        connect_args={"sslmode": "require"} if "railway" in SQLALCHEMY_DATABASE_URL else {},
+        connect_args={"sslmode": "require"} if SQLALCHEMY_DATABASE_URL.startswith("postgresql") else {},
     )
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)

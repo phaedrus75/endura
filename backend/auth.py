@@ -1,6 +1,7 @@
 from datetime import datetime, timedelta
 from typing import Optional
-from jose import JWTError, jwt
+import jwt
+from jwt.exceptions import PyJWTError as JWTError
 import bcrypt
 import logging
 from fastapi import Depends, HTTPException, status
@@ -98,6 +99,11 @@ def get_optional_user(
         if email is None:
             return None
         user = db.query(models.User).filter(models.User.email == email).first()
+        if user is None:
+            return None
+        token_ver = payload.get("tv", 0)
+        if (user.token_version or 0) != token_ver:
+            return None
         return user
     except JWTError:
         return None

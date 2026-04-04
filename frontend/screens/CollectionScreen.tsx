@@ -321,38 +321,6 @@ export default function CollectionScreen() {
   const [traySlotOrigin, setTraySlotOrigin] = useState({ x: 0, y: 0 });
   const traySlotOriginRef = useRef({ x: 0, y: 0 });
   const [communityTotal, setCommunityTotal] = useState(0);
-  const [hasSeenTips, setHasSeenTips] = useState(true);
-  const tipsPulse = useRef(new Animated.Value(1)).current;
-
-  useEffect(() => {
-    const checkTips = async () => {
-      const seen = await AsyncStorage.getItem(`hasSeenTips_${user?.id || 'anon'}`);
-      setHasSeenTips(seen === 'true');
-    };
-    checkTips();
-  }, [user?.id]);
-
-  useEffect(() => {
-    if (!hasSeenTips) {
-      const loop = Animated.loop(
-        Animated.sequence([
-          Animated.timing(tipsPulse, { toValue: 1.25, duration: 800, useNativeDriver: true }),
-          Animated.timing(tipsPulse, { toValue: 1, duration: 800, useNativeDriver: true }),
-        ])
-      );
-      loop.start();
-      return () => loop.stop();
-    }
-  }, [hasSeenTips]);
-
-  const handleOpenTips = async () => {
-    if (!hasSeenTips) {
-      setHasSeenTips(true);
-      await AsyncStorage.setItem(`hasSeenTips_${user?.id || 'anon'}`, 'true');
-    }
-    navigation.navigate('Tips');
-  };
-
   const loadPurchases = async () => {
     try {
       const raw = await AsyncStorage.getItem(purchasedKey);
@@ -451,7 +419,7 @@ export default function CollectionScreen() {
       setMyAnimals(myData);
       setAllAnimals(allData);
     } catch (error) {
-      console.error('Failed to load animals:', error);
+      if (__DEV__) console.error('Failed to load animals:', error);
     }
   };
 
@@ -535,15 +503,6 @@ export default function CollectionScreen() {
         <View style={styles.header}>
           <Text style={styles.titleBlack}>My Sanctuary</Text>
           <View style={{ flexDirection: 'row', gap: 8 }}>
-            <TouchableOpacity 
-              style={styles.profileButton}
-              onPress={handleOpenTips}
-            >
-              <Text style={styles.profileButtonEmoji}>💡</Text>
-              {!hasSeenTips && (
-                <Animated.View style={[styles.tipsDot, { transform: [{ scale: tipsPulse }] }]} />
-              )}
-            </TouchableOpacity>
             <TouchableOpacity 
               style={styles.profileButton}
               onPress={() => navigation.navigate('Profile')}
@@ -1155,17 +1114,6 @@ const styles = StyleSheet.create({
   },
   profileButtonEmoji: {
     fontSize: 22,
-  },
-  tipsDot: {
-    position: 'absolute' as const,
-    top: 2,
-    right: 2,
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    backgroundColor: '#FF6B6B',
-    borderWidth: 1.5,
-    borderColor: '#FFFFFF',
   },
   profileButtonImage: {
     width: 44,

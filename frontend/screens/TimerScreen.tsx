@@ -12,7 +12,6 @@ import {
   AppState,
   Modal,
   Image,
-  Animated,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
@@ -192,8 +191,6 @@ export default function TimerScreen() {
   const [deadAnimalName, setDeadAnimalName] = useState('');
   const [deathCause, setDeathCause] = useState<'timeout' | 'abandoned'>('timeout');
   const [quoteIndex, setQuoteIndex] = useState(0);
-  const [hasSeenTips, setHasSeenTips] = useState(true);
-  const tipsPulse = useRef(new Animated.Value(1)).current;
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
   const appState = useRef(AppState.currentState);
   const backgroundTimestamp = useRef<number | null>(null);
@@ -211,36 +208,6 @@ export default function TimerScreen() {
       setQuoteIndex(Math.floor(Math.random() * FOCUS_QUOTES.length));
     }
   }, [isRunning]);
-
-  // Check if user has seen tips
-  useEffect(() => {
-    const checkTips = async () => {
-      const seen = await AsyncStorage.getItem(`hasSeenTips_${user?.id || 'anon'}`);
-      setHasSeenTips(seen === 'true');
-    };
-    checkTips();
-  }, [user?.id]);
-
-  useEffect(() => {
-    if (!hasSeenTips) {
-      const loop = Animated.loop(
-        Animated.sequence([
-          Animated.timing(tipsPulse, { toValue: 1.25, duration: 800, useNativeDriver: true }),
-          Animated.timing(tipsPulse, { toValue: 1, duration: 800, useNativeDriver: true }),
-        ])
-      );
-      loop.start();
-      return () => loop.stop();
-    }
-  }, [hasSeenTips]);
-
-  const handleOpenTips = async () => {
-    if (!hasSeenTips) {
-      setHasSeenTips(true);
-      await AsyncStorage.setItem(`hasSeenTips_${user?.id || 'anon'}`, 'true');
-    }
-    navigation.navigate('Tips' as never);
-  };
 
   // Load unlocked animals from backend + local storage
   useEffect(() => {
@@ -262,7 +229,7 @@ export default function TimerScreen() {
         }
         setUnlockedAnimals(merged);
       } catch (e) {
-        console.log('Failed to load unlocked animals');
+        if (__DEV__) console.log('Failed to load unlocked animals');
       }
     };
     loadUnlockedAnimals();
@@ -278,7 +245,7 @@ export default function TimerScreen() {
             setSubjects(JSON.parse(stored));
           }
         } catch (e) {
-          console.log('Failed to load subjects');
+          if (__DEV__) console.log('Failed to load subjects');
         }
       };
       loadSubjects();
@@ -291,7 +258,7 @@ export default function TimerScreen() {
       await AsyncStorage.setItem(`unlockedAnimals_${user?.id || 'anon'}`, JSON.stringify(animals));
       setUnlockedAnimals(animals);
     } catch (e) {
-      console.log('Failed to save unlocked animals');
+      if (__DEV__) console.log('Failed to save unlocked animals');
     }
   };
 
@@ -596,15 +563,6 @@ export default function TimerScreen() {
             <Text style={styles.subtitle}>Focus and earn eco-credits!</Text>
           </View>
           <View style={{ flexDirection: 'row', gap: 8 }}>
-            <TouchableOpacity 
-              style={styles.profileButton}
-              onPress={handleOpenTips}
-            >
-              <Text style={styles.profileButtonEmoji}>💡</Text>
-              {!hasSeenTips && (
-                <Animated.View style={[styles.tipsDot, { transform: [{ scale: tipsPulse }] }]} />
-              )}
-            </TouchableOpacity>
             <TouchableOpacity 
               style={styles.profileButton}
               onPress={() => navigation.navigate('Profile')}
@@ -1215,17 +1173,6 @@ const styles = StyleSheet.create({
   },
   profileButtonEmoji: {
     fontSize: 22,
-  },
-  tipsDot: {
-    position: 'absolute',
-    top: 2,
-    right: 2,
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    backgroundColor: '#FF6B6B',
-    borderWidth: 1.5,
-    borderColor: '#FFFFFF',
   },
   profileButtonImage: {
     width: 44,

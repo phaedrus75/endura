@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useRef, useEffect } from 'react';
+import React, { useState, useCallback, useRef } from 'react';
 import {
   View,
   Text,
@@ -16,7 +16,6 @@ import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import Svg, { Rect, G, Text as SvgText, Defs, LinearGradient, Stop } from 'react-native-svg';
 import { LinearGradient as ExpoLinearGradient } from 'expo-linear-gradient';
 import { colors, shadows, spacing, borderRadius } from '../theme/colors';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useAuth } from '../contexts/AuthContext';
 import { statsAPI, tasksAPI, badgesAPI, UserStats, Task, BadgeResponse } from '../services/api';
 
@@ -174,38 +173,6 @@ export default function ProgressScreen() {
   const [badges, setBadges] = useState<BadgeResponse[]>([]);
   const [selectedBadge, setSelectedBadge] = useState<BadgeResponse | null>(null);
   const modalScale = useRef(new Animated.Value(0)).current;
-  const [hasSeenTips, setHasSeenTips] = useState(true);
-  const tipsPulse = useRef(new Animated.Value(1)).current;
-
-  useEffect(() => {
-    const checkTips = async () => {
-      const seen = await AsyncStorage.getItem(`hasSeenTips_${user?.id || 'anon'}`);
-      setHasSeenTips(seen === 'true');
-    };
-    checkTips();
-  }, [user?.id]);
-
-  useEffect(() => {
-    if (!hasSeenTips) {
-      const loop = Animated.loop(
-        Animated.sequence([
-          Animated.timing(tipsPulse, { toValue: 1.25, duration: 800, useNativeDriver: true }),
-          Animated.timing(tipsPulse, { toValue: 1, duration: 800, useNativeDriver: true }),
-        ])
-      );
-      loop.start();
-      return () => loop.stop();
-    }
-  }, [hasSeenTips]);
-
-  const handleOpenTips = async () => {
-    if (!hasSeenTips) {
-      setHasSeenTips(true);
-      await AsyncStorage.setItem(`hasSeenTips_${user?.id || 'anon'}`, 'true');
-    }
-    navigation.navigate('Tips');
-  };
-
   const loadData = async () => {
     try {
       setLoadError(false);
@@ -222,7 +189,7 @@ export default function ProgressScreen() {
         setSubjectStudyTime(statsData.study_minutes_by_subject);
       }
     } catch (error) {
-      console.error('Failed to load progress data:', error);
+      if (__DEV__) console.error('Failed to load progress data:', error);
       setLoadError(true);
     }
   };
@@ -318,15 +285,6 @@ export default function ProgressScreen() {
           <View style={{ flexDirection: 'row', gap: 8 }}>
             <TouchableOpacity 
               style={styles.profileButton}
-              onPress={handleOpenTips}
-            >
-              <Text style={styles.profileButtonEmoji}>💡</Text>
-              {!hasSeenTips && (
-                <Animated.View style={[styles.tipsDot, { transform: [{ scale: tipsPulse }] }]} />
-              )}
-            </TouchableOpacity>
-            <TouchableOpacity 
-              style={styles.profileButton}
               onPress={() => navigation.navigate('Profile')}
             >
               {profilePic ? (
@@ -363,6 +321,27 @@ export default function ProgressScreen() {
             <Text style={styles.quickStatLabel}>🔥 Streak</Text>
           </View>
         </View>
+
+        {/* Study Tips */}
+        <TouchableOpacity
+          style={styles.studyTipsWrap}
+          onPress={() => navigation.navigate('Tips')}
+          activeOpacity={0.85}
+        >
+          <ExpoLinearGradient
+            colors={['#7BB5AD', '#2D4055']}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 0 }}
+            style={styles.studyTipsBtn}
+          >
+            <Text style={styles.studyTipsEmoji}>💡</Text>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.studyTipsTitle}>Study Tips</Text>
+              <Text style={styles.studyTipsSub}>Browse tips from the community</Text>
+            </View>
+            <Text style={styles.studyTipsArrow}>›</Text>
+          </ExpoLinearGradient>
+        </TouchableOpacity>
 
         {/* Weekly Study Bar Chart */}
         <View style={[styles.chartCard, { alignItems: 'center' }]}>
@@ -581,17 +560,6 @@ const styles = StyleSheet.create({
   profileButtonEmoji: {
     fontSize: 22,
   },
-  tipsDot: {
-    position: 'absolute' as const,
-    top: 2,
-    right: 2,
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    backgroundColor: '#FF6B6B',
-    borderWidth: 1.5,
-    borderColor: '#FFFFFF',
-  },
   profileButtonImage: {
     width: 44,
     height: 44,
@@ -709,6 +677,41 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: colors.textSecondary,
     marginTop: 2,
+  },
+  studyTipsWrap: {
+    borderRadius: 18,
+    overflow: 'hidden',
+    marginBottom: spacing.md,
+    shadowColor: '#2F4A3E',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 10,
+    elevation: 6,
+  },
+  studyTipsBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 16,
+    gap: 12,
+  },
+  studyTipsEmoji: {
+    fontSize: 28,
+  },
+  studyTipsTitle: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: '#FFFFFF',
+  },
+  studyTipsSub: {
+    fontSize: 13,
+    color: 'rgba(255,255,255,0.8)',
+    fontWeight: '500',
+    marginTop: 3,
+  },
+  studyTipsArrow: {
+    fontSize: 26,
+    fontWeight: '300',
+    color: 'rgba(255,255,255,0.7)',
   },
   // Badges Section
   badgesSection: {

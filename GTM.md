@@ -58,7 +58,7 @@ Endura is a mobile study app that gamifies focus and productivity by letting stu
 ### Endura's Competitive Advantages
 
 1. **Emotional Connection**: Real endangered animals > virtual trees
-2. **Collection Mechanics**: 21+ unique animals to discover
+2. **Collection Mechanics**: 30 unique animals to discover
 3. **Social Competition**: Leaderboards and friend challenges
 4. **Educational Impact**: Learn about conservation while studying
 5. **Visual Delight**: Animated eggs, confetti, beautiful UI
@@ -245,16 +245,181 @@ Month 4+:   Growth campaigns + feature expansion
 
 ---
 
+## App Store Launch Checklist
+
+### Phase 1: Pre-Submission Preparation
+
+#### 1. Apple Developer Account
+- [ ] Ensure Apple Developer Program membership is active ($99/year) at [developer.apple.com](https://developer.apple.com)
+- [ ] Verify Apple ID (`munshiaseem@yahoo.com`) has the "Account Holder" role
+- [ ] Set up banking and tax info in App Store Connect (required before you can sell or distribute)
+
+#### 2. App Store Connect Setup
+- [ ] Log into [App Store Connect](https://appstoreconnect.apple.com)
+- [ ] Click **My Apps > + > New App**
+- [ ] Fill in:
+  - **Platform**: iOS
+  - **Name**: `Endura`
+  - **Primary Language**: English (U.S.)
+  - **Bundle ID**: `com.endura.study` (must match `app.json`)
+  - **SKU**: `endura-study-v1` (any unique string)
+- [ ] Select **Full Access** for user access
+
+#### 3. App Listing Content (prepare these assets)
+- [ ] **App Name**: Endura - Study & Save Species
+- [ ] **Subtitle** (30 chars): Gamified Focus Timer
+- [ ] **Description** (4000 chars max):
+  > Turn every study session into a mission to save endangered species. Earn coins, hatch rare animals, climb leaderboards, and study with friends. Endura makes focusing addictive with beautiful animations, timed study sessions, and a growing animal sanctuary.
+- [ ] **Promotional Text** (170 chars, can be updated without a new build):
+  > Study smarter. Hatch endangered animals. Compete with friends. Every minute of focus counts.
+- [ ] **Keywords** (100 chars, comma-separated):
+  > study timer,focus app,pomodoro,study motivation,endangered animals,gamified study,study game,focus
+- [ ] **Support URL**: `https://endura.eco` (or a simple support page)
+- [ ] **Privacy Policy URL**: `https://endura.eco/privacy` (required -- must create this)
+- [ ] **Category**: Education (Primary), Productivity (Secondary)
+- [ ] **Age Rating**: Fill out the questionnaire (likely rated 4+, no objectionable content)
+
+#### 4. Screenshots & Preview
+- [ ] Prepare **6.7" screenshots** (iPhone 15 Pro Max, 1290x2796) -- minimum 3, recommended 6-10
+- [ ] Prepare **6.5" screenshots** (iPhone 11 Pro Max, 1284x2778) -- required for older devices
+- [ ] Prepare **5.5" screenshots** (iPhone 8 Plus, 1242x2208) -- optional but recommended
+- [ ] Optional: **iPad screenshots** if `supportsTablet: true` (currently enabled)
+- [ ] Optional: **App Preview video** (15-30 sec, shows egg hatching + timer + sanctuary)
+
+**Recommended screenshot flow:**
+1. Home screen with egg animation and stats
+2. Timer running with animal hatching progress
+3. Animal sanctuary / collection
+4. Leaderboard with friends
+5. Study group with goal progress bar
+6. Congratulations modal (animal hatched)
+
+#### 5. App Icon
+- [ ] Ensure `icon.png` is **1024x1024**, no transparency, no rounded corners (Apple adds those)
+
+### Phase 2: Build & Submit
+
+#### 6. Final Pre-Build Checks
+- [ ] Bump version if needed in `app.json` (`"version": "1.0.0"`)
+- [ ] Bump `buildNumber` in `app.json` (currently `"6"`, increment to `"7"` for new submission)
+- [ ] Ensure `ITSAppUsesNonExemptEncryption` is set to `false` (already done)
+- [ ] Remove all `console.log` statements or gate behind `__DEV__` (already done in security audit)
+- [ ] Verify the production API URL is correct in `api.ts` (currently `https://web-production-34028.up.railway.app`)
+- [ ] Test the full app flow end-to-end on a real device
+
+#### 7. Build with EAS
+```bash
+cd frontend
+eas build --platform ios --profile production
+```
+- This creates a production `.ipa` file signed for App Store distribution
+- Build takes ~15-20 minutes on EAS servers
+- Once complete, you'll get a download link
+
+#### 8. Submit to App Store
+**Option A: Auto-submit via EAS** (recommended)
+```bash
+eas submit --platform ios --latest
+```
+- This uploads the latest build directly to App Store Connect
+- You'll be prompted to authenticate with your Apple ID
+
+**Option B: Manual upload**
+- Download the `.ipa` from EAS
+- Open **Transporter** app on Mac
+- Drag and drop the `.ipa` to upload
+
+#### 9. Complete App Store Connect Listing
+- [ ] Go to App Store Connect > Your App > iOS App > Version 1.0
+- [ ] Select the uploaded build (may take 5-10 min to process)
+- [ ] Upload all screenshots
+- [ ] Fill in all metadata fields from Step 3
+- [ ] Set **Price**: Free (configure in-app purchases later if needed)
+- [ ] Set **Availability**: All territories (or select specific countries)
+- [ ] Set **Release**: "Manually release this version" (so you control launch day)
+
+#### 10. Submit for Review
+- [ ] Click **Add for Review**
+- [ ] Answer review questions:
+  - Sign-in required? **Yes** -- provide a demo account (create one specifically for Apple review)
+  - Demo credentials: username + password for Apple's review team
+- [ ] Click **Submit to App Review**
+
+### Phase 3: Review & Launch
+
+#### 11. Apple Review Process
+- **First submission**: typically 24-48 hours (can take up to 7 days)
+- **Common rejection reasons** to avoid:
+  - Missing privacy policy
+  - Broken links or crashes
+  - Incomplete metadata
+  - Login issues (always provide demo credentials)
+  - iPad layout issues (if `supportsTablet` is true, iPad must work properly)
+- If rejected: read the feedback, fix issues, increment `buildNumber`, rebuild, resubmit
+
+#### 12. Post-Approval
+- [ ] App status changes to **"Pending Developer Release"** (if set to manual)
+- [ ] Coordinate launch day with marketing (social posts, influencer drops)
+- [ ] Click **"Release This Version"** on launch day
+- [ ] App goes live within 24 hours (usually faster)
+
+#### 13. Launch Day Actions
+- [ ] Release the app on App Store Connect
+- [ ] Post on all social channels (TikTok, Instagram, Twitter/X)
+- [ ] Email the waitlist
+- [ ] Notify beta testers and influencers
+- [ ] Monitor App Store Connect for crash reports
+- [ ] Monitor Railway backend for traffic spikes
+- [ ] Respond to early App Store reviews
+
+### Phase 4: Post-Launch
+
+#### 14. Monitor & Iterate
+- [ ] Check **App Store Connect Analytics** daily (impressions, downloads, retention)
+- [ ] Monitor crash reports in App Store Connect > Feedback > Crashes
+- [ ] Track KPIs: Day 1/7/30 retention, session length, premium conversion
+- [ ] Respond to all App Store reviews (especially negative ones -- fast responses matter)
+- [ ] Submit updates regularly (every 2-4 weeks) to stay fresh in search results
+
+#### 15. Version Updates
+For each update:
+1. Increment `version` in `app.json` (e.g., `1.0.0` -> `1.1.0`)
+2. Increment `buildNumber` (e.g., `7` -> `8`)
+3. Run `eas build --platform ios --profile production`
+4. Run `eas submit --platform ios --latest`
+5. Add "What's New" release notes in App Store Connect
+6. Submit for review (subsequent reviews are usually faster, ~24h)
+
+---
+
+## Quick Reference: Essential Commands
+
+```bash
+# Build for App Store
+cd frontend
+eas build --platform ios --profile production
+
+# Submit to App Store
+eas submit --platform ios --latest
+
+# Build + submit in one command
+eas build --platform ios --profile production --auto-submit
+```
+
+---
+
 ## Next Steps
 
-1. **This Week**: Finalize MVP features, create landing page
-2. **Next Week**: Begin influencer outreach, create content
-3. **Week 3**: Start beta testing with 100 users
-4. **Week 4**: Iterate based on feedback
-5. **Month 2**: Submit to App Store, prepare launch
+1. **Today**: Create privacy policy page at endura.eco/privacy
+2. **Today**: Create a demo Apple review account in the app
+3. **Today**: Prepare 6 App Store screenshots
+4. **Tomorrow**: Set up App Store Connect listing with all metadata
+5. **Tomorrow**: Run final production build and submit
+6. **Day 3-5**: Wait for Apple review, prepare launch day social content
+7. **Launch Day**: Release + full marketing push
 
 ---
 
 *"Every minute you study is a minute closer to saving an endangered species."*
 
-**Let's make studying mean something.** 🥚🦁🌍
+**Let's make studying mean something.**

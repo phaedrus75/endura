@@ -1,5 +1,6 @@
 import PostHog from 'posthog-react-native';
 
+// Write-only project API key (safe to include in client bundle per PostHog docs)
 const POSTHOG_API_KEY = 'phc_qlSNrffxYPTSRAxQy0gC7q7h4DmhMiScXYwriCiTOtr';
 const POSTHOG_HOST = 'https://us.i.posthog.com';
 
