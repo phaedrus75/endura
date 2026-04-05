@@ -14,7 +14,6 @@ import {
   Animated,
 } from 'react-native';
 import { Text, TextInput } from '../components/StyledText';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import ConfettiCannon from 'react-native-confetti-cannon';
@@ -65,7 +64,7 @@ const shadows = {
     elevation: 8,
   },
 };
-import { animalsAPI, tasksAPI, statsAPI, Egg, Task, UserStats, UserAnimal } from '../services/api';
+import { animalsAPI, tasksAPI, statsAPI, subjectsAPI, Egg, Task, UserStats, UserAnimal, Subject } from '../services/api';
 import { animalImages, getAnimalImage } from '../assets/animals';
 
 const { width, height } = Dimensions.get('window');
@@ -163,11 +162,14 @@ export default function HomeScreen() {
   const [hatchedAnimal, setHatchedAnimal] = useState<any>(null);
   const [showAddTask, setShowAddTask] = useState(false);
   const [showCompleted, setShowCompleted] = useState(false);
-  const [subjects, setSubjects] = useState<string[]>(['Math', 'Science', 'English', 'History']);
+  const [subjects, setSubjects] = useState<Subject[]>([]);
   const [showAddSubject, setShowAddSubject] = useState(false);
   const [newTaskDueDate, setNewTaskDueDate] = useState<Date | null>(null);
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [newSubjectName, setNewSubjectName] = useState('');
+  const [subjectSuggestions, setSubjectSuggestions] = useState<Subject[]>([]);
+  const [showSubjectSuggestions, setShowSubjectSuggestions] = useState(false);
+  const subjectSearchTimeout = useRef<NodeJS.Timeout | null>(null);
   const [showEditTask, setShowEditTask] = useState(false);
   const [editingTask, setEditingTask] = useState<Task | null>(null);
   const [editTaskTitle, setEditTaskTitle] = useState('');
@@ -181,60 +183,67 @@ export default function HomeScreen() {
   const eggOpacity = useRef(new Animated.Value(1)).current;
   const animalRevealScale = useRef(new Animated.Value(0)).current;
 
-  // Load subjects from storage, merging with backend study data
-  useEffect(() => {
-    const loadSubjects = async () => {
-      try {
-        const stored = await AsyncStorage.getItem(`customSubjects_${user?.id || 'anon'}`);
-        if (stored) {
-          setSubjects(JSON.parse(stored));
-        }
-      } catch (e) {
-        if (__DEV__) console.log('Failed to load subjects');
-      }
-    };
-    loadSubjects();
-  }, [user?.id]);
-
-  const saveSubjects = async (newSubjects: string[]) => {
+  const loadSubjects = async () => {
     try {
-      await AsyncStorage.setItem(`customSubjects_${user?.id || 'anon'}`, JSON.stringify(newSubjects));
-      setSubjects(newSubjects);
+      const subs = await subjectsAPI.getMySubjects();
+      setSubjects(subs);
     } catch (e) {
-      if (__DEV__) console.log('Failed to save subjects');
+      if (__DEV__) console.log('Failed to load subjects');
     }
+  };
+
+  useEffect(() => { loadSubjects(); }, [user?.id]);
+
+  const handleSubjectSearch = (text: string) => {
+    setNewSubjectName(text);
+    if (subjectSearchTimeout.current) clearTimeout(subjectSearchTimeout.current);
+    if (text.trim().length < 1) {
+      setSubjectSuggestions([]);
+      setShowSubjectSuggestions(false);
+      return;
+    }
+    subjectSearchTimeout.current = setTimeout(async () => {
+      try {
+        const results = await subjectsAPI.search(text.trim());
+        const myIds = new Set(subjects.map(s => s.id));
+        const filtered = results.filter(s => !myIds.has(s.id));
+        setSubjectSuggestions(filtered);
+        setShowSubjectSuggestions(filtered.length > 0);
+      } catch {
+        setSubjectSuggestions([]);
+        setShowSubjectSuggestions(false);
+      }
+    }, 250);
+  };
+
+  const selectSubjectSuggestion = async (subject: Subject) => {
+    try {
+      await subjectsAPI.addSubject(subject.id);
+      await loadSubjects();
+      setNewSubjectName('');
+      setSubjectSuggestions([]);
+      setShowSubjectSuggestions(false);
+      setShowAddSubject(false);
+    } catch (e) {}
   };
 
   const addNewSubject = async () => {
     const name = newSubjectName.trim();
-    if (name && !subjects.includes(name)) {
-      const updated = [...subjects, name];
-      saveSubjects(updated);
+    if (!name) return;
+    try {
+      await subjectsAPI.createCustom(name);
+      await loadSubjects();
       setNewSubjectName('');
+      setSubjectSuggestions([]);
+      setShowSubjectSuggestions(false);
       setShowAddSubject(false);
-      try {
-        const key = `removedSubjects_${user?.id || 'anon'}`;
-        const stored = await AsyncStorage.getItem(key);
-        if (stored) {
-          const removed: string[] = JSON.parse(stored);
-          const filtered = removed.filter(s => s !== name);
-          await AsyncStorage.setItem(key, JSON.stringify(filtered));
-        }
-      } catch (e) {}
-    }
+    } catch (e) {}
   };
 
-  const removeSubject = async (subject: string) => {
-    const updated = subjects.filter(s => s !== subject);
-    saveSubjects(updated);
+  const removeSubject = async (sub: Subject) => {
     try {
-      const key = `removedSubjects_${user?.id || 'anon'}`;
-      const stored = await AsyncStorage.getItem(key);
-      const removed: string[] = stored ? JSON.parse(stored) : [];
-      if (!removed.includes(subject)) {
-        removed.push(subject);
-        await AsyncStorage.setItem(key, JSON.stringify(removed));
-      }
+      await subjectsAPI.removeSubject(sub.id);
+      setSubjects(prev => prev.filter(s => s.id !== sub.id));
     } catch (e) {}
   };
 
@@ -252,25 +261,7 @@ export default function HomeScreen() {
       setStats(statsData);
       setRecentAnimals(animalsData.slice(0, 3));
 
-      if (statsData?.study_minutes_by_subject) {
-        const backendSubjects = Object.keys(statsData.study_minutes_by_subject);
-        const removedRaw = await AsyncStorage.getItem(`removedSubjects_${user?.id || 'anon'}`).catch(() => null);
-        const removedSubjects: string[] = removedRaw ? JSON.parse(removedRaw) : [];
-        setSubjects(prev => {
-          const merged = [...prev];
-          let changed = false;
-          for (const s of backendSubjects) {
-            if (!merged.includes(s) && !removedSubjects.includes(s)) {
-              merged.push(s);
-              changed = true;
-            }
-          }
-          if (changed) {
-            AsyncStorage.setItem(`customSubjects_${user?.id || 'anon'}`, JSON.stringify(merged)).catch(() => {});
-          }
-          return changed ? merged : prev;
-        });
-      }
+      loadSubjects();
     } catch (error) {
       if (__DEV__) console.error('Failed to load data:', error);
     }
@@ -682,20 +673,20 @@ export default function HomeScreen() {
               
               <Text style={styles.inputLabel}>Subject</Text>
               <View style={styles.subjectGrid}>
-                {subjects.map((subject) => (
-                  <View key={subject} style={[
+                {subjects.map((sub) => (
+                  <View key={sub.id} style={[
                     styles.subjectChip,
-                    newTaskSubject === subject && styles.subjectChipActive,
+                    newTaskSubject === sub.display_name && styles.subjectChipActive,
                   ]}>
                     <TouchableOpacity
                       style={{ flexDirection: 'row', alignItems: 'center' }}
-                      onPress={() => setNewTaskSubject(newTaskSubject === subject ? '' : subject)}
+                      onPress={() => setNewTaskSubject(newTaskSubject === sub.display_name ? '' : sub.display_name)}
                     >
                       <Text style={[
                         styles.subjectChipText,
-                        newTaskSubject === subject && styles.subjectChipTextActive,
+                        newTaskSubject === sub.display_name && styles.subjectChipTextActive,
                       ]}>
-                        {subject}
+                        {sub.display_name}
                       </Text>
                     </TouchableOpacity>
                     <TouchableOpacity
@@ -703,16 +694,16 @@ export default function HomeScreen() {
                       onPress={() => {
                         Alert.alert(
                           'Remove Subject',
-                          `Remove "${subject}" from your subjects?`,
+                          `Remove "${sub.display_name}" from your subjects?`,
                           [
                             { text: 'Cancel', style: 'cancel' },
-                            { text: 'Remove', onPress: () => removeSubject(subject), style: 'destructive' },
+                            { text: 'Remove', onPress: () => removeSubject(sub), style: 'destructive' },
                           ]
                         );
                       }}
                       hitSlop={{ top: 8, bottom: 8, left: 4, right: 8 }}
                     >
-                      <Text style={[styles.subjectRemoveText, newTaskSubject === subject && { color: 'rgba(255,255,255,0.6)' }]}>✕</Text>
+                      <Text style={[styles.subjectRemoveText, newTaskSubject === sub.display_name && { color: 'rgba(255,255,255,0.6)' }]}>✕</Text>
                     </TouchableOpacity>
                   </View>
                 ))}
@@ -725,18 +716,35 @@ export default function HomeScreen() {
               </View>
 
               {showAddSubject && (
-                <View style={styles.addSubjectRow}>
-                  <TextInput
-                    style={styles.addSubjectInput}
-                    placeholder="New subject name"
-                    placeholderTextColor={colors.textMuted}
-                    value={newSubjectName}
-                    onChangeText={setNewSubjectName}
-                    autoFocus
-                  />
-                  <TouchableOpacity style={styles.addSubjectButton} onPress={addNewSubject}>
-                    <Text style={styles.addSubjectButtonText}>Add</Text>
-                  </TouchableOpacity>
+                <View>
+                  <View style={styles.addSubjectRow}>
+                    <TextInput
+                      style={styles.addSubjectInput}
+                      placeholder="Search or add a subject..."
+                      placeholderTextColor={colors.textMuted}
+                      value={newSubjectName}
+                      onChangeText={handleSubjectSearch}
+                      autoFocus
+                    />
+                    <TouchableOpacity style={styles.addSubjectButton} onPress={addNewSubject}>
+                      <Text style={styles.addSubjectButtonText}>Add</Text>
+                    </TouchableOpacity>
+                  </View>
+                  {showSubjectSuggestions && subjectSuggestions.length > 0 && (
+                    <View style={styles.subjectSuggestions}>
+                      <ScrollView style={{ maxHeight: 160 }} keyboardShouldPersistTaps="handled" nestedScrollEnabled>
+                        {subjectSuggestions.map((s) => (
+                          <TouchableOpacity
+                            key={s.id}
+                            style={styles.subjectSuggestionItem}
+                            onPress={() => selectSubjectSuggestion(s)}
+                          >
+                            <Text style={styles.subjectSuggestionText}>{s.display_name}</Text>
+                          </TouchableOpacity>
+                        ))}
+                      </ScrollView>
+                    </View>
+                  )}
                 </View>
               )}
 
@@ -810,20 +818,20 @@ export default function HomeScreen() {
               
               <Text style={styles.inputLabel}>Subject</Text>
               <View style={styles.subjectGrid}>
-                {subjects.map((subject) => (
-                  <View key={subject} style={[
+                {subjects.map((sub) => (
+                  <View key={sub.id} style={[
                     styles.subjectChip,
-                    editTaskSubject === subject && styles.subjectChipActive,
+                    editTaskSubject === sub.display_name && styles.subjectChipActive,
                   ]}>
                     <TouchableOpacity
                       style={{ flexDirection: 'row', alignItems: 'center' }}
-                      onPress={() => setEditTaskSubject(editTaskSubject === subject ? '' : subject)}
+                      onPress={() => setEditTaskSubject(editTaskSubject === sub.display_name ? '' : sub.display_name)}
                     >
                       <Text style={[
                         styles.subjectChipText,
-                        editTaskSubject === subject && styles.subjectChipTextActive,
+                        editTaskSubject === sub.display_name && styles.subjectChipTextActive,
                       ]}>
-                        {subject}
+                        {sub.display_name}
                       </Text>
                     </TouchableOpacity>
                   </View>
@@ -1270,10 +1278,11 @@ const styles = StyleSheet.create({
     color: 'rgba(255,255,255,0.6)',
   },
   taskEditHint: {
-    fontSize: 11,
-    color: 'rgba(255,255,255,0.4)',
-    marginTop: 3,
-    fontWeight: '500',
+    fontSize: 12,
+    color: 'rgba(255,255,255,0.6)',
+    marginTop: 4,
+    fontWeight: '600',
+    fontStyle: 'italic',
   },
   taskDeleteBtn: {
     width: 28,
@@ -1538,7 +1547,7 @@ const styles = StyleSheet.create({
   addSubjectRow: {
     flexDirection: 'row',
     gap: spacing.sm,
-    marginBottom: spacing.md,
+    marginBottom: spacing.xs,
   },
   addSubjectInput: {
     flex: 1,
@@ -1560,6 +1569,25 @@ const styles = StyleSheet.create({
     color: colors.textOnPrimary,
     fontWeight: '600',
     fontSize: 14,
+  },
+  subjectSuggestions: {
+    backgroundColor: colors.surface,
+    borderRadius: borderRadius.md,
+    borderWidth: 1,
+    borderColor: colors.cardBorder,
+    marginBottom: spacing.md,
+    ...shadows.small,
+  },
+  subjectSuggestionItem: {
+    paddingVertical: 10,
+    paddingHorizontal: spacing.md,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.divider,
+  },
+  subjectSuggestionText: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: colors.textPrimary,
   },
   subjectHint: {
     fontSize: 11,

@@ -24,9 +24,9 @@ import SwipeDismiss, { DragHandle } from '../components/SwipeDismiss';
 import { useAuth } from '../contexts/AuthContext';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
-  groupsAPI, feedAPI, socialAPI, tipsAPI, statsAPI,
+  groupsAPI, feedAPI, socialAPI, tipsAPI, subjectsAPI,
   StudyGroup, GroupMessage, FeedEvent,
-  Friend, FriendProfile, FriendSuggestion, StudyTip, LeaderboardEntry,
+  Friend, FriendProfile, FriendSuggestion, StudyTip, LeaderboardEntry, Subject,
 } from '../services/api';
 import { getAnimalImage } from '../assets/animals';
 import ConfettiCannon from 'react-native-confetti-cannon';
@@ -140,78 +140,33 @@ export default function SocialScreen() {
   const [celebratedGroupIds, setCelebratedGroupIds] = useState<Set<number>>(new Set());
   const [showEditGroup, setShowEditGroup] = useState<StudyGroup | null>(null);
   const [editGroupName, setEditGroupName] = useState('');
-  const [editGroupSubject, setEditGroupSubject] = useState<string | null>(null);
+  const [editGroupSubjectId, setEditGroupSubjectId] = useState<number | null>(null);
 
   // Hours/minutes picker state for create & edit goal
   const [goalHoursPicker, setGoalHoursPicker] = useState(8);
   const [goalMinutesPicker, setGoalMinutesPicker] = useState(20);
-  const [createSubject, setCreateSubject] = useState<string | null>(null);
-  const [mySubjects, setMySubjects] = useState<string[]>([]);
-  const [friendSubjectsMap, setFriendSubjectsMap] = useState<Record<number, string[]>>({});
-  const friendSubjectsCacheRef = useRef<Record<number, string[]>>({});
-
-  const DEFAULT_SUBJECTS = ['Math', 'Science', 'English', 'History'];
+  const [createSubjectId, setCreateSubjectId] = useState<number | null>(null);
+  const [sharedSubjects, setSharedSubjects] = useState<Subject[]>([]);
+  const [editGroupSubjects, setEditGroupSubjects] = useState<Subject[]>([]);
 
   useEffect(() => {
-    const loadMySubjects = async () => {
+    const fetchShared = async () => {
+      const memberIds = Array.from(selectedGroupFriends);
+      const allIds = user ? [user.id, ...memberIds] : memberIds;
+      if (allIds.length === 0) return;
       try {
-        const stats = await statsAPI.getStats();
-        const fromSessions = Object.keys(stats.study_minutes_by_subject || {});
-        const stored = await AsyncStorage.getItem(`customSubjects_${user?.id || 'anon'}`);
-        const local: string[] = stored ? JSON.parse(stored) : DEFAULT_SUBJECTS;
-        const merged = Array.from(new Set([...local, ...fromSessions]));
-        setMySubjects(merged);
+        const shared = await subjectsAPI.getShared(allIds);
+        setSharedSubjects(shared);
       } catch {
-        setMySubjects(DEFAULT_SUBJECTS);
+        setSharedSubjects([]);
       }
     };
-    if (user) loadMySubjects();
-  }, [user]);
+    fetchShared();
+  }, [selectedGroupFriends, user]);
 
   useEffect(() => {
-    const fetchAll = async () => {
-      const friendIds = Array.from(selectedGroupFriends);
-      let changed = false;
-      for (const fid of friendIds) {
-        if (friendSubjectsCacheRef.current[fid] !== undefined) continue;
-        try {
-          const result = await socialAPI.getFriendSubjects(fid);
-          friendSubjectsCacheRef.current[fid] = result.subjects || [];
-        } catch {
-          try {
-            const profile = await socialAPI.getFriendProfile(fid);
-            friendSubjectsCacheRef.current[fid] = profile.subjects || [];
-          } catch {
-            friendSubjectsCacheRef.current[fid] = [];
-          }
-        }
-        changed = true;
-      }
-      if (changed || friendIds.length === 0) {
-        setFriendSubjectsMap({ ...friendSubjectsCacheRef.current });
-      }
-    };
-    fetchAll();
-  }, [selectedGroupFriends]);
-
-  const sharedSubjects = React.useMemo(() => {
-    if (mySubjects.length === 0) return DEFAULT_SUBJECTS;
-    const selectedIds = Array.from(selectedGroupFriends);
-    if (selectedIds.length === 0) return mySubjects;
-    let shared = [...mySubjects];
-    for (const fid of selectedIds) {
-      const fs = friendSubjectsMap[fid];
-      if (!fs) continue;
-      if (fs.length === 0) { shared = []; break; }
-      const friendLower = fs.map(s => s.toLowerCase());
-      shared = shared.filter(s => friendLower.includes(s.toLowerCase()));
-    }
-    return shared;
-  }, [mySubjects, selectedGroupFriends, friendSubjectsMap]);
-
-  useEffect(() => {
-    if (createSubject && !sharedSubjects.some(s => s.toLowerCase() === createSubject.toLowerCase())) {
-      setCreateSubject(null);
+    if (createSubjectId && !sharedSubjects.some(s => s.id === createSubjectId)) {
+      setCreateSubjectId(null);
     }
   }, [sharedSubjects]);
 
@@ -459,11 +414,11 @@ export default function SocialScreen() {
   // ---- Group Actions ----
   const handleCreateGroup = async () => {
     if (!groupName.trim()) return;
-    if (!createSubject) { Alert.alert('Select Subject', 'Please select a subject for the group goal.'); return; }
+    if (!createSubjectId) { Alert.alert('Select Subject', 'Please select a subject for the group goal.'); return; }
     const totalMins = goalHoursPicker * 60 + goalMinutesPicker;
     if (totalMins < 1) { Alert.alert('Invalid Goal', 'Please set a goal of at least 1 minute.'); return; }
     try {
-      const result = await groupsAPI.create(groupName.trim(), totalMins, undefined, createSubject);
+      const result = await groupsAPI.create(groupName.trim(), totalMins, undefined, createSubjectId);
       const invited: string[] = [];
       for (const friendId of selectedGroupFriends) {
         const friend = friends.find(f => f.id === friendId);
@@ -584,7 +539,7 @@ export default function SocialScreen() {
     try {
       await groupsAPI.updateGroup(groupId, {
         name: editGroupName.trim(),
-        subject: editGroupSubject,
+        subject_id: editGroupSubjectId,
       });
       setShowEditGroup(null);
       loadData();
@@ -769,7 +724,13 @@ export default function SocialScreen() {
                 </View>
                 {g.goal_met && <Text style={styles.goalMetBadge}>Goal reached!</Text>}
                 <TouchableOpacity
-                  onPress={() => { setShowEditGroup(g); setEditGroupName(g.name); setEditGroupSubject(g.subject || null); }}
+                  onPress={() => {
+                    setShowEditGroup(g);
+                    setEditGroupName(g.name);
+                    setEditGroupSubjectId(g.subject_id || null);
+                    const memberIds = g.members.map(m => m.user_id);
+                    subjectsAPI.getShared(memberIds).then(setEditGroupSubjects).catch(() => setEditGroupSubjects([]));
+                  }}
                   style={styles.groupEditBtn}
                 >
                   <Text style={styles.groupEditBtnLabel}>Edit</Text>
@@ -1093,11 +1054,11 @@ export default function SocialScreen() {
                 <View style={styles.subjectGrid}>
                   {sharedSubjects.map(s => (
                     <TouchableOpacity
-                      key={s}
-                      style={[styles.subjectChip, createSubject === s && styles.subjectChipActive]}
-                      onPress={() => setCreateSubject(createSubject === s ? null : s)}
+                      key={s.id}
+                      style={[styles.subjectChip, createSubjectId === s.id && styles.subjectChipActive]}
+                      onPress={() => setCreateSubjectId(createSubjectId === s.id ? null : s.id)}
                     >
-                      <Text style={[styles.subjectChipText, createSubject === s && styles.subjectChipTextActive]}>{s}</Text>
+                      <Text style={[styles.subjectChipText, createSubjectId === s.id && styles.subjectChipTextActive]}>{s.display_name}</Text>
                     </TouchableOpacity>
                   ))}
                 </View>
@@ -1610,13 +1571,13 @@ export default function SocialScreen() {
               Only study time for this subject counts toward the goal
             </Text>
             <View style={styles.subjectGrid}>
-              {DEFAULT_SUBJECTS.map(s => (
+              {editGroupSubjects.map(s => (
                 <TouchableOpacity
-                  key={s}
-                  style={[styles.subjectChip, editGroupSubject === s && styles.subjectChipActive]}
-                  onPress={() => setEditGroupSubject(editGroupSubject === s ? null : s)}
+                  key={s.id}
+                  style={[styles.subjectChip, editGroupSubjectId === s.id && styles.subjectChipActive]}
+                  onPress={() => setEditGroupSubjectId(editGroupSubjectId === s.id ? null : s.id)}
                 >
-                  <Text style={[styles.subjectChipText, editGroupSubject === s && styles.subjectChipTextActive]}>{s}</Text>
+                  <Text style={[styles.subjectChipText, editGroupSubjectId === s.id && styles.subjectChipTextActive]}>{s.display_name}</Text>
                 </TouchableOpacity>
               ))}
             </View>

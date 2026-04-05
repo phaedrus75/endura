@@ -41,6 +41,8 @@ class UserResponse(BaseModel):
     school: Optional[str] = None
     city: Optional[str] = None
     country: Optional[str] = None
+    is_admin: bool = False
+    use_test_timer: bool = False
 
     class Config:
         from_attributes = True
@@ -98,13 +100,29 @@ class TaskResponse(BaseModel):
         from_attributes = True
 
 
+# ============ Subject Schemas ============
+
+class SubjectResponse(BaseModel):
+    id: int
+    name: str
+    display_name: str
+    is_default: bool
+
+    class Config:
+        from_attributes = True
+
+
+class SubjectCreate(BaseModel):
+    display_name: str = Field(..., min_length=1, max_length=100)
+
+
 # ============ Study Session Schemas ============
 
 class StudySessionCreate(BaseModel):
     task_id: Optional[int] = None
     duration_minutes: int = Field(..., ge=1, le=480)
     animal_name: Optional[str] = Field(None, max_length=100)
-    subject: Optional[str] = Field(None, max_length=100)
+    subject_id: Optional[int] = None
 
 
 class StudySessionResponse(BaseModel):
@@ -112,7 +130,8 @@ class StudySessionResponse(BaseModel):
     task_id: Optional[int]
     duration_minutes: int
     coins_earned: int
-    subject: Optional[str]
+    subject: Optional[str] = None
+    subject_id: Optional[int] = None
     started_at: datetime
     completed_at: Optional[datetime]
 
@@ -266,7 +285,7 @@ class GroupCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=100)
     goal_minutes: int = Field(500, ge=1, le=100000)
     goal_deadline: Optional[datetime] = None
-    subject: Optional[str] = Field(None, max_length=100)
+    subject_id: Optional[int] = None
 
 class GroupMemberResponse(BaseModel):
     user_id: int
@@ -290,6 +309,7 @@ class GroupResponse(BaseModel):
     goal_minutes: int
     goal_deadline: Optional[datetime]
     subject: Optional[str] = None
+    subject_id: Optional[int] = None
     created_at: datetime
     members: List[GroupMemberResponse] = []
     total_minutes: int = 0

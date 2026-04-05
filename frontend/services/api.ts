@@ -20,6 +20,8 @@ export interface User {
   school: string | null;
   city: string | null;
   country: string | null;
+  is_admin: boolean;
+  use_test_timer: boolean;
 }
 
 export interface SchoolSearchResult {
@@ -192,6 +194,7 @@ export interface StudyGroup {
   goal_minutes: number;
   goal_deadline: string | null;
   subject: string | null;
+  subject_id: number | null;
   created_at: string;
   members: StudyGroupMember[];
   total_minutes: number;
@@ -229,6 +232,13 @@ export interface UserStats {
   weekly_study_minutes: number[];
   monthly_study_minutes: number[];
   study_minutes_by_subject: { [key: string]: number };
+}
+
+export interface Subject {
+  id: number;
+  name: string;
+  display_name: string;
+  is_default: boolean;
 }
 
 // Helper function for API calls
@@ -352,6 +362,12 @@ export const authAPI = {
       body: JSON.stringify(data),
     }),
 
+  updateSettings: (data: { use_test_timer?: boolean }) =>
+    apiFetch<User>('/auth/settings', {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    }),
+
   searchSchools: (q: string) =>
     apiFetch<SchoolSearchResult[]>(`/schools/search?q=${encodeURIComponent(q)}`),
 
@@ -410,10 +426,10 @@ export const tasksAPI = {
 
 // Study Sessions API
 export const sessionsAPI = {
-  completeSession: (duration_minutes: number, task_id?: number, animal_name?: string, subject?: string) =>
+  completeSession: (duration_minutes: number, task_id?: number, animal_name?: string, subject_id?: number) =>
     apiFetch<StudySessionWithHatchAndBadges>('/sessions', {
       method: 'POST',
-      body: JSON.stringify({ duration_minutes, task_id, animal_name, subject }),
+      body: JSON.stringify({ duration_minutes, task_id, animal_name, subject_id }),
     }),
   
   getSessions: (limit = 50) =>
@@ -498,6 +514,28 @@ export const statsAPI = {
   getStats: () => apiFetch<UserStats>('/stats'),
 };
 
+// Subjects API
+export const subjectsAPI = {
+  getAll: () => apiFetch<Subject[]>('/subjects'),
+  getMySubjects: () => apiFetch<Subject[]>('/subjects/me'),
+  addSubject: (subjectId: number) =>
+    apiFetch<{ message: string }>('/subjects/me', {
+      method: 'POST',
+      body: JSON.stringify({ subject_id: subjectId }),
+    }),
+  removeSubject: (subjectId: number) =>
+    apiFetch<{ message: string }>(`/subjects/me/${subjectId}`, { method: 'DELETE' }),
+  createCustom: (displayName: string) =>
+    apiFetch<Subject>('/subjects', {
+      method: 'POST',
+      body: JSON.stringify({ display_name: displayName }),
+    }),
+  getShared: (userIds: number[]) =>
+    apiFetch<Subject[]>(`/subjects/shared?user_ids=${userIds.join(',')}`),
+  search: (q: string) =>
+    apiFetch<Subject[]>(`/subjects/search?q=${encodeURIComponent(q)}`),
+};
+
 // Shop API
 export const shopAPI = {
   spendCoins: (amount: number) =>
@@ -509,10 +547,10 @@ export const shopAPI = {
 
 // Study Group API
 export const groupsAPI = {
-  create: (name: string, goalMinutes: number, goalDeadline?: string, subject?: string) =>
+  create: (name: string, goalMinutes: number, goalDeadline?: string, subject_id?: number) =>
     apiFetch<{ id: number; name: string }>('/groups', {
       method: 'POST',
-      body: JSON.stringify({ name, goal_minutes: goalMinutes, goal_deadline: goalDeadline, subject }),
+      body: JSON.stringify({ name, goal_minutes: goalMinutes, goal_deadline: goalDeadline, subject_id }),
     }),
   join: (groupId: number) =>
     apiFetch('/groups/' + groupId + '/join', { method: 'POST' }),
@@ -538,8 +576,8 @@ export const groupsAPI = {
       method: 'PUT',
       body: JSON.stringify({ goal_minutes: goalMinutes }),
     }),
-  updateGroup: (groupId: number, data: { name?: string; subject?: string | null; goal_minutes?: number }) =>
-    apiFetch<{ message: string; name: string; subject: string | null; goal_minutes: number }>(`/groups/${groupId}`, {
+  updateGroup: (groupId: number, data: { name?: string; subject_id?: number | null; goal_minutes?: number }) =>
+    apiFetch<{ message: string; name: string; subject: string | null; subject_id: number | null; goal_minutes: number }>(`/groups/${groupId}`, {
       method: 'PUT',
       body: JSON.stringify(data),
     }),

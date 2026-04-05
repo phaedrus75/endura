@@ -29,10 +29,24 @@ def create_user(db: Session, email: str, hashed_password: str) -> models.User:
     db.commit()
     db.refresh(user)
     
-    # Create initial egg for user
     create_egg_for_user(db, user.id)
+    _assign_default_subjects(db, user.id)
     
     return user
+
+
+def _assign_default_subjects(db: Session, user_id: int):
+    """Give a new user the four starter subjects."""
+    starter = ["math", "science", "english", "history"]
+    subjects = db.query(models.Subject).filter(models.Subject.name.in_(starter)).all()
+    for s in subjects:
+        existing = db.query(models.UserSubject).filter(
+            models.UserSubject.user_id == user_id,
+            models.UserSubject.subject_id == s.id,
+        ).first()
+        if not existing:
+            db.add(models.UserSubject(user_id=user_id, subject_id=s.id))
+    db.commit()
 
 
 def update_username(db: Session, user_id: int, username: str) -> models.User:
@@ -102,20 +116,19 @@ def delete_task(db: Session, task_id: int, user_id: int) -> bool:
 
 # ============ Study Session CRUD ============
 
-def create_study_session(db: Session, user_id: int, duration_minutes: int, task_id: int = None, animal_name: str = None, subject: str = None) -> tuple:
-    # Calculate coins earned (1 coin per minute, bonus for longer sessions)
+def create_study_session(db: Session, user_id: int, duration_minutes: int, task_id: int = None, animal_name: str = None, subject_id: int = None) -> tuple:
     coins = duration_minutes
     if duration_minutes >= 25:
-        coins += 5  # Pomodoro bonus
+        coins += 5
     if duration_minutes >= 50:
-        coins += 10  # Extra bonus for hour sessions
+        coins += 10
     
     session = models.StudySession(
         user_id=user_id,
         task_id=task_id,
         duration_minutes=duration_minutes,
         coins_earned=coins,
-        subject=subject,
+        subject_id=subject_id,
         completed_at=datetime.utcnow()
     )
     db.add(session)
@@ -656,14 +669,16 @@ def get_user_stats(db: Session, user_id: int) -> dict:
 
     # Study minutes by subject
     subject_query = db.query(
-        models.StudySession.subject,
+        models.Subject.display_name,
         func.sum(models.StudySession.duration_minutes)
+    ).join(
+        models.Subject, models.StudySession.subject_id == models.Subject.id
     ).filter(
         models.StudySession.user_id == user_id,
-        models.StudySession.subject != None
-    ).group_by(models.StudySession.subject).all()
+        models.StudySession.subject_id != None
+    ).group_by(models.Subject.id, models.Subject.display_name).all()
     
-    study_minutes_by_subject = {row[0]: row[1] for row in subject_query if row[0]}
+    study_minutes_by_subject = {row[0]: int(row[1]) for row in subject_query if row[0]}
     
     return {
         "total_coins": user.total_coins,
@@ -682,11 +697,11 @@ def get_user_stats(db: Session, user_id: int) -> dict:
 
 # ============ Study Group CRUD ============
 
-def create_group(db: Session, creator_id: int, name: str, goal_minutes: int, goal_deadline, subject: str = None) -> models.StudyGroup:
+def create_group(db: Session, creator_id: int, name: str, goal_minutes: int, goal_deadline, subject_id: int = None) -> models.StudyGroup:
     group = models.StudyGroup(
         name=name, creator_id=creator_id,
         goal_minutes=goal_minutes, goal_deadline=goal_deadline,
-        subject=subject
+        subject_id=subject_id
     )
     db.add(group)
     db.commit()
@@ -752,10 +767,16 @@ def get_user_groups(db: Session, user_id: int) -> List[dict]:
                 "profile_pic_url": u.profile_pic_url if u else None,
             })
 
+        subject_display = None
+        if group.subject_id:
+            subj = db.query(models.Subject).filter(models.Subject.id == group.subject_id).first()
+            subject_display = subj.display_name if subj else None
+
         results.append({
             "id": group.id, "name": group.name, "creator_id": group.creator_id,
             "goal_minutes": group.goal_minutes, "goal_deadline": group.goal_deadline,
-            "subject": group.subject,
+            "subject": subject_display,
+            "subject_id": group.subject_id,
             "created_at": group.created_at, "members": member_list,
             "total_minutes": total, "goal_met": total >= group.goal_minutes
         })
@@ -768,8 +789,8 @@ def _group_member_minutes(db: Session, user_id: int, group) -> int:
         models.StudySession.user_id == user_id,
         models.StudySession.completed_at >= since
     )
-    if group.subject:
-        q = q.filter(func.lower(models.StudySession.subject) == func.lower(group.subject))
+    if group.subject_id:
+        q = q.filter(models.StudySession.subject_id == group.subject_id)
     return q.scalar() or 0
 
 
@@ -1193,14 +1214,14 @@ def check_badges(db: Session, user_id: int, session_hour: int = None, session_mi
 
     # Subjects
     subject_query = db.query(
-        models.StudySession.subject,
+        models.StudySession.subject_id,
         func.sum(models.StudySession.duration_minutes)
     ).filter(
         models.StudySession.user_id == user_id,
-        models.StudySession.subject != None
-    ).group_by(models.StudySession.subject).all()
+        models.StudySession.subject_id != None
+    ).group_by(models.StudySession.subject_id).all()
 
-    distinct_subjects = len([s for s in subject_query if s[0]])
+    distinct_subjects = len(subject_query)
     if distinct_subjects >= 3: capped_award("subject_explorer")
     if distinct_subjects >= 6: capped_award("renaissance_student")
 
@@ -1209,10 +1230,10 @@ def check_badges(db: Session, user_id: int, session_hour: int = None, session_mi
     if max_subject_mins >= 1500: capped_award("subject_champion")
 
     # Balanced brain: 3+ subjects in current week
-    week_subjects = db.query(models.StudySession.subject).filter(
+    week_subjects = db.query(models.StudySession.subject_id).filter(
         models.StudySession.user_id == user_id,
         models.StudySession.completed_at >= datetime.combine(monday, datetime.min.time()),
-        models.StudySession.subject != None
+        models.StudySession.subject_id != None
     ).distinct().count()
     if week_subjects >= 3: capped_award("balanced_brain")
     if distinct_subjects >= 10: capped_award("polymath")
@@ -1243,5 +1264,118 @@ def check_badges(db: Session, user_id: int, session_hour: int = None, session_mi
         db.commit()
 
     return new_badges
+
+
+# ============ Subject CRUD ============
+
+def seed_default_subjects(db: Session):
+    """Insert standard subjects if they don't exist yet."""
+    for name, display_name in models.DEFAULT_SUBJECT_SEEDS:
+        existing = db.query(models.Subject).filter(models.Subject.name == name).first()
+        if not existing:
+            db.add(models.Subject(name=name, display_name=display_name, is_default=True))
+    db.commit()
+
+
+def get_all_subjects(db: Session) -> List[models.Subject]:
+    return db.query(models.Subject).filter(models.Subject.is_default == True).order_by(models.Subject.display_name).all()
+
+
+def get_user_subjects(db: Session, user_id: int) -> List[models.Subject]:
+    return (
+        db.query(models.Subject)
+        .join(models.UserSubject, models.UserSubject.subject_id == models.Subject.id)
+        .filter(models.UserSubject.user_id == user_id, models.UserSubject.is_active == True)
+        .order_by(models.Subject.display_name)
+        .all()
+    )
+
+
+def add_user_subject(db: Session, user_id: int, subject_id: int) -> bool:
+    existing = db.query(models.UserSubject).filter(
+        models.UserSubject.user_id == user_id,
+        models.UserSubject.subject_id == subject_id,
+    ).first()
+    if existing:
+        if not existing.is_active:
+            existing.is_active = True
+            db.commit()
+        return True
+    sub = db.query(models.Subject).filter(models.Subject.id == subject_id).first()
+    if not sub:
+        return False
+    db.add(models.UserSubject(user_id=user_id, subject_id=subject_id))
+    db.commit()
+    return True
+
+
+def remove_user_subject(db: Session, user_id: int, subject_id: int) -> bool:
+    row = db.query(models.UserSubject).filter(
+        models.UserSubject.user_id == user_id,
+        models.UserSubject.subject_id == subject_id,
+    ).first()
+    if not row:
+        return False
+    row.is_active = False
+    db.commit()
+    return True
+
+
+def create_custom_subject(db: Session, user_id: int, display_name: str) -> Optional[models.Subject]:
+    name = display_name.strip().lower()
+    if not name:
+        return None
+    existing = db.query(models.Subject).filter(models.Subject.name == name).first()
+    if existing:
+        add_user_subject(db, user_id, existing.id)
+        return existing
+    sub = models.Subject(
+        name=name, display_name=display_name.strip(),
+        is_default=False, created_by_user_id=user_id,
+    )
+    db.add(sub)
+    db.commit()
+    db.refresh(sub)
+    add_user_subject(db, user_id, sub.id)
+    return sub
+
+
+def search_subjects(db: Session, query: str, limit: int = 20) -> List[models.Subject]:
+    """Search all standard subjects by display_name (ilike)."""
+    if not query or len(query) < 1:
+        return []
+    pattern = f"%{query}%"
+    return (
+        db.query(models.Subject)
+        .filter(
+            models.Subject.is_default == True,
+            models.Subject.display_name.ilike(pattern),
+        )
+        .order_by(models.Subject.display_name)
+        .limit(limit)
+        .all()
+    )
+
+
+def get_shared_subjects(db: Session, user_ids: List[int]) -> List[models.Subject]:
+    """Return subjects that ALL given users have active."""
+    if not user_ids:
+        return []
+    from sqlalchemy import and_
+    n = len(user_ids)
+    subject_ids = (
+        db.query(models.UserSubject.subject_id)
+        .filter(
+            models.UserSubject.user_id.in_(user_ids),
+            models.UserSubject.is_active == True,
+        )
+        .group_by(models.UserSubject.subject_id)
+        .having(func.count(models.UserSubject.user_id.distinct()) == n)
+        .all()
+    )
+    ids = [r[0] for r in subject_ids]
+    if not ids:
+        return []
+    return db.query(models.Subject).filter(models.Subject.id.in_(ids)).order_by(models.Subject.display_name).all()
 
 

@@ -5,6 +5,197 @@ from uuid import uuid4
 from database import Base
 
 
+DEFAULT_SUBJECT_SEEDS = [
+    # ── Mathematics ──
+    ("math", "Math"),
+    ("further mathematics", "Further Mathematics"),
+    ("statistics", "Statistics"),
+    ("calculus", "Calculus"),
+
+    # ── Natural Sciences ──
+    ("science", "Science"),
+    ("physics", "Physics"),
+    ("chemistry", "Chemistry"),
+    ("biology", "Biology"),
+    ("computer science", "Computer Science"),
+    ("environmental science", "Environmental Science"),
+    ("earth science", "Earth Science"),
+    ("marine science", "Marine Science"),
+    ("geology", "Geology"),
+    ("astronomy", "Astronomy"),
+    ("anatomy and physiology", "Anatomy and Physiology"),
+    ("forensic science", "Forensic Science"),
+    ("biotechnology", "Biotechnology"),
+    ("health science", "Health Science"),
+    ("sports science", "Sports Science"),
+    ("nutrition", "Nutrition"),
+    ("agricultural science", "Agricultural Science"),
+
+    # ── Social Sciences ──
+    ("psychology", "Psychology"),
+    ("sociology", "Sociology"),
+    ("anthropology", "Anthropology"),
+    ("social and cultural anthropology", "Social and Cultural Anthropology"),
+    ("economics", "Economics"),
+    ("macroeconomics", "Macroeconomics"),
+    ("microeconomics", "Microeconomics"),
+    ("political science", "Political Science"),
+    ("government and politics", "Government and Politics"),
+    ("global politics", "Global Politics"),
+    ("comparative government", "Comparative Government"),
+    ("geography", "Geography"),
+    ("human geography", "Human Geography"),
+    ("law", "Law"),
+    ("criminology", "Criminology"),
+    ("philosophy", "Philosophy"),
+    ("ethics", "Ethics"),
+    ("religious studies", "Religious Studies"),
+    ("world religions", "World Religions"),
+    ("social studies", "Social Studies"),
+    ("civics", "Civics"),
+
+    # ── History ──
+    ("history", "History"),
+    ("us history", "US History"),
+    ("world history", "World History"),
+    ("european history", "European History"),
+    ("art history", "Art History"),
+    ("ancient history", "Ancient History"),
+
+    # ── English & Language Arts ──
+    ("english", "English"),
+    ("english language", "English Language"),
+    ("english literature", "English Literature"),
+    ("literature", "Literature"),
+    ("creative writing", "Creative Writing"),
+    ("media studies", "Media Studies"),
+    ("journalism", "Journalism"),
+    ("communication studies", "Communication Studies"),
+
+    # ── World Languages ──
+    ("french", "French"),
+    ("spanish", "Spanish"),
+    ("german", "German"),
+    ("mandarin chinese", "Mandarin Chinese"),
+    ("japanese", "Japanese"),
+    ("arabic", "Arabic"),
+    ("hindi", "Hindi"),
+    ("italian", "Italian"),
+    ("portuguese", "Portuguese"),
+    ("russian", "Russian"),
+    ("latin", "Latin"),
+    ("ancient greek", "Ancient Greek"),
+    ("korean", "Korean"),
+    ("urdu", "Urdu"),
+    ("turkish", "Turkish"),
+    ("dutch", "Dutch"),
+    ("sanskrit", "Sanskrit"),
+    ("hebrew", "Hebrew"),
+    ("persian", "Persian"),
+    ("polish", "Polish"),
+    ("swedish", "Swedish"),
+    ("sign language", "Sign Language"),
+
+    # ── Arts ──
+    ("art", "Art"),
+    ("visual arts", "Visual Arts"),
+    ("music", "Music"),
+    ("music theory", "Music Theory"),
+    ("theatre", "Theatre"),
+    ("drama", "Drama"),
+    ("dance", "Dance"),
+    ("film studies", "Film Studies"),
+    ("photography", "Photography"),
+    ("graphic design", "Graphic Design"),
+    ("painting", "Painting"),
+
+    # ── Technology & Design ──
+    ("design technology", "Design Technology"),
+    ("information technology", "Information Technology"),
+    ("digital technology", "Digital Technology"),
+    ("engineering", "Engineering"),
+    ("robotics", "Robotics"),
+
+    # ── Business ──
+    ("business studies", "Business Studies"),
+    ("business management", "Business Management"),
+    ("accounting", "Accounting"),
+    ("accountancy", "Accountancy"),
+    ("marketing", "Marketing"),
+    ("finance", "Finance"),
+    ("entrepreneurship", "Entrepreneurship"),
+    ("commerce", "Commerce"),
+
+    # ── IB-Specific ──
+    ("theory of knowledge", "Theory of Knowledge"),
+    ("environmental systems and societies", "Environmental Systems and Societies"),
+    ("sports exercise and health science", "Sports Exercise and Health Science"),
+
+    # ── CBSE / Indian Curriculum ──
+    ("physical education", "Physical Education"),
+    ("home science", "Home Science"),
+    ("informatics practices", "Informatics Practices"),
+    ("legal studies", "Legal Studies"),
+
+    # ── AP-Specific ──
+    ("ap seminar", "AP Seminar"),
+    ("ap research", "AP Research"),
+
+    # ── Entrance Exams & Test Prep ──
+    ("sat", "SAT"),
+    ("act", "ACT"),
+    ("mcat", "MCAT"),
+    ("lsat", "LSAT"),
+    ("gre", "GRE"),
+    ("gmat", "GMAT"),
+    ("ucat", "UCAT"),
+    ("bmat", "BMAT"),
+    ("lnat", "LNAT"),
+    ("step", "STEP"),
+    ("mat", "MAT"),
+    ("pat", "PAT"),
+    ("tsa", "TSA"),
+    ("ielts", "IELTS"),
+    ("toefl", "TOEFL"),
+    ("ap exam prep", "AP Exam Prep"),
+    ("common app", "Common App"),
+    ("ucas", "UCAS"),
+    ("jee", "JEE"),
+    ("neet", "NEET"),
+    ("gamsat", "GAMSAT"),
+    ("dat", "DAT"),
+]
+
+
+class Subject(Base):
+    """Canonical subject catalog — standard + user-created custom subjects"""
+    __tablename__ = "subjects"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String, unique=True, nullable=False, index=True)
+    display_name = Column(String, nullable=False)
+    is_default = Column(Boolean, default=True)
+    created_by_user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class UserSubject(Base):
+    """Join table: which subjects a user has active"""
+    __tablename__ = "user_subjects"
+    __table_args__ = (
+        UniqueConstraint("user_id", "subject_id", name="uq_user_subject"),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"))
+    subject_id = Column(Integer, ForeignKey("subjects.id"))
+    is_active = Column(Boolean, default=True)
+    added_at = Column(DateTime, default=datetime.utcnow)
+
+    user = relationship("User")
+    subject = relationship("Subject")
+
+
 class User(Base):
     __tablename__ = "users"
     
@@ -54,6 +245,10 @@ class User(Base):
     notification_enabled = Column(Boolean, default=True)
     study_reminder_hour = Column(Integer, nullable=True)
     study_reminder_minute = Column(Integer, nullable=True)
+
+    # Admin & dev settings
+    is_admin = Column(Boolean, default=False, server_default="0")
+    use_test_timer = Column(Boolean, default=False, server_default="0")
     
     # Relationships
     tasks = relationship("Task", back_populates="user")
@@ -88,12 +283,13 @@ class StudySession(Base):
     task_id = Column(Integer, ForeignKey("tasks.id"), nullable=True)
     duration_minutes = Column(Integer, nullable=False)
     coins_earned = Column(Integer, nullable=False)
-    subject = Column(String, nullable=True)  # Subject/category for tracking
+    subject_id = Column(Integer, ForeignKey("subjects.id"), nullable=True)
     started_at = Column(DateTime, default=datetime.utcnow)
     completed_at = Column(DateTime, nullable=True)
     
     user = relationship("User", back_populates="study_sessions")
     task = relationship("Task")
+    subject = relationship("Subject")
 
 
 class Animal(Base):
@@ -221,10 +417,11 @@ class StudyGroup(Base):
     creator_id = Column(Integer, ForeignKey("users.id"))
     goal_minutes = Column(Integer, default=500)
     goal_deadline = Column(DateTime, nullable=True)
-    subject = Column(String, nullable=True)
+    subject_id = Column(Integer, ForeignKey("subjects.id"), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
     creator = relationship("User", foreign_keys=[creator_id])
+    subject = relationship("Subject")
     members = relationship("GroupMember", back_populates="group")
     messages = relationship("GroupMessage", back_populates="group", order_by="GroupMessage.created_at.desc()")
 

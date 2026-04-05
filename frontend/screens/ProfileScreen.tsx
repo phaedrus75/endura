@@ -12,6 +12,7 @@ import {
   ActionSheetIOS,
   Platform,
   KeyboardAvoidingView,
+  Switch,
 } from 'react-native';
 import { Text, TextInput } from '../components/StyledText';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -453,8 +454,6 @@ export default function ProfileScreen() {
         }
         showsVerticalScrollIndicator={false}
       >
-        {/* Swipe Indicator */}
-        <View style={styles.swipeIndicator} />
         
         {/* Header with Close Button */}
         <View style={styles.backHeader}>
@@ -537,35 +536,8 @@ export default function ProfileScreen() {
             end={{ x: 0, y: 1 }}
             style={styles.statBox}
           >
-            <Text style={styles.statValue}>{formatTime(stats?.total_study_minutes || 0)}</Text>
-            <Text style={styles.statLabel}>Total Study</Text>
-          </ExpoLinearGradient>
-          <ExpoLinearGradient
-            colors={['#FFFFFF', '#E7EFEA']}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 0, y: 1 }}
-            style={styles.statBox}
-          >
-            <Text style={styles.statValue}>{stats?.total_sessions || 0}</Text>
-            <Text style={styles.statLabel}>Sessions</Text>
-          </ExpoLinearGradient>
-          <ExpoLinearGradient
-            colors={['#FFFFFF', '#E7EFEA']}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 0, y: 1 }}
-            style={styles.statBox}
-          >
             <Text style={styles.statValue}>{stats?.total_coins || 0}</Text>
             <Text style={styles.statLabel}>Total Eco-Credits</Text>
-          </ExpoLinearGradient>
-          <ExpoLinearGradient
-            colors={['#FFFFFF', '#E7EFEA']}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 0, y: 1 }}
-            style={styles.statBox}
-          >
-            <Text style={styles.statValue}>{stats?.animals_hatched || 0}</Text>
-            <Text style={styles.statLabel}>Animals</Text>
           </ExpoLinearGradient>
           <ExpoLinearGradient
             colors={['#FFFFFF', '#E7EFEA']}
@@ -611,6 +583,30 @@ export default function ProfileScreen() {
             <Text style={styles.donationCardBtnText}>Donate</Text>
           </TouchableOpacity>
         </ExpoLinearGradient>
+
+        {/* Admin Settings — only visible to admin users */}
+        {user?.is_admin && (
+          <View style={styles.adminCard}>
+            <Text style={styles.adminCardTitle}>🛠  Developer Settings</Text>
+            <View style={styles.adminRow}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.adminRowLabel}>Test Timer (seconds)</Text>
+                <Text style={styles.adminRowHint}>Timer counts in seconds instead of minutes</Text>
+              </View>
+              <Switch
+                value={user?.use_test_timer ?? false}
+                onValueChange={async (val) => {
+                  try {
+                    await authAPI.updateSettings({ use_test_timer: val });
+                    await refreshUser();
+                  } catch {}
+                }}
+                trackColor={{ false: '#E2EAE5', true: colors.primary }}
+                thumbColor="#FFFFFF"
+              />
+            </View>
+          </View>
+        )}
 
         {/* Logout */}
         <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
@@ -895,6 +891,7 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
     gap: 10,
     marginBottom: spacing.xl,
+    justifyContent: 'center',
   },
   statBox: {
     width: (width - spacing.lg * 2 - 20) / 3,
@@ -1155,6 +1152,36 @@ const styles = StyleSheet.create({
     color: colors.streakActive,
     fontWeight: '600',
     fontSize: 12,
+  },
+  adminCard: {
+    backgroundColor: '#FFFBF0',
+    borderRadius: borderRadius.lg,
+    padding: spacing.md,
+    marginBottom: spacing.lg,
+    borderWidth: 1,
+    borderColor: '#E8DCC8',
+  },
+  adminCardTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: colors.textPrimary,
+    marginBottom: spacing.sm,
+  },
+  adminRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: spacing.xs,
+  },
+  adminRowLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: colors.textPrimary,
+  },
+  adminRowHint: {
+    fontSize: 11,
+    color: colors.textSecondary,
+    marginTop: 2,
   },
   logoutButton: {
     backgroundColor: colors.error + '15',

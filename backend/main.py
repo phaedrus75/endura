@@ -34,6 +34,20 @@ if SQLALCHEMY_DATABASE_URL.startswith("sqlite"):
     except Exception as e:
         print(f"Warning: Could not create tables on startup: {e}")
 
+# Seed default subjects and mark admin users on startup
+try:
+    from database import SessionLocal
+    _seed_db = SessionLocal()
+    crud.seed_default_subjects(_seed_db)
+    for _uid in [1, 2]:
+        _u = _seed_db.query(models.User).filter(models.User.id == _uid).first()
+        if _u and not _u.is_admin:
+            _u.is_admin = True
+            _seed_db.commit()
+    _seed_db.close()
+except Exception as e:
+    print(f"Warning: Could not seed startup data: {e}")
+
 app = FastAPI(title="Endura API", description="Gamified Study App Backend")
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
@@ -509,6 +523,21 @@ def logout(current_user: models.User = Depends(get_current_user), db: Session = 
     return {"message": "Logged out"}
 
 
+@app.put("/auth/settings")
+def update_user_settings(
+    data: dict,
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    if "use_test_timer" in data:
+        if not current_user.is_admin:
+            raise HTTPException(status_code=403, detail="Admin only")
+        current_user.use_test_timer = bool(data["use_test_timer"])
+    db.commit()
+    db.refresh(current_user)
+    return current_user
+
+
 _IMAGE_MAGIC = {
     b'\xff\xd8\xff': "image/jpeg",
     b'\x89PNG': "image/png",
@@ -928,7 +957,7 @@ def complete_study_session(
             session.duration_minutes,
             task_id,
             session.animal_name,
-            session.subject
+            session.subject_id
         )
         session_hour = None
         if study_session.completed_at:
@@ -943,8 +972,18 @@ def complete_study_session(
                                       hatched_animal.name if hatched_animal else None)
         except Exception:
             pass
+        session_dict = {
+            "id": study_session.id,
+            "task_id": study_session.task_id,
+            "duration_minutes": study_session.duration_minutes,
+            "coins_earned": study_session.coins_earned,
+            "subject": study_session.subject.display_name if study_session.subject else None,
+            "subject_id": study_session.subject_id,
+            "started_at": study_session.started_at,
+            "completed_at": study_session.completed_at,
+        }
         return {
-            "session": study_session,
+            "session": session_dict,
             "hatched_animal": hatched_animal,
             "new_badges": [crud.BADGE_MAP[bid] for bid in new_badges if bid in crud.BADGE_MAP],
         }
@@ -961,7 +1000,17 @@ def get_sessions(
     current_user: models.User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    return crud.get_user_sessions(db, current_user.id, limit)
+    sessions = crud.get_user_sessions(db, current_user.id, limit)
+    return [
+        {
+            "id": s.id, "task_id": s.task_id,
+            "duration_minutes": s.duration_minutes, "coins_earned": s.coins_earned,
+            "subject": s.subject.display_name if s.subject else None,
+            "subject_id": s.subject_id,
+            "started_at": s.started_at, "completed_at": s.completed_at,
+        }
+        for s in sessions
+    ]
 
 
 # ============ Egg & Animal Endpoints ============
@@ -1227,11 +1276,8 @@ def get_friend_profile(
     if not friend:
         raise HTTPException(status_code=404, detail="User not found")
     animals_count = db.query(models.UserAnimal).filter(models.UserAnimal.user_id == friend.id).count()
-    subject_rows = db.query(models.StudySession.subject).filter(
-        models.StudySession.user_id == friend.id,
-        models.StudySession.subject != None
-    ).distinct().all()
-    friend_subjects = [row[0] for row in subject_rows if row[0]]
+    friend_subject_objs = crud.get_user_subjects(db, friend.id)
+    friend_subjects = [s.display_name for s in friend_subject_objs]
     return {
         "id": friend.id,
         "username": friend.username,
@@ -1266,11 +1312,8 @@ def get_friend_subjects(
     ).first()
     if not friendship:
         raise HTTPException(status_code=404, detail="Friend not found")
-    rows = db.query(models.StudySession.subject).filter(
-        models.StudySession.user_id == friend_id,
-        models.StudySession.subject != None
-    ).distinct().all()
-    return {"subjects": [r[0] for r in rows if r[0]]}
+    friend_subject_objs = crud.get_user_subjects(db, friend_id)
+    return {"subjects": [s.display_name for s in friend_subject_objs]}
 
 
 @app.delete("/friends/{friend_id}")
@@ -1378,6 +1421,88 @@ def check_badges(
     }
 
 
+# ============ Subject Endpoints ============
+
+@app.get("/subjects", response_model=List[schemas.SubjectResponse])
+def list_subjects(db: Session = Depends(get_db)):
+    """Return all standard (default) subjects."""
+    return crud.get_all_subjects(db)
+
+
+@app.get("/subjects/search", response_model=List[schemas.SubjectResponse])
+def search_subjects(
+    q: str = "",
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Search standard subjects by name for autocomplete."""
+    if not q or len(q) < 1:
+        return []
+    return crud.search_subjects(db, q)
+
+
+@app.get("/subjects/me", response_model=List[schemas.SubjectResponse])
+def my_subjects(
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    return crud.get_user_subjects(db, current_user.id)
+
+
+@app.post("/subjects/me")
+def add_subject_to_me(
+    data: dict,
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    subject_id = data.get("subject_id")
+    if not subject_id or not isinstance(subject_id, int):
+        raise HTTPException(status_code=400, detail="subject_id required")
+    ok = crud.add_user_subject(db, current_user.id, subject_id)
+    if not ok:
+        raise HTTPException(status_code=404, detail="Subject not found")
+    return {"message": "Subject added"}
+
+
+@app.delete("/subjects/me/{subject_id}")
+def remove_subject_from_me(
+    subject_id: int,
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    ok = crud.remove_user_subject(db, current_user.id, subject_id)
+    if not ok:
+        raise HTTPException(status_code=404, detail="Subject not found in your list")
+    return {"message": "Subject removed"}
+
+
+@app.post("/subjects", response_model=schemas.SubjectResponse)
+def create_subject(
+    data: schemas.SubjectCreate,
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    sub = crud.create_custom_subject(db, current_user.id, data.display_name)
+    if not sub:
+        raise HTTPException(status_code=400, detail="Invalid subject name")
+    return sub
+
+
+@app.get("/subjects/shared", response_model=List[schemas.SubjectResponse])
+def shared_subjects(
+    user_ids: str = Query(..., description="Comma-separated user IDs"),
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    try:
+        ids = [int(x.strip()) for x in user_ids.split(",") if x.strip()]
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid user_ids format")
+    if not ids:
+        raise HTTPException(status_code=400, detail="At least one user_id required")
+    return crud.get_shared_subjects(db, ids)
+
+
 # ============ Study Group Endpoints ============
 
 @app.post("/groups")
@@ -1386,7 +1511,7 @@ def create_group(
     current_user: models.User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    group = crud.create_group(db, current_user.id, data.name, data.goal_minutes, data.goal_deadline, data.subject)
+    group = crud.create_group(db, current_user.id, data.name, data.goal_minutes, data.goal_deadline, data.subject_id)
     return {"id": group.id, "name": group.name}
 
 @app.put("/groups/{group_id}")
@@ -1409,15 +1534,19 @@ def update_group(
         name = str(data["name"]).strip()[:100]
         if name:
             group.name = name
-    if "subject" in data:
-        subj = data["subject"]
-        group.subject = str(subj).strip()[:100] if subj else None
+    if "subject_id" in data:
+        sid = data["subject_id"]
+        group.subject_id = int(sid) if sid else None
     if "goal_minutes" in data:
         goal = data["goal_minutes"]
         if isinstance(goal, int) and goal >= 1:
             group.goal_minutes = goal
     db.commit()
-    return {"message": "Group updated", "name": group.name, "subject": group.subject, "goal_minutes": group.goal_minutes}
+    subj_name = None
+    if group.subject_id:
+        subj_obj = db.query(models.Subject).filter(models.Subject.id == group.subject_id).first()
+        subj_name = subj_obj.display_name if subj_obj else None
+    return {"message": "Group updated", "name": group.name, "subject": subj_name, "subject_id": group.subject_id, "goal_minutes": group.goal_minutes}
 
 @app.put("/groups/{group_id}/goal")
 def update_group_goal(
@@ -2051,7 +2180,8 @@ def admin_user_detail(user_id: int, db: Session = Depends(get_db), _=Depends(ver
         "id": s.id,
         "duration_minutes": s.duration_minutes,
         "coins_earned": s.coins_earned,
-        "subject": s.subject,
+        "subject": s.subject.display_name if s.subject else None,
+        "subject_id": s.subject_id,
         "started_at": s.started_at.isoformat() if s.started_at else None,
     } for s in sessions]
 
@@ -2153,7 +2283,8 @@ def admin_sessions(
             "username": (u.username or u.email) if u else None,
             "duration_minutes": s.duration_minutes,
             "coins_earned": s.coins_earned,
-            "subject": s.subject,
+            "subject": s.subject.display_name if s.subject else None,
+            "subject_id": s.subject_id,
             "started_at": s.started_at.isoformat() if s.started_at else None,
         })
 

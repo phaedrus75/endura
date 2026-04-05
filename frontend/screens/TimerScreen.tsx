@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import {
   View,
   StyleSheet,
@@ -24,7 +24,7 @@ import Slider from '@react-native-community/slider';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { colors, shadows, spacing, borderRadius } from '../theme/colors';
 import SwipeDismiss, { DragHandle } from '../components/SwipeDismiss';
-import { sessionsAPI, animalsAPI, BadgeInfo } from '../services/api';
+import { sessionsAPI, animalsAPI, subjectsAPI, BadgeInfo, Subject } from '../services/api';
 import { useAuth } from '../contexts/AuthContext';
 import { getAnimalImage } from '../assets/animals';
 import { Analytics } from '../services/analytics';
@@ -65,10 +65,6 @@ const ENDANGERED_ANIMALS = [
 
 const { width } = Dimensions.get('window');
 
-// ⚠️ TEST MODE: Set to true to make timers run in seconds instead of minutes
-// e.g., 5 min becomes 5 seconds for quick testing
-const TEST_MODE = true;
-
 const PRESET_TIMES = [
   { label: '20', minutes: 20 },
   { label: '30', minutes: 30 },
@@ -77,9 +73,6 @@ const PRESET_TIMES = [
   { label: '90', minutes: 90 },
   { label: '120', minutes: 120 },
 ];
-
-// In test mode, multiply by 1 (seconds), otherwise by 60 (minutes to seconds)
-const TIME_MULTIPLIER = TEST_MODE ? 1 : 60;
 
 // Circular Progress Component
 const CircularProgress = ({ progress, size = 260, strokeWidth = 10, children }: any) => {
@@ -168,8 +161,9 @@ const FOCUS_QUOTES = [
 export default function TimerScreen() {
   const { refreshUser, profilePic, user } = useAuth();
   const navigation = useNavigation();
+  const TIME_MULTIPLIER = user?.use_test_timer ? 1 : 60;
   const [selectedMinutes, setSelectedMinutes] = useState(25);
-  const [timeLeft, setTimeLeft] = useState(25 * TIME_MULTIPLIER);
+  const [timeLeft, setTimeLeft] = useState(25 * 60);
   const [isRunning, setIsRunning] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
   
@@ -186,8 +180,8 @@ export default function TimerScreen() {
   const [unlockedAnimals, setUnlockedAnimals] = useState<number[]>([]);
   const [selectedAnimalId, setSelectedAnimalId] = useState<number | null>(null);
   const [showSubjectModal, setShowSubjectModal] = useState(false);
-  const [selectedSubject, setSelectedSubject] = useState<string | null>(null);
-  const [subjects, setSubjects] = useState<string[]>(['Math', 'Science', 'English', 'History']);
+  const [selectedSubject, setSelectedSubject] = useState<Subject | null>(null);
+  const [subjects, setSubjects] = useState<Subject[]>([]);
   const [showEggDeathModal, setShowEggDeathModal] = useState(false);
   const [deadAnimalName, setDeadAnimalName] = useState('');
   const [deathCause, setDeathCause] = useState<'timeout' | 'abandoned'>('timeout');
@@ -208,6 +202,12 @@ export default function TimerScreen() {
   useEffect(() => { isRunningRef.current = isRunning; }, [isRunning]);
   useEffect(() => { timeLeftRef.current = timeLeft; }, [timeLeft]);
   useEffect(() => { isPausedRef.current = isPaused; }, [isPaused]);
+
+  useEffect(() => {
+    if (!isRunning) {
+      setTimeLeft(selectedMinutes * TIME_MULTIPLIER);
+    }
+  }, [TIME_MULTIPLIER]);
 
   useEffect(() => {
     if (isRunning) {
@@ -241,20 +241,11 @@ export default function TimerScreen() {
     loadUnlockedAnimals();
   }, [user?.id]);
 
-  // Reload subjects every time the Timer tab is focused
   useFocusEffect(
     useCallback(() => {
-      const loadSubjects = async () => {
-        try {
-          const stored = await AsyncStorage.getItem(`customSubjects_${user?.id || 'anon'}`);
-          if (stored) {
-            setSubjects(JSON.parse(stored));
-          }
-        } catch (e) {
-          if (__DEV__) console.log('Failed to load subjects');
-        }
-      };
-      loadSubjects();
+      subjectsAPI.getMySubjects()
+        .then(subs => setSubjects(subs))
+        .catch(() => {});
     }, [user?.id])
   );
 
@@ -436,7 +427,7 @@ export default function TimerScreen() {
     setShowCelebrationModal(true);
     setSessionSaveError(false);
 
-    Analytics.sessionCompleted(selectedMinutes, estimatedCoins, selectedSubject || undefined);
+    Analytics.sessionCompleted(selectedMinutes, estimatedCoins, selectedSubject?.display_name || undefined);
     Analytics.eggHatched(hatchedName, localAnimal?.status || 'Unknown');
 
     if (selectedAnimalId && !unlockedAnimals.includes(selectedAnimalId)) {
@@ -448,7 +439,7 @@ export default function TimerScreen() {
         selectedMinutes,
         undefined,
         localAnimal?.name,
-        selectedSubject || undefined
+        selectedSubject?.id || undefined
       );
       if (result && typeof result === 'object') {
         const sessionCoins = result?.session?.coins_earned;
@@ -544,7 +535,7 @@ export default function TimerScreen() {
       return;
     }
     setShowSubjectModal(false);
-    Analytics.sessionStarted(selectedMinutes, selectedSubject);
+    Analytics.sessionStarted(selectedMinutes, selectedSubject?.display_name || '');
     setIsRunning(true);
     setIsPaused(false);
   };
@@ -863,22 +854,22 @@ export default function TimerScreen() {
               </Text>
               
               <View style={styles.subjectGrid}>
-                {subjects.map((subject) => (
+                {subjects.map((sub) => (
                   <TouchableOpacity
-                    key={subject}
+                    key={sub.id}
                     style={[
                       styles.subjectChip,
-                      selectedSubject === subject && styles.subjectChipActive,
+                      selectedSubject?.id === sub.id && styles.subjectChipActive,
                     ]}
-                    onPress={() => setSelectedSubject(subject)}
+                    onPress={() => setSelectedSubject(sub)}
                   >
                     <Text
                       style={[
                         styles.subjectChipText,
-                        selectedSubject === subject && styles.subjectChipTextActive,
+                        selectedSubject?.id === sub.id && styles.subjectChipTextActive,
                       ]}
                     >
-                      {subject}
+                      {sub.display_name}
                     </Text>
                   </TouchableOpacity>
                 ))}
