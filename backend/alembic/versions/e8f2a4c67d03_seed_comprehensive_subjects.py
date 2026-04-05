@@ -154,9 +154,9 @@ def upgrade() -> None:
             conn.execute(
                 sa.text(
                     "INSERT INTO subjects (name, display_name, is_default) "
-                    "VALUES (:n, :d, 1)"
+                    "VALUES (:n, :d, :t)"
                 ),
-                {"n": name, "d": display_name},
+                {"n": name, "d": display_name, "t": True},
             )
 
 

@@ -31,8 +31,8 @@ def upgrade() -> None:
     conn = op.get_bind()
     for uid in ADMIN_USER_IDS:
         conn.execute(
-            sa.text("UPDATE users SET is_admin = 1 WHERE id = :uid"),
-            {"uid": uid},
+            sa.text("UPDATE users SET is_admin = :val WHERE id = :uid"),
+            {"val": True, "uid": uid},
         )
 
 
