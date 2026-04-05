@@ -19,7 +19,7 @@ export const metadata: Metadata = {
     "gamified learning",
     "focus timer",
     "wildlife",
-    "charity",
+    "WWF",
   ],
   openGraph: {
     title: "Endura — Study Smarter. Save Species.",

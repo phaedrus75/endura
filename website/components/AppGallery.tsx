@@ -48,32 +48,28 @@ const SCREENS: Screen[] = [
             </div>
           ))}
         </div>
-        <div className="bg-white/60 rounded-2xl p-3 mb-3">
-          <p className="text-[10px] font-bold text-[#2F4A3E] mb-2">
-            My Recent Hatches
-          </p>
-          <div className="flex gap-3 justify-center">
-            {["🐆", "🦏", "🐘", "🦁"].map((a, i) => (
-              <div
-                key={i}
-                className="w-10 h-10 bg-[#E7EFEA] rounded-xl flex items-center justify-center text-lg"
-              >
-                {a}
-              </div>
-            ))}
-          </div>
+        <div className="bg-white/60 rounded-2xl p-3 mb-3 text-center">
+          <span className="text-3xl block mb-1">🥚</span>
+          <p className="text-[9px] font-bold text-[#2F4A3E]">Tap to hatch!</p>
+          <p className="text-[8px] text-[#5E7F6E]">65% — keep studying</p>
         </div>
         <div className="bg-white/60 rounded-2xl p-3">
           <p className="text-[10px] font-bold text-[#2F4A3E] mb-2">
             Today&apos;s To-Dos
           </p>
-          {["Biology revision", "Maths practice"].map((t) => (
+          {[
+            { task: "Biology revision", subject: "Biology", due: "Today" },
+            { task: "Maths practice", subject: "Maths", due: "Tomorrow" },
+          ].map((t) => (
             <div
-              key={t}
+              key={t.task}
               className="flex items-center gap-2 py-1.5 border-b border-[#E7EFEA] last:border-0"
             >
               <div className="w-3.5 h-3.5 rounded border-2 border-[#5E7F6E]/40" />
-              <span className="text-[10px] text-[#2F4A3E]">{t}</span>
+              <div className="flex-1">
+                <span className="text-[10px] text-[#2F4A3E] block">{t.task}</span>
+                <span className="text-[8px] text-[#5E7F6E]">{t.subject} · {t.due}</span>
+              </div>
             </div>
           ))}
         </div>
@@ -88,9 +84,11 @@ const SCREENS: Screen[] = [
     bg: "from-[#E7EFEA] to-[#D4E8DE]",
     content: (
       <div className="flex flex-col items-center h-full justify-center">
-        <p className="text-[10px] text-[#5E7F6E] font-medium mb-1">
-          Biology — Chapter 4
-        </p>
+        <div className="bg-white/50 rounded-full px-3 py-1 mb-2 flex items-center gap-1.5">
+          <span className="text-[9px]">📚</span>
+          <p className="text-[10px] text-[#5E7F6E] font-medium">Biology</p>
+          <span className="text-[8px] text-[#5E7F6E]/50">▾</span>
+        </div>
         <div className="relative w-32 h-32 mb-4">
           <svg className="w-full h-full -rotate-90" viewBox="0 0 100 100">
             <circle
@@ -137,12 +135,18 @@ const SCREENS: Screen[] = [
   {
     id: "sanctuary",
     title: "Sanctuary",
-    subtitle: "Your animal collection",
+    subtitle: "Your animal collection & shop",
     badge: "🏡",
     bg: "from-[#D4E8DE] to-[#E7EFEA]",
     content: (
       <div className="flex flex-col h-full">
-        <p className="text-sm font-bold text-[#2F4A3E] mb-1">My Sanctuary</p>
+        <div className="flex items-center justify-between mb-1">
+          <p className="text-sm font-bold text-[#2F4A3E]">My Sanctuary</p>
+          <div className="bg-[#5E7F6E]/10 rounded-full px-2.5 py-1 flex items-center gap-1">
+            <span className="text-[9px]">🛍️</span>
+            <span className="text-[9px] font-semibold text-[#5E7F6E]">Shop</span>
+          </div>
+        </div>
         <p className="text-[9px] text-[#5E7F6E] mb-3">8 animals collected</p>
         <div className="flex-1 bg-gradient-to-b from-[#87CEEB]/30 to-[#90EE90]/30 rounded-2xl p-3 relative overflow-hidden mb-3">
           <div className="absolute bottom-0 left-0 right-0 h-1/3 bg-gradient-to-t from-[#228B22]/20 to-transparent rounded-b-2xl" />
@@ -159,15 +163,18 @@ const SCREENS: Screen[] = [
             )}
           </div>
         </div>
-        <div className="bg-white/60 rounded-xl p-2.5 flex items-center gap-2">
-          <span className="text-sm">🤝</span>
-          <div className="flex-1">
-            <p className="text-[10px] font-bold text-[#2F4A3E]">Take Action</p>
-            <p className="text-[8px] text-[#5E7F6E]">
-              $127 raised by our community
-            </p>
+        <div className="flex gap-2">
+          <div className="flex-1 bg-white/60 rounded-xl p-2.5 flex items-center gap-2">
+            <span className="text-sm">🤝</span>
+            <div className="flex-1">
+              <p className="text-[10px] font-bold text-[#2F4A3E]">Take Action</p>
+              <p className="text-[7px] text-[#5E7F6E]">Donate directly to WWF</p>
+            </div>
           </div>
-          <span className="text-[10px] text-[#5E7F6E]">→</span>
+          <div className="bg-white/60 rounded-xl p-2.5 flex items-center gap-1.5">
+            <span className="text-xs">🍀</span>
+            <span className="text-[10px] font-bold text-[#2F4A3E]">340</span>
+          </div>
         </div>
       </div>
     ),
@@ -175,13 +182,16 @@ const SCREENS: Screen[] = [
   {
     id: "hatching",
     title: "Hatching",
-    subtitle: "The magical reveal",
+    subtitle: "Interactive tap-to-hatch",
     badge: "🐣",
     bg: "from-[#C2DDD0] to-[#E7EFEA]",
     content: (
       <div className="flex flex-col items-center justify-center h-full text-center">
-        <div className="w-24 h-24 bg-white/50 rounded-full flex items-center justify-center mb-4 shadow-inner">
+        <p className="text-[9px] text-[#5E7F6E] font-medium mb-3">Tap the egg to crack it!</p>
+        <div className="w-24 h-24 bg-white/50 rounded-full flex items-center justify-center mb-4 shadow-inner relative">
           <span className="text-5xl">🐆</span>
+          <div className="absolute -top-2 -right-2 text-lg">✨</div>
+          <div className="absolute -bottom-1 -left-2 text-lg">✨</div>
         </div>
         <p className="text-lg font-bold text-[#2F4A3E]">Congratulations!</p>
         <p className="text-[10px] text-[#5E7F6E] mt-1 mb-3">
@@ -264,20 +274,24 @@ const SCREENS: Screen[] = [
   {
     id: "friends",
     title: "Friends",
-    subtitle: "Study together",
+    subtitle: "Groups, goals & leaderboards",
     badge: "👥",
     bg: "from-[#E8EFF5] to-[#E7EFEA]",
     content: (
       <div className="flex flex-col h-full">
         <p className="text-sm font-bold text-[#2F4A3E] mb-3">Friends</p>
         <div className="bg-white/60 rounded-2xl p-3 mb-3">
-          <p className="text-[10px] font-bold text-[#2F4A3E] mb-2">
-            Leaderboard
-          </p>
+          <div className="flex items-center justify-between mb-2">
+            <p className="text-[10px] font-bold text-[#2F4A3E]">Leaderboard</p>
+            <div className="flex gap-1">
+              <span className="text-[7px] bg-[#5E7F6E] text-white px-2 py-0.5 rounded-full font-semibold">Weekly</span>
+              <span className="text-[7px] bg-[#E7EFEA] text-[#5E7F6E] px-2 py-0.5 rounded-full font-medium">All Time</span>
+            </div>
+          </div>
           {[
-            { name: "Rhea", hrs: "6.5h", pos: "1", emoji: "🥇" },
-            { name: "Alex", hrs: "5.2h", pos: "2", emoji: "🥈" },
-            { name: "Maya", hrs: "4.8h", pos: "3", emoji: "🥉" },
+            { name: "Rhea", hrs: "6.5h", emoji: "🥇" },
+            { name: "Alex", hrs: "5.2h", emoji: "🥈" },
+            { name: "Maya", hrs: "4.8h", emoji: "🥉" },
           ].map((f) => (
             <div
               key={f.name}
@@ -300,18 +314,21 @@ const SCREENS: Screen[] = [
           <p className="text-[10px] font-bold text-[#2F4A3E] mb-2">
             Study Groups
           </p>
-          {["Biology Crew", "GCSE Gang"].map((g) => (
+          {[
+            { name: "Biology Crew", subject: "Biology", goal: "10h/week" },
+            { name: "GCSE Gang", subject: "Mixed", goal: "8h/week" },
+          ].map((g) => (
             <div
-              key={g}
+              key={g.name}
               className="flex items-center gap-2 py-1.5 border-b border-[#E7EFEA] last:border-0"
             >
               <div className="w-6 h-6 rounded-lg bg-[#5E7F6E]/15 flex items-center justify-center text-[10px]">
                 📚
               </div>
-              <span className="text-[10px] font-medium text-[#2F4A3E] flex-1">
-                {g}
-              </span>
-              <span className="text-[9px] text-[#5E7F6E]">3 online</span>
+              <div className="flex-1">
+                <span className="text-[10px] font-medium text-[#2F4A3E] block">{g.name}</span>
+                <span className="text-[7px] text-[#5E7F6E]">{g.subject} · Goal: {g.goal}</span>
+              </div>
             </div>
           ))}
         </div>
@@ -331,7 +348,7 @@ const SCREENS: Screen[] = [
           Protect Wildlife
         </p>
         <p className="text-[9px] text-[#5E7F6E] mb-4 px-2">
-          100% of donations go to WWF conservation projects
+          100% of donations go directly to WWF conservation projects
         </p>
         <div className="w-20 h-20 bg-white/50 rounded-full flex items-center justify-center mb-3 relative">
           <span className="text-3xl">🏺</span>

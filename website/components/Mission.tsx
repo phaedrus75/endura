@@ -3,17 +3,17 @@
 import { motion } from "framer-motion";
 
 const IMPACT_STATS = [
-  { value: "20+", label: "Endangered Species", emoji: "🐾" },
+  { value: "30+", label: "Endangered Species", emoji: "🐾" },
   { value: "1000+", label: "Study Hours Logged", emoji: "📚" },
-  { value: "50", label: "Badges to Earn", emoji: "🏅" },
+  { value: "50+", label: "Badges to Earn", emoji: "🏅" },
   { value: "100%", label: "Youth-Led", emoji: "💚" },
 ];
 
-const CONSERVATION_PARTNERS = [
-  "Wildlife Trusts",
-  "WWF-UK",
-  "Zoological Society of London",
-  "Fauna & Flora International",
+const CONSERVATION_HIGHLIGHTS = [
+  "Direct WWF Integration",
+  "In-App Donations",
+  "Real-Time Impact Tracking",
+  "100% Transparent",
 ];
 
 export default function Mission() {
@@ -40,7 +40,7 @@ export default function Mission() {
           className="text-center mb-16"
         >
           <span className="inline-block bg-white/10 text-white/80 px-4 py-1.5 rounded-full text-sm font-medium mb-4">
-            Endura Conservation Foundation
+            Endura × WWF
           </span>
           <h2 className="text-4xl sm:text-5xl font-bold text-white tracking-tight">
             Every study session
@@ -49,8 +49,8 @@ export default function Mission() {
           </h2>
           <p className="mt-6 text-lg text-white/60 max-w-2xl mx-auto leading-relaxed">
             Endura isn&apos;t just an app — it&apos;s a youth-led conservation
-            movement. A portion of everything we earn goes directly to protecting
-            endangered wildlife around the world.
+            movement. We&apos;ve built a direct integration with WWF so you can
+            donate to real conservation projects straight from the app.
           </p>
         </motion.div>
 
@@ -85,24 +85,24 @@ export default function Mission() {
           className="bg-white/5 backdrop-blur-sm rounded-3xl p-8 sm:p-12 border border-white/10 mb-16"
         >
           <h3 className="text-2xl font-bold text-white mb-6 text-center">
-            Where the funds go
+            How it works
           </h3>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
             {[
               {
-                emoji: "🏥",
-                title: "Conservation Projects",
-                desc: "Direct funding to on-the-ground wildlife protection and habitat restoration.",
+                emoji: "📱",
+                title: "Study & Earn",
+                desc: "Every study session earns eco-credits and grows your impact. The more you study, the more you contribute.",
               },
               {
-                emoji: "🔬",
-                title: "Species Research",
-                desc: "Supporting scientific research into endangered species protection and breeding programs.",
+                emoji: "🐼",
+                title: "Donate to WWF",
+                desc: "Tap 'Take Action' in the app to donate directly to WWF conservation projects — no middlemen, no detours.",
               },
               {
-                emoji: "📢",
-                title: "Education & Awareness",
-                desc: "Youth-led campaigns to raise awareness about endangered species in schools worldwide.",
+                emoji: "🌍",
+                title: "Protect Wildlife",
+                desc: "Your donations fund habitat protection, anti-poaching efforts, and species recovery programmes worldwide.",
               },
             ].map((item) => (
               <div key={item.title} className="text-center">
@@ -118,7 +118,7 @@ export default function Mission() {
           </div>
         </motion.div>
 
-        {/* Partners */}
+        {/* WWF Partnership */}
         <motion.div
           initial={{ opacity: 0 }}
           whileInView={{ opacity: 1 }}
@@ -127,15 +127,15 @@ export default function Mission() {
           className="text-center"
         >
           <p className="text-sm text-white/30 uppercase tracking-widest mb-6">
-            Aspiring Conservation Partners
+            Powered By
           </p>
           <div className="flex flex-wrap items-center justify-center gap-6 sm:gap-10">
-            {CONSERVATION_PARTNERS.map((partner) => (
+            {CONSERVATION_HIGHLIGHTS.map((item) => (
               <span
-                key={partner}
+                key={item}
                 className="text-white/40 text-sm sm:text-base font-medium"
               >
-                {partner}
+                {item}
               </span>
             ))}
           </div>
@@ -149,10 +149,6 @@ export default function Mission() {
           transition={{ delay: 0.5, duration: 0.6 }}
           className="text-center mt-16"
         >
-          <p className="text-white/40 text-sm mb-4">
-            Registered as a Charitable Incorporated Organisation (CIO) in
-            England & Wales
-          </p>
           <motion.a
             whileHover={{ scale: 1.05 }}
             whileTap={{ scale: 0.97 }}

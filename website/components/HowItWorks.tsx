@@ -8,7 +8,7 @@ const STEPS = [
     emoji: "📚",
     title: "Study",
     description:
-      "Set a timer, pick a subject, and focus. Our distraction-free timer keeps you on track with gentle motivation — leave early and your egg might not make it!",
+      "Choose from your subjects, set a timer, and focus. Our distraction-free timer keeps you on track with gentle motivation — leave early and your egg might not make it!",
     accent: "bg-forest-light",
   },
   {
@@ -16,7 +16,7 @@ const STEPS = [
     emoji: "🐣",
     title: "Hatch",
     description:
-      "Complete your session to hatch a real endangered species. Each animal comes with facts about its conservation status. Build your collection and earn eco-credits.",
+      "Complete your session and tap to crack open your egg in an interactive hatching experience. Discover one of 30+ real endangered species, learn about its conservation status, and earn eco-credits.",
     accent: "bg-leaf",
   },
   {
@@ -24,7 +24,7 @@ const STEPS = [
     emoji: "🌍",
     title: "Protect",
     description:
-      "Your study hours translate to real impact. A portion of Endura's proceeds funds conservation projects worldwide. The more you study, the more species you help save.",
+      "Your study hours translate to real impact. Donate directly to WWF from inside the app — no middlemen, no detours. The more you study, the more species you help save.",
     accent: "bg-forest",
   },
 ];

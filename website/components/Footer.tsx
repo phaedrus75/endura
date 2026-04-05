@@ -8,9 +8,9 @@ const FOOTER_LINKS = {
     { label: "How It Works", href: "#how-it-works" },
     { label: "Download", href: "#hero" },
   ],
-  Foundation: [
+  Impact: [
     { label: "Our Mission", href: "#mission" },
-    { label: "Conservation Partners", href: "#mission" },
+    { label: "WWF Partnership", href: "#mission" },
     { label: "Get Involved", href: "mailto:hello@endura.eco" },
   ],
   Connect: [
@@ -97,8 +97,7 @@ export default function Footer() {
         {/* Divider */}
         <div className="border-t border-white/10 pt-8 flex flex-col sm:flex-row items-center justify-between gap-4">
           <p className="text-xs text-white/30">
-            &copy; {new Date().getFullYear()} Endura Conservation Foundation.
-            All rights reserved.
+            &copy; {new Date().getFullYear()} Endura. All rights reserved.
           </p>
           <p className="text-xs text-white/30 italic">
             &ldquo;Every study session saves a species.&rdquo;

@@ -7,29 +7,43 @@ const FEATURES = [
     emoji: "⏳",
     title: "Gamified Study Timer",
     description:
-      "Set focused study sessions with our beautiful timer. Every minute you study earns eco-credits and brings your egg closer to hatching.",
+      "Set focused study sessions with our beautiful timer. Pick your subject, start the clock, and watch your egg grow closer to hatching with every minute you study.",
     color: "from-forest-light/20 to-sage-light/30",
   },
   {
     emoji: "🐣",
     title: "Hatch Endangered Animals",
     description:
-      "Complete study sessions to hatch real endangered species — from Amur Leopards to Javan Rhinos. Collect, nickname, and learn about each one.",
+      "Complete study sessions to unlock an interactive hatching experience — tap to crack the egg and reveal one of 30+ real endangered species. Collect, nickname, and learn about each one.",
     color: "from-sage/20 to-leaf/20",
   },
   {
-    emoji: "🏡",
-    title: "Build Your Sanctuary",
+    emoji: "📋",
+    title: "Subjects & Task Management",
     description:
-      "Create a beautiful habitat for your animals. Drag and drop accessories and decorations. Make it uniquely yours.",
+      "Organise your study by subject, create to-dos with due dates, and track what needs doing. Everything in one place so you can focus on what matters.",
     color: "from-sage-light/30 to-sand/50",
   },
   {
     emoji: "👥",
     title: "Study With Friends",
     description:
-      "Join groups, compete on leaderboards, and react to friends' achievements. Studying is better together.",
+      "Join groups, set group goals by subject, compete on weekly and all-time leaderboards, and react to friends' achievements. Studying is better together.",
     color: "from-leaf/15 to-forest-light/15",
+  },
+  {
+    emoji: "🏡",
+    title: "Sanctuary & Shop",
+    description:
+      "Build a beautiful habitat for your animals. Spend eco-credits in the shop on accessories and decorations. Make your sanctuary uniquely yours.",
+    color: "from-forest-light/15 to-sage/20",
+  },
+  {
+    emoji: "🏅",
+    title: "Badges & Study Tips",
+    description:
+      "Earn 50+ badges as you study and protect wildlife. Discover community-powered study tips with voting and sharing to help you and your friends study smarter.",
+    color: "from-sand/40 to-leaf/15",
   },
 ];
 
@@ -79,7 +93,7 @@ export default function Features() {
           initial="hidden"
           whileInView="visible"
           viewport={{ once: true, margin: "-50px" }}
-          className="grid grid-cols-1 sm:grid-cols-2 gap-6"
+          className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6"
         >
           {FEATURES.map((feature) => (
             <motion.div

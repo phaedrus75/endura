@@ -81,7 +81,7 @@ export default function Hero() {
               <span className="text-leaf">●</span> Free to use
             </span>
             <span className="flex items-center gap-1.5">
-              <span className="text-leaf">●</span> 20+ endangered species
+              <span className="text-leaf">●</span> 30+ endangered species
             </span>
             <span className="flex items-center gap-1.5">
               <span className="text-leaf">●</span> Real impact
