@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   View,
-  Text,
   StyleSheet,
   TouchableOpacity,
   Alert,
@@ -12,7 +11,9 @@ import {
   AppState,
   Modal,
   Image,
+  Animated,
 } from 'react-native';
+import { Text } from '../components/StyledText';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import ConfettiCannon from 'react-native-confetti-cannon';
@@ -191,6 +192,11 @@ export default function TimerScreen() {
   const [deadAnimalName, setDeadAnimalName] = useState('');
   const [deathCause, setDeathCause] = useState<'timeout' | 'abandoned'>('timeout');
   const [quoteIndex, setQuoteIndex] = useState(0);
+  const [hatchStage, setHatchStage] = useState(0);
+  const eggWobble = useRef(new Animated.Value(0)).current;
+  const eggScale = useRef(new Animated.Value(1)).current;
+  const eggOpacity = useRef(new Animated.Value(1)).current;
+  const animalRevealScale = useRef(new Animated.Value(0)).current;
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
   const appState = useRef(AppState.currentState);
   const backgroundTimestamp = useRef<number | null>(null);
@@ -421,7 +427,12 @@ export default function TimerScreen() {
       name: hatchedName,
       ecoCredits: estimatedCoins,
     });
-    setShowConfetti(true);
+    setHatchStage(0);
+    eggWobble.setValue(0);
+    eggScale.setValue(1);
+    eggOpacity.setValue(1);
+    animalRevealScale.setValue(0);
+    setShowConfetti(false);
     setShowCelebrationModal(true);
     setSessionSaveError(false);
 
@@ -461,6 +472,33 @@ export default function TimerScreen() {
     }
 
     try { await refreshUser(); } catch (_) {}
+  };
+
+  const handleEggTap = () => {
+    if (hatchStage >= 3) return;
+    const next = hatchStage + 1;
+    setHatchStage(next);
+
+    const intensity = next * 6;
+    Animated.sequence([
+      Animated.timing(eggWobble, { toValue: intensity, duration: 60, useNativeDriver: true }),
+      Animated.timing(eggWobble, { toValue: -intensity, duration: 60, useNativeDriver: true }),
+      Animated.timing(eggWobble, { toValue: intensity * 0.6, duration: 50, useNativeDriver: true }),
+      Animated.timing(eggWobble, { toValue: -intensity * 0.6, duration: 50, useNativeDriver: true }),
+      Animated.timing(eggWobble, { toValue: intensity * 0.3, duration: 40, useNativeDriver: true }),
+      Animated.timing(eggWobble, { toValue: 0, duration: 40, useNativeDriver: true }),
+    ]).start();
+
+    if (next === 3) {
+      setTimeout(() => {
+        setShowConfetti(true);
+        Animated.parallel([
+          Animated.timing(eggOpacity, { toValue: 0, duration: 400, useNativeDriver: true }),
+          Animated.timing(eggScale, { toValue: 1.4, duration: 400, useNativeDriver: true }),
+          Animated.spring(animalRevealScale, { toValue: 1, tension: 50, friction: 6, useNativeDriver: true }),
+        ]).start();
+      }, 350);
+    }
   };
 
   const closeCelebrationModal = () => {
@@ -753,6 +791,7 @@ export default function TimerScreen() {
                                 source={getAnimalImage(animal.name)} 
                                 style={styles.animalSlotImage}
                                 resizeMode="contain"
+                                fadeDuration={0}
                               />
                             ) : (
                               <Text style={styles.animalEmoji}>{animal.emoji}</Text>
@@ -773,7 +812,9 @@ export default function TimerScreen() {
               {selectedAnimalId && (
                 <View style={styles.selectedAnimalPreview}>
                   <Text style={styles.selectedAnimalText}>
-                    Egg selected! What will hatch? Study to find out!
+                    {unlockedAnimals.includes(selectedAnimalId)
+                      ? `Study to hatch ${/^[aeiou]/i.test(ENDANGERED_ANIMALS.find(a => a.id === selectedAnimalId)?.name || '') ? 'an' : 'a'} ${ENDANGERED_ANIMALS.find(a => a.id === selectedAnimalId)?.name}!`
+                      : 'Egg selected! What will hatch? Study to find out!'}
                   </Text>
                 </View>
               )}
@@ -879,70 +920,137 @@ export default function TimerScreen() {
 
       {/* Celebration Modal */}
       <Modal visible={showCelebrationModal} transparent animationType="fade">
-        <TouchableOpacity style={styles.celebrationOverlay} activeOpacity={1} onPress={closeCelebrationModal}>
+        <TouchableOpacity style={styles.celebrationOverlay} activeOpacity={1} onPress={hatchStage >= 3 ? closeCelebrationModal : undefined}>
           <TouchableOpacity activeOpacity={1}>
+          <View style={styles.celebrationContentOuter}>
           <ExpoLinearGradient
             colors={['#8FC4BC', '#4A6A7A']}
             start={{ x: 0, y: 0 }}
             end={{ x: 0, y: 1 }}
-            style={styles.celebrationContent}
-          >
-            <Text style={styles.celebrationTitle}>Congratulations! 🎉</Text>
-            <Text style={styles.celebrationSubtitle}>You hatched a new friend!</Text>
-            
-            <View style={styles.celebrationAnimalContainer}>
-              {hatchedAnimalInfo?.name && getAnimalImage(hatchedAnimalInfo.name) ? (
-                <Image 
-                  source={getAnimalImage(hatchedAnimalInfo.name)} 
-                  style={styles.celebrationAnimalImage}
-                  resizeMode="contain"
-                />
-              ) : (
-                <Text style={styles.celebrationAnimalEmoji}>
-                  {hatchedAnimalInfo?.emoji || '🐾'}
-                </Text>
-              )}
-            </View>
-            
-            <Text style={styles.celebrationAnimalName}>
-              {hatchedAnimalInfo?.name}
-            </Text>
-            
-            <View style={styles.celebrationCoins}>
-              <Text style={styles.celebrationCoinsEmoji}>🍀</Text>
-              <Text style={styles.celebrationCoinsText}>
-                +{hatchedAnimalInfo?.ecoCredits || 0} eco-credits earned
-              </Text>
-            </View>
-            
-            <Text style={styles.celebrationMessage}>
-              This endangered animal has been added to your collection!
-            </Text>
-
-            {sessionSaveError && (
-              <Text style={{ color: 'rgba(255,255,255,0.7)', fontSize: 12, textAlign: 'center', marginTop: 6 }}>
-                ⚠️ Session couldn't be saved to the server. Progress may not update.
-              </Text>
+            style={[StyleSheet.absoluteFill, { borderRadius: 28 }]}
+          />
+          <View style={styles.celebrationContentInner}>
+            {hatchStage < 3 ? (
+              <>
+                <Text style={styles.celebrationTitle}>Session complete!</Text>
+                <Text style={styles.celebrationSubtitle}>Your egg is ready...</Text>
+              </>
+            ) : (
+              <>
+                <Text style={styles.celebrationTitle}>Congratulations! 🎉</Text>
+                <Text style={styles.celebrationSubtitle}>You hatched a new friend!</Text>
+              </>
             )}
             
-            <View style={styles.celebrationButtons}>
-              <TouchableOpacity
-                style={styles.celebrationButton}
-                onPress={closeCelebrationModal}
-              >
-                <Text style={styles.celebrationButtonText}>Continue</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.celebrationButtonSecondary}
-                onPress={() => {
-                  closeCelebrationModal();
-                  (navigation as any).navigate('Sanctuary');
-                }}
-              >
-                <Text style={styles.celebrationButtonSecondaryText}>View Collection →</Text>
-              </TouchableOpacity>
+            <View style={styles.celebrationEggWrap}>
+              {/* Egg with progressive cracks */}
+              <Animated.View style={{
+                opacity: eggOpacity,
+                transform: [
+                  { rotate: eggWobble.interpolate({ inputRange: [-18, 18], outputRange: ['-18deg', '18deg'] }) },
+                  { scale: eggScale },
+                ],
+                alignItems: 'center',
+              }}>
+                <TouchableOpacity activeOpacity={0.85} onPress={handleEggTap} disabled={hatchStage >= 3}>
+                  <View style={styles.eggLottieWrap}>
+                    <LottieView
+                      source={require('../assets/egg-animation.json')}
+                      autoPlay={false}
+                      loop={false}
+                      style={styles.eggLottieNatural}
+                    />
+                    {hatchStage >= 1 && (
+                      <>
+                        <View style={styles.c1Main} />
+                        <View style={styles.c1BranchA} />
+                        <View style={styles.c1BranchB} />
+                        <View style={styles.c1BranchC} />
+                        <View style={styles.c1Tip} />
+                      </>
+                    )}
+                    {hatchStage >= 2 && (
+                      <>
+                        <View style={styles.c2Main} />
+                        <View style={styles.c2BranchA} />
+                        <View style={styles.c2BranchB} />
+                        <View style={styles.c2BranchC} />
+                        <View style={styles.c2Tip} />
+                        <View style={styles.c2Hair} />
+                      </>
+                    )}
+                  </View>
+                </TouchableOpacity>
+              </Animated.View>
+
+              {/* Animal reveal with translucent circle */}
+              {hatchStage >= 3 && (
+                <Animated.View style={[styles.celebrationAnimalContainer, {
+                  position: 'absolute',
+                  transform: [{ scale: animalRevealScale }],
+                  opacity: animalRevealScale,
+                }]}>
+                  {hatchedAnimalInfo?.name && getAnimalImage(hatchedAnimalInfo.name) ? (
+                    <Image 
+                      source={getAnimalImage(hatchedAnimalInfo.name)} 
+                      style={styles.celebrationAnimalImage}
+                      resizeMode="contain"
+                    />
+                  ) : (
+                    <Text style={styles.celebrationAnimalEmoji}>
+                      {hatchedAnimalInfo?.emoji || '🐾'}
+                    </Text>
+                  )}
+                </Animated.View>
+              )}
             </View>
-          </ExpoLinearGradient>
+
+            {hatchStage < 3 ? (
+              <Text style={styles.eggTapHint}>Tap the egg to hatch!</Text>
+            ) : (
+              <>
+                <Text style={styles.celebrationAnimalName}>
+                  {hatchedAnimalInfo?.name}
+                </Text>
+                
+                <View style={styles.celebrationCoins}>
+                  <Text style={styles.celebrationCoinsEmoji}>🍀</Text>
+                  <Text style={styles.celebrationCoinsText}>
+                    +{hatchedAnimalInfo?.ecoCredits || 0} eco-credits earned
+                  </Text>
+                </View>
+                
+                <Text style={styles.celebrationMessage}>
+                  This endangered animal has been added to your collection!
+                </Text>
+
+                {sessionSaveError && (
+                  <Text style={{ color: 'rgba(255,255,255,0.7)', fontSize: 12, textAlign: 'center', marginTop: 6 }}>
+                    ⚠️ Session couldn't be saved to the server. Progress may not update.
+                  </Text>
+                )}
+                
+                <View style={styles.celebrationButtons}>
+                  <TouchableOpacity
+                    style={styles.celebrationButton}
+                    onPress={closeCelebrationModal}
+                  >
+                    <Text style={styles.celebrationButtonText}>Continue</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.celebrationButtonSecondary}
+                    onPress={() => {
+                      closeCelebrationModal();
+                      (navigation as any).navigate('Sanctuary');
+                    }}
+                  >
+                    <Text style={styles.celebrationButtonSecondaryText}>View Collection →</Text>
+                  </TouchableOpacity>
+                </View>
+              </>
+            )}
+          </View>
+          </View>
           </TouchableOpacity>
           {showConfetti && (
             <ConfettiCannon
@@ -1074,10 +1182,9 @@ export default function TimerScreen() {
       </Modal>
 
       {/* Custom Timer Modal */}
-      <Modal visible={showCustomModal} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setShowCustomModal(false)}>
-        <View style={{ flex: 1, backgroundColor: '#fff' }}>
-          <DragHandle />
-          <View style={{ padding: 20 }}>
+      <Modal visible={showCustomModal} transparent animationType="fade" onRequestClose={() => setShowCustomModal(false)}>
+        <TouchableOpacity style={styles.customModalOverlay} activeOpacity={1} onPress={() => setShowCustomModal(false)}>
+          <TouchableOpacity activeOpacity={1} style={styles.customModalContent}>
             <Text style={styles.customModalTitle}>⏱️ Custom Timer</Text>
             <Text style={styles.customModalSubtitle}>Set your own study duration</Text>
             
@@ -1129,8 +1236,8 @@ export default function TimerScreen() {
                 </ExpoLinearGradient>
               </TouchableOpacity>
             </View>
-          </View>
-        </View>
+          </TouchableOpacity>
+        </TouchableOpacity>
       </Modal>
     </SafeAreaView>
   );
@@ -1691,14 +1798,15 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     padding: spacing.lg,
   },
-  celebrationContent: {
-    borderRadius: 28,
-    padding: 28,
-    alignItems: 'center',
+  celebrationContentOuter: {
     width: '100%',
     maxWidth: 340,
     ...shadows.large,
-    overflow: 'hidden',
+  },
+  celebrationContentInner: {
+    padding: 24,
+    paddingTop: 20,
+    alignItems: 'center',
   },
   celebrationTitle: {
     fontSize: 30,
@@ -1712,7 +1820,7 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: 'rgba(255,255,255,0.8)',
     textAlign: 'center',
-    marginBottom: spacing.xl,
+    marginBottom: spacing.md,
     fontWeight: '500',
   },
   celebrationAnimalContainer: {
@@ -1723,6 +1831,142 @@ const styles = StyleSheet.create({
     borderRadius: 100,
     width: 170,
     height: 170,
+  },
+  celebrationEggWrap: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: 220,
+    height: 220,
+  },
+  eggLottieWrap: {
+    width: 220,
+    height: 220,
+    alignItems: 'center',
+    justifyContent: 'center',
+    position: 'relative',
+  },
+  eggLottieNatural: {
+    width: 550,
+    height: 550,
+  },
+  eggTapHint: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: 'rgba(255,255,255,0.9)',
+    textAlign: 'center',
+    marginTop: 60,
+    marginBottom: spacing.lg,
+    letterSpacing: 0.3,
+  },
+  c1Main: {
+    position: 'absolute',
+    top: 45,
+    left: 80,
+    width: 1.5,
+    height: 44,
+    backgroundColor: '#3A3A3A',
+    transform: [{ rotate: '12deg' }],
+    zIndex: 10,
+  },
+  c1BranchA: {
+    position: 'absolute',
+    top: 40,
+    left: 71,
+    width: 1,
+    height: 28,
+    backgroundColor: '#4A4A4A',
+    transform: [{ rotate: '-30deg' }],
+    zIndex: 10,
+  },
+  c1BranchB: {
+    position: 'absolute',
+    top: 72,
+    left: 82,
+    width: 1.5,
+    height: 30,
+    backgroundColor: '#3A3A3A',
+    transform: [{ rotate: '70deg' }],
+    zIndex: 10,
+  },
+  c1BranchC: {
+    position: 'absolute',
+    top: 58,
+    left: 73,
+    width: 1,
+    height: 16,
+    backgroundColor: '#555',
+    transform: [{ rotate: '-55deg' }],
+    zIndex: 10,
+  },
+  c1Tip: {
+    position: 'absolute',
+    top: 35,
+    left: 77,
+    width: 0.8,
+    height: 12,
+    backgroundColor: '#666',
+    transform: [{ rotate: '18deg' }],
+    zIndex: 10,
+  },
+  c2Main: {
+    position: 'absolute',
+    top: 110,
+    right: 60,
+    width: 1.5,
+    height: 48,
+    backgroundColor: '#3A3A3A',
+    transform: [{ rotate: '-12deg' }],
+    zIndex: 10,
+  },
+  c2BranchA: {
+    position: 'absolute',
+    top: 130,
+    right: 52,
+    width: 1,
+    height: 30,
+    backgroundColor: '#4A4A4A',
+    transform: [{ rotate: '35deg' }],
+    zIndex: 10,
+  },
+  c2BranchB: {
+    position: 'absolute',
+    top: 124,
+    right: 64,
+    width: 1.5,
+    height: 24,
+    backgroundColor: '#3A3A3A',
+    transform: [{ rotate: '-65deg' }],
+    zIndex: 10,
+  },
+  c2BranchC: {
+    position: 'absolute',
+    top: 144,
+    right: 56,
+    width: 1,
+    height: 20,
+    backgroundColor: '#555',
+    transform: [{ rotate: '58deg' }],
+    zIndex: 10,
+  },
+  c2Tip: {
+    position: 'absolute',
+    top: 158,
+    right: 58,
+    width: 0.8,
+    height: 14,
+    backgroundColor: '#666',
+    transform: [{ rotate: '-22deg' }],
+    zIndex: 10,
+  },
+  c2Hair: {
+    position: 'absolute',
+    top: 114,
+    right: 70,
+    width: 0.7,
+    height: 12,
+    backgroundColor: '#777',
+    transform: [{ rotate: '42deg' }],
+    zIndex: 10,
   },
   celebrationAnimalEmoji: {
     fontSize: 80,
@@ -2069,9 +2313,10 @@ const styles = StyleSheet.create({
   },
   subjectModalStart: {
     flex: 2,
-    paddingVertical: spacing.md,
+    paddingVertical: spacing.md + 2,
     borderRadius: borderRadius.lg,
     alignItems: 'center',
+    justifyContent: 'center',
     ...shadows.small,
   },
   subjectModalStartDisabled: {
@@ -2084,5 +2329,8 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '700',
     color: colors.textOnPrimary,
+    lineHeight: 22,
+    includeFontPadding: false,
+    textAlignVertical: 'center',
   },
 });

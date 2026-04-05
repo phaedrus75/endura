@@ -110,9 +110,12 @@ export const shadows = {
 };
 
 export const fonts = {
-  regular: 'System',
-  medium: 'System',
-  bold: 'System',
+  light: 'DMSans_300Light',
+  regular: 'DMSans_400Regular',
+  medium: 'DMSans_500Medium',
+  semiBold: 'DMSans_600SemiBold',
+  bold: 'DMSans_700Bold',
+  extraBold: 'DMSans_800ExtraBold',
 };
 
 export const spacing = {

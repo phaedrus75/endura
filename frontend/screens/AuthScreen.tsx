@@ -2,8 +2,6 @@ import React, { useState, useEffect, useRef } from 'react';
 import * as SecureStore from 'expo-secure-store';
 import {
   View,
-  Text,
-  TextInput,
   TouchableOpacity,
   StyleSheet,
   KeyboardAvoidingView,
@@ -13,9 +11,10 @@ import {
   Dimensions,
   ScrollView,
   Modal,
+  Image,
 } from 'react-native';
+import { Text, TextInput } from '../components/StyledText';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import LottieView from 'lottie-react-native';
 import { colors, shadows, spacing, borderRadius } from '../theme/colors';
 import SwipeDismiss, { DragHandle } from '../components/SwipeDismiss';
 import { useAuth } from '../contexts/AuthContext';
@@ -23,14 +22,14 @@ import { authAPI } from '../services/api';
 
 const { width } = Dimensions.get('window');
 
-const AnimatedEggLogo = () => (
+const LogoImage = () => (
   <View style={styles.logoWrapper}>
-    <LottieView
-      source={require('../assets/egg-animation.json')}
-      autoPlay
-      loop
-      style={{ width: 240, height: 240 }}
+    <Image
+      source={require('../assets/icon.png')}
+      style={{ width: 200, height: 200, borderRadius: 40 }}
+      resizeMode="cover"
     />
+    <Text style={styles.brandName}>endura</Text>
   </View>
 );
 
@@ -219,11 +218,10 @@ export default function AuthScreen() {
   // Initial welcome screen
   if (!showForm) {
     return (
-      <SafeAreaView style={styles.container}>
+      <SafeAreaView style={[styles.container, { backgroundColor: '#c8dbc3' }]}>
         <View style={styles.welcomeContent}>
           <View style={styles.brandContainer}>
-            <Text style={styles.brandName}>endura</Text>
-            <AnimatedEggLogo />
+            <LogoImage />
           </View>
 
           <View style={styles.buttonsContainer}>
@@ -577,11 +575,11 @@ const styles = StyleSheet.create({
     paddingTop: spacing.xxl,
   },
   brandName: {
-    fontSize: 48,
+    fontSize: 42,
     fontWeight: '300',
-    color: colors.primary,
+    color: '#FFFFFF',
     letterSpacing: 4,
-    marginBottom: spacing.lg,
+    marginTop: spacing.lg,
   },
   logoWrapper: {
     alignItems: 'center',

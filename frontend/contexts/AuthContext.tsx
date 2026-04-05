@@ -110,6 +110,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       const userData = await authAPI.getMe();
       setUser(userData);
+      await loadProfilePicForUser(userData);
     } catch (error) {
       if (__DEV__) console.log('Failed to refresh user:', error);
     }

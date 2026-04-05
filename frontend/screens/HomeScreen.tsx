@@ -1,11 +1,9 @@
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import {
   View,
-  Text,
   StyleSheet,
   ScrollView,
   TouchableOpacity,
-  TextInput,
   Alert,
   RefreshControl,
   Dimensions,
@@ -13,7 +11,9 @@ import {
   Image,
   KeyboardAvoidingView,
   Platform,
+  Animated,
 } from 'react-native';
+import { Text, TextInput } from '../components/StyledText';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
@@ -168,7 +168,18 @@ export default function HomeScreen() {
   const [newTaskDueDate, setNewTaskDueDate] = useState<Date | null>(null);
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [newSubjectName, setNewSubjectName] = useState('');
+  const [showEditTask, setShowEditTask] = useState(false);
+  const [editingTask, setEditingTask] = useState<Task | null>(null);
+  const [editTaskTitle, setEditTaskTitle] = useState('');
+  const [editTaskSubject, setEditTaskSubject] = useState('');
+  const [editTaskDueDate, setEditTaskDueDate] = useState<Date | null>(null);
+  const [showEditDatePicker, setShowEditDatePicker] = useState(false);
+  const [hatchStage, setHatchStage] = useState(0);
   const confettiRef = useRef<any>(null);
+  const eggWobble = useRef(new Animated.Value(0)).current;
+  const eggScale = useRef(new Animated.Value(1)).current;
+  const eggOpacity = useRef(new Animated.Value(1)).current;
+  const animalRevealScale = useRef(new Animated.Value(0)).current;
 
   // Load subjects from storage, merging with backend study data
   useEffect(() => {
@@ -307,6 +318,31 @@ export default function HomeScreen() {
     }
   };
 
+  const openEditTask = (task: Task) => {
+    setEditingTask(task);
+    setEditTaskTitle(task.title);
+    setEditTaskSubject(task.description || '');
+    setEditTaskDueDate(task.due_date ? new Date(task.due_date) : null);
+    setShowEditDatePicker(false);
+    setShowEditTask(true);
+  };
+
+  const saveEditTask = async () => {
+    if (!editingTask || !editTaskTitle.trim()) return;
+    try {
+      await tasksAPI.updateTask(editingTask.id, {
+        title: editTaskTitle.trim(),
+        description: editTaskSubject.trim() || null,
+        due_date: editTaskDueDate ? editTaskDueDate.toISOString().split('T')[0] : null,
+      } as any);
+      setShowEditTask(false);
+      setEditingTask(null);
+      loadData();
+    } catch (error: any) {
+      Alert.alert('Error', error.message);
+    }
+  };
+
   const deleteTask = (task: Task) => {
     Alert.alert(
       'Delete To-Do',
@@ -334,6 +370,11 @@ export default function HomeScreen() {
       const result = await animalsAPI.hatchEgg();
       if (result.success && result.animal) {
         setHatchedAnimal(result.animal);
+        setHatchStage(0);
+        eggWobble.setValue(0);
+        eggScale.setValue(1);
+        eggOpacity.setValue(1);
+        animalRevealScale.setValue(0);
         setShowConfetti(true);
         setShowHatchModal(true);
       } else {
@@ -342,6 +383,32 @@ export default function HomeScreen() {
       loadData();
     } catch (error: any) {
       Alert.alert('Error', error.message);
+    }
+  };
+
+  const handleEggTap = () => {
+    if (hatchStage >= 3) return;
+    const next = hatchStage + 1;
+    setHatchStage(next);
+
+    const intensity = next * 6;
+    Animated.sequence([
+      Animated.timing(eggWobble, { toValue: intensity, duration: 60, useNativeDriver: true }),
+      Animated.timing(eggWobble, { toValue: -intensity, duration: 60, useNativeDriver: true }),
+      Animated.timing(eggWobble, { toValue: intensity * 0.6, duration: 50, useNativeDriver: true }),
+      Animated.timing(eggWobble, { toValue: -intensity * 0.6, duration: 50, useNativeDriver: true }),
+      Animated.timing(eggWobble, { toValue: intensity * 0.3, duration: 40, useNativeDriver: true }),
+      Animated.timing(eggWobble, { toValue: 0, duration: 40, useNativeDriver: true }),
+    ]).start();
+
+    if (next === 3) {
+      setTimeout(() => {
+        Animated.parallel([
+          Animated.timing(eggOpacity, { toValue: 0, duration: 400, useNativeDriver: true }),
+          Animated.timing(eggScale, { toValue: 1.4, duration: 400, useNativeDriver: true }),
+          Animated.spring(animalRevealScale, { toValue: 1, tension: 50, friction: 6, useNativeDriver: true }),
+        ]).start();
+      }, 350);
     }
   };
 
@@ -487,7 +554,7 @@ export default function HomeScreen() {
                 >
                   <Text style={styles.taskDeleteText}>✕</Text>
                 </TouchableOpacity>
-                <View style={styles.taskInfo}>
+                <TouchableOpacity style={styles.taskInfo} onPress={() => openEditTask(task)} activeOpacity={0.7}>
                   <Text style={styles.taskTitle}>{task.title}</Text>
                   {task.description ? (
                     <Text style={styles.taskSubtitle}>{task.description}</Text>
@@ -495,7 +562,8 @@ export default function HomeScreen() {
                   {task.due_date ? (
                     <Text style={styles.taskDue}>📅 Due {new Date(task.due_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</Text>
                   ) : null}
-                </View>
+                  <Text style={styles.taskEditHint}>tap to edit</Text>
+                </TouchableOpacity>
                 <TouchableOpacity
                   style={styles.taskCheckbox}
                   onPress={() => toggleTask(task)}
@@ -710,27 +778,175 @@ export default function HomeScreen() {
         </View>
       </Modal>
 
+      {/* Edit Task Modal */}
+      <Modal visible={showEditTask} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => { setShowEditTask(false); setShowEditDatePicker(false); }}>
+        <View style={{ flex: 1, backgroundColor: '#fff' }}>
+        <DragHandle />
+        <View style={styles.addTaskHeader}>
+          <TouchableOpacity onPress={() => { setShowEditTask(false); setShowEditDatePicker(false); }}>
+            <Text style={styles.addTaskHeaderCancel}>Cancel</Text>
+          </TouchableOpacity>
+          <Text style={styles.addTaskHeaderTitle}>Edit To-Do</Text>
+          <TouchableOpacity onPress={saveEditTask}>
+            <Text style={styles.addTaskHeaderSave}>Save</Text>
+          </TouchableOpacity>
+        </View>
+        <KeyboardAvoidingView 
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          style={{ flex: 1 }}
+        >
+          <ScrollView 
+            contentContainerStyle={{ padding: 20 }}
+            keyboardShouldPersistTaps="handled"
+          >
+              <Text style={styles.inputLabel}>Task Name</Text>
+              <TextInput
+                style={styles.modalInput}
+                placeholder="What do you need to do?"
+                placeholderTextColor={colors.textMuted}
+                value={editTaskTitle}
+                onChangeText={setEditTaskTitle}
+              />
+              
+              <Text style={styles.inputLabel}>Subject</Text>
+              <View style={styles.subjectGrid}>
+                {subjects.map((subject) => (
+                  <View key={subject} style={[
+                    styles.subjectChip,
+                    editTaskSubject === subject && styles.subjectChipActive,
+                  ]}>
+                    <TouchableOpacity
+                      style={{ flexDirection: 'row', alignItems: 'center' }}
+                      onPress={() => setEditTaskSubject(editTaskSubject === subject ? '' : subject)}
+                    >
+                      <Text style={[
+                        styles.subjectChipText,
+                        editTaskSubject === subject && styles.subjectChipTextActive,
+                      ]}>
+                        {subject}
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+                ))}
+              </View>
+
+              <Text style={[styles.inputLabel, { marginTop: spacing.lg }]}>Due Date (optional)</Text>
+              <View style={styles.dueDateRow}>
+                <TouchableOpacity
+                  style={styles.dueDateButton}
+                  onPress={() => setShowEditDatePicker(true)}
+                >
+                  <Text style={styles.dueDateButtonIcon}>📅</Text>
+                  <Text style={styles.dueDateButtonText}>
+                    {editTaskDueDate
+                      ? editTaskDueDate.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })
+                      : 'Select a due date'}
+                  </Text>
+                </TouchableOpacity>
+                {editTaskDueDate && (
+                  <TouchableOpacity onPress={() => setEditTaskDueDate(null)}>
+                    <Text style={styles.dueDateClear}>✕</Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+              {showEditDatePicker && (
+                <DateTimePicker
+                  value={editTaskDueDate || new Date()}
+                  mode="date"
+                  display={Platform.OS === 'ios' ? 'inline' : 'default'}
+                  minimumDate={new Date()}
+                  onChange={(event, selectedDate) => {
+                    setShowEditDatePicker(Platform.OS === 'ios');
+                    if (selectedDate) setEditTaskDueDate(selectedDate);
+                  }}
+                  accentColor={colors.primary}
+                />
+              )}
+          </ScrollView>
+        </KeyboardAvoidingView>
+        </View>
+      </Modal>
+
       {/* Hatch Celebration Modal */}
       <Modal visible={showHatchModal} transparent animationType="fade">
-        <TouchableOpacity style={styles.hatchModalOverlay} activeOpacity={1} onPress={closeHatchModal}>
+        <TouchableOpacity style={styles.hatchModalOverlay} activeOpacity={1} onPress={hatchStage >= 3 ? closeHatchModal : undefined}>
           <TouchableOpacity activeOpacity={1} style={styles.hatchModalContent}>
             <TouchableOpacity style={styles.closeButton} onPress={closeHatchModal}>
               <Text style={styles.closeButtonText}>✕</Text>
             </TouchableOpacity>
             
-            <Text style={styles.hatchModalTitle}>
-              Congrats {user?.username || 'you'}, you've{'\n'}completed{'\n'}your task!!
-            </Text>
+            {hatchStage < 3 ? (
+              <Text style={styles.hatchModalTitle}>
+                Congrats {user?.username || 'you'}!{'\n'}You've earned{'\n'}a new friend!
+              </Text>
+            ) : (
+              <Text style={styles.hatchModalTitle}>
+                Congrats {user?.username || 'you'}, you've{'\n'}completed{'\n'}your task!!
+              </Text>
+            )}
             
             <View style={styles.hatchAnimalContainer}>
-              <View style={styles.hatchEggShell}>
-                <Text style={styles.hatchAnimalEmoji}>🐘</Text>
-              </View>
+              {/* Egg with progressive cracks */}
+              <Animated.View style={{
+                opacity: eggOpacity,
+                transform: [
+                  { rotate: eggWobble.interpolate({ inputRange: [-18, 18], outputRange: ['-18deg', '18deg'] }) },
+                  { scale: eggScale },
+                ],
+              }}>
+                <TouchableOpacity activeOpacity={0.85} onPress={handleEggTap}>
+                  <View style={styles.hatchEggShell}>
+                    <LottieView
+                      source={require('../assets/egg-animation.json')}
+                      autoPlay={false}
+                      loop={false}
+                      style={{ width: 160, height: 160 }}
+                    />
+                    {/* Crack 1 — upper left */}
+                    {hatchStage >= 1 && (
+                      <View style={styles.crack1Container}>
+                        <View style={styles.crackSegA} />
+                        <View style={styles.crackSegB} />
+                        <View style={styles.crackSegC} />
+                      </View>
+                    )}
+                    {/* Crack 2 — lower right */}
+                    {hatchStage >= 2 && (
+                      <View style={styles.crack2Container}>
+                        <View style={styles.crackSegD} />
+                        <View style={styles.crackSegE} />
+                        <View style={styles.crackSegF} />
+                      </View>
+                    )}
+                  </View>
+                  <Text style={styles.hatchNestEmoji}>🪹</Text>
+                </TouchableOpacity>
+              </Animated.View>
+
+              {/* Animal reveal — scales up from behind once egg breaks */}
+              {hatchStage >= 3 && (
+                <Animated.View style={[styles.animalRevealWrap, {
+                  transform: [{ scale: animalRevealScale }],
+                  opacity: animalRevealScale,
+                }]}>
+                  {getAnimalImage(hatchedAnimal?.name) ? (
+                    <Image source={getAnimalImage(hatchedAnimal?.name)!} style={styles.revealAnimalImage} resizeMode="contain" />
+                  ) : (
+                    <Text style={styles.hatchAnimalEmoji}>
+                      {animalEmojiMap[hatchedAnimal?.name || ''] || '🐾'}
+                    </Text>
+                  )}
+                </Animated.View>
+              )}
             </View>
             
-            <Text style={styles.hatchModalSubtitle}>
-              And hatched a{'\n'}cute {hatchedAnimal?.name || 'Animal'} :)
-            </Text>
+            {hatchStage < 3 ? (
+              <Text style={styles.hatchTapHint}>Tap the egg to hatch!</Text>
+            ) : (
+              <Text style={styles.hatchModalSubtitle}>
+                And hatched a{'\n'}cute {hatchedAnimal?.name || 'Animal'} :)
+              </Text>
+            )}
           </TouchableOpacity>
         </TouchableOpacity>
       </Modal>
@@ -755,7 +971,7 @@ const styles = StyleSheet.create({
     marginHorizontal: spacing.md,
     marginTop: spacing.md,
     borderRadius: 24,
-    paddingBottom: spacing.xl,
+    paddingBottom: spacing.md,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.06,
@@ -868,7 +1084,7 @@ const styles = StyleSheet.create({
   },
   eggWrapper: {
     position: 'absolute',
-    top: 0,
+    top: -10,
     alignItems: 'center',
     justifyContent: 'center',
     zIndex: 10,
@@ -876,13 +1092,13 @@ const styles = StyleSheet.create({
   nestEmoji: {
     fontSize: 150,
     position: 'absolute',
-    bottom: -54,
+    bottom: -58,
     textAlign: 'center',
     opacity: 0.92,
   },
   buttonContainer: {
     alignItems: 'center',
-    paddingTop: spacing.lg + 14,
+    paddingTop: spacing.lg,
     paddingBottom: 0,
   },
   hatchButton: {
@@ -1052,6 +1268,12 @@ const styles = StyleSheet.create({
   taskDue: {
     fontSize: 12,
     color: 'rgba(255,255,255,0.6)',
+  },
+  taskEditHint: {
+    fontSize: 11,
+    color: 'rgba(255,255,255,0.4)',
+    marginTop: 3,
+    fontWeight: '500',
   },
   taskDeleteBtn: {
     width: 28,
@@ -1444,6 +1666,8 @@ const styles = StyleSheet.create({
   },
   hatchAnimalContainer: {
     marginVertical: spacing.xl,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   hatchEggShell: {
     width: 200,
@@ -1453,6 +1677,13 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     ...shadows.large,
+    overflow: 'hidden',
+  },
+  hatchNestEmoji: {
+    fontSize: 120,
+    textAlign: 'center',
+    marginTop: -65,
+    opacity: 0.9,
   },
   hatchAnimalEmoji: {
     fontSize: 100,
@@ -1464,5 +1695,85 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     fontStyle: 'italic',
     lineHeight: 38,
+  },
+  hatchTapHint: {
+    fontSize: 22,
+    fontWeight: '600',
+    color: 'rgba(255,255,255,0.85)',
+    textAlign: 'center',
+    fontStyle: 'italic',
+    letterSpacing: 0.3,
+  },
+  animalRevealWrap: {
+    position: 'absolute',
+    alignItems: 'center',
+    justifyContent: 'center',
+    top: 10,
+  },
+  revealAnimalImage: {
+    width: 160,
+    height: 160,
+  },
+  crack1Container: {
+    position: 'absolute',
+    top: 55,
+    left: 30,
+    zIndex: 10,
+  },
+  crack2Container: {
+    position: 'absolute',
+    top: 80,
+    right: 35,
+    zIndex: 10,
+  },
+  crackSegA: {
+    width: 22,
+    height: 3,
+    backgroundColor: '#7A6B5A',
+    borderRadius: 1,
+    transform: [{ rotate: '40deg' }],
+  },
+  crackSegB: {
+    width: 16,
+    height: 3,
+    backgroundColor: '#7A6B5A',
+    borderRadius: 1,
+    transform: [{ rotate: '-35deg' }],
+    marginLeft: 16,
+    marginTop: -2,
+  },
+  crackSegC: {
+    width: 20,
+    height: 3,
+    backgroundColor: '#7A6B5A',
+    borderRadius: 1,
+    transform: [{ rotate: '50deg' }],
+    marginLeft: 10,
+    marginTop: -1,
+  },
+  crackSegD: {
+    width: 18,
+    height: 3,
+    backgroundColor: '#7A6B5A',
+    borderRadius: 1,
+    transform: [{ rotate: '-30deg' }],
+  },
+  crackSegE: {
+    width: 24,
+    height: 3,
+    backgroundColor: '#7A6B5A',
+    borderRadius: 1,
+    transform: [{ rotate: '45deg' }],
+    marginLeft: -6,
+    marginTop: -1,
+  },
+  crackSegF: {
+    width: 14,
+    height: 3,
+    backgroundColor: '#7A6B5A',
+    borderRadius: 1,
+    transform: [{ rotate: '-40deg' }],
+    marginLeft: 12,
+    marginTop: -2,
   },
 });

@@ -1,13 +1,11 @@
 import React, { useState, useCallback } from 'react';
 import {
   View,
-  Text,
   StyleSheet,
   ScrollView,
   TouchableOpacity,
   RefreshControl,
   Alert,
-  TextInput,
   Modal,
   Dimensions,
   Image,
@@ -15,6 +13,7 @@ import {
   Platform,
   KeyboardAvoidingView,
 } from 'react-native';
+import { Text, TextInput } from '../components/StyledText';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { LinearGradient as ExpoLinearGradient } from 'expo-linear-gradient';

@@ -1227,6 +1227,11 @@ def get_friend_profile(
     if not friend:
         raise HTTPException(status_code=404, detail="User not found")
     animals_count = db.query(models.UserAnimal).filter(models.UserAnimal.user_id == friend.id).count()
+    subject_rows = db.query(models.StudySession.subject).filter(
+        models.StudySession.user_id == friend.id,
+        models.StudySession.subject != None
+    ).distinct().all()
+    friend_subjects = [row[0] for row in subject_rows if row[0]]
     return {
         "id": friend.id,
         "username": friend.username,
@@ -1242,7 +1247,30 @@ def get_friend_profile(
         "school": friend.school,
         "city": friend.city,
         "country": friend.country,
+        "subjects": friend_subjects,
     }
+
+
+@app.get("/friends/{friend_id}/subjects")
+def get_friend_subjects(
+    friend_id: int,
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    friendship = db.query(models.Friendship).filter(
+        models.Friendship.status == "accepted",
+        (
+            ((models.Friendship.user_id == current_user.id) & (models.Friendship.friend_id == friend_id)) |
+            ((models.Friendship.user_id == friend_id) & (models.Friendship.friend_id == current_user.id))
+        )
+    ).first()
+    if not friendship:
+        raise HTTPException(status_code=404, detail="Friend not found")
+    rows = db.query(models.StudySession.subject).filter(
+        models.StudySession.user_id == friend_id,
+        models.StudySession.subject != None
+    ).distinct().all()
+    return {"subjects": [r[0] for r in rows if r[0]]}
 
 
 @app.delete("/friends/{friend_id}")

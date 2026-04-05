@@ -1,7 +1,6 @@
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import {
   View,
-  Text,
   StyleSheet,
   TouchableOpacity,
   FlatList,
@@ -14,6 +13,7 @@ import {
   Alert,
   Share,
 } from 'react-native';
+import { Text } from '../components/StyledText';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -26,6 +26,16 @@ import { Analytics } from '../services/analytics';
 import { useAuth } from '../contexts/AuthContext';
 
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
+
+function decodeHtmlEntities(str: string): string {
+  return str
+    .replace(/&quot;/g, '"')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&#39;/g, "'")
+    .replace(/&apos;/g, "'");
+}
 
 const ANIMAL_COLORS: Record<string, { bg: string; accent: string }> = {
   'Sunda Island Tiger': { bg: '#FFF3E6', accent: '#D4883E' },
@@ -98,7 +108,7 @@ const TipCard = React.memo(({
         {/* Speech bubble */}
         <View style={styles.speechArea}>
           <View style={styles.speechBubble}>
-            <Text style={styles.tipText}>{item.content}</Text>
+            <Text style={styles.tipText}>{decodeHtmlEntities(item.content)}</Text>
 
             {/* Actions inside bubble */}
             <View style={styles.actionsRow}>
@@ -119,7 +129,7 @@ const TipCard = React.memo(({
                   onPress={() => bounceAnim(saveScale, () => onToggleSave(item.id))}
                   activeOpacity={0.7}
                 >
-                  <Text style={[styles.saveIcon, isSaved && styles.saveIconActive]}>{isSaved ? '♥' : '♡'}</Text>
+                  <Text style={[styles.saveIcon, isSaved && styles.saveIconActive]}>{isSaved ? '❤️' : '🤍'}</Text>
                   <Text style={[styles.saveBtnText, isSaved && styles.saveBtnTextActive]}>
                     {isSaved ? 'Saved' : 'Save'}
                   </Text>
@@ -200,32 +210,42 @@ export default function TipsScreen() {
     await AsyncStorage.setItem(`seenTipIds_${user?.id || 'anon'}`, JSON.stringify([...ids]));
   };
 
-  const loadTips = useCallback(async () => {
+  const loadTips = useCallback(async (shuffle = false) => {
     try {
       const tipsData = await tipsAPI.getTips(100);
       const seen = seenTipIdsRef.current;
-      const sorted = [...tipsData].sort((a, b) => {
-        const aS = seen.has(a.id) ? 1 : 0;
-        const bS = seen.has(b.id) ? 1 : 0;
-        return aS - bS;
-      });
-      setTips(sorted);
+      let ordered: StudyTip[];
+
+      if (shuffle) {
+        ordered = [...tipsData].sort(() => Math.random() - 0.5);
+      } else {
+        const unseen = tipsData.filter(t => !seen.has(t.id));
+        const seenTips = tipsData.filter(t => seen.has(t.id));
+        const shuffledUnseen = unseen.sort(() => Math.random() - 0.5);
+        const shuffledSeen = seenTips.sort(() => Math.random() - 0.5);
+        ordered = [...shuffledUnseen, ...shuffledSeen];
+      }
+      setTips(ordered);
     } catch (error) {
       if (__DEV__) console.error('Failed to load tips:', error);
     }
   }, []);
 
   useFocusEffect(useCallback(() => {
-    loadTips();
+    loadTips(false);
+    flatListRef.current?.scrollToOffset({ offset: 0, animated: false });
+    hasScrolled.current = false;
+    scrollIndicatorOpacity.setValue(1);
     return () => {
       Object.values(tipViewTimers.current).forEach(t => clearTimeout(t));
       tipViewTimers.current = {};
     };
-  }, [loadTips]));
+  }, []));
 
   const onRefresh = async () => {
     setIsRefreshing(true);
-    await loadTips();
+    await loadTips(true);
+    flatListRef.current?.scrollToOffset({ offset: 0, animated: true });
     setIsRefreshing(false);
   };
 
@@ -298,7 +318,7 @@ export default function TipsScreen() {
     const key = `group-${groupId}`;
     try {
       const animalName = sendingTip.animal_name || ANIMAL_NAMES_IN_ORDER[sendingTip.id % ANIMAL_NAMES_IN_ORDER.length];
-      await groupsAPI.sendMessage(groupId, `📚 Study tip from ${animalName}:\n\n"${sendingTip.content}"`);
+      await groupsAPI.sendMessage(groupId, `📚 Study tip from ${animalName}:\n\n"${decodeHtmlEntities(sendingTip.content)}"`);
       Analytics.tipSent(sendingTip.id, 'group');
       setSentTo(prev => ({ ...prev, [key]: true }));
     } catch {
@@ -324,7 +344,7 @@ export default function TipsScreen() {
     const animalName = sendingTip.animal_name || ANIMAL_NAMES_IN_ORDER[sendingTip.id % ANIMAL_NAMES_IN_ORDER.length];
     try {
       await Share.share({
-        message: `📚 Study tip from ${animalName}:\n\n"${sendingTip.content}"\n\n— Endura 🌿`,
+        message: `📚 Study tip from ${animalName}:\n\n"${decodeHtmlEntities(sendingTip.content)}"\n\n— Endura 🌿`,
       });
     } catch {}
   }, [sendingTip]);
@@ -345,6 +365,28 @@ export default function TipsScreen() {
   }).current;
 
   const viewabilityConfig = useRef({ viewAreaCoveragePercentThreshold: 50 }).current;
+
+  const scrollIndicatorOpacity = useRef(new Animated.Value(1)).current;
+  const scrollIndicatorBounce = useRef(new Animated.Value(0)).current;
+  const hasScrolled = useRef(false);
+
+  useEffect(() => {
+    const bounce = Animated.loop(
+      Animated.sequence([
+        Animated.timing(scrollIndicatorBounce, { toValue: 8, duration: 600, useNativeDriver: true }),
+        Animated.timing(scrollIndicatorBounce, { toValue: 0, duration: 600, useNativeDriver: true }),
+      ])
+    );
+    bounce.start();
+    return () => bounce.stop();
+  }, []);
+
+  const onFeedScroll = useCallback((e: any) => {
+    if (!hasScrolled.current && e.nativeEvent.contentOffset.y > 30) {
+      hasScrolled.current = true;
+      Animated.timing(scrollIndicatorOpacity, { toValue: 0, duration: 300, useNativeDriver: true }).start();
+    }
+  }, []);
 
   const savedTips = tips.filter((t) => savedIds[t.id]);
 
@@ -405,28 +447,38 @@ export default function TipsScreen() {
 
       {/* Feed */}
       {activeTab === 'feed' && (
-        <FlatList
-          key="feed-list"
-          ref={flatListRef}
-          data={tips}
-          extraData={savedIds}
-          renderItem={renderFeedItem}
-          keyExtractor={(item) => item.id.toString()}
-          showsVerticalScrollIndicator={false}
-          snapToInterval={CARD_HEIGHT + 16}
-          decelerationRate="fast"
-          onViewableItemsChanged={onViewableItemsChanged}
-          viewabilityConfig={viewabilityConfig}
-          refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={onRefresh} tintColor={colors.primary} />}
-          contentContainerStyle={styles.listContent}
-          ListEmptyComponent={
-            <View style={styles.emptyState}>
-              <Text style={styles.emptyEmoji}>🌿</Text>
-              <Text style={styles.emptyTitle}>No tips yet</Text>
-              <Text style={styles.emptyText}>Pull down to refresh!</Text>
-            </View>
-          }
-        />
+        <View style={{ flex: 1 }}>
+          <FlatList
+            key="feed-list"
+            ref={flatListRef}
+            data={tips}
+            extraData={savedIds}
+            renderItem={renderFeedItem}
+            keyExtractor={(item) => item.id.toString()}
+            showsVerticalScrollIndicator={false}
+            snapToInterval={CARD_HEIGHT + 16}
+            decelerationRate="fast"
+            onViewableItemsChanged={onViewableItemsChanged}
+            viewabilityConfig={viewabilityConfig}
+            onScroll={onFeedScroll}
+            scrollEventThrottle={16}
+            refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={onRefresh} tintColor={colors.primary} />}
+            contentContainerStyle={styles.listContent}
+            ListEmptyComponent={
+              <View style={styles.emptyState}>
+                <Text style={styles.emptyEmoji}>🌿</Text>
+                <Text style={styles.emptyTitle}>No tips yet</Text>
+                <Text style={styles.emptyText}>Pull down to refresh!</Text>
+              </View>
+            }
+          />
+          {tips.length > 1 && (
+            <Animated.View style={[styles.scrollIndicator, { opacity: scrollIndicatorOpacity, transform: [{ translateY: scrollIndicatorBounce }] }]}>
+              <Text style={styles.scrollIndicatorText}>Swipe up for more</Text>
+              <Text style={styles.scrollIndicatorArrow}>⌄</Text>
+            </Animated.View>
+          )}
+        </View>
       )}
 
       {/* Saved */}
@@ -446,7 +498,7 @@ export default function TipsScreen() {
           contentContainerStyle={styles.listContent}
           ListEmptyComponent={
             <View style={styles.emptyState}>
-              <Text style={styles.emptyEmoji}>♡</Text>
+              <Text style={styles.emptyEmoji}>🤍</Text>
               <Text style={styles.emptyTitle}>No saved tips yet</Text>
               <Text style={styles.emptyText}>Tap "Save" on any tip to keep it here for later.</Text>
             </View>
@@ -468,50 +520,11 @@ export default function TipsScreen() {
 
             {sendingTip && (
               <View style={styles.tipPreview}>
-                <Text style={styles.tipPreviewText} numberOfLines={2}>"{sendingTip.content}"</Text>
+                <Text style={styles.tipPreviewText} numberOfLines={2}>"{decodeHtmlEntities(sendingTip.content)}"</Text>
               </View>
             )}
 
             <ScrollView showsVerticalScrollIndicator={false}>
-              {/* Friends */}
-              {friends.length > 0 && (
-                <View style={styles.sendSection}>
-                  <Text style={styles.sendSectionTitle}>Friends</Text>
-                  {friends.map(f => {
-                    const key = `friend-${f.id}`;
-                    const sent = sentTo[key];
-                    const name = f.username || f.email?.split('@')[0] || 'Friend';
-                    return (
-                      <TouchableOpacity
-                        key={f.id}
-                        style={styles.sendRow}
-                        onPress={() => !sent && handleSendToFriend(f.id, name)}
-                        activeOpacity={sent ? 1 : 0.7}
-                      >
-                        <View style={[styles.sendAvatar, { backgroundColor: '#5F8C87' + '18' }]}>
-                          <Text style={styles.sendAvatarText}>{name[0].toUpperCase()}</Text>
-                        </View>
-                        <Text style={styles.sendName} numberOfLines={1}>{name}</Text>
-                        {sent ? (
-                          <View style={styles.sentBadge}>
-                            <Text style={styles.sentBadgeText}>Sent ✓</Text>
-                          </View>
-                        ) : (
-                          <LinearGradient
-                            colors={['#5F8C87', '#3B5466']}
-                            start={{ x: 0, y: 0 }}
-                            end={{ x: 1, y: 0 }}
-                            style={styles.sendActionBtn}
-                          >
-                            <Text style={styles.sendActionText}>Send</Text>
-                          </LinearGradient>
-                        )}
-                      </TouchableOpacity>
-                    );
-                  })}
-                </View>
-              )}
-
               {/* Study groups */}
               {groups.length > 0 && (
                 <View style={styles.sendSection}>
@@ -963,6 +976,28 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '700',
     color: '#3D7A5F',
+  },
+
+  scrollIndicator: {
+    position: 'absolute',
+    bottom: 50,
+    alignSelf: 'center',
+    alignItems: 'center',
+    backgroundColor: 'rgba(95,140,135,0.9)',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 20,
+  },
+  scrollIndicatorText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#FFFFFF',
+  },
+  scrollIndicatorArrow: {
+    fontSize: 16,
+    color: '#FFFFFF',
+    marginTop: -4,
+    fontWeight: '700',
   },
 
   emptyState: {

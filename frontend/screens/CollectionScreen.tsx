@@ -1,13 +1,11 @@
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import {
   View,
-  Text,
   StyleSheet,
   ScrollView,
   TouchableOpacity,
   RefreshControl,
   Alert,
-  TextInput,
   Modal,
   Dimensions,
   Image,
@@ -16,6 +14,7 @@ import {
   ImageSourcePropType,
   LayoutChangeEvent,
 } from 'react-native';
+import { Text, TextInput } from '../components/StyledText';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -319,6 +318,8 @@ export default function CollectionScreen() {
   const [draggingItemId, setDraggingItemId] = useState<string | null>(null);
   const [sanctuaryPage, setSanctuaryPage] = useState(0);
   const [traySlotOrigin, setTraySlotOrigin] = useState({ x: 0, y: 0 });
+  const [showInstancePicker, setShowInstancePicker] = useState(false);
+  const [instancePickerAnimals, setInstancePickerAnimals] = useState<UserAnimal[]>([]);
   const traySlotOriginRef = useRef({ x: 0, y: 0 });
   const [communityTotal, setCommunityTotal] = useState(0);
   const loadPurchases = async () => {
@@ -451,6 +452,16 @@ export default function CollectionScreen() {
     setSelectedAnimal(animal);
     setNicknameInput(animal.nickname || '');
     setShowModal(true);
+  };
+
+  const openAnimalForSpecies = (speciesId: number) => {
+    const instances = myAnimals.filter(a => a.animal.id === speciesId);
+    if (instances.length <= 1) {
+      openAnimalDetail(instances[0]);
+    } else {
+      setInstancePickerAnimals(instances);
+      setShowInstancePicker(true);
+    }
   };
 
   const saveNickname = async () => {
@@ -594,7 +605,7 @@ export default function CollectionScreen() {
                           key={userAnimal.id}
                           style={[
                             styles.sanctuaryAnimal,
-                            { bottom: pos.bottom, left: pos.left, transform: [{ scale: pos.scale }] },
+                            { bottom: pos.bottom - 15, left: pos.left, transform: [{ scale: pos.scale }] },
                           ]}
                         >
                           {imageSource ? (
@@ -675,7 +686,7 @@ export default function CollectionScreen() {
                 <TouchableOpacity
                   key={userAnimal.animal.id}
                   style={styles.animalCard}
-                  onPress={() => openAnimalDetail(userAnimal)}
+                  onPress={() => openAnimalForSpecies(userAnimal.animal.id)}
                 >
                   <View>
                     {imageSource ? (
@@ -1061,6 +1072,62 @@ export default function CollectionScreen() {
             </View>
           </TouchableOpacity>
         </TouchableOpacity>
+      </Modal>
+
+      {/* Instance Picker Modal */}
+      <Modal visible={showInstancePicker} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setShowInstancePicker(false)}>
+        <View style={{ flex: 1 }}>
+          <LinearGradient
+            colors={['#FFFFFF', '#E7EFEA']}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 0, y: 1 }}
+            style={{ flex: 1 }}
+          >
+            <DragHandle />
+            <View style={styles.instancePickerHeader}>
+              <Text style={styles.instancePickerTitle} numberOfLines={1}>
+                Choose a {instancePickerAnimals[0]?.animal.name || 'Animal'}
+              </Text>
+              <TouchableOpacity onPress={() => setShowInstancePicker(false)} style={styles.instancePickerClose}>
+                <Text style={styles.closeButtonText}>✕</Text>
+              </TouchableOpacity>
+            </View>
+            <Text style={styles.instancePickerSubtitle}>
+              You have {instancePickerAnimals.length} — tap one to view or nickname
+            </Text>
+            <ScrollView contentContainerStyle={{ padding: spacing.lg, paddingTop: 0 }}>
+              {instancePickerAnimals.map((ua, idx) => {
+                const img = getAnimalImage(ua.animal.name);
+                return (
+                  <TouchableOpacity
+                    key={ua.id}
+                    style={styles.instanceRow}
+                    activeOpacity={0.7}
+                    onPress={() => {
+                      setShowInstancePicker(false);
+                      setTimeout(() => openAnimalDetail(ua), 300);
+                    }}
+                  >
+                    {img ? (
+                      <Image source={img} style={styles.instanceImage} resizeMode="contain" />
+                    ) : (
+                      <Text style={{ fontSize: 32 }}>{animalEmojis[ua.animal.name] || '🦁'}</Text>
+                    )}
+                    <View style={{ flex: 1, marginLeft: 14 }}>
+                      <Text style={styles.instanceName}>
+                        {ua.nickname || `${ua.animal.name} #${idx + 1}`}
+                      </Text>
+                      <Text style={styles.instanceSub}>
+                        {ua.nickname ? ua.animal.name : 'No nickname yet'}
+                      </Text>
+                    </View>
+                    <Text style={{ fontSize: 18, color: colors.textMuted }}>›</Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+          </LinearGradient>
+        </View>
       </Modal>
 
     </SafeAreaView>
@@ -2068,5 +2135,59 @@ const styles = StyleSheet.create({
     color: colors.primaryDark,
     lineHeight: 20,
     fontStyle: 'italic',
+  },
+  instancePickerHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    paddingHorizontal: spacing.lg,
+    paddingBottom: spacing.xs,
+  },
+  instancePickerTitle: {
+    fontSize: 22,
+    fontWeight: '700',
+    color: colors.textPrimary,
+    flex: 1,
+    marginRight: spacing.sm,
+  },
+  instancePickerClose: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: colors.surfaceAlt,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginTop: 2,
+  },
+  instancePickerSubtitle: {
+    fontSize: 13,
+    color: colors.textMuted,
+    paddingHorizontal: spacing.lg,
+    marginBottom: spacing.md,
+  },
+  instanceRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.surface,
+    borderRadius: borderRadius.lg,
+    padding: spacing.md,
+    marginBottom: spacing.sm,
+    borderWidth: 1,
+    borderColor: colors.cardBorder,
+    ...shadows.small,
+  },
+  instanceImage: {
+    width: 52,
+    height: 52,
+  },
+  instanceName: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: colors.textPrimary,
+  },
+  instanceSub: {
+    fontSize: 12,
+    color: colors.textMuted,
+    marginTop: 2,
   },
 });

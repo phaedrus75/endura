@@ -1,7 +1,8 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react';
 import {
-  View, Text, StyleSheet, Modal, TouchableOpacity, Animated, Dimensions, AppState,
+  View, StyleSheet, Modal, TouchableOpacity, Animated, Dimensions, AppState,
 } from 'react-native';
+import { Text } from './StyledText';
 import { LinearGradient } from 'expo-linear-gradient';
 import { feedAPI } from '../services/api';
 import { useAuth } from '../contexts/AuthContext';

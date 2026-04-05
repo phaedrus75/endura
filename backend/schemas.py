@@ -243,6 +243,7 @@ class FriendProfileResponse(BaseModel):
     school: Optional[str] = None
     city: Optional[str] = None
     country: Optional[str] = None
+    subjects: list[str] = []
 
     class Config:
         from_attributes = True

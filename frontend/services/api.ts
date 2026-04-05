@@ -124,6 +124,7 @@ export interface FriendProfile {
   school: string | null;
   city: string | null;
   country: string | null;
+  subjects: string[];
 }
 
 export interface FriendSuggestion {
@@ -190,6 +191,7 @@ export interface StudyGroup {
   creator_id: number;
   goal_minutes: number;
   goal_deadline: string | null;
+  subject: string | null;
   created_at: string;
   members: StudyGroupMember[];
   total_minutes: number;
@@ -364,7 +366,6 @@ export const authAPI = {
       method: 'POST',
       headers: { Authorization: `Bearer ${token}` },
       body: formData,
-      redirect: 'error',
     });
     if (response.status === 401) {
       await SecureStore.deleteItemAsync('authToken');
@@ -482,6 +483,9 @@ export const socialAPI = {
   getFriendProfile: (friendId: number) =>
     apiFetch<FriendProfile>(`/friends/${friendId}/profile`),
 
+  getFriendSubjects: (friendId: number) =>
+    apiFetch<{ subjects: string[] }>(`/friends/${friendId}/subjects`),
+
   getLeaderboard: (period: string = 'all_time') => apiFetch<LeaderboardEntry[]>(`/leaderboard?period=${period}`),
   getGlobalLeaderboard: (period: string = 'all_time') => apiFetch<LeaderboardEntry[]>(`/leaderboard/global?period=${period}`),
   getSchoolLeaderboard: (period: string = 'all_time') => apiFetch<LeaderboardEntry[]>(`/leaderboard/school?period=${period}`),
@@ -505,10 +509,10 @@ export const shopAPI = {
 
 // Study Group API
 export const groupsAPI = {
-  create: (name: string, goalMinutes: number, goalDeadline?: string) =>
+  create: (name: string, goalMinutes: number, goalDeadline?: string, subject?: string) =>
     apiFetch<{ id: number; name: string }>('/groups', {
       method: 'POST',
-      body: JSON.stringify({ name, goal_minutes: goalMinutes, goal_deadline: goalDeadline }),
+      body: JSON.stringify({ name, goal_minutes: goalMinutes, goal_deadline: goalDeadline, subject }),
     }),
   join: (groupId: number) =>
     apiFetch('/groups/' + groupId + '/join', { method: 'POST' }),
@@ -533,6 +537,11 @@ export const groupsAPI = {
     apiFetch<{ message: string; goal_minutes: number }>(`/groups/${groupId}/goal`, {
       method: 'PUT',
       body: JSON.stringify({ goal_minutes: goalMinutes }),
+    }),
+  updateGroup: (groupId: number, data: { name?: string; subject?: string | null; goal_minutes?: number }) =>
+    apiFetch<{ message: string; name: string; subject: string | null; goal_minutes: number }>(`/groups/${groupId}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
     }),
 };
 

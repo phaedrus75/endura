@@ -1,13 +1,11 @@
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import {
   View,
-  Text,
   StyleSheet,
   ScrollView,
   TouchableOpacity,
   RefreshControl,
   Modal,
-  TextInput,
   Alert,
   Dimensions,
   KeyboardAvoidingView,
@@ -16,15 +14,17 @@ import {
   Animated,
   Image,
 } from 'react-native';
+import { Text, TextInput } from '../components/StyledText';
 import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
+import { Picker } from '@react-native-picker/picker';
 import { colors, shadows, spacing, borderRadius } from '../theme/colors';
 import SwipeDismiss, { DragHandle } from '../components/SwipeDismiss';
 import { useAuth } from '../contexts/AuthContext';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
-  groupsAPI, feedAPI, socialAPI, tipsAPI,
+  groupsAPI, feedAPI, socialAPI, tipsAPI, statsAPI,
   StudyGroup, GroupMessage, FeedEvent,
   Friend, FriendProfile, FriendSuggestion, StudyTip, LeaderboardEntry,
 } from '../services/api';
@@ -32,6 +32,17 @@ import { getAnimalImage } from '../assets/animals';
 import ConfettiCannon from 'react-native-confetti-cannon';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
+
+
+function decodeHtmlEntities(str: string): string {
+  return str
+    .replace(/&quot;/g, '"')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&#39;/g, "'")
+    .replace(/&apos;/g, "'");
+}
 
 const TABS = ['Friends', 'Leaderboard', 'Groups', 'Feed'] as const;
 type Tab = typeof TABS[number];
@@ -115,7 +126,6 @@ export default function SocialScreen() {
   const [groups, setGroups] = useState<StudyGroup[]>([]);
   const [showCreateGroup, setShowCreateGroup] = useState(false);
   const [groupName, setGroupName] = useState('');
-  const [groupGoal, setGroupGoal] = useState('500');
   const [selectedGroupFriends, setSelectedGroupFriends] = useState<Set<number>>(new Set());
   const [selectedGroup, setSelectedGroup] = useState<StudyGroup | null>(null);
   const [messages, setMessages] = useState<GroupMessage[]>([]);
@@ -126,9 +136,84 @@ export default function SocialScreen() {
   const [savedTips, setSavedTips] = useState<StudyTip[]>([]);
   const [showChatActions, setShowChatActions] = useState(false);
   const [showEditGoal, setShowEditGoal] = useState<StudyGroup | null>(null);
-  const [editGoalValue, setEditGoalValue] = useState('');
   const [showGoalCongrats, setShowGoalCongrats] = useState<StudyGroup | null>(null);
   const [celebratedGroupIds, setCelebratedGroupIds] = useState<Set<number>>(new Set());
+  const [showEditGroup, setShowEditGroup] = useState<StudyGroup | null>(null);
+  const [editGroupName, setEditGroupName] = useState('');
+  const [editGroupSubject, setEditGroupSubject] = useState<string | null>(null);
+
+  // Hours/minutes picker state for create & edit goal
+  const [goalHoursPicker, setGoalHoursPicker] = useState(8);
+  const [goalMinutesPicker, setGoalMinutesPicker] = useState(20);
+  const [createSubject, setCreateSubject] = useState<string | null>(null);
+  const [mySubjects, setMySubjects] = useState<string[]>([]);
+  const [friendSubjectsMap, setFriendSubjectsMap] = useState<Record<number, string[]>>({});
+  const friendSubjectsCacheRef = useRef<Record<number, string[]>>({});
+
+  const DEFAULT_SUBJECTS = ['Math', 'Science', 'English', 'History'];
+
+  useEffect(() => {
+    const loadMySubjects = async () => {
+      try {
+        const stats = await statsAPI.getStats();
+        const fromSessions = Object.keys(stats.study_minutes_by_subject || {});
+        const stored = await AsyncStorage.getItem(`customSubjects_${user?.id || 'anon'}`);
+        const local: string[] = stored ? JSON.parse(stored) : DEFAULT_SUBJECTS;
+        const merged = Array.from(new Set([...local, ...fromSessions]));
+        setMySubjects(merged);
+      } catch {
+        setMySubjects(DEFAULT_SUBJECTS);
+      }
+    };
+    if (user) loadMySubjects();
+  }, [user]);
+
+  useEffect(() => {
+    const fetchAll = async () => {
+      const friendIds = Array.from(selectedGroupFriends);
+      let changed = false;
+      for (const fid of friendIds) {
+        if (friendSubjectsCacheRef.current[fid] !== undefined) continue;
+        try {
+          const result = await socialAPI.getFriendSubjects(fid);
+          friendSubjectsCacheRef.current[fid] = result.subjects || [];
+        } catch {
+          try {
+            const profile = await socialAPI.getFriendProfile(fid);
+            friendSubjectsCacheRef.current[fid] = profile.subjects || [];
+          } catch {
+            friendSubjectsCacheRef.current[fid] = [];
+          }
+        }
+        changed = true;
+      }
+      if (changed || friendIds.length === 0) {
+        setFriendSubjectsMap({ ...friendSubjectsCacheRef.current });
+      }
+    };
+    fetchAll();
+  }, [selectedGroupFriends]);
+
+  const sharedSubjects = React.useMemo(() => {
+    if (mySubjects.length === 0) return DEFAULT_SUBJECTS;
+    const selectedIds = Array.from(selectedGroupFriends);
+    if (selectedIds.length === 0) return mySubjects;
+    let shared = [...mySubjects];
+    for (const fid of selectedIds) {
+      const fs = friendSubjectsMap[fid];
+      if (!fs) continue;
+      if (fs.length === 0) { shared = []; break; }
+      const friendLower = fs.map(s => s.toLowerCase());
+      shared = shared.filter(s => friendLower.includes(s.toLowerCase()));
+    }
+    return shared;
+  }, [mySubjects, selectedGroupFriends, friendSubjectsMap]);
+
+  useEffect(() => {
+    if (createSubject && !sharedSubjects.some(s => s.toLowerCase() === createSubject.toLowerCase())) {
+      setCreateSubject(null);
+    }
+  }, [sharedSubjects]);
 
   // Feature modals (challenge, leaderboard, streak)
   const [featureModal, setFeatureModal] = useState<{ type: 'challenge' | 'leaderboard' | 'streak'; group: StudyGroup } | null>(null);
@@ -374,8 +459,11 @@ export default function SocialScreen() {
   // ---- Group Actions ----
   const handleCreateGroup = async () => {
     if (!groupName.trim()) return;
+    if (!createSubject) { Alert.alert('Select Subject', 'Please select a subject for the group goal.'); return; }
+    const totalMins = goalHoursPicker * 60 + goalMinutesPicker;
+    if (totalMins < 1) { Alert.alert('Invalid Goal', 'Please set a goal of at least 1 minute.'); return; }
     try {
-      const result = await groupsAPI.create(groupName.trim(), parseInt(groupGoal) || 500);
+      const result = await groupsAPI.create(groupName.trim(), totalMins, undefined, createSubject);
       const invited: string[] = [];
       for (const friendId of selectedGroupFriends) {
         const friend = friends.find(f => f.id === friendId);
@@ -390,7 +478,7 @@ export default function SocialScreen() {
         }
       }
       setShowCreateGroup(false);
-      setGroupName(''); setGroupGoal('500'); setSelectedGroupFriends(new Set());
+      setGroupName(''); setGoalHoursPicker(8); setGoalMinutesPicker(20); setSelectedGroupFriends(new Set()); setCreateSubject(null);
       const msg = invited.length > 0
         ? `Group created and ${invited.join(', ')} ${invited.length === 1 ? 'has' : 'have'} been added!`
         : 'Group created! Add friends from the group card.';
@@ -470,12 +558,11 @@ export default function SocialScreen() {
   const handleUpdateGoal = async () => {
     if (!showEditGoal) return;
     const groupId = showEditGoal.id;
-    const mins = parseInt(editGoalValue);
-    if (!mins || mins < 1) { Alert.alert('Invalid', 'Please enter a valid number of minutes.'); return; }
+    const mins = goalHoursPicker * 60 + goalMinutesPicker;
+    if (mins < 1) { Alert.alert('Invalid', 'Please set a goal of at least 1 minute.'); return; }
     try {
       await groupsAPI.updateGoal(groupId, mins);
       setShowEditGoal(null);
-      setEditGoalValue('');
       const freshGroups = await groupsAPI.getAll().catch(() => []);
       setGroups(freshGroups);
       const completed = freshGroups.find(
@@ -487,6 +574,22 @@ export default function SocialScreen() {
       }
     } catch (e: any) {
       Alert.alert('Error', e.message || 'Could not update goal');
+    }
+  };
+
+  const handleUpdateGroup = async () => {
+    if (!showEditGroup) return;
+    const groupId = showEditGroup.id;
+    if (!editGroupName.trim()) { Alert.alert('Invalid', 'Please enter a group name.'); return; }
+    try {
+      await groupsAPI.updateGroup(groupId, {
+        name: editGroupName.trim(),
+        subject: editGroupSubject,
+      });
+      setShowEditGroup(null);
+      loadData();
+    } catch (e: any) {
+      Alert.alert('Error', e.message || 'Could not update group');
     }
   };
 
@@ -648,7 +751,7 @@ export default function SocialScreen() {
           <Text style={styles.emptyTitle}>No groups yet</Text>
           <Text style={styles.emptySubtitle}>Create a study group to collaborate with friends!</Text>
         </View>
-      ) : groups.map(g => {
+      ) : [...groups].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()).map(g => {
         const progress = g.goal_minutes > 0 ? Math.min((g.total_minutes / g.goal_minutes) * 100, 100) : 0;
         const goalHours = Math.floor(g.goal_minutes / 60);
         const goalMins = g.goal_minutes % 60;
@@ -660,8 +763,17 @@ export default function SocialScreen() {
           <View key={g.id} style={styles.groupCard}>
             <TouchableOpacity onPress={() => openGroupChat(g)} activeOpacity={0.7}>
               <View style={styles.groupHeader}>
-                <Text style={styles.groupName}>{g.name}</Text>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.groupName}>{g.name}</Text>
+                  {g.subject && <Text style={styles.groupSubjectTag}>📚 {g.subject}</Text>}
+                </View>
                 {g.goal_met && <Text style={styles.goalMetBadge}>Goal reached!</Text>}
+                <TouchableOpacity
+                  onPress={() => { setShowEditGroup(g); setEditGroupName(g.name); setEditGroupSubject(g.subject || null); }}
+                  style={styles.groupEditBtn}
+                >
+                  <Text style={styles.groupEditBtnLabel}>Edit</Text>
+                </TouchableOpacity>
               </View>
               <View style={styles.groupMembersRow}>
                 {g.members.slice(0, 5).map(m => {
@@ -695,13 +807,10 @@ export default function SocialScreen() {
             <View style={styles.goalSection}>
               <View style={styles.goalHeaderRow}>
                 <Text style={styles.goalLabel}>🎯 Group Goal</Text>
-                <TouchableOpacity onPress={() => { setShowEditGoal(g); setEditGoalValue(String(g.goal_minutes)); }}>
-                  <Text style={styles.goalEditBtn}>Edit</Text>
-                </TouchableOpacity>
               </View>
               <View style={styles.goalProgressBarOuter}>
                 <LinearGradient
-                  colors={g.goal_met ? ['#6FCF97', '#27AE60'] : ['#A9CECA', '#5F8C87']}
+                  colors={g.goal_met ? ['#2E7D32', '#1B5E20'] : ['#7BB5AD', '#2D4055']}
                   start={{ x: 0, y: 0 }}
                   end={{ x: 1, y: 0 }}
                   style={[styles.goalProgressBarFill, { width: `${Math.max(progress, 2)}%` }]}
@@ -709,7 +818,7 @@ export default function SocialScreen() {
               </View>
               <View style={styles.goalStatsRow}>
                 <Text style={styles.goalStatsText}>{totalLabel} / {goalLabel}</Text>
-                <Text style={[styles.goalPercentText, g.goal_met && { color: '#27AE60' }]}>{Math.round(progress)}%</Text>
+                <Text style={[styles.goalPercentText, g.goal_met && { color: '#1B5E20' }]}>{Math.round(progress)}%</Text>
               </View>
             </View>
 
@@ -725,17 +834,8 @@ export default function SocialScreen() {
                 </TouchableOpacity>
 
                 <TouchableOpacity
-                  style={styles.groupActionBtnClean}
-                  onPress={() => { setInviteGroupId(g.id); setShowInviteModal(true); }}
-                  activeOpacity={0.7}
-                >
-                  <Text style={styles.groupActionEmoji}>➕</Text>
-                  <Text style={styles.groupActionText}>Add</Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
                   style={styles.groupActionBtnHighlight}
-                  onPress={() => { setShowEditGoal(g); setEditGoalValue(String(g.goal_minutes)); }}
+                  onPress={() => { setShowEditGoal(g); setGoalHoursPicker(Math.floor(g.goal_minutes / 60)); setGoalMinutesPicker(g.goal_minutes % 60); }}
                   activeOpacity={0.7}
                 >
                   <LinearGradient
@@ -745,7 +845,7 @@ export default function SocialScreen() {
                     style={styles.groupActionBtnGradient}
                   >
                     <Text style={styles.groupActionEmoji}>🎯</Text>
-                    <Text style={styles.groupActionTextWhite}>Goal</Text>
+                    <Text style={styles.groupActionTextWhite}>Edit Goal</Text>
                   </LinearGradient>
                 </TouchableOpacity>
               </View>
@@ -945,28 +1045,15 @@ export default function SocialScreen() {
       </ScrollView>
 
       {/* Create Group Modal */}
-      <Modal visible={showCreateGroup} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => { setShowCreateGroup(false); setSelectedGroupFriends(new Set()); }}>
+      <Modal visible={showCreateGroup} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => { setShowCreateGroup(false); setSelectedGroupFriends(new Set()); setCreateSubject(null); }}>
         <View style={{ flex: 1, backgroundColor: '#fff' }}>
           <DragHandle />
           <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}>
             <ScrollView contentContainerStyle={{ padding: 20 }}>
               <Text style={styles.modalTitle}>👥 Create Study Group</Text>
               <Text style={styles.inputLabel}>Group name</Text>
-              <TextInput style={styles.input} placeholder="Physics Study Group" placeholderTextColor={colors.textMuted}
+              <TextInput style={styles.input} placeholder="eg. Physics Study Group" placeholderTextColor={colors.textMuted}
                 value={groupName} onChangeText={setGroupName} />
-
-              <Text style={styles.inputLabel}>Group goal (combined minutes)</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="e.g. 500"
-                placeholderTextColor={colors.textMuted}
-                value={groupGoal}
-                onChangeText={setGroupGoal}
-                keyboardType="number-pad"
-              />
-              <Text style={{ fontSize: 11, color: colors.textMuted, marginTop: 4 }}>
-                All members' study time contributes toward this goal
-              </Text>
 
               {friends.length > 0 && (
                 <>
@@ -998,6 +1085,69 @@ export default function SocialScreen() {
                 </>
               )}
 
+              <Text style={styles.inputLabel}>Subject</Text>
+              <Text style={{ fontSize: 13, color: colors.textSecondary, marginBottom: 10, lineHeight: 18 }}>
+                Only subjects shared by all members are shown
+              </Text>
+              {sharedSubjects.length > 0 ? (
+                <View style={styles.subjectGrid}>
+                  {sharedSubjects.map(s => (
+                    <TouchableOpacity
+                      key={s}
+                      style={[styles.subjectChip, createSubject === s && styles.subjectChipActive]}
+                      onPress={() => setCreateSubject(createSubject === s ? null : s)}
+                    >
+                      <Text style={[styles.subjectChipText, createSubject === s && styles.subjectChipTextActive]}>{s}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              ) : (
+                <Text style={{ fontSize: 13, color: colors.textMuted, marginBottom: 10, fontStyle: 'italic', lineHeight: 18 }}>
+                  No shared subjects found. Make sure every member adds subjects via the timer's subject list.
+                </Text>
+              )}
+              <Text style={{ fontSize: 13, color: colors.textSecondary, marginTop: 6, marginBottom: 10, fontStyle: 'italic', lineHeight: 18 }}>
+                Don't see your subject? Make sure every member adds it via the timer's subject list first.
+              </Text>
+
+              <Text style={styles.inputLabel}>Group goal</Text>
+              <View style={styles.pickerRow}>
+                <View style={styles.pickerColumn}>
+                  <Text style={styles.pickerLabel}>Hours</Text>
+                  <View style={styles.pickerWheelWrap}>
+                    <Picker
+                      selectedValue={goalHoursPicker}
+                      onValueChange={(v) => setGoalHoursPicker(v)}
+                      style={styles.pickerWheel}
+                      itemStyle={styles.pickerWheelItem}
+                    >
+                      {Array.from({ length: 100 }, (_, i) => (
+                        <Picker.Item key={i} label={String(i)} value={i} />
+                      ))}
+                    </Picker>
+                  </View>
+                </View>
+                <Text style={styles.pickerSeparator}>:</Text>
+                <View style={styles.pickerColumn}>
+                  <Text style={styles.pickerLabel}>Mins</Text>
+                  <View style={styles.pickerWheelWrap}>
+                    <Picker
+                      selectedValue={goalMinutesPicker}
+                      onValueChange={(v) => setGoalMinutesPicker(v)}
+                      style={styles.pickerWheel}
+                      itemStyle={styles.pickerWheelItem}
+                    >
+                      {Array.from({ length: 12 }, (_, i) => (
+                        <Picker.Item key={i} label={String(i * 5)} value={i * 5} />
+                      ))}
+                    </Picker>
+                  </View>
+                </View>
+              </View>
+              <Text style={styles.pickerTotal}>
+                Total: {goalHoursPicker * 60 + goalMinutesPicker} minutes
+              </Text>
+
               <TouchableOpacity onPress={handleCreateGroup}>
                 <LinearGradient
                   colors={['#5F8C87', '#3B5466']}
@@ -1008,7 +1158,7 @@ export default function SocialScreen() {
                   <Text style={styles.modalPrimaryText}>Create Group</Text>
                 </LinearGradient>
               </TouchableOpacity>
-              <TouchableOpacity style={styles.modalCancel} onPress={() => { setShowCreateGroup(false); setSelectedGroupFriends(new Set()); }}>
+              <TouchableOpacity style={styles.modalCancel} onPress={() => { setShowCreateGroup(false); setSelectedGroupFriends(new Set()); setCreateSubject(null); }}>
                 <Text style={styles.modalCancelText}>Cancel</Text>
               </TouchableOpacity>
             </ScrollView>
@@ -1017,12 +1167,12 @@ export default function SocialScreen() {
       </Modal>
 
       {/* Group Chat Modal */}
-      <Modal visible={!!selectedGroup} animationType="slide" onRequestClose={() => { setSelectedGroup(null); setShowChatActions(false); }}>
+      <Modal visible={!!selectedGroup} animationType="slide" presentationStyle="fullScreen" onRequestClose={() => { setSelectedGroup(null); setShowChatActions(false); }}>
         <KeyboardAvoidingView
           style={{ flex: 1 }}
           behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         >
-          <SafeAreaView style={styles.chatContainer} edges={['top', 'bottom']}>
+          <SafeAreaView style={styles.chatContainer} edges={['top', 'bottom', 'left', 'right']}>
             {/* Chat Header */}
             <View style={styles.chatHeader}>
               <View style={styles.chatHeaderCenter}>
@@ -1039,7 +1189,7 @@ export default function SocialScreen() {
 
           {/* Messages */}
             <FlatList
-              style={{ flex: 1 }}
+              style={{ flex: 1, backgroundColor: '#EDF5EF' }}
               data={[...messages].reverse()}
               keyExtractor={m => m.id.toString()}
               contentContainerStyle={styles.chatList}
@@ -1069,7 +1219,7 @@ export default function SocialScreen() {
                         style={styles.chatTipCard}
                       >
                         <Text style={styles.chatTipEmoji}>📚</Text>
-                        <Text style={styles.chatTipText}>{tipText}</Text>
+                        <Text style={styles.chatTipText}>{decodeHtmlEntities(tipText)}</Text>
                       </LinearGradient>
                       <Text style={styles.chatSpecialTime}>{timeAgo(item.created_at)}</Text>
                     </View>
@@ -1085,7 +1235,7 @@ export default function SocialScreen() {
                     )}
                     <View style={[styles.chatBubble, isMine ? styles.chatBubbleMine : styles.chatBubbleTheirs]}>
                       {!isMine && <Text style={styles.chatBubbleSender}>{item.username || 'Someone'}</Text>}
-                      <Text style={[styles.chatBubbleText, isMine && { color: '#fff' }]}>{item.content}</Text>
+                      <Text style={[styles.chatBubbleText, isMine && { color: '#fff' }]}>{decodeHtmlEntities(item.content)}</Text>
                       <Text style={[styles.chatBubbleTime, isMine && { color: 'rgba(255,255,255,0.7)' }]}>{timeAgo(item.created_at)}</Text>
                     </View>
                     {isMine && (
@@ -1388,17 +1538,41 @@ export default function SocialScreen() {
         <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => setShowEditGoal(null)}>
           <TouchableOpacity activeOpacity={1} style={styles.modalContent}>
             <Text style={styles.modalTitle}>🎯 Set Group Goal</Text>
-            <Text style={styles.inputLabel}>Combined study minutes</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="e.g. 500"
-              placeholderTextColor={colors.textMuted}
-              value={editGoalValue}
-              onChangeText={setEditGoalValue}
-              keyboardType="number-pad"
-            />
-            <Text style={{ fontSize: 11, color: colors.textMuted, marginTop: 6, textAlign: 'center' }}>
-              Every member's study sessions count toward this shared goal
+            <View style={styles.pickerRow}>
+              <View style={styles.pickerColumn}>
+                <Text style={styles.pickerLabel}>Hours</Text>
+                <View style={styles.pickerWheelWrap}>
+                  <Picker
+                    selectedValue={goalHoursPicker}
+                    onValueChange={(v) => setGoalHoursPicker(v)}
+                    style={styles.pickerWheel}
+                    itemStyle={styles.pickerWheelItem}
+                  >
+                    {Array.from({ length: 100 }, (_, i) => (
+                      <Picker.Item key={i} label={String(i)} value={i} />
+                    ))}
+                  </Picker>
+                </View>
+              </View>
+              <Text style={styles.pickerSeparator}>:</Text>
+              <View style={styles.pickerColumn}>
+                <Text style={styles.pickerLabel}>Mins</Text>
+                <View style={styles.pickerWheelWrap}>
+                  <Picker
+                    selectedValue={goalMinutesPicker}
+                    onValueChange={(v) => setGoalMinutesPicker(v)}
+                    style={styles.pickerWheel}
+                    itemStyle={styles.pickerWheelItem}
+                  >
+                    {Array.from({ length: 12 }, (_, i) => (
+                      <Picker.Item key={i} label={String(i * 5)} value={i * 5} />
+                    ))}
+                  </Picker>
+                </View>
+              </View>
+            </View>
+            <Text style={styles.pickerTotal}>
+              Total: {goalHoursPicker * 60 + goalMinutesPicker} minutes
             </Text>
             <TouchableOpacity onPress={handleUpdateGoal}>
               <LinearGradient
@@ -1417,6 +1591,115 @@ export default function SocialScreen() {
         </TouchableOpacity>
       </Modal>
 
+      {/* Edit Group Modal (name + subject + members) */}
+      <Modal visible={!!showEditGroup} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setShowEditGroup(null)}>
+        <View style={{ flex: 1, backgroundColor: '#fff' }}>
+          <DragHandle />
+          <ScrollView contentContainerStyle={{ padding: 20 }}>
+            <Text style={styles.modalTitle}>Edit Group</Text>
+            <Text style={styles.inputLabel}>Group name</Text>
+            <TextInput
+              style={styles.input}
+              placeholder="Group name"
+              placeholderTextColor={colors.textMuted}
+              value={editGroupName}
+              onChangeText={setEditGroupName}
+            />
+            <Text style={styles.inputLabel}>Subject</Text>
+            <Text style={{ fontSize: 13, color: colors.textSecondary, marginBottom: 10, lineHeight: 18 }}>
+              Only study time for this subject counts toward the goal
+            </Text>
+            <View style={styles.subjectGrid}>
+              {DEFAULT_SUBJECTS.map(s => (
+                <TouchableOpacity
+                  key={s}
+                  style={[styles.subjectChip, editGroupSubject === s && styles.subjectChipActive]}
+                  onPress={() => setEditGroupSubject(editGroupSubject === s ? null : s)}
+                >
+                  <Text style={[styles.subjectChipText, editGroupSubject === s && styles.subjectChipTextActive]}>{s}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+            <Text style={{ fontSize: 13, color: colors.textSecondary, marginTop: 6, marginBottom: 16, fontStyle: 'italic', lineHeight: 18 }}>
+              Don't see your subject? Make sure every member adds it via the timer's subject list first.
+            </Text>
+
+            {/* Members */}
+            <Text style={styles.inputLabel}>Members</Text>
+            {showEditGroup?.members.map(m => {
+              const isMe = m.user_id === user?.id;
+              const isAdmin = showEditGroup.creator_id === user?.id;
+              const displayName = m.username || '?';
+              return (
+                <View key={m.user_id} style={styles.editMemberRow}>
+                  <UserAvatar id={m.user_id} username={displayName} profilePicUrl={isMe ? profilePic : m.profile_pic_url} size={32} />
+                  <Text style={styles.editMemberName}>{displayName}</Text>
+                  {m.role === 'admin' && <Text style={styles.editMemberBadge}>👑</Text>}
+                  {isAdmin && !isMe && (
+                    <TouchableOpacity
+                      style={styles.editMemberRemoveBtn}
+                      onPress={() => {
+                        handleRemoveGroupMember(showEditGroup.id, m.user_id, displayName);
+                      }}
+                    >
+                      <Text style={styles.editMemberRemoveText}>Remove</Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
+              );
+            })}
+
+            {/* Add friends */}
+            {(() => {
+              const memberIds = new Set(showEditGroup?.members.map(m => m.user_id) || []);
+              const available = friends.filter(f => !memberIds.has(f.id));
+              if (available.length === 0) return null;
+              return (
+                <>
+                  <Text style={[styles.inputLabel, { marginTop: 16 }]}>Add friends</Text>
+                  {available.map(f => (
+                    <View key={f.id} style={styles.editMemberRow}>
+                      <UserAvatar id={f.id} username={f.username} email={f.email} profilePicUrl={f.profile_pic_url} size={32} />
+                      <Text style={styles.editMemberName}>{f.username || 'Friend'}</Text>
+                      <TouchableOpacity
+                        style={styles.editMemberAddBtn}
+                        onPress={async () => {
+                          if (showEditGroup) {
+                            await handleInviteFriend(showEditGroup.id, f);
+                            const fresh = await groupsAPI.getAll().catch(() => []);
+                            setGroups(fresh);
+                            const updated = fresh.find((g: StudyGroup) => g.id === showEditGroup.id);
+                            if (updated) setShowEditGroup(updated);
+                          }
+                        }}
+                      >
+                        <Text style={styles.editMemberAddText}>Add</Text>
+                      </TouchableOpacity>
+                    </View>
+                  ))}
+                </>
+              );
+            })()}
+
+            <View style={{ marginTop: 20 }}>
+              <TouchableOpacity onPress={handleUpdateGroup}>
+                <LinearGradient
+                  colors={['#5F8C87', '#3B5466']}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 0 }}
+                  style={styles.modalPrimary}
+                >
+                  <Text style={styles.modalPrimaryText}>Save Changes</Text>
+                </LinearGradient>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.modalCancel} onPress={() => setShowEditGroup(null)}>
+                <Text style={styles.modalCancelText}>Cancel</Text>
+              </TouchableOpacity>
+            </View>
+          </ScrollView>
+        </View>
+      </Modal>
+
       {/* Goal Reached Congratulations Modal */}
       <Modal visible={!!showGoalCongrats} transparent animationType="fade">
         <TouchableOpacity style={styles.goalCongratsOverlay} activeOpacity={1} onPress={() => setShowGoalCongrats(null)}>
@@ -1430,18 +1713,30 @@ export default function SocialScreen() {
               <Text style={styles.goalCongratsTitle}>Congratulations! 🎉</Text>
               <Text style={styles.goalCongratsSubtitle}>Your group hit the goal!</Text>
 
-              <View style={styles.goalCongratsIconWrap}>
-                <Text style={{ fontSize: 56 }}>🎯</Text>
+              <View style={styles.goalCongratsMembersWrap}>
+                {showGoalCongrats?.members.slice(0, 8).map((m, i) => (
+                  <View key={m.user_id} style={[styles.goalCongratsMemberAvatar, { marginLeft: i > 0 ? -10 : 0, zIndex: 10 - i }]}>
+                    <UserAvatar
+                      id={m.user_id}
+                      username={m.username || undefined}
+                      profilePicUrl={m.user_id === user?.id ? profilePic : m.profile_pic_url}
+                      size={48}
+                    />
+                  </View>
+                ))}
               </View>
 
               <Text style={styles.goalCongratsGroupName}>{showGoalCongrats?.name}</Text>
 
-              <View style={styles.goalCongratsStatsRow}>
-                <Text style={styles.goalCongratsStatsEmoji}>⏱️</Text>
-                <Text style={styles.goalCongratsStatsText}>
-                  {showGoalCongrats ? `${showGoalCongrats.goal_minutes} minutes` : ''} of combined study completed
-                </Text>
-              </View>
+              <Text style={styles.goalCongratsStatsMain}>
+                {showGoalCongrats ? (() => {
+                  const h = Math.floor(showGoalCongrats.goal_minutes / 60);
+                  const m = showGoalCongrats.goal_minutes % 60;
+                  const timeStr = h > 0 ? (m > 0 ? `${h} hour${h !== 1 ? 's' : ''} and ${m} minute${m !== 1 ? 's' : ''}` : `${h} hour${h !== 1 ? 's' : ''}`) : `${m} minute${m !== 1 ? 's' : ''}`;
+                  const subj = showGoalCongrats.subject || 'studying';
+                  return `${timeStr} of ${subj} studied together ;)`;
+                })() : ''}
+              </Text>
 
               <Text style={styles.goalCongratsMessage}>
                 Amazing teamwork! Set a new goal and keep the momentum going!
@@ -1457,10 +1752,10 @@ export default function SocialScreen() {
               </View>
             </LinearGradient>
           </TouchableOpacity>
-          {showGoalCongrats && (
-            <ConfettiCannon count={120} origin={{ x: SCREEN_WIDTH / 2, y: -20 }} fadeOut autoStart />
-          )}
         </TouchableOpacity>
+        {showGoalCongrats && (
+          <ConfettiCannon count={120} origin={{ x: SCREEN_WIDTH / 2, y: -10 }} fadeOut autoStart explosionSpeed={400} fallSpeed={2500} />
+        )}
       </Modal>
 
       {/* Friend Profile Modal */}
@@ -1828,7 +2123,7 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: colors.textPrimary,
   },
-  goalEditBtn: {
+  goalEditBtnText: {
     fontSize: 12,
     fontWeight: '600',
     color: '#5F8C87',
@@ -1890,14 +2185,17 @@ const styles = StyleSheet.create({
     marginBottom: 20,
     fontWeight: '500',
   },
-  goalCongratsIconWrap: {
-    width: 100,
-    height: 100,
-    borderRadius: 50,
-    backgroundColor: 'rgba(255,255,255,0.15)',
-    alignItems: 'center',
+  goalCongratsMembersWrap: {
+    flexDirection: 'row',
     justifyContent: 'center',
+    alignItems: 'center',
     marginBottom: 16,
+  },
+  goalCongratsMemberAvatar: {
+    borderWidth: 2.5,
+    borderColor: 'rgba(255,255,255,0.6)',
+    borderRadius: 24,
+    overflow: 'hidden',
   },
   goalCongratsGroupName: {
     fontSize: 20,
@@ -1906,23 +2204,14 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginBottom: 12,
   },
-  goalCongratsStatsRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(255,255,255,0.15)',
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: 20,
-    gap: 8,
-    marginBottom: 16,
-  },
-  goalCongratsStatsEmoji: {
-    fontSize: 18,
-  },
-  goalCongratsStatsText: {
-    fontSize: 14,
-    fontWeight: '600',
+  goalCongratsStatsMain: {
+    fontSize: 17,
+    fontWeight: '700',
     color: '#FFFFFF',
+    textAlign: 'center',
+    marginBottom: 16,
+    lineHeight: 24,
+    paddingHorizontal: 10,
   },
   goalCongratsMessage: {
     fontSize: 14,
@@ -2311,7 +2600,7 @@ const styles = StyleSheet.create({
   // Chat
   chatContainer: {
     flex: 1,
-    backgroundColor: '#F4F7F5',
+    backgroundColor: '#FFFFFF',
   },
   chatSwipeHandle: {
     alignItems: 'center',
@@ -2328,8 +2617,8 @@ const styles = StyleSheet.create({
   chatHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 10,
+    paddingHorizontal: 28,
+    paddingVertical: 18,
     borderBottomWidth: 1,
     borderBottomColor: 'rgba(0,0,0,0.08)',
     backgroundColor: '#FFFFFF',
@@ -2351,13 +2640,15 @@ const styles = StyleSheet.create({
     marginLeft: -1,
   },
   chatCloseBtn: {
-    paddingHorizontal: 12,
-    paddingVertical: 8,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
     marginLeft: 12,
+    backgroundColor: '#E7EFEA',
+    borderRadius: 20,
   },
   chatCloseText: {
     fontSize: 16,
-    fontWeight: '600',
+    fontWeight: '700',
     color: '#5F8C87',
   },
   chatHeaderCenter: {
@@ -2374,7 +2665,7 @@ const styles = StyleSheet.create({
     marginTop: 1,
   },
   chatList: {
-    paddingHorizontal: 14,
+    paddingHorizontal: 20,
     paddingTop: 12,
     paddingBottom: 6,
     flexGrow: 1,
@@ -2567,7 +2858,7 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: 'rgba(0,0,0,0.06)',
     paddingVertical: 10,
-    paddingHorizontal: 16,
+    paddingHorizontal: 28,
     gap: 10,
   },
   chatActionItem: {
@@ -2590,13 +2881,13 @@ const styles = StyleSheet.create({
   chatInputRow: {
     flexDirection: 'row',
     alignItems: 'flex-end',
-    paddingHorizontal: 12,
-    paddingTop: 8,
-    paddingBottom: 12,
+    paddingHorizontal: 28,
+    paddingTop: 12,
+    paddingBottom: 20,
     borderTopWidth: 1,
     borderTopColor: 'rgba(0,0,0,0.06)',
     backgroundColor: '#FFFFFF',
-    gap: 8,
+    gap: 12,
   },
   chatPlusBtn: {
     width: 36,
@@ -2815,6 +3106,145 @@ const styles = StyleSheet.create({
   },
   fpCloseBtnText: {
     fontSize: 15,
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
+
+  // Subject chips
+  subjectGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginBottom: 16,
+  },
+  subjectChip: {
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 20,
+    backgroundColor: '#F4F9F7',
+    borderWidth: 1.5,
+    borderColor: '#E2EBE7',
+  },
+  subjectChipActive: {
+    backgroundColor: '#5F8C87',
+    borderColor: '#5F8C87',
+  },
+  subjectChipText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: colors.textPrimary,
+  },
+  subjectChipTextActive: {
+    color: '#FFFFFF',
+  },
+
+  // Group subject tag
+  groupSubjectTag: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#5F8C87',
+    marginTop: 2,
+  },
+  groupEditBtn: {
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+    marginLeft: 8,
+    backgroundColor: '#F4F9F7',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#E2EBE7',
+  },
+  groupEditBtnLabel: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#5F8C87',
+  },
+
+  // Hours/minutes picker
+  pickerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    marginVertical: 4,
+  },
+  pickerColumn: {
+    alignItems: 'center',
+    flex: 1,
+  },
+  pickerLabel: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: colors.textMuted,
+    marginBottom: 4,
+  },
+  pickerWheelWrap: {
+    height: 150,
+    width: '100%',
+    overflow: 'hidden',
+    borderRadius: 14,
+    backgroundColor: '#F4F9F7',
+  },
+  pickerWheel: {
+    height: 150,
+    width: '100%',
+  },
+  pickerWheelItem: {
+    fontSize: 22,
+    fontWeight: '600',
+    color: colors.textPrimary,
+  },
+  pickerSeparator: {
+    fontSize: 28,
+    fontWeight: '700',
+    color: colors.textMuted,
+    marginTop: 24,
+  },
+  pickerTotal: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: colors.textSecondary,
+    textAlign: 'center',
+    marginBottom: 12,
+  },
+
+  // Edit group member management
+  editMemberRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F0F4F2',
+    gap: 10,
+  },
+  editMemberName: {
+    flex: 1,
+    fontSize: 14,
+    fontWeight: '600',
+    color: colors.textPrimary,
+  },
+  editMemberBadge: {
+    fontSize: 12,
+  },
+  editMemberRemoveBtn: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    backgroundColor: '#FEE2E2',
+    borderRadius: 12,
+  },
+  editMemberRemoveText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#DC2626',
+  },
+  editMemberAddBtn: {
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+    backgroundColor: '#5F8C87',
+    borderRadius: 12,
+  },
+  editMemberAddText: {
+    fontSize: 12,
     fontWeight: '700',
     color: '#FFFFFF',
   },

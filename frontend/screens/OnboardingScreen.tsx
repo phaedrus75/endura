@@ -1,8 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import {
   View,
-  Text,
-  TextInput,
   TouchableOpacity,
   StyleSheet,
   Dimensions,
@@ -16,6 +14,7 @@ import {
   KeyboardAvoidingView,
   ImageSourcePropType,
 } from 'react-native';
+import { Text, TextInput } from '../components/StyledText';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as ImagePicker from 'expo-image-picker';
