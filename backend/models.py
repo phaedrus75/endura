@@ -221,6 +221,7 @@ class StudyGroup(Base):
     creator_id = Column(Integer, ForeignKey("users.id"))
     goal_minutes = Column(Integer, default=500)
     goal_deadline = Column(DateTime, nullable=True)
+    subject = Column(String, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
     creator = relationship("User", foreign_keys=[creator_id])

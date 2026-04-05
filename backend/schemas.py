@@ -265,6 +265,7 @@ class GroupCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=100)
     goal_minutes: int = Field(500, ge=1, le=100000)
     goal_deadline: Optional[datetime] = None
+    subject: Optional[str] = Field(None, max_length=100)
 
 class GroupMemberResponse(BaseModel):
     user_id: int
@@ -287,6 +288,7 @@ class GroupResponse(BaseModel):
     creator_id: int
     goal_minutes: int
     goal_deadline: Optional[datetime]
+    subject: Optional[str] = None
     created_at: datetime
     members: List[GroupMemberResponse] = []
     total_minutes: int = 0

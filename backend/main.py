@@ -1358,8 +1358,38 @@ def create_group(
     current_user: models.User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    group = crud.create_group(db, current_user.id, data.name, data.goal_minutes, data.goal_deadline)
+    group = crud.create_group(db, current_user.id, data.name, data.goal_minutes, data.goal_deadline, data.subject)
     return {"id": group.id, "name": group.name}
+
+@app.put("/groups/{group_id}")
+def update_group(
+    group_id: int,
+    data: dict,
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    group = db.query(models.StudyGroup).filter(models.StudyGroup.id == group_id).first()
+    if not group:
+        raise HTTPException(status_code=404, detail="Group not found")
+    member = db.query(models.GroupMember).filter(
+        models.GroupMember.group_id == group_id,
+        models.GroupMember.user_id == current_user.id
+    ).first()
+    if not member:
+        raise HTTPException(status_code=403, detail="Not a member of this group")
+    if "name" in data and data["name"]:
+        name = str(data["name"]).strip()[:100]
+        if name:
+            group.name = name
+    if "subject" in data:
+        subj = data["subject"]
+        group.subject = str(subj).strip()[:100] if subj else None
+    if "goal_minutes" in data:
+        goal = data["goal_minutes"]
+        if isinstance(goal, int) and goal >= 1:
+            group.goal_minutes = goal
+    db.commit()
+    return {"message": "Group updated", "name": group.name, "subject": group.subject, "goal_minutes": group.goal_minutes}
 
 @app.put("/groups/{group_id}/goal")
 def update_group_goal(

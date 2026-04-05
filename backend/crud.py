@@ -682,10 +682,11 @@ def get_user_stats(db: Session, user_id: int) -> dict:
 
 # ============ Study Group CRUD ============
 
-def create_group(db: Session, creator_id: int, name: str, goal_minutes: int, goal_deadline) -> models.StudyGroup:
+def create_group(db: Session, creator_id: int, name: str, goal_minutes: int, goal_deadline, subject: str = None) -> models.StudyGroup:
     group = models.StudyGroup(
         name=name, creator_id=creator_id,
-        goal_minutes=goal_minutes, goal_deadline=goal_deadline
+        goal_minutes=goal_minutes, goal_deadline=goal_deadline,
+        subject=subject
     )
     db.add(group)
     db.commit()
@@ -754,6 +755,7 @@ def get_user_groups(db: Session, user_id: int) -> List[dict]:
         results.append({
             "id": group.id, "name": group.name, "creator_id": group.creator_id,
             "goal_minutes": group.goal_minutes, "goal_deadline": group.goal_deadline,
+            "subject": group.subject,
             "created_at": group.created_at, "members": member_list,
             "total_minutes": total, "goal_met": total >= group.goal_minutes
         })
@@ -762,11 +764,13 @@ def get_user_groups(db: Session, user_id: int) -> List[dict]:
 
 def _group_member_minutes(db: Session, user_id: int, group) -> int:
     since = group.created_at
-    mins = db.query(func.sum(models.StudySession.duration_minutes)).filter(
+    q = db.query(func.sum(models.StudySession.duration_minutes)).filter(
         models.StudySession.user_id == user_id,
         models.StudySession.completed_at >= since
-    ).scalar()
-    return mins or 0
+    )
+    if group.subject:
+        q = q.filter(func.lower(models.StudySession.subject) == func.lower(group.subject))
+    return q.scalar() or 0
 
 
 def send_group_message(db: Session, user_id: int, group_id: int, content: str) -> Optional[dict]:
