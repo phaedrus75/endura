@@ -2237,9 +2237,14 @@ async def admin_upload_image(
     return {"id": upload.id, "url": f"{base}/uploads/{upload.public_id}"}
 
 
-@app.get("/uploads/{public_id}")
-def serve_upload(public_id: str, db: Session = Depends(get_db)):
-    upload = db.query(models.Upload).filter(models.Upload.public_id == public_id).first()
+@app.get("/uploads/{identifier}")
+def serve_upload(identifier: str, db: Session = Depends(get_db)):
+    upload = db.query(models.Upload).filter(models.Upload.public_id == identifier).first()
+    if not upload:
+        try:
+            upload = db.query(models.Upload).filter(models.Upload.id == int(identifier)).first()
+        except (ValueError, TypeError):
+            pass
     if not upload:
         raise HTTPException(404, "Not found")
     return Response(
