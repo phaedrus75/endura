@@ -34,7 +34,7 @@ if SQLALCHEMY_DATABASE_URL.startswith("sqlite"):
     except Exception as e:
         print(f"Warning: Could not create tables on startup: {e}")
 
-# Seed default subjects, mark admin users, and backfill user_subjects on startup
+# Seed default subjects and mark admin users on startup
 try:
     from database import SessionLocal
     _seed_db = SessionLocal()
@@ -44,14 +44,6 @@ try:
         if _u and not _u.is_admin:
             _u.is_admin = True
             _seed_db.commit()
-    # Assign default subjects to any existing user who has none
-    _all_users = _seed_db.query(models.User).all()
-    for _u in _all_users:
-        _has = _seed_db.query(models.UserSubject).filter(
-            models.UserSubject.user_id == _u.id
-        ).first()
-        if not _has:
-            crud._assign_default_subjects(_seed_db, _u.id)
     _seed_db.close()
 except Exception as e:
     print(f"Warning: Could not seed startup data: {e}")

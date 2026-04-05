@@ -30,7 +30,6 @@ def create_user(db: Session, email: str, hashed_password: str) -> models.User:
     db.refresh(user)
     
     create_egg_for_user(db, user.id)
-    _assign_default_subjects(db, user.id)
     
     return user
 
