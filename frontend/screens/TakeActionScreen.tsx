@@ -19,7 +19,7 @@ import * as WebBrowser from 'expo-web-browser';
 import ConfettiCannon from 'react-native-confetti-cannon';
 import { colors, shadows, spacing, borderRadius } from '../theme/colors';
 import { useAuth } from '../contexts/AuthContext';
-import { animalImages, getAnimalImage } from '../assets/animals';
+import { getAnimalImage } from '../assets/animals';
 import { API_URL, donationsAPI } from '../services/api';
 
 const EVERY_ORG_WWF_BASE = 'https://www.every.org/wwf';
@@ -55,38 +55,6 @@ const IMPACT_FACTS = [
   { icon: '🌿', stat: '1M+', label: 'acres protected by WWF annually' },
 ];
 
-const ENDANGERED_STORIES = [
-  {
-    animal: 'Tapanuli Orangutan',
-    imageName: 'Tapanuli Orangutan',
-    fact: 'Fewer than 800 remain in the wild. Their rainforest home is disappearing at an alarming rate.',
-    urgency: 'Critically Endangered',
-  },
-  {
-    animal: 'Amur Leopard',
-    imageName: 'Amur Leopard',
-    fact: 'Fewer than 100 remain in the wild, making them the world\'s rarest big cat.',
-    urgency: 'Critically Endangered',
-  },
-  {
-    animal: 'Hawksbill Turtle',
-    imageName: 'Hawksbill Turtle',
-    fact: 'Their population has declined by 80% in the last century due to habitat loss and poaching.',
-    urgency: 'Critically Endangered',
-  },
-  {
-    animal: 'Javan Rhino',
-    imageName: 'Javan Rhino',
-    fact: 'Only 72 individuals survive. They\'re one step from disappearing forever.',
-    urgency: 'Critically Endangered',
-  },
-  {
-    animal: 'Sunda Island Tiger',
-    imageName: 'Sunda Island Tiger',
-    fact: 'Fewer than 400 survive on the island of Sumatra. Deforestation is their greatest threat.',
-    urgency: 'Critically Endangered',
-  },
-];
 
 const FALLBACK_MESSAGES = [
   '🩷 Be the first to donate through Endura!',
@@ -110,7 +78,6 @@ export default function TakeActionScreen() {
   const [selectedAmount, setSelectedAmount] = useState(5);
   const [showThankYou, setShowThankYou] = useState(false);
   const [showConfetti, setShowConfetti] = useState(false);
-  const [storyIndex, setStoryIndex] = useState(0);
   const [communityStats, setCommunityStats] = useState<CommunityStats | null>(null);
   const [personalStats, setPersonalStats] = useState<PersonalStats | null>(null);
 
@@ -187,12 +154,6 @@ export default function TakeActionScreen() {
     return () => clearInterval(interval);
   }, [buildTickerMessages]);
 
-  useEffect(() => {
-    const storyTimer = setInterval(() => {
-      setStoryIndex(prev => (prev + 1) % ENDANGERED_STORIES.length);
-    }, 6000);
-    return () => clearInterval(storyTimer);
-  }, []);
 
   const handleDonate = async () => {
     const donationId = user?.id ? `endura-u${user.id}-${Date.now()}` : `endura-${Date.now()}`;
@@ -229,9 +190,6 @@ export default function TakeActionScreen() {
       Alert.alert('Error', e.message || 'Could not open donation page');
     }
   };
-
-  const story = ENDANGERED_STORIES[storyIndex];
-  const storyImg = getAnimalImage(story.imageName);
 
   return (
     <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
@@ -376,29 +334,6 @@ export default function TakeActionScreen() {
           </View>
         )}
 
-
-        {/* Endangered Animal Story Card */}
-        <View style={styles.storyCard}>
-          <View style={styles.storyImageWrap}>
-            {storyImg ? (
-              <Image source={storyImg} style={styles.storyImage} resizeMode="contain" />
-            ) : (
-              <Text style={{ fontSize: 50 }}>🐾</Text>
-            )}
-          </View>
-          <View style={styles.storyContent}>
-            <View style={styles.urgencyBadge}>
-              <Text style={styles.urgencyText}>⚠️ {story.urgency}</Text>
-            </View>
-            <Text style={styles.storyAnimalName}>{story.animal}</Text>
-            <Text style={styles.storyFact}>{story.fact}</Text>
-          </View>
-          <View style={styles.storyDots}>
-            {ENDANGERED_STORIES.map((_, i) => (
-              <View key={i} style={[styles.storyDot, i === storyIndex && styles.storyDotActive]} />
-            ))}
-          </View>
-        </View>
 
         {/* Impact Stats */}
         <View style={styles.impactRow}>
@@ -661,70 +596,6 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     textAlign: 'center',
     fontWeight: '600',
-  },
-
-  // Story Card
-  storyCard: {
-    marginHorizontal: spacing.md,
-    backgroundColor: '#FFFFFF',
-    borderRadius: 20,
-    overflow: 'hidden',
-    marginBottom: 16,
-    ...shadows.medium,
-  },
-  storyImageWrap: {
-    height: 160,
-    backgroundColor: '#E7EFEA',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  storyImage: {
-    width: 120,
-    height: 120,
-  },
-  storyContent: {
-    padding: 16,
-  },
-  urgencyBadge: {
-    alignSelf: 'flex-start',
-    backgroundColor: '#FFF0E8',
-    borderRadius: 8,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    marginBottom: 8,
-  },
-  urgencyText: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: '#B85C4A',
-  },
-  storyAnimalName: {
-    fontSize: 18,
-    fontWeight: '800',
-    color: colors.textPrimary,
-    marginBottom: 6,
-  },
-  storyFact: {
-    fontSize: 13,
-    lineHeight: 20,
-    color: colors.textSecondary,
-    fontWeight: '500',
-  },
-  storyDots: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    gap: 6,
-    paddingBottom: 12,
-  },
-  storyDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: '#D0D8D4',
-  },
-  storyDotActive: {
-    backgroundColor: colors.primary,
-    width: 18,
   },
 
   // Impact Stats

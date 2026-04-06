@@ -676,6 +676,7 @@ export default function HomeScreen() {
                 {subjects.map((sub) => (
                   <View key={sub.id} style={[
                     styles.subjectChip,
+                    { paddingRight: 6 },
                     newTaskSubject === sub.display_name && styles.subjectChipActive,
                   ]}>
                     <TouchableOpacity
@@ -787,11 +788,11 @@ export default function HomeScreen() {
       </Modal>
 
       {/* Edit Task Modal */}
-      <Modal visible={showEditTask} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => { setShowEditTask(false); setShowEditDatePicker(false); }}>
+      <Modal visible={showEditTask} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => { setShowEditTask(false); setShowEditDatePicker(false); setShowAddSubject(false); }}>
         <View style={{ flex: 1, backgroundColor: '#fff' }}>
         <DragHandle />
         <View style={styles.addTaskHeader}>
-          <TouchableOpacity onPress={() => { setShowEditTask(false); setShowEditDatePicker(false); }}>
+          <TouchableOpacity onPress={() => { setShowEditTask(false); setShowEditDatePicker(false); setShowAddSubject(false); }}>
             <Text style={styles.addTaskHeaderCancel}>Cancel</Text>
           </TouchableOpacity>
           <Text style={styles.addTaskHeaderTitle}>Edit To-Do</Text>
@@ -836,7 +837,45 @@ export default function HomeScreen() {
                     </TouchableOpacity>
                   </View>
                 ))}
+                <TouchableOpacity
+                  style={styles.addSubjectChip}
+                  onPress={() => setShowAddSubject(true)}
+                >
+                  <Text style={styles.addSubjectChipText}>+ Add</Text>
+                </TouchableOpacity>
               </View>
+              {showAddSubject && (
+                <View>
+                  <View style={styles.addSubjectRow}>
+                    <TextInput
+                      style={styles.addSubjectInput}
+                      placeholder="Search or type a subject..."
+                      placeholderTextColor={colors.textMuted}
+                      value={newSubjectName}
+                      onChangeText={handleSubjectSearch}
+                      autoFocus
+                    />
+                    <TouchableOpacity style={styles.addSubjectButton} onPress={addNewSubject}>
+                      <Text style={styles.addSubjectButtonText}>Add</Text>
+                    </TouchableOpacity>
+                  </View>
+                  {showSubjectSuggestions && subjectSuggestions.length > 0 && (
+                    <View style={styles.subjectSuggestions}>
+                      <ScrollView style={{ maxHeight: 160 }} keyboardShouldPersistTaps="handled" nestedScrollEnabled>
+                        {subjectSuggestions.map((s) => (
+                          <TouchableOpacity
+                            key={s.id}
+                            style={styles.subjectSuggestionItem}
+                            onPress={() => selectSubjectSuggestion(s)}
+                          >
+                            <Text style={styles.subjectSuggestionText}>{s.display_name}</Text>
+                          </TouchableOpacity>
+                        ))}
+                      </ScrollView>
+                    </View>
+                  )}
+                </View>
+              )}
 
               <Text style={[styles.inputLabel, { marginTop: spacing.lg }]}>Due Date (optional)</Text>
               <View style={styles.dueDateRow}>
@@ -1274,12 +1313,13 @@ const styles = StyleSheet.create({
     marginBottom: 2,
   },
   taskDue: {
-    fontSize: 12,
-    color: 'rgba(255,255,255,0.6)',
+    fontSize: 13,
+    color: 'rgba(255,255,255,0.75)',
+    fontWeight: '500',
   },
   taskEditHint: {
-    fontSize: 12,
-    color: 'rgba(255,255,255,0.6)',
+    fontSize: 13,
+    color: 'rgba(255,255,255,0.7)',
     marginTop: 4,
     fontWeight: '600',
     fontStyle: 'italic',
@@ -1496,8 +1536,8 @@ const styles = StyleSheet.create({
   subjectChip: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingLeft: spacing.md,
-    paddingRight: 6,
+    justifyContent: 'center',
+    paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
     backgroundColor: colors.surfaceAlt,
     borderRadius: borderRadius.full,

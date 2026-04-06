@@ -576,9 +576,9 @@ const styles = StyleSheet.create({
   },
   brandName: {
     fontSize: 42,
-    fontWeight: '300',
-    color: '#FFFFFF',
-    letterSpacing: 4,
+    fontWeight: '700',
+    color: '#5F8C87',
+    letterSpacing: 0,
     marginTop: spacing.lg,
   },
   logoWrapper: {
@@ -602,8 +602,8 @@ const styles = StyleSheet.create({
   primaryButtonText: {
     color: colors.textOnPrimary,
     fontSize: 14,
-    fontWeight: '700',
-    letterSpacing: 1,
+    fontWeight: '600',
+    letterSpacing: 1.5,
   },
   secondaryButton: {
     paddingVertical: spacing.md,
@@ -616,8 +616,8 @@ const styles = StyleSheet.create({
   secondaryButtonText: {
     color: colors.textSecondary,
     fontSize: 13,
-    fontWeight: '600',
-    letterSpacing: 0.5,
+    fontWeight: '500',
+    letterSpacing: 1,
   },
   formHeader: {
     marginBottom: spacing.xl,

@@ -22,16 +22,17 @@ const WEIGHT_MAP: Record<string, string> = {
   '900': 'DMSans_800ExtraBold',
 };
 
-function resolve(style: any): string {
+function resolve(style: any): { fontFamily: string } {
   const flat = StyleSheet.flatten(style) || {};
-  if (flat.fontFamily) return flat.fontFamily;
-  return WEIGHT_MAP[String(flat.fontWeight || '400')] || 'DMSans_400Regular';
+  if (flat.fontFamily) return { fontFamily: flat.fontFamily };
+  const family = WEIGHT_MAP[String(flat.fontWeight || '400')] || 'DMSans_400Regular';
+  return { fontFamily: family };
 }
 
 export const Text = React.forwardRef<any, TextProps>((props, ref) => (
-  <RNText {...props} ref={ref} style={[props.style, { fontFamily: resolve(props.style) }]} />
+  <RNText {...props} ref={ref} style={[props.style, resolve(props.style), { fontWeight: undefined }]} />
 ));
 
 export const TextInput = React.forwardRef<any, TextInputProps>((props, ref) => (
-  <RNTextInput {...props} ref={ref} style={[props.style, { fontFamily: resolve(props.style) }]} />
+  <RNTextInput {...props} ref={ref} style={[props.style, resolve(props.style), { fontWeight: undefined }]} />
 ));

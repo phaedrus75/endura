@@ -774,7 +774,7 @@ export default function SocialScreen() {
                   colors={g.goal_met ? ['#2E7D32', '#1B5E20'] : ['#7BB5AD', '#2D4055']}
                   start={{ x: 0, y: 0 }}
                   end={{ x: 1, y: 0 }}
-                  style={[styles.goalProgressBarFill, { width: `${Math.max(progress, 2)}%` }]}
+                  style={[styles.goalProgressBarFill, { width: `${progress}%` }]}
                 />
               </View>
               <View style={styles.goalStatsRow}>
@@ -2494,7 +2494,7 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1, borderBottomColor: colors.divider,
   },
   leaderboardRowSelf: {
-    backgroundColor: '#E7EFEA40',
+    backgroundColor: '#C5DEC9',
     borderRadius: 8,
     marginHorizontal: -4,
     paddingHorizontal: 4,

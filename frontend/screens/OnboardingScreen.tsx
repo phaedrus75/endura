@@ -21,7 +21,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { colors, shadows, spacing, borderRadius } from '../theme/colors';
 import { useAuth } from '../contexts/AuthContext';
 import * as SecureStore from 'expo-secure-store';
-import { API_URL, authAPI, SchoolSearchResult } from '../services/api';
+import { API_URL, authAPI, SchoolSearchResult, subjectsAPI, Subject } from '../services/api';
 
 const { width: SW, height: SH } = Dimensions.get('window');
 
@@ -78,7 +78,7 @@ const SLIDES: Slide[] = [
   {
     image: SCREENSHOTS.timer,
     tag: 'FOCUS TIMER',
-    title: 'Study to earn eco-credits',
+    title: 'Study and earn eco-credits',
     body: 'Pick a duration, hit start, and every minute you study earns eco-credits that hatch your egg.',
   },
   {
@@ -96,8 +96,8 @@ const SLIDES: Slide[] = [
   {
     image: SCREENSHOTS.tips,
     tag: 'STUDY TIPS',
-    title: 'Tap 💡 on any screen',
-    body: 'Open Study Tips from the 💡 icon on any page. Swipe through advice from animal friends, save favourites, and share with mates.',
+    title: 'Scroll through study tips',
+    body: 'Swipe through unique, research-backed advice from animal friends, save favourites, and share with mates.',
   },
   {
     image: SCREENSHOTS.friends,
@@ -114,7 +114,8 @@ const SLIDES: Slide[] = [
 export default function OnboardingScreen() {
   const insets = useSafeAreaInsets();
   const [step, setStep] = useState(0);
-  const crossfade = useRef(new Animated.Value(1)).current;
+  const slideOpacities = useRef(SLIDES.map((_, i) => new Animated.Value(i === 0 ? 1 : 0))).current;
+  const textOpacity = useRef(new Animated.Value(1)).current;
   const isAnimating = useRef(false);
 
   // Profile setup state
@@ -128,15 +129,34 @@ export default function OnboardingScreen() {
   const [isLoading, setIsLoading] = useState(false);
   const { refreshUser, setProfilePic } = useAuth();
 
+  // Subject picker state
+  const [showSubjectPicker, setShowSubjectPicker] = useState(false);
+  const [selectedSubjects, setSelectedSubjects] = useState<Subject[]>([]);
+  const [subjectSearchText, setSubjectSearchText] = useState('');
+  const [subjectSuggestions, setSubjectSuggestions] = useState<Subject[]>([]);
+  const [showSubjectSuggestions, setShowSubjectSuggestions] = useState(false);
+  const subjectSearchTimeout = useRef<NodeJS.Timeout | null>(null);
+  const [subjectSaving, setSubjectSaving] = useState(false);
+
   const isSetup = step === SLIDES.length;
 
   const go = (next: number) => {
-    if (isAnimating.current) return;
+    if (isAnimating.current || next < 0 || next > SLIDES.length) return;
     isAnimating.current = true;
-    crossfade.setValue(0);
-    setStep(next);
-    Animated.timing(crossfade, { toValue: 1, duration: 300, useNativeDriver: true }).start(() => {
-      isAnimating.current = false;
+    const prev = step;
+    Animated.parallel([
+      Animated.timing(slideOpacities[prev], { toValue: 0, duration: 200, useNativeDriver: true }),
+      Animated.timing(textOpacity, { toValue: 0, duration: 150, useNativeDriver: true }),
+    ]).start(() => {
+      setStep(next);
+      if (next < SLIDES.length) {
+        Animated.parallel([
+          Animated.timing(slideOpacities[next], { toValue: 1, duration: 250, useNativeDriver: true }),
+          Animated.timing(textOpacity, { toValue: 1, duration: 250, useNativeDriver: true }),
+        ]).start(() => { isAnimating.current = false; });
+      } else {
+        isAnimating.current = false;
+      }
     });
   };
 
@@ -182,6 +202,62 @@ export default function OnboardingScreen() {
     }
   };
 
+  const handleSubjectSearch = (text: string) => {
+    setSubjectSearchText(text);
+    if (subjectSearchTimeout.current) clearTimeout(subjectSearchTimeout.current);
+    if (text.trim().length < 1) {
+      setSubjectSuggestions([]);
+      setShowSubjectSuggestions(false);
+      return;
+    }
+    subjectSearchTimeout.current = setTimeout(async () => {
+      try {
+        const results = await subjectsAPI.search(text.trim());
+        const selectedIds = new Set(selectedSubjects.map(s => s.id));
+        const filtered = results.filter(s => !selectedIds.has(s.id));
+        setSubjectSuggestions(filtered);
+        setShowSubjectSuggestions(filtered.length > 0);
+      } catch {
+        setSubjectSuggestions([]);
+        setShowSubjectSuggestions(false);
+      }
+    }, 250);
+  };
+
+  const selectSubject = (subject: Subject) => {
+    setSelectedSubjects(prev => [...prev, subject]);
+    setSubjectSearchText('');
+    setSubjectSuggestions([]);
+    setShowSubjectSuggestions(false);
+  };
+
+  const removeSelectedSubject = (subjectId: number) => {
+    setSelectedSubjects(prev => prev.filter(s => s.id !== subjectId));
+  };
+
+  const addCustomSubject = async () => {
+    const name = subjectSearchText.trim();
+    if (!name) return;
+    try {
+      const newSub = await subjectsAPI.createCustom(name);
+      setSelectedSubjects(prev => [...prev, newSub]);
+      setSubjectSearchText('');
+      setSubjectSuggestions([]);
+      setShowSubjectSuggestions(false);
+    } catch {}
+  };
+
+  const handleSaveSubjects = async () => {
+    setSubjectSaving(true);
+    try {
+      for (const sub of selectedSubjects) {
+        try { await subjectsAPI.addSubject(sub.id); } catch {}
+      }
+      await refreshUser();
+    } catch {}
+    finally { setSubjectSaving(false); }
+  };
+
   const handleComplete = async () => {
     if (!profilePicUri) { Alert.alert('Profile Photo Required', 'Please add a profile picture to continue.'); return; }
     const u = username.trim();
@@ -202,10 +278,86 @@ export default function OnboardingScreen() {
       }
       try { await authAPI.updateProfile({ school: school.trim(), country: country.trim() }); } catch {}
       try { await setProfilePic(profilePicUri); } catch {}
-      await refreshUser();
+      setShowSubjectPicker(true);
     } catch (e: any) { Alert.alert('Error', e?.message || 'Something went wrong'); }
     finally { setIsLoading(false); }
   };
+
+  // ═══════ SUBJECT PICKER (after profile setup) ═══════
+  if (showSubjectPicker) {
+    return (
+      <LinearGradient colors={['#E7EFEA', '#DCEAE3']} style={{ flex: 1 }}>
+        <SafeAreaView style={{ flex: 1 }}>
+          <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
+            <ScrollView contentContainerStyle={ps.content} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+              <Text style={ps.title}>What do you study?</Text>
+              <Text style={ps.sub}>Add your subjects so we can personalise your experience</Text>
+
+              <View style={[ps.field, { zIndex: 10 }]}>
+                <Text style={ps.label}>Search subjects</Text>
+                <View style={sp.searchRow}>
+                  <TextInput
+                    style={[ps.input, { flex: 1 }]}
+                    placeholder="e.g. Biology, Maths, History..."
+                    placeholderTextColor={C.textMute}
+                    value={subjectSearchText}
+                    onChangeText={handleSubjectSearch}
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                  />
+                  {subjectSearchText.trim().length > 0 && (
+                    <TouchableOpacity style={sp.addBtn} onPress={addCustomSubject}>
+                      <Text style={sp.addBtnText}>Add</Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
+                {showSubjectSuggestions && subjectSuggestions.length > 0 && (
+                  <View style={sp.sugBox}>
+                    <ScrollView style={{ maxHeight: 200 }} keyboardShouldPersistTaps="handled" nestedScrollEnabled>
+                      {subjectSuggestions.map((s) => (
+                        <TouchableOpacity key={s.id} style={sp.sugItem} onPress={() => selectSubject(s)}>
+                          <Text style={sp.sugText}>{s.display_name}</Text>
+                          <Text style={sp.sugPlus}>+</Text>
+                        </TouchableOpacity>
+                      ))}
+                    </ScrollView>
+                  </View>
+                )}
+              </View>
+
+              {selectedSubjects.length > 0 && (
+                <View style={sp.chipsWrap}>
+                  {selectedSubjects.map((s) => (
+                    <TouchableOpacity key={s.id} style={sp.chip} onPress={() => removeSelectedSubject(s.id)} activeOpacity={0.7}>
+                      <Text style={sp.chipText}>{s.display_name}</Text>
+                      <Text style={sp.chipX}>✕</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              )}
+
+              <View style={{ flex: 1, minHeight: 40 }} />
+
+              <TouchableOpacity
+                style={[ps.cta, subjectSaving && { opacity: 0.7 }]}
+                onPress={handleSaveSubjects}
+                disabled={subjectSaving}
+                activeOpacity={0.8}
+              >
+                <LinearGradient colors={[C.primary, C.dark]} style={ps.ctaGrad} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}>
+                  {subjectSaving ? <ActivityIndicator color="#fff" /> : (
+                    <Text style={ps.ctaText}>
+                      {selectedSubjects.length > 0 ? `Continue with ${selectedSubjects.length} subject${selectedSubjects.length > 1 ? 's' : ''}` : 'Skip for now'}
+                    </Text>
+                  )}
+                </LinearGradient>
+              </TouchableOpacity>
+            </ScrollView>
+          </KeyboardAvoidingView>
+        </SafeAreaView>
+      </LinearGradient>
+    );
+  }
 
   // ═══════ PROFILE SETUP ═══════
   if (isSetup) {
@@ -275,17 +427,25 @@ export default function OnboardingScreen() {
             ))}
           </View>
 
-          {/* Screenshot fades in */}
-          <Animated.View style={{ flex: 1, opacity: crossfade }}>
-            <ScreenshotSlide source={sl.image} />
-          </Animated.View>
+          {/* All slides stacked, each with its own opacity */}
+          <View style={{ flex: 1 }}>
+            {SLIDES.map((slide, i) => (
+              <Animated.View
+                key={i}
+                style={{ ...StyleSheet.absoluteFillObject, opacity: slideOpacities[i] }}
+                pointerEvents={i === step ? 'auto' : 'none'}
+              >
+                <ScreenshotSlide source={slide.image} />
+              </Animated.View>
+            ))}
+          </View>
         </SafeAreaView>
       </View>
 
       {/* Instruction card at bottom */}
       <View style={[wb.card, { paddingBottom: Math.max(insets.bottom, 16) }]}>
         <View style={wb.cardHandle} />
-        <Animated.View style={{ opacity: crossfade, alignItems: 'center' }}>
+        <Animated.View style={{ opacity: textOpacity, alignItems: 'center' }}>
           <Text style={wb.cardTag}>{sl.tag}</Text>
           <Text style={wb.cardTitle}>{sl.title}</Text>
           <Text style={wb.cardBody}>{sl.body}</Text>
@@ -347,6 +507,81 @@ const wb = StyleSheet.create({
   nextGrad: { paddingVertical: 12, alignItems: 'center', borderRadius: 14 },
   nextText: { color: '#fff', fontSize: 15, fontWeight: '700' },
   skipText: { color: '#7C8F86', fontSize: 13, fontWeight: '500' },
+});
+
+// Subject picker styles
+const sp = StyleSheet.create({
+  searchRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  addBtn: {
+    backgroundColor: C.primary,
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+  },
+  addBtnText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  sugBox: {
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    marginTop: 4,
+    borderWidth: 1,
+    borderColor: C.border,
+    ...shadows.small,
+  },
+  sugItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: C.border,
+  },
+  sugText: {
+    fontSize: 15,
+    fontWeight: '500',
+    color: C.textDark,
+  },
+  sugPlus: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: C.primary,
+  },
+  chipsWrap: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginTop: 8,
+  },
+  chip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#fff',
+    borderRadius: 20,
+    paddingVertical: 8,
+    paddingLeft: 14,
+    paddingRight: 10,
+    borderWidth: 1.5,
+    borderColor: C.primary,
+    gap: 6,
+  },
+  chipText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: C.primary,
+  },
+  chipX: {
+    fontSize: 12,
+    color: C.textMute,
+    fontWeight: '600',
+  },
 });
 
 // Profile setup styles

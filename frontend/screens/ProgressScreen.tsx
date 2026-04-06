@@ -77,6 +77,7 @@ const BarChart = ({ data, height = 150 }: { data: { label: string; value: number
               y={height + 18}
               fill={colors.textSecondary}
               fontSize={10}
+              fontWeight="bold"
               textAnchor="middle"
             >
               {item.label}
@@ -117,7 +118,7 @@ const SubjectBarChart = ({ data }: { data: { label: string; value: number; gradi
         const grad = SUBJECT_GRADIENTS[item.gradientIndex % SUBJECT_GRADIENTS.length];
         return (
           <View key={index} style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 14 }}>
-            <Text style={{ width: 72, fontSize: 12, color: colors.textSecondary, fontWeight: '500' }} numberOfLines={1}>
+            <Text style={{ width: 72, fontSize: 12, color: colors.textSecondary, fontWeight: '700' }} numberOfLines={1}>
               {item.label}
             </Text>
             <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', marginLeft: 10, marginRight: 4 }}>
@@ -125,7 +126,7 @@ const SubjectBarChart = ({ data }: { data: { label: string; value: number; gradi
                 colors={[grad[0], grad[1]]}
                 start={{ x: 0, y: 0 }}
                 end={{ x: 1, y: 0 }}
-                style={{ width: `${Math.max(Math.min(pct, 72), 8)}%`, height: 22, borderRadius: 11 }}
+                style={{ width: `${Math.max(pct * 0.7, 5)}%`, height: 22, borderRadius: 11 }}
               />
               <Text style={{ fontSize: 12, fontWeight: '700', color: colors.textPrimary, marginLeft: 8, flexShrink: 0 }}>
                 {formatMinutes(item.value)}
@@ -337,7 +338,7 @@ export default function ProgressScreen() {
             <Text style={styles.studyTipsEmoji}>💡</Text>
             <View style={{ flex: 1 }}>
               <Text style={styles.studyTipsTitle}>Study Tips</Text>
-              <Text style={styles.studyTipsSub}>Browse tips from the community</Text>
+              <Text style={styles.studyTipsSub}>Browse unique, research-backed study tips.</Text>
             </View>
             <Text style={styles.studyTipsArrow}>›</Text>
           </ExpoLinearGradient>
@@ -681,6 +682,7 @@ const styles = StyleSheet.create({
   studyTipsWrap: {
     borderRadius: 18,
     overflow: 'hidden',
+    marginTop: spacing.md,
     marginBottom: spacing.md,
     shadowColor: '#2F4A3E',
     shadowOffset: { width: 0, height: 4 },

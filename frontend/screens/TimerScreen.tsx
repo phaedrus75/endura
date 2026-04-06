@@ -13,7 +13,7 @@ import {
   Image,
   Animated,
 } from 'react-native';
-import { Text } from '../components/StyledText';
+import { Text, TextInput } from '../components/StyledText';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import ConfettiCannon from 'react-native-confetti-cannon';
@@ -78,7 +78,8 @@ const PRESET_TIMES = [
 const CircularProgress = ({ progress, size = 260, strokeWidth = 10, children }: any) => {
   const radius = (size - strokeWidth) / 2;
   const circumference = radius * 2 * Math.PI;
-  const strokeDashoffset = circumference - (progress * circumference);
+  const clampedProgress = progress < 0.005 ? 0 : progress;
+  const strokeDashoffset = circumference - (clampedProgress * circumference);
   const glowWidth = strokeWidth + 12;
   
   return (
@@ -108,7 +109,7 @@ const CircularProgress = ({ progress, size = 260, strokeWidth = 10, children }: 
           fill="none"
         />
         {/* Glow layer — wider, semi-transparent copy */}
-        {progress > 0.01 && (
+        {clampedProgress > 0 && (
           <Circle
             cx={(size + 24) / 2}
             cy={(size + 24) / 2}
@@ -123,18 +124,20 @@ const CircularProgress = ({ progress, size = 260, strokeWidth = 10, children }: 
           />
         )}
         {/* Main progress arc */}
-        <Circle
-          cx={(size + 24) / 2}
-          cy={(size + 24) / 2}
-          r={radius}
-          stroke="url(#progressGrad)"
-          strokeWidth={strokeWidth}
-          fill="none"
-          strokeDasharray={circumference}
-          strokeDashoffset={strokeDashoffset}
-          strokeLinecap="round"
-          transform={`rotate(-90 ${(size + 24) / 2} ${(size + 24) / 2})`}
-        />
+        {clampedProgress > 0 && (
+          <Circle
+            cx={(size + 24) / 2}
+            cy={(size + 24) / 2}
+            r={radius}
+            stroke="url(#progressGrad)"
+            strokeWidth={strokeWidth}
+            fill="none"
+            strokeDasharray={circumference}
+            strokeDashoffset={strokeDashoffset}
+            strokeLinecap="round"
+            transform={`rotate(-90 ${(size + 24) / 2} ${(size + 24) / 2})`}
+          />
+        )}
       </Svg>
       <View style={styles.timerInner}>
         {children}
@@ -182,6 +185,11 @@ export default function TimerScreen() {
   const [showSubjectModal, setShowSubjectModal] = useState(false);
   const [selectedSubject, setSelectedSubject] = useState<Subject | null>(null);
   const [subjects, setSubjects] = useState<Subject[]>([]);
+  const [showAddSubjectTimer, setShowAddSubjectTimer] = useState(false);
+  const [newSubjectNameTimer, setNewSubjectNameTimer] = useState('');
+  const [timerSubjectSuggestions, setTimerSubjectSuggestions] = useState<Subject[]>([]);
+  const [showTimerSubjectSuggestions, setShowTimerSubjectSuggestions] = useState(false);
+  const timerSubjectSearchTimeout = useRef<NodeJS.Timeout | null>(null);
   const [showEggDeathModal, setShowEggDeathModal] = useState(false);
   const [deadAnimalName, setDeadAnimalName] = useState('');
   const [deathCause, setDeathCause] = useState<'timeout' | 'abandoned'>('timeout');
@@ -248,6 +256,56 @@ export default function TimerScreen() {
         .catch(() => {});
     }, [user?.id])
   );
+
+  const reloadSubjects = () => {
+    subjectsAPI.getMySubjects().then(subs => setSubjects(subs)).catch(() => {});
+  };
+
+  const handleTimerSubjectSearch = (text: string) => {
+    setNewSubjectNameTimer(text);
+    if (timerSubjectSearchTimeout.current) clearTimeout(timerSubjectSearchTimeout.current);
+    if (text.trim().length < 1) {
+      setTimerSubjectSuggestions([]);
+      setShowTimerSubjectSuggestions(false);
+      return;
+    }
+    timerSubjectSearchTimeout.current = setTimeout(async () => {
+      try {
+        const results = await subjectsAPI.search(text.trim());
+        const myIds = new Set(subjects.map(s => s.id));
+        const filtered = results.filter(s => !myIds.has(s.id));
+        setTimerSubjectSuggestions(filtered);
+        setShowTimerSubjectSuggestions(filtered.length > 0);
+      } catch {
+        setTimerSubjectSuggestions([]);
+        setShowTimerSubjectSuggestions(false);
+      }
+    }, 250);
+  };
+
+  const selectTimerSubjectSuggestion = async (subject: Subject) => {
+    try {
+      await subjectsAPI.addSubject(subject.id);
+      reloadSubjects();
+      setNewSubjectNameTimer('');
+      setTimerSubjectSuggestions([]);
+      setShowTimerSubjectSuggestions(false);
+      setShowAddSubjectTimer(false);
+    } catch {}
+  };
+
+  const addNewSubjectTimer = async () => {
+    const name = newSubjectNameTimer.trim();
+    if (!name) return;
+    try {
+      await subjectsAPI.createCustom(name);
+      reloadSubjects();
+      setNewSubjectNameTimer('');
+      setTimerSubjectSuggestions([]);
+      setShowTimerSubjectSuggestions(false);
+      setShowAddSubjectTimer(false);
+    } catch {}
+  };
 
   // Save unlocked animals
   const saveUnlockedAnimals = async (animals: number[]) => {
@@ -470,6 +528,8 @@ export default function TimerScreen() {
     const next = hatchStage + 1;
     setHatchStage(next);
 
+    Vibration.vibrate(next === 3 ? [0, 80, 60, 120] : next * 30 + 20);
+
     const intensity = next * 6;
     Animated.sequence([
       Animated.timing(eggWobble, { toValue: intensity, duration: 60, useNativeDriver: true }),
@@ -607,7 +667,7 @@ export default function TimerScreen() {
         
         {/* Timer Display */}
         <View style={styles.timerContainer}>
-          <CircularProgress progress={progress} size={isRunning ? 336 : 312} strokeWidth={isRunning ? 10 : 12}>
+          <CircularProgress progress={progress} size={336} strokeWidth={10}>
             <View style={styles.timerEggContainer}>
               <LottieView
                 source={require('../assets/egg-animation.json')}
@@ -873,7 +933,45 @@ export default function TimerScreen() {
                     </Text>
                   </TouchableOpacity>
                 ))}
+                <TouchableOpacity
+                  style={styles.addSubjectChipTimer}
+                  onPress={() => setShowAddSubjectTimer(!showAddSubjectTimer)}
+                >
+                  <Text style={styles.addSubjectChipTimerText}>+ Add Subject</Text>
+                </TouchableOpacity>
               </View>
+              {showAddSubjectTimer && (
+                <View style={{ marginBottom: spacing.md }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                    <TextInput
+                      style={styles.timerAddSubjectInput}
+                      placeholder="Search or type a subject..."
+                      placeholderTextColor={colors.textMuted}
+                      value={newSubjectNameTimer}
+                      onChangeText={handleTimerSubjectSearch}
+                      autoFocus
+                    />
+                    <TouchableOpacity style={styles.timerAddSubjectBtn} onPress={addNewSubjectTimer}>
+                      <Text style={styles.timerAddSubjectBtnText}>Add</Text>
+                    </TouchableOpacity>
+                  </View>
+                  {showTimerSubjectSuggestions && timerSubjectSuggestions.length > 0 && (
+                    <View style={styles.timerSubjectSuggestions}>
+                      <ScrollView style={{ maxHeight: 160 }} keyboardShouldPersistTaps="handled" nestedScrollEnabled>
+                        {timerSubjectSuggestions.map((s) => (
+                          <TouchableOpacity
+                            key={s.id}
+                            style={styles.timerSubjectSuggestionItem}
+                            onPress={() => selectTimerSubjectSuggestion(s)}
+                          >
+                            <Text style={styles.timerSubjectSuggestionText}>{s.display_name}</Text>
+                          </TouchableOpacity>
+                        ))}
+                      </ScrollView>
+                    </View>
+                  )}
+                </View>
+              )}
 
               <View style={styles.subjectModalButtons}>
                 <TouchableOpacity
@@ -900,7 +998,7 @@ export default function TimerScreen() {
                       !selectedSubject && styles.subjectModalStartDisabled,
                     ]}
                   >
-                    <Text style={styles.subjectModalStartText}>Start Timer! ⏱️</Text>
+                    <Text style={styles.subjectModalStartText}>Start Timer</Text>
                   </ExpoLinearGradient>
                 </TouchableOpacity>
               </View>
@@ -2285,6 +2383,61 @@ const styles = StyleSheet.create({
   },
   subjectChipTextActive: {
     color: colors.primary,
+  },
+  addSubjectChipTimer: {
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderRadius: borderRadius.full,
+    borderWidth: 2,
+    borderColor: colors.primary,
+    borderStyle: 'dashed',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  addSubjectChipTimerText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: colors.primary,
+  },
+  timerAddSubjectInput: {
+    flex: 1,
+    backgroundColor: colors.surfaceAlt,
+    borderRadius: borderRadius.md,
+    padding: spacing.md,
+    fontSize: 14,
+    color: colors.textPrimary,
+    borderWidth: 1,
+    borderColor: colors.cardBorder,
+  },
+  timerAddSubjectBtn: {
+    backgroundColor: colors.primary,
+    borderRadius: borderRadius.md,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.md,
+  },
+  timerAddSubjectBtnText: {
+    color: colors.textOnPrimary,
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  timerSubjectSuggestions: {
+    backgroundColor: colors.surface,
+    borderRadius: borderRadius.md,
+    borderWidth: 1,
+    borderColor: colors.cardBorder,
+    marginTop: 4,
+    ...shadows.small,
+  },
+  timerSubjectSuggestionItem: {
+    paddingVertical: 10,
+    paddingHorizontal: spacing.md,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.divider,
+  },
+  timerSubjectSuggestionText: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: colors.textPrimary,
   },
   subjectModalButtons: {
     flexDirection: 'row',
