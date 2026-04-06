@@ -538,6 +538,39 @@ class Donation(Base):
     user = relationship("User")
 
 
+class UserPurchase(Base):
+    """Tracks items a user has purchased from the shop"""
+    __tablename__ = "user_purchases"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    item_key = Column(String, nullable=False)
+    quantity = Column(Integer, default=1, nullable=False)
+    purchased_at = Column(DateTime, default=datetime.utcnow)
+
+    user = relationship("User")
+    __table_args__ = (
+        UniqueConstraint("user_id", "item_key", name="uq_user_purchase"),
+    )
+
+
+class UserItemAssignment(Base):
+    """Tracks where items are placed in the sanctuary"""
+    __tablename__ = "user_item_assignments"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    item_id = Column(String, nullable=False)
+    x = Column(Float, nullable=False)
+    y = Column(Float, nullable=False)
+    page = Column(Integer, default=0)
+
+    user = relationship("User")
+    __table_args__ = (
+        UniqueConstraint("user_id", "item_id", name="uq_user_item_assignment"),
+    )
+
+
 class School(Base):
     __tablename__ = "schools"
 

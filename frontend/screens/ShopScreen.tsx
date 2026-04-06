@@ -14,7 +14,6 @@ import { Text } from '../components/StyledText';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { LinearGradient } from 'expo-linear-gradient';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { colors, shadows, spacing, borderRadius } from '../theme/colors';
 import SwipeDismiss, { DragHandle } from '../components/SwipeDismiss';
 import { shopAPI, statsAPI, badgesAPI, UserStats } from '../services/api';
@@ -73,8 +72,6 @@ const RARITY_COLORS: Record<string, string> = {
   legendary: '#2F4A3E',
 };
 
-const STORAGE_KEY_PREFIX = 'endura_purchased_items_';
-
 export default function ShopScreen() {
   const navigation = useNavigation<any>();
   const { refreshUser, user } = useAuth();
@@ -85,31 +82,20 @@ export default function ShopScreen() {
   const [selectedItem, setSelectedItem] = useState<ShopItem | null>(null);
   const [showPreview, setShowPreview] = useState(false);
 
-  const storageKey = `${STORAGE_KEY_PREFIX}${user?.id || 'anon'}`;
-
   const loadData = async () => {
     try {
-      const [statsData, storedPurchases] = await Promise.all([
+      const [statsData, purchases] = await Promise.all([
         statsAPI.getStats(),
-        AsyncStorage.getItem(storageKey),
+        shopAPI.getPurchases(),
       ]);
       setStats(statsData);
-      if (storedPurchases) {
-        const parsed = JSON.parse(storedPurchases);
-        const migrated: Record<string, number> = {};
-        for (const [key, val] of Object.entries(parsed)) {
-          migrated[key] = typeof val === 'number' ? (val as number) : (val ? 1 : 0);
-        }
-        setPurchasedIds(migrated);
-      } else {
-        setPurchasedIds({});
-      }
+      setPurchasedIds(purchases || {});
     } catch (e) {
       if (__DEV__) console.error('Failed to load shop data:', e);
     }
   };
 
-  useFocusEffect(useCallback(() => { loadData(); }, [storageKey]));
+  useFocusEffect(useCallback(() => { loadData(); }, []));
 
   const purchaseItem = async (item: ShopItem) => {
     const coins = stats?.current_coins || 0;
@@ -127,9 +113,8 @@ export default function ShopScreen() {
 
     const currentCount = purchasedIds[item.id] || 0;
     try {
-      const updated = { ...purchasedIds, [item.id]: currentCount + 1 };
-      setPurchasedIds(updated);
-      await AsyncStorage.setItem(storageKey, JSON.stringify(updated));
+      await shopAPI.recordPurchase(item.id);
+      setPurchasedIds(prev => ({ ...prev, [item.id]: currentCount + 1 }));
       await refreshUser();
       const newStats = await statsAPI.getStats();
       setStats(newStats);
@@ -141,12 +126,7 @@ export default function ShopScreen() {
         `${item.name} has been added to my sanctuary! Visit Collection to see it.`
       );
     } catch (e: any) {
-      const updated = { ...purchasedIds, [item.id]: currentCount + 1 };
-      setPurchasedIds(updated);
-      await AsyncStorage.setItem(storageKey, JSON.stringify(updated));
-      setShowPreview(false);
-      setSelectedItem(null);
-      Alert.alert('Purchased!', `${item.name} has been added to my sanctuary!`);
+      Alert.alert('Purchase Failed', e.message || 'Could not save your purchase. Please try again.');
     }
   };
 

@@ -1401,6 +1401,86 @@ def spend_coins(
     return {"current_coins": user.current_coins, "spent": req.amount}
 
 
+# ============ User Purchases & Assignments ============
+
+@app.get("/shop/purchases")
+def get_purchases(
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    rows = db.query(models.UserPurchase).filter(
+        models.UserPurchase.user_id == current_user.id
+    ).all()
+    return {row.item_key: row.quantity for row in rows}
+
+
+class PurchaseRequest(BaseModel):
+    item_key: str
+    quantity: int = 1
+
+@app.post("/shop/purchases")
+def record_purchase(
+    req: PurchaseRequest,
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    existing = db.query(models.UserPurchase).filter(
+        models.UserPurchase.user_id == current_user.id,
+        models.UserPurchase.item_key == req.item_key,
+    ).first()
+    if existing:
+        existing.quantity += req.quantity
+    else:
+        db.add(models.UserPurchase(
+            user_id=current_user.id,
+            item_key=req.item_key,
+            quantity=req.quantity,
+        ))
+    db.commit()
+    return {"item_key": req.item_key, "quantity": existing.quantity if existing else req.quantity}
+
+
+@app.get("/shop/assignments")
+def get_assignments(
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    rows = db.query(models.UserItemAssignment).filter(
+        models.UserItemAssignment.user_id == current_user.id
+    ).all()
+    return [{"itemId": r.item_id, "x": r.x, "y": r.y, "page": r.page} for r in rows]
+
+
+class AssignmentItem(BaseModel):
+    itemId: str
+    x: float
+    y: float
+    page: int = 0
+
+class SaveAssignmentsRequest(BaseModel):
+    assignments: List[AssignmentItem]
+
+@app.put("/shop/assignments")
+def save_assignments(
+    req: SaveAssignmentsRequest,
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    db.query(models.UserItemAssignment).filter(
+        models.UserItemAssignment.user_id == current_user.id
+    ).delete()
+    for a in req.assignments:
+        db.add(models.UserItemAssignment(
+            user_id=current_user.id,
+            item_id=a.itemId,
+            x=a.x,
+            y=a.y,
+            page=a.page,
+        ))
+    db.commit()
+    return {"saved": len(req.assignments)}
+
+
 # ============ Badge Endpoints ============
 
 @app.get("/badges", response_model=List[schemas.BadgeResponse])

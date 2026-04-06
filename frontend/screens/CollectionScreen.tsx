@@ -24,7 +24,7 @@ import LottieView from 'lottie-react-native';
 import { colors, shadows, spacing, borderRadius } from '../theme/colors';
 import SwipeDismiss, { DragHandle } from '../components/SwipeDismiss';
 import { useAuth } from '../contexts/AuthContext';
-import { animalsAPI, badgesAPI, donationsAPI, UserAnimal, Animal } from '../services/api';
+import { animalsAPI, badgesAPI, donationsAPI, shopAPI, UserAnimal, Animal } from '../services/api';
 import { getAnimalImage } from '../assets/animals';
 import { Analytics } from '../services/analytics';
 
@@ -324,44 +324,101 @@ export default function CollectionScreen() {
   const [communityTotal, setCommunityTotal] = useState(0);
   const loadPurchases = async () => {
     try {
-      const raw = await AsyncStorage.getItem(purchasedKey);
-      if (raw) {
-        const parsed = JSON.parse(raw);
-        const migrated: Record<string, number> = {};
-        for (const [key, val] of Object.entries(parsed)) {
-          migrated[key] = typeof val === 'number' ? (val as number) : (val ? 1 : 0);
-        }
-        setPurchasedItems(migrated);
+      const serverPurchases = await shopAPI.getPurchases();
+      if (serverPurchases && Object.keys(serverPurchases).length > 0) {
+        setPurchasedItems(serverPurchases);
       } else {
-        setPurchasedItems({});
+        // Migrate from AsyncStorage if server has nothing
+        const raw = await AsyncStorage.getItem(purchasedKey);
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          const migrated: Record<string, number> = {};
+          for (const [key, val] of Object.entries(parsed)) {
+            migrated[key] = typeof val === 'number' ? (val as number) : (val ? 1 : 0);
+          }
+          if (Object.keys(migrated).length > 0) {
+            const promises = Object.entries(migrated)
+              .filter(([, qty]) => qty > 0)
+              .map(([key, qty]) => shopAPI.recordPurchase(key, qty));
+            await Promise.all(promises);
+            await AsyncStorage.removeItem(purchasedKey);
+          }
+          setPurchasedItems(migrated);
+        } else {
+          setPurchasedItems({});
+        }
       }
-    } catch (e) {}
+    } catch (e) {
+      // Fallback to AsyncStorage if API fails
+      try {
+        const raw = await AsyncStorage.getItem(purchasedKey);
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          const migrated: Record<string, number> = {};
+          for (const [key, val] of Object.entries(parsed)) {
+            migrated[key] = typeof val === 'number' ? (val as number) : (val ? 1 : 0);
+          }
+          setPurchasedItems(migrated);
+        }
+      } catch {}
+    }
   };
 
   const loadAssignments = async () => {
     try {
-      const raw = await AsyncStorage.getItem(assignmentsKey);
-      if (raw) {
-        const parsed = JSON.parse(raw);
-        const valid = Array.isArray(parsed)
-          ? parsed.filter((a: any) => a.itemId && typeof a.x === 'number' && typeof a.y === 'number')
-          : [];
+      const serverAssignments = await shopAPI.getAssignments();
+      if (serverAssignments && serverAssignments.length > 0) {
+        const valid = serverAssignments.filter(
+          (a: any) => a.itemId && typeof a.x === 'number' && typeof a.y === 'number'
+        );
         itemAssignmentsRef.current = valid;
         setItemAssignments(valid);
-        if (valid.length !== parsed.length) {
-          await AsyncStorage.setItem(assignmentsKey, JSON.stringify(valid));
-        }
       } else {
-        itemAssignmentsRef.current = [];
-        setItemAssignments([]);
+        // Migrate from AsyncStorage if server has nothing
+        const raw = await AsyncStorage.getItem(assignmentsKey);
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          const valid = Array.isArray(parsed)
+            ? parsed.filter((a: any) => a.itemId && typeof a.x === 'number' && typeof a.y === 'number')
+            : [];
+          if (valid.length > 0) {
+            await shopAPI.saveAssignments(valid);
+            await AsyncStorage.removeItem(assignmentsKey);
+          }
+          itemAssignmentsRef.current = valid;
+          setItemAssignments(valid);
+        } else {
+          itemAssignmentsRef.current = [];
+          setItemAssignments([]);
+        }
       }
     } catch (e) {
-      await AsyncStorage.removeItem(assignmentsKey);
+      // Fallback to AsyncStorage if API fails
+      try {
+        const raw = await AsyncStorage.getItem(assignmentsKey);
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          const valid = Array.isArray(parsed)
+            ? parsed.filter((a: any) => a.itemId && typeof a.x === 'number' && typeof a.y === 'number')
+            : [];
+          itemAssignmentsRef.current = valid;
+          setItemAssignments(valid);
+        }
+      } catch {}
     }
   };
 
   const sanctuaryPageRef = useRef(0);
   useEffect(() => { sanctuaryPageRef.current = sanctuaryPage; }, [sanctuaryPage]);
+
+  const persistAssignments = useCallback(async (assignments: ItemAssignment[]) => {
+    try {
+      await shopAPI.saveAssignments(assignments);
+    } catch {
+      // Fallback to local storage
+      await AsyncStorage.setItem(assignmentsKey, JSON.stringify(assignments));
+    }
+  }, [assignmentsKey]);
 
   const handleItemDrop = useCallback(async (itemId: string, x: number, y: number) => {
     const filtered = itemAssignmentsRef.current.filter(a => a.itemId !== itemId);
@@ -369,20 +426,20 @@ export default function CollectionScreen() {
     if (y >= trayTop) {
       itemAssignmentsRef.current = filtered;
       setItemAssignments(filtered);
-      await AsyncStorage.setItem(assignmentsKey, JSON.stringify(filtered));
+      await persistAssignments(filtered);
     } else {
       const updated = [...filtered, { itemId, x, y, page: sanctuaryPageRef.current }];
       itemAssignmentsRef.current = updated;
       setItemAssignments(updated);
-      await AsyncStorage.setItem(assignmentsKey, JSON.stringify(updated));
+      await persistAssignments(updated);
     }
-  }, [assignmentsKey]);
+  }, [persistAssignments]);
 
   const removeAssignment = async (itemId: string) => {
     const updated = itemAssignmentsRef.current.filter(a => a.itemId !== itemId);
     itemAssignmentsRef.current = updated;
     setItemAssignments(updated);
-    await AsyncStorage.setItem(assignmentsKey, JSON.stringify(updated));
+    await persistAssignments(updated);
   };
 
   const ownedDecorationItems = (() => {
@@ -1012,8 +1069,8 @@ export default function CollectionScreen() {
                           item => itemAssignments.some(a => a.itemId === item.id && (a.page ?? 0) === sanctuaryPage)
                         );
                         const draggableItems = [...unplacedItems, ...thisPagePlaced];
-                        const slotW = 44;
-                        const slotGap = 6;
+                        const slotW = 62;
+                        const slotGap = 8;
 
                         return draggableItems.map((item) => {
                           const existing = itemAssignments.find(a => a.itemId === item.id && (a.page ?? 0) === sanctuaryPage);
@@ -1705,12 +1762,12 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     justifyContent: 'flex-start',
-    gap: 6,
+    gap: 8,
   },
   itemTraySlot: {
-    width: 44,
-    height: 44,
-    borderRadius: 13,
+    width: 62,
+    height: 62,
+    borderRadius: 16,
     backgroundColor: colors.cardBorder + '20',
     justifyContent: 'center',
     alignItems: 'center',

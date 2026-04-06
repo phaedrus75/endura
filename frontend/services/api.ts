@@ -543,6 +543,20 @@ export const shopAPI = {
       method: 'POST',
       body: JSON.stringify({ amount }),
     }),
+  getPurchases: () =>
+    apiFetch<Record<string, number>>('/shop/purchases'),
+  recordPurchase: (item_key: string, quantity: number = 1) =>
+    apiFetch<{ item_key: string; quantity: number }>('/shop/purchases', {
+      method: 'POST',
+      body: JSON.stringify({ item_key, quantity }),
+    }),
+  getAssignments: () =>
+    apiFetch<Array<{ itemId: string; x: number; y: number; page: number }>>('/shop/assignments'),
+  saveAssignments: (assignments: Array<{ itemId: string; x: number; y: number; page: number }>) =>
+    apiFetch<{ saved: number }>('/shop/assignments', {
+      method: 'PUT',
+      body: JSON.stringify({ assignments }),
+    }),
 };
 
 // Study Group API
