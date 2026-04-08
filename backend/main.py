@@ -22,6 +22,7 @@ import os
 import html
 import json as _json
 import logging
+from content_filter import contains_profanity
 
 logger = logging.getLogger(__name__)
 limiter = Limiter(key_func=get_remote_address)
@@ -739,6 +740,8 @@ def set_username(
         raise HTTPException(status_code=400, detail="Username must be at least 2 characters")
     if len(username) > 30:
         raise HTTPException(status_code=400, detail="Username must be 30 characters or fewer")
+    if contains_profanity(username):
+        raise HTTPException(status_code=400, detail="Username contains inappropriate language. Please choose a different name.")
 
     existing = db.query(models.User).filter(
         models.User.username == username,
@@ -1081,6 +1084,8 @@ def name_animal(
     current_user: models.User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
+    if contains_profanity(nickname):
+        raise HTTPException(status_code=400, detail="Nickname contains inappropriate language. Please choose a different name.")
     animal = crud.name_animal(db, animal_id, current_user.id, nickname)
     if not animal:
         raise HTTPException(status_code=404, detail="Animal not found")
@@ -1591,6 +1596,8 @@ def create_group(
     current_user: models.User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
+    if contains_profanity(data.name):
+        raise HTTPException(status_code=400, detail="Group name contains inappropriate language. Please choose a different name.")
     group = crud.create_group(db, current_user.id, data.name, data.goal_minutes, data.goal_deadline, data.subject_id)
     return {"id": group.id, "name": group.name}
 
@@ -1613,6 +1620,8 @@ def update_group(
     if "name" in data and data["name"]:
         name = str(data["name"]).strip()[:100]
         if name:
+            if contains_profanity(name):
+                raise HTTPException(status_code=400, detail="Group name contains inappropriate language.")
             group.name = name
     if "subject_id" in data:
         sid = data["subject_id"]
@@ -1687,6 +1696,8 @@ def send_group_message(
     db: Session = Depends(get_db)
 ):
     content = html.escape(data.content)
+    if contains_profanity(content):
+        raise HTTPException(status_code=400, detail="Your message contains inappropriate language. Please rephrase.")
     result = crud.send_group_message(db, current_user.id, group_id, content)
     if not result:
         raise HTTPException(status_code=403, detail="Not a member of this group")

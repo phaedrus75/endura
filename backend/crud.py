@@ -211,6 +211,16 @@ def name_animal(db: Session, user_animal_id: int, user_id: int, nickname: str) -
         animal.nickname = nickname
         db.commit()
         db.refresh(animal)
+        species = db.query(models.Animal).filter(models.Animal.id == animal.animal_id).first()
+        if species:
+            event = db.query(models.ActivityEvent).filter(
+                models.ActivityEvent.user_id == user_id,
+                models.ActivityEvent.event_type == "animal_hatched",
+                models.ActivityEvent.description.contains(species.name),
+            ).order_by(models.ActivityEvent.created_at.desc()).first()
+            if event:
+                event.description = f"just hatched a {species.name} called {nickname}!"
+                db.commit()
     return animal
 
 
