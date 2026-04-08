@@ -48,6 +48,9 @@ export default function AuthScreen() {
   const [verifyLoading, setVerifyLoading] = useState(false);
   const verifyInputRefs = useRef<(TextInput | null)[]>([]);
 
+  // Terms consent
+  const [termsAccepted, setTermsAccepted] = useState(false);
+
   // Forgot password state
   const [showForgotModal, setShowForgotModal] = useState(false);
   const [forgotStep, setForgotStep] = useState<'email' | 'code'>('email');
@@ -188,6 +191,10 @@ export default function AuthScreen() {
   const handleSubmit = async () => {
     if (!email || !password) {
       Alert.alert('Error', 'Please fill in all fields');
+      return;
+    }
+    if (!isLogin && !termsAccepted) {
+      Alert.alert('Terms Required', 'Please agree to the Terms of Use and Privacy Policy to create your account.');
       return;
     }
     
@@ -383,23 +390,25 @@ export default function AuthScreen() {
             </View>
 
             {!isLogin && (
-              <Text style={styles.termsText}>
-                By creating an account, you agree to our{' '}
-                <Text
-                  style={styles.termsLink}
-                  onPress={() => Linking.openURL('https://endura.eco/terms')}
+              <View style={styles.termsRow}>
+                <TouchableOpacity
+                  style={[styles.termsCheckbox, termsAccepted && styles.termsCheckboxChecked]}
+                  onPress={() => setTermsAccepted(!termsAccepted)}
+                  activeOpacity={0.7}
                 >
-                  Terms of Use
+                  {termsAccepted && <Text style={styles.termsCheckmark}>✓</Text>}
+                </TouchableOpacity>
+                <Text style={styles.termsText}>
+                  I agree to the{' '}
+                  <Text style={styles.termsLink} onPress={() => Linking.openURL('https://endura.eco/terms')}>
+                    Terms of Use
+                  </Text>
+                  {' '}and{' '}
+                  <Text style={styles.termsLink} onPress={() => Linking.openURL('https://endura.eco/privacy')}>
+                    Privacy Policy
+                  </Text>
                 </Text>
-                {' '}and{' '}
-                <Text
-                  style={styles.termsLink}
-                  onPress={() => Linking.openURL('https://endura.eco/privacy')}
-                >
-                  Privacy Policy
-                </Text>
-                .
-              </Text>
+              </View>
             )}
 
             <TouchableOpacity
@@ -801,13 +810,37 @@ const styles = StyleSheet.create({
     lineHeight: 22,
     marginTop: spacing.sm,
   },
-  termsText: {
-    fontSize: 12,
-    color: colors.textMuted,
-    textAlign: 'center',
-    lineHeight: 18,
+  termsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
     marginBottom: spacing.md,
-    paddingHorizontal: spacing.sm,
+    paddingHorizontal: 2,
+  },
+  termsCheckbox: {
+    width: 22,
+    height: 22,
+    borderRadius: 6,
+    borderWidth: 2,
+    borderColor: colors.textMuted,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 10,
+  },
+  termsCheckboxChecked: {
+    backgroundColor: colors.primary,
+    borderColor: colors.primary,
+  },
+  termsCheckmark: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '700',
+    marginTop: -1,
+  },
+  termsText: {
+    flex: 1,
+    fontSize: 13,
+    color: colors.textMuted,
+    lineHeight: 18,
   },
   termsLink: {
     color: colors.primary,
