@@ -634,6 +634,21 @@ export const donationsAPI = {
     apiFetch<{ confirmed: boolean; amount?: number; nonprofit?: string }>(`/donations/check/${partnerId}`),
 };
 
+// Moderation API
+export const moderationAPI = {
+  reportContent: (reported_user_id: number, content_type: string, reason: string, content_id?: number, details?: string) =>
+    apiFetch<{ message: string }>('/report', {
+      method: 'POST',
+      body: JSON.stringify({ reported_user_id, content_type, reason, content_id, details }),
+    }),
+  blockUser: (userId: number) =>
+    apiFetch<{ message: string }>(`/block/${userId}`, { method: 'POST' }),
+  unblockUser: (userId: number) =>
+    apiFetch<{ message: string }>(`/block/${userId}`, { method: 'DELETE' }),
+  getBlockedUsers: () =>
+    apiFetch<Array<{ id: number; username: string; email: string }>>('/blocked-users'),
+};
+
 export const setApiUrl = (url: string) => {
   if (__DEV__) console.log('API URL set to:', url);
 };

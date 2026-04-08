@@ -14,9 +14,11 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.endura.study",
-      "buildNumber": "9",
+      "buildNumber": "10",
       "infoPlist": {
-        "ITSAppUsesNonExemptEncryption": false
+        "ITSAppUsesNonExemptEncryption": false,
+        "NSCameraUsageDescription": "Endura uses your camera to let you take a profile photo that is visible to your friends and study group members.",
+        "NSPhotoLibraryUsageDescription": "Endura accesses your photo library so you can choose an existing photo to use as your profile picture, which is visible to your friends and study group members."
       }
     },
     "android": {

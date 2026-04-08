@@ -538,6 +538,40 @@ class Donation(Base):
     user = relationship("User")
 
 
+class ContentReport(Base):
+    """Reports of objectionable content by users"""
+    __tablename__ = "content_reports"
+
+    id = Column(Integer, primary_key=True, index=True)
+    reporter_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    reported_user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    content_type = Column(String, nullable=False)  # group_message, activity_event, username, profile_pic
+    content_id = Column(Integer, nullable=True)
+    reason = Column(String, nullable=False)  # inappropriate, spam, harassment, other
+    details = Column(Text, nullable=True)
+    status = Column(String, default="pending")  # pending, reviewed, actioned, dismissed
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    reporter = relationship("User", foreign_keys=[reporter_id])
+    reported_user = relationship("User", foreign_keys=[reported_user_id])
+
+
+class UserBlock(Base):
+    """Users blocked by other users"""
+    __tablename__ = "user_blocks"
+    __table_args__ = (
+        UniqueConstraint("blocker_id", "blocked_id", name="uq_user_block"),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    blocker_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    blocked_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    blocker = relationship("User", foreign_keys=[blocker_id])
+    blocked = relationship("User", foreign_keys=[blocked_id])
+
+
 class UserPurchase(Base):
     """Tracks items a user has purchased from the shop"""
     __tablename__ = "user_purchases"

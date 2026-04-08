@@ -1830,6 +1830,104 @@ def send_tip_to_friend(
     return {"message": f"Tip sent to {friend.username}"}
 
 
+# ============ Content Reporting & User Blocking ============
+
+class ReportContentRequest(BaseModel):
+    reported_user_id: int
+    content_type: str  # group_message, activity_event, username, profile_pic
+    content_id: Optional[int] = None
+    reason: str  # inappropriate, spam, harassment, other
+    details: Optional[str] = None
+
+@app.post("/report")
+def report_content(
+    req: ReportContentRequest,
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    if req.reported_user_id == current_user.id:
+        raise HTTPException(status_code=400, detail="Cannot report yourself")
+    report = models.ContentReport(
+        reporter_id=current_user.id,
+        reported_user_id=req.reported_user_id,
+        content_type=req.content_type,
+        content_id=req.content_id,
+        reason=req.reason,
+        details=req.details[:500] if req.details else None,
+    )
+    db.add(report)
+    db.commit()
+    return {"message": "Report submitted. Our team will review it shortly."}
+
+
+@app.post("/block/{user_id}")
+def block_user(
+    user_id: int,
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    if user_id == current_user.id:
+        raise HTTPException(status_code=400, detail="Cannot block yourself")
+    target = db.query(models.User).filter(models.User.id == user_id).first()
+    if not target:
+        raise HTTPException(status_code=404, detail="User not found")
+    existing = db.query(models.UserBlock).filter(
+        models.UserBlock.blocker_id == current_user.id,
+        models.UserBlock.blocked_id == user_id,
+    ).first()
+    if existing:
+        return {"message": "User already blocked"}
+    block = models.UserBlock(blocker_id=current_user.id, blocked_id=user_id)
+    db.add(block)
+    # Auto-report for admin visibility
+    report = models.ContentReport(
+        reporter_id=current_user.id,
+        reported_user_id=user_id,
+        content_type="user_blocked",
+        reason="blocked",
+        details="User was blocked — content hidden from blocker's feed.",
+    )
+    db.add(report)
+    # Remove friendship if exists
+    db.query(models.Friendship).filter(
+        ((models.Friendship.user_id == current_user.id) & (models.Friendship.friend_id == user_id)) |
+        ((models.Friendship.user_id == user_id) & (models.Friendship.friend_id == current_user.id))
+    ).delete()
+    db.commit()
+    return {"message": "User blocked. Their content will no longer appear in your feed."}
+
+
+@app.delete("/block/{user_id}")
+def unblock_user(
+    user_id: int,
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    deleted = db.query(models.UserBlock).filter(
+        models.UserBlock.blocker_id == current_user.id,
+        models.UserBlock.blocked_id == user_id,
+    ).delete()
+    db.commit()
+    if deleted:
+        return {"message": "User unblocked"}
+    return {"message": "User was not blocked"}
+
+
+@app.get("/blocked-users")
+def get_blocked_users(
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    blocks = db.query(models.UserBlock).filter(
+        models.UserBlock.blocker_id == current_user.id
+    ).all()
+    blocked_ids = [b.blocked_id for b in blocks]
+    if not blocked_ids:
+        return []
+    users = db.query(models.User).filter(models.User.id.in_(blocked_ids)).all()
+    return [{"id": u.id, "username": u.username, "email": u.email} for u in users]
+
+
 # ============ Every.org Donation Webhook ============
 
 _last_webhook_payloads = []

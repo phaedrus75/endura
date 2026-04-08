@@ -24,7 +24,7 @@ import SwipeDismiss, { DragHandle } from '../components/SwipeDismiss';
 import { useAuth } from '../contexts/AuthContext';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
-  groupsAPI, feedAPI, socialAPI, tipsAPI, subjectsAPI,
+  groupsAPI, feedAPI, socialAPI, tipsAPI, subjectsAPI, moderationAPI,
   StudyGroup, GroupMessage, FeedEvent,
   Friend, FriendProfile, FriendSuggestion, StudyTip, LeaderboardEntry, Subject,
 } from '../services/api';
@@ -198,6 +198,83 @@ export default function SocialScreen() {
   const [globalLeaderboard, setGlobalLeaderboard] = useState<LeaderboardEntry[]>([]);
   const [friendsLeaderboard, setFriendsLeaderboard] = useState<LeaderboardEntry[]>([]);
   const [schoolLeaderboard, setSchoolLeaderboard] = useState<LeaderboardEntry[]>([]);
+
+  // EULA acceptance
+  const [eulaAccepted, setEulaAccepted] = useState(true);
+  const [showEula, setShowEula] = useState(false);
+
+  useEffect(() => {
+    AsyncStorage.getItem('endura_eula_accepted').then(v => {
+      if (v !== 'true') {
+        setEulaAccepted(false);
+        setShowEula(true);
+      }
+    });
+  }, []);
+
+  const acceptEula = async () => {
+    await AsyncStorage.setItem('endura_eula_accepted', 'true');
+    setEulaAccepted(true);
+    setShowEula(false);
+  };
+
+  // Report & Block
+  const handleReport = (reportedUserId: number, username: string, contentType: string, contentId?: number) => {
+    Alert.alert(
+      'Report Content',
+      `Why are you reporting ${username || 'this user'}?`,
+      [
+        { text: 'Inappropriate Content', onPress: () => submitReport(reportedUserId, contentType, 'inappropriate', contentId) },
+        { text: 'Spam', onPress: () => submitReport(reportedUserId, contentType, 'spam', contentId) },
+        { text: 'Harassment', onPress: () => submitReport(reportedUserId, contentType, 'harassment', contentId) },
+        { text: 'Cancel', style: 'cancel' },
+      ]
+    );
+  };
+
+  const submitReport = async (reportedUserId: number, contentType: string, reason: string, contentId?: number) => {
+    try {
+      await moderationAPI.reportContent(reportedUserId, contentType, reason, contentId);
+      Alert.alert('Report Submitted', 'Thank you. Our team will review this shortly.');
+    } catch {
+      Alert.alert('Error', 'Could not submit report. Please try again.');
+    }
+  };
+
+  const handleBlock = (userId: number, username: string) => {
+    Alert.alert(
+      `Block ${username || 'this user'}?`,
+      'They will be removed from your friends and their content will be hidden from your feed. You can unblock them later from your profile settings.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Block',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await moderationAPI.blockUser(userId);
+              loadData();
+              Alert.alert('Blocked', `${username || 'User'} has been blocked.`);
+            } catch {
+              Alert.alert('Error', 'Could not block user. Please try again.');
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  const showUserActions = (userId: number, username: string, contentType: string, contentId?: number) => {
+    Alert.alert(
+      username || 'User',
+      'What would you like to do?',
+      [
+        { text: 'Report Content', onPress: () => handleReport(userId, username, contentType, contentId) },
+        { text: 'Block User', style: 'destructive', onPress: () => handleBlock(userId, username) },
+        { text: 'Cancel', style: 'cancel' },
+      ]
+    );
+  };
 
   const loadData = useCallback(async () => {
     try {
@@ -833,7 +910,12 @@ export default function SocialScreen() {
         const hatchMatch = e.description.match(/^just hatched a (.+)!$/);
         const hatchedAnimalImage = hatchMatch ? getAnimalImage(hatchMatch[1]) : null;
         return (
-        <View key={e.id} style={styles.feedCard}>
+        <TouchableOpacity
+          key={e.id}
+          style={styles.feedCard}
+          activeOpacity={0.9}
+          onLongPress={() => showUserActions(e.user_id, e.username || 'Someone', 'activity_event', e.id)}
+        >
           <View style={styles.feedCardHeader}>
             <View style={{ flex: 1 }}>
               <Text style={styles.feedCardText}>
@@ -862,7 +944,7 @@ export default function SocialScreen() {
               );
             })}
           </View>
-        </View>
+        </TouchableOpacity>
         );
       })}
     </View>
@@ -1830,6 +1912,17 @@ export default function SocialScreen() {
                       </View>
                     </View>
 
+                    {/* Report / Block */}
+                    <TouchableOpacity
+                      style={styles.fpReportBtn}
+                      onPress={() => {
+                        closeFriendProfile();
+                        setTimeout(() => showUserActions(fp.id, name, 'username'), 400);
+                      }}
+                    >
+                      <Text style={styles.fpReportText}>Report or Block</Text>
+                    </TouchableOpacity>
+
                     {/* Close button */}
                     <TouchableOpacity style={styles.fpCloseBtn} onPress={closeFriendProfile}>
                       <LinearGradient
@@ -1847,6 +1940,45 @@ export default function SocialScreen() {
             </TouchableOpacity>
           </Animated.View>
         </TouchableOpacity>
+      </Modal>
+
+      {/* EULA / Terms of Use Modal */}
+      <Modal visible={showEula} transparent animationType="fade">
+        <View style={styles.eulaOverlay}>
+          <View style={styles.eulaCard}>
+            <Text style={styles.eulaTitle}>Terms of Use</Text>
+            <ScrollView style={styles.eulaScroll} showsVerticalScrollIndicator>
+              <Text style={styles.eulaText}>
+                Welcome to Endura! By using this app, you agree to the following terms:{'\n\n'}
+                <Text style={{ fontWeight: '700' }}>1. Respectful Community</Text>{'\n'}
+                Endura is a supportive study community. You agree not to post, share, or communicate any content that is offensive, abusive, harassing, hateful, sexually explicit, or otherwise objectionable.{'\n\n'}
+                <Text style={{ fontWeight: '700' }}>2. User-Generated Content</Text>{'\n'}
+                You are responsible for any content you create, including usernames, profile pictures, group names, and messages. Content that violates these terms may be removed and your account may be suspended.{'\n\n'}
+                <Text style={{ fontWeight: '700' }}>3. Reporting & Blocking</Text>{'\n'}
+                If you encounter inappropriate content or behaviour, please use the in-app reporting tools. You can also block users to prevent them from contacting you or appearing in your feed.{'\n\n'}
+                <Text style={{ fontWeight: '700' }}>4. Privacy</Text>{'\n'}
+                Your data is handled in accordance with our Privacy Policy at endura.eco/privacy. We collect study session data, profile information, and usage analytics to improve the app.{'\n\n'}
+                <Text style={{ fontWeight: '700' }}>5. Age Requirements</Text>{'\n'}
+                Endura is designed for students aged 13 and above. By using this app, you confirm you meet this age requirement.{'\n\n'}
+                <Text style={{ fontWeight: '700' }}>6. Conservation Donations</Text>{'\n'}
+                Donations made through the app go directly to WWF via Every.org. Endura does not process or hold any payment information.{'\n\n'}
+                <Text style={{ fontWeight: '700' }}>7. Account Termination</Text>{'\n'}
+                We reserve the right to suspend or terminate accounts that violate these terms without prior notice.{'\n\n'}
+                By tapping "I Agree", you acknowledge that you have read, understood, and agree to be bound by these terms.
+              </Text>
+            </ScrollView>
+            <TouchableOpacity style={styles.eulaButton} onPress={acceptEula} activeOpacity={0.8}>
+              <LinearGradient
+                colors={['#5F8C87', '#3B5466']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 0 }}
+                style={styles.eulaButtonGradient}
+              >
+                <Text style={styles.eulaButtonText}>I Agree</Text>
+              </LinearGradient>
+            </TouchableOpacity>
+          </View>
+        </View>
       </Modal>
     </SafeAreaView>
   );
@@ -3206,6 +3338,59 @@ const styles = StyleSheet.create({
   },
   editMemberAddText: {
     fontSize: 12,
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
+  fpReportBtn: {
+    alignItems: 'center',
+    paddingVertical: 10,
+    marginTop: 4,
+  },
+  fpReportText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: colors.textMuted,
+  },
+  eulaOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 24,
+  },
+  eulaCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 20,
+    padding: 24,
+    maxHeight: '80%',
+    width: '100%',
+  },
+  eulaTitle: {
+    fontSize: 22,
+    fontWeight: '800',
+    color: colors.textPrimary,
+    textAlign: 'center',
+    marginBottom: 16,
+  },
+  eulaScroll: {
+    maxHeight: 380,
+    marginBottom: 16,
+  },
+  eulaText: {
+    fontSize: 13,
+    lineHeight: 20,
+    color: colors.textSecondary,
+  },
+  eulaButton: {
+    borderRadius: borderRadius.full,
+    overflow: 'hidden',
+  },
+  eulaButtonGradient: {
+    paddingVertical: 14,
+    alignItems: 'center',
+  },
+  eulaButtonText: {
+    fontSize: 16,
     fontWeight: '700',
     color: '#FFFFFF',
   },

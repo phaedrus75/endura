@@ -858,8 +858,16 @@ def get_friend_feed(db: Session, user_id: int, limit: int = 30) -> List[dict]:
     if not friend_ids:
         return []
 
+    # Exclude blocked users
+    blocked_ids = [b.blocked_id for b in db.query(models.UserBlock).filter(
+        models.UserBlock.blocker_id == user_id
+    ).all()]
+    visible_ids = [fid for fid in friend_ids if fid not in blocked_ids]
+    if not visible_ids:
+        return []
+
     events = db.query(models.ActivityEvent).filter(
-        models.ActivityEvent.user_id.in_(friend_ids)
+        models.ActivityEvent.user_id.in_(visible_ids)
     ).order_by(models.ActivityEvent.created_at.desc()).limit(limit).all()
 
     results = []
