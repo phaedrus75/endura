@@ -12,6 +12,7 @@ import {
   ScrollView,
   Modal,
   Image,
+  Linking,
 } from 'react-native';
 import { Text, TextInput } from '../components/StyledText';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -380,6 +381,26 @@ export default function AuthScreen() {
                 secureTextEntry
               />
             </View>
+
+            {!isLogin && (
+              <Text style={styles.termsText}>
+                By creating an account, you agree to our{' '}
+                <Text
+                  style={styles.termsLink}
+                  onPress={() => Linking.openURL('https://endura.eco/terms')}
+                >
+                  Terms of Use
+                </Text>
+                {' '}and{' '}
+                <Text
+                  style={styles.termsLink}
+                  onPress={() => Linking.openURL('https://endura.eco/privacy')}
+                >
+                  Privacy Policy
+                </Text>
+                .
+              </Text>
+            )}
 
             <TouchableOpacity
               style={[styles.submitButton, isLoading && styles.buttonDisabled]}
@@ -779,5 +800,18 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     lineHeight: 22,
     marginTop: spacing.sm,
+  },
+  termsText: {
+    fontSize: 12,
+    color: colors.textMuted,
+    textAlign: 'center',
+    lineHeight: 18,
+    marginBottom: spacing.md,
+    paddingHorizontal: spacing.sm,
+  },
+  termsLink: {
+    color: colors.primary,
+    fontWeight: '600',
+    textDecorationLine: 'underline',
   },
 });

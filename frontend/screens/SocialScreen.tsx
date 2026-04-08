@@ -199,24 +199,6 @@ export default function SocialScreen() {
   const [friendsLeaderboard, setFriendsLeaderboard] = useState<LeaderboardEntry[]>([]);
   const [schoolLeaderboard, setSchoolLeaderboard] = useState<LeaderboardEntry[]>([]);
 
-  // EULA acceptance
-  const [eulaAccepted, setEulaAccepted] = useState(true);
-  const [showEula, setShowEula] = useState(false);
-
-  useEffect(() => {
-    AsyncStorage.getItem('endura_eula_accepted').then(v => {
-      if (v !== 'true') {
-        setEulaAccepted(false);
-        setShowEula(true);
-      }
-    });
-  }, []);
-
-  const acceptEula = async () => {
-    await AsyncStorage.setItem('endura_eula_accepted', 'true');
-    setEulaAccepted(true);
-    setShowEula(false);
-  };
 
   // Report & Block
   const handleReport = (reportedUserId: number, username: string, contentType: string, contentId?: number) => {
@@ -907,7 +889,7 @@ export default function SocialScreen() {
           <Text style={styles.emptySubtitle}>When your friends hatch animals, they'll appear here!</Text>
         </View>
       ) : hatchFeed.map(e => {
-        const hatchMatch = e.description.match(/^just hatched a (.+)!$/);
+        const hatchMatch = e.description.match(/^just hatched a (.+?)(?:\s+called\s+.+)?!$/);
         const hatchedAnimalImage = hatchMatch ? getAnimalImage(hatchMatch[1]) : null;
         return (
         <TouchableOpacity
@@ -1252,6 +1234,13 @@ export default function SocialScreen() {
                 if (isTipMessage(item.content)) {
                   const tipText = item.content.replace('📚 [TIP] ', '');
                   return (
+                    <TouchableOpacity
+                      activeOpacity={0.8}
+                      onLongPress={() => {
+                        if (!isMine) showUserActions(item.user_id, item.username || 'User', 'group_message', item.id);
+                      }}
+                      delayLongPress={500}
+                    >
                     <View style={[styles.chatSpecialBubble, isMine ? { alignSelf: 'flex-end' } : { alignSelf: 'flex-start' }]}>
                       {!isMine && <Text style={styles.chatSpecialSender}>{item.username || 'Someone'} shared a tip</Text>}
                       {isMine && <Text style={styles.chatSpecialSenderMine}>You shared a tip</Text>}
@@ -1266,10 +1255,18 @@ export default function SocialScreen() {
                       </LinearGradient>
                       <Text style={styles.chatSpecialTime}>{timeAgo(item.created_at)}</Text>
                     </View>
+                    </TouchableOpacity>
                   );
                 }
 
                 return (
+                  <TouchableOpacity
+                    activeOpacity={0.8}
+                    onLongPress={() => {
+                      if (!isMine) showUserActions(item.user_id, item.username || 'User', 'group_message', item.id);
+                    }}
+                    delayLongPress={500}
+                  >
                   <View style={[styles.chatBubbleWrap, isMine ? styles.chatBubbleWrapMine : styles.chatBubbleWrapTheirs]}>
                     {!isMine && (
                       <View style={{ marginRight: 8, marginBottom: 2 }}>
@@ -1287,6 +1284,7 @@ export default function SocialScreen() {
                       </View>
                     )}
                   </View>
+                  </TouchableOpacity>
                 );
               }}
             />
@@ -1942,44 +1940,6 @@ export default function SocialScreen() {
         </TouchableOpacity>
       </Modal>
 
-      {/* EULA / Terms of Use Modal */}
-      <Modal visible={showEula} transparent animationType="fade">
-        <View style={styles.eulaOverlay}>
-          <View style={styles.eulaCard}>
-            <Text style={styles.eulaTitle}>Terms of Use</Text>
-            <ScrollView style={styles.eulaScroll} showsVerticalScrollIndicator>
-              <Text style={styles.eulaText}>
-                Welcome to Endura! By using this app, you agree to the following terms:{'\n\n'}
-                <Text style={{ fontWeight: '700' }}>1. Respectful Community</Text>{'\n'}
-                Endura is a supportive study community. You agree not to post, share, or communicate any content that is offensive, abusive, harassing, hateful, sexually explicit, or otherwise objectionable.{'\n\n'}
-                <Text style={{ fontWeight: '700' }}>2. User-Generated Content</Text>{'\n'}
-                You are responsible for any content you create, including usernames, profile pictures, group names, and messages. Content that violates these terms may be removed and your account may be suspended.{'\n\n'}
-                <Text style={{ fontWeight: '700' }}>3. Reporting & Blocking</Text>{'\n'}
-                If you encounter inappropriate content or behaviour, please use the in-app reporting tools. You can also block users to prevent them from contacting you or appearing in your feed.{'\n\n'}
-                <Text style={{ fontWeight: '700' }}>4. Privacy</Text>{'\n'}
-                Your data is handled in accordance with our Privacy Policy at endura.eco/privacy. We collect study session data, profile information, and usage analytics to improve the app.{'\n\n'}
-                <Text style={{ fontWeight: '700' }}>5. Age Requirements</Text>{'\n'}
-                Endura is designed for students aged 13 and above. By using this app, you confirm you meet this age requirement.{'\n\n'}
-                <Text style={{ fontWeight: '700' }}>6. Conservation Donations</Text>{'\n'}
-                Donations made through the app go directly to WWF via Every.org. Endura does not process or hold any payment information.{'\n\n'}
-                <Text style={{ fontWeight: '700' }}>7. Account Termination</Text>{'\n'}
-                We reserve the right to suspend or terminate accounts that violate these terms without prior notice.{'\n\n'}
-                By tapping "I Agree", you acknowledge that you have read, understood, and agree to be bound by these terms.
-              </Text>
-            </ScrollView>
-            <TouchableOpacity style={styles.eulaButton} onPress={acceptEula} activeOpacity={0.8}>
-              <LinearGradient
-                colors={['#5F8C87', '#3B5466']}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 0 }}
-                style={styles.eulaButtonGradient}
-              >
-                <Text style={styles.eulaButtonText}>I Agree</Text>
-              </LinearGradient>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </Modal>
     </SafeAreaView>
   );
 }
@@ -2626,7 +2586,7 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1, borderBottomColor: colors.divider,
   },
   leaderboardRowSelf: {
-    backgroundColor: '#C5DEC9',
+    backgroundColor: '#D8EDDB',
     borderRadius: 8,
     marginHorizontal: -4,
     paddingHorizontal: 4,
@@ -3350,48 +3310,5 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '600',
     color: colors.textMuted,
-  },
-  eulaOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.6)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 24,
-  },
-  eulaCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 20,
-    padding: 24,
-    maxHeight: '80%',
-    width: '100%',
-  },
-  eulaTitle: {
-    fontSize: 22,
-    fontWeight: '800',
-    color: colors.textPrimary,
-    textAlign: 'center',
-    marginBottom: 16,
-  },
-  eulaScroll: {
-    maxHeight: 380,
-    marginBottom: 16,
-  },
-  eulaText: {
-    fontSize: 13,
-    lineHeight: 20,
-    color: colors.textSecondary,
-  },
-  eulaButton: {
-    borderRadius: borderRadius.full,
-    overflow: 'hidden',
-  },
-  eulaButtonGradient: {
-    paddingVertical: 14,
-    alignItems: 'center',
-  },
-  eulaButtonText: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#FFFFFF',
   },
 });

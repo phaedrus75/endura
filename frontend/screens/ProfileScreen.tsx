@@ -13,6 +13,8 @@ import {
   Platform,
   KeyboardAvoidingView,
   Switch,
+  Linking,
+  ActivityIndicator,
 } from 'react-native';
 import { Text, TextInput } from '../components/StyledText';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -28,6 +30,7 @@ import {
   socialAPI,
   authAPI,
   donationsAPI,
+  moderationAPI,
   UserStats,
   LeaderboardEntry,
   DonationLeaderboardEntry,
@@ -166,6 +169,38 @@ export default function ProfileScreen() {
   const [friendEmail, setFriendEmail] = useState('');
   const [personalDonation, setPersonalDonation] = useState<{ total: number; count: number }>({ total: 0, count: 0 });
   const [donationLeaderboard, setDonationLeaderboard] = useState<DonationLeaderboardEntry[]>([]);
+
+  // Blocked users
+  const [blockedUsers, setBlockedUsers] = useState<Array<{ id: number; username: string; email: string }>>([]);
+  const [showBlockedUsers, setShowBlockedUsers] = useState(false);
+  const [loadingBlocked, setLoadingBlocked] = useState(false);
+
+  const loadBlockedUsers = async () => {
+    setLoadingBlocked(true);
+    try {
+      const list = await moderationAPI.getBlockedUsers();
+      setBlockedUsers(list);
+    } catch { setBlockedUsers([]); }
+    setLoadingBlocked(false);
+  };
+
+  const handleUnblock = (userId: number, username: string) => {
+    Alert.alert('Unblock User', `Are you sure you want to unblock ${username}?`, [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Unblock',
+        onPress: async () => {
+          try {
+            await moderationAPI.unblockUser(userId);
+            setBlockedUsers(prev => prev.filter(u => u.id !== userId));
+            Alert.alert('Unblocked', `${username} has been unblocked.`);
+          } catch {
+            Alert.alert('Error', 'Could not unblock user. Please try again.');
+          }
+        },
+      },
+    ]);
+  };
 
   // Edit profile
   const [showEditProfile, setShowEditProfile] = useState(false);
@@ -608,6 +643,43 @@ export default function ProfileScreen() {
           </View>
         )}
 
+        {/* Settings & Support */}
+        <View style={styles.settingsCard}>
+          <Text style={styles.settingsCardTitle}>Settings & Support</Text>
+
+          <TouchableOpacity
+            style={styles.settingsRow}
+            onPress={() => { loadBlockedUsers(); setShowBlockedUsers(true); }}
+          >
+            <Text style={styles.settingsRowText}>Blocked Users</Text>
+            <Text style={styles.settingsRowArrow}>›</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.settingsRow}
+            onPress={() => Linking.openURL('https://endura.eco/terms')}
+          >
+            <Text style={styles.settingsRowText}>Terms of Use</Text>
+            <Text style={styles.settingsRowArrow}>›</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.settingsRow}
+            onPress={() => Linking.openURL('https://endura.eco/privacy')}
+          >
+            <Text style={styles.settingsRowText}>Privacy Policy</Text>
+            <Text style={styles.settingsRowArrow}>›</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.settingsRow, { borderBottomWidth: 0 }]}
+            onPress={() => Linking.openURL('mailto:hello@endura.eco')}
+          >
+            <Text style={styles.settingsRowText}>Contact Support</Text>
+            <Text style={styles.settingsRowArrow}>›</Text>
+          </TouchableOpacity>
+        </View>
+
         {/* Logout */}
         <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
           <Text style={styles.logoutText}>Logout</Text>
@@ -621,6 +693,43 @@ export default function ProfileScreen() {
         {/* App Info */}
         <Text style={styles.appVersion}>Endura v1.0.0</Text>
       </ScrollView>
+
+      {/* Blocked Users Modal */}
+      <Modal visible={showBlockedUsers} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setShowBlockedUsers(false)}>
+        <View style={{ flex: 1, backgroundColor: '#fff' }}>
+          <DragHandle />
+          <View style={{ padding: 20 }}>
+            <Text style={styles.modalTitle}>Blocked Users</Text>
+            <Text style={styles.modalSubtitle}>
+              Users you've blocked can't see your activity or contact you.
+            </Text>
+
+            {loadingBlocked ? (
+              <ActivityIndicator color={colors.primary} style={{ marginTop: 24 }} />
+            ) : blockedUsers.length === 0 ? (
+              <Text style={{ textAlign: 'center', color: colors.textMuted, marginTop: 24, fontSize: 14 }}>
+                You haven't blocked anyone.
+              </Text>
+            ) : (
+              <ScrollView style={{ maxHeight: 400 }}>
+                {blockedUsers.map(bu => (
+                  <View key={bu.id} style={styles.blockedUserRow}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.blockedUserName}>{bu.username || bu.email}</Text>
+                    </View>
+                    <TouchableOpacity
+                      style={styles.unblockButton}
+                      onPress={() => handleUnblock(bu.id, bu.username || bu.email)}
+                    >
+                      <Text style={styles.unblockButtonText}>Unblock</Text>
+                    </TouchableOpacity>
+                  </View>
+                ))}
+              </ScrollView>
+            )}
+          </View>
+        </View>
+      </Modal>
 
       {/* Add Friend Modal */}
       <Modal visible={showFriendModal} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setShowFriendModal(false)}>
@@ -1396,5 +1505,62 @@ const styles = StyleSheet.create({
   epCancelBtnText: {
     color: colors.textMuted,
     fontSize: 14,
+  },
+  settingsCard: {
+    backgroundColor: colors.surface,
+    borderRadius: borderRadius.lg,
+    marginHorizontal: spacing.lg,
+    marginBottom: spacing.lg,
+    ...shadows.small,
+  },
+  settingsCardTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: colors.textPrimary,
+    padding: spacing.md,
+    paddingBottom: spacing.xs,
+  },
+  settingsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 14,
+    paddingHorizontal: spacing.md,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colors.border,
+  },
+  settingsRowText: {
+    fontSize: 15,
+    color: colors.textPrimary,
+  },
+  settingsRowArrow: {
+    fontSize: 20,
+    color: colors.textMuted,
+    fontWeight: '300',
+  },
+  blockedUserRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 12,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colors.border,
+  },
+  blockedUserName: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: colors.textPrimary,
+  },
+  unblockButton: {
+    backgroundColor: colors.primary + '15',
+    borderRadius: borderRadius.full,
+    paddingVertical: 6,
+    paddingHorizontal: 16,
+    borderWidth: 1,
+    borderColor: colors.primary,
+  },
+  unblockButtonText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: colors.primary,
   },
 });
