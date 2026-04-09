@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import Image from "next/image";
 
@@ -73,66 +73,7 @@ const SCREENS: Screen[] = [
 
 export default function AppGallery() {
   const [active, setActive] = useState(0);
-  const scrollRef = useRef<HTMLDivElement>(null);
-  const [isDragging, setIsDragging] = useState(false);
-  const [startX, setStartX] = useState(0);
-  const [scrollLeft, setScrollLeft] = useState(0);
-
-  const scrollToCard = (index: number) => {
-    setActive(index);
-    if (scrollRef.current) {
-      const card = scrollRef.current.children[index] as HTMLElement;
-      if (card) {
-        const containerRect = scrollRef.current.getBoundingClientRect();
-        const cardRect = card.getBoundingClientRect();
-        const scrollTarget =
-          card.offsetLeft -
-          containerRect.width / 2 +
-          cardRect.width / 2;
-        scrollRef.current.scrollTo({ left: scrollTarget, behavior: "smooth" });
-      }
-    }
-  };
-
-  useEffect(() => {
-    const el = scrollRef.current;
-    if (!el) return;
-
-    const onScroll = () => {
-      const containerCenter = el.scrollLeft + el.clientWidth / 2;
-      let closest = 0;
-      let minDist = Infinity;
-      Array.from(el.children).forEach((child, i) => {
-        const childEl = child as HTMLElement;
-        const childCenter = childEl.offsetLeft + childEl.clientWidth / 2;
-        const dist = Math.abs(containerCenter - childCenter);
-        if (dist < minDist) {
-          minDist = dist;
-          closest = i;
-        }
-      });
-      if (closest !== active) setActive(closest);
-    };
-
-    el.addEventListener("scroll", onScroll, { passive: true });
-    return () => el.removeEventListener("scroll", onScroll);
-  }, [active]);
-
-  const handleMouseDown = (e: React.MouseEvent) => {
-    setIsDragging(true);
-    setStartX(e.pageX - (scrollRef.current?.offsetLeft || 0));
-    setScrollLeft(scrollRef.current?.scrollLeft || 0);
-  };
-
-  const handleMouseMove = (e: React.MouseEvent) => {
-    if (!isDragging || !scrollRef.current) return;
-    e.preventDefault();
-    const x = e.pageX - scrollRef.current.offsetLeft;
-    const walk = (x - startX) * 1.5;
-    scrollRef.current.scrollLeft = scrollLeft - walk;
-  };
-
-  const handleMouseUp = () => setIsDragging(false);
+  const screen = SCREENS[active];
 
   return (
     <section
@@ -140,12 +81,13 @@ export default function AppGallery() {
       className="py-24 sm:py-32 bg-gradient-to-b from-cream via-sand/30 to-cream overflow-hidden"
     >
       <div className="max-w-6xl mx-auto px-6">
+        {/* Section header */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           whileInView={{ opacity: 1, y: 0 }}
           viewport={{ once: true, margin: "-100px" }}
           transition={{ duration: 0.6 }}
-          className="text-center mb-6"
+          className="text-center mb-12"
         >
           <span className="inline-block bg-forest/10 text-forest-dark px-4 py-1.5 rounded-full text-sm font-medium mb-4">
             Why Endura?
@@ -162,12 +104,12 @@ export default function AppGallery() {
         </motion.div>
 
         {/* Tab pills */}
-        <div className="flex justify-center mb-10 overflow-x-auto scrollbar-hide">
+        <div className="flex justify-center mb-12 overflow-x-auto scrollbar-hide">
           <div className="flex gap-2 px-4 py-2">
             {SCREENS.map((s, i) => (
               <button
                 key={s.id}
-                onClick={() => scrollToCard(i)}
+                onClick={() => setActive(i)}
                 className={`flex items-center gap-1.5 px-4 py-2 rounded-full text-sm font-medium whitespace-nowrap transition-all duration-300 ${
                   active === i
                     ? "bg-forest text-white shadow-md shadow-forest/20"
@@ -181,80 +123,66 @@ export default function AppGallery() {
           </div>
         </div>
 
-        {/* Carousel */}
-        <div
-          ref={scrollRef}
-          onMouseDown={handleMouseDown}
-          onMouseMove={handleMouseMove}
-          onMouseUp={handleMouseUp}
-          onMouseLeave={handleMouseUp}
-          className="flex gap-6 overflow-x-auto scrollbar-hide snap-x snap-mandatory pb-8 px-[calc(50%-140px)] sm:px-[calc(50%-160px)] cursor-grab active:cursor-grabbing select-none"
-          style={{ scrollbarWidth: "none", msOverflowStyle: "none" }}
-        >
-          {SCREENS.map((screen, i) => (
-            <motion.div
-              key={screen.id}
-              initial={{ opacity: 0, y: 40 }}
-              whileInView={{ opacity: 1, y: 0 }}
-              viewport={{ once: true }}
-              transition={{ delay: i * 0.08, duration: 0.5 }}
-              className="snap-center flex-shrink-0"
-            >
-              <div
-                className={`transition-all duration-500 ${
-                  active === i ? "scale-100" : "scale-[0.88] opacity-60"
-                }`}
+        {/* Content: phone + text side by side */}
+        <div className="flex flex-col lg:flex-row items-center gap-10 lg:gap-16 max-w-4xl mx-auto">
+          {/* Phone screenshot */}
+          <div className="flex-shrink-0 flex justify-center">
+            <AnimatePresence mode="wait">
+              <motion.div
+                key={screen.id}
+                initial={{ opacity: 0, y: 16 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -12 }}
+                transition={{ duration: 0.35, ease: "easeOut" }}
+                className="w-[220px] sm:w-[240px]"
               >
-                {/* Phone frame with screenshot */}
-                <div className="w-[280px] sm:w-[300px] relative">
-                  <div className="rounded-[2.5rem] border-[5px] border-white/80 shadow-2xl shadow-forest/15 overflow-hidden bg-black">
-                    <Image
-                      src={screen.image}
-                      alt={screen.title}
-                      width={300}
-                      height={650}
-                      className="w-full h-auto object-cover"
-                      draggable={false}
-                    />
-                  </div>
+                <div className="rounded-[2rem] border-[4px] border-white/80 shadow-2xl shadow-forest/15 overflow-hidden bg-black">
+                  <Image
+                    src={screen.image}
+                    alt={screen.title}
+                    width={240}
+                    height={520}
+                    className="w-full h-auto object-cover"
+                  />
                 </div>
-              </div>
+              </motion.div>
+            </AnimatePresence>
+          </div>
 
-              {/* Label + description beneath active phone */}
-              <AnimatePresence mode="wait">
-                {active === i && (
-                  <motion.div
-                    initial={{ opacity: 0, y: 8 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: -4 }}
-                    transition={{ duration: 0.3 }}
-                    className="text-center mt-6 max-w-[300px]"
-                  >
-                    <p className="text-base font-bold text-forest-dark">
-                      {screen.title}
-                    </p>
-                    <p className="text-sm text-forest-dark/50 mt-1.5 leading-relaxed">
-                      {screen.description}
-                    </p>
-                  </motion.div>
-                )}
-              </AnimatePresence>
-            </motion.div>
-          ))}
+          {/* Text content */}
+          <div className="flex-1 text-center lg:text-left min-h-[160px] flex flex-col justify-center">
+            <AnimatePresence mode="wait">
+              <motion.div
+                key={screen.id}
+                initial={{ opacity: 0, x: 20 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: -20 }}
+                transition={{ duration: 0.35, ease: "easeOut" }}
+              >
+                <span className="text-3xl block mb-3">{screen.badge}</span>
+                <h3 className="text-2xl sm:text-3xl font-bold text-forest-dark mb-4">
+                  {screen.title}
+                </h3>
+                <p className="text-base sm:text-lg text-forest-dark/55 leading-relaxed max-w-md mx-auto lg:mx-0">
+                  {screen.description}
+                </p>
+              </motion.div>
+            </AnimatePresence>
+          </div>
         </div>
 
         {/* Dot indicators */}
-        <div className="flex justify-center gap-2 mt-4">
+        <div className="flex justify-center gap-2 mt-12">
           {SCREENS.map((_, i) => (
             <button
               key={i}
-              onClick={() => scrollToCard(i)}
+              onClick={() => setActive(i)}
               className={`transition-all duration-300 rounded-full ${
                 active === i
                   ? "w-6 h-2 bg-forest"
                   : "w-2 h-2 bg-forest-dark/15 hover:bg-forest-dark/30"
               }`}
-              aria-label={`Go to screen ${i + 1}`}
+              aria-label={`Go to feature ${i + 1}`}
             />
           ))}
         </div>
