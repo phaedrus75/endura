@@ -115,12 +115,9 @@ export default function Footer() {
         </div>
 
         {/* Divider */}
-        <div className="border-t border-white/10 pt-8 flex flex-col sm:flex-row items-center justify-between gap-4">
+        <div className="border-t border-white/10 pt-8">
           <p className="text-xs text-white/30">
             &copy; {new Date().getFullYear()} Endura. All rights reserved.
-          </p>
-          <p className="text-xs text-white/30 italic">
-            &ldquo;Every study session saves a species.&rdquo;
           </p>
         </div>
       </div>
