@@ -37,7 +37,8 @@ const SCREENS: Screen[] = [
     description:
       "Organise your study by subject, create to-dos with due dates, and track what needs doing. Everything in one place so you can focus on what matters.",
     badge: "📋",
-    image: "/screenshots/home.png",
+    image: "/screenshots/progress.png",
+    image2: "/screenshots/todos.png",
   },
   {
     id: "friends",
