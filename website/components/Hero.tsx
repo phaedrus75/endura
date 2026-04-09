@@ -46,15 +46,15 @@ export default function Hero() {
           </motion.div>
 
           <h1 className="text-5xl sm:text-6xl lg:text-7xl font-bold text-forest-dark leading-tight tracking-tight">
-            Study smarter.
+            You get the grades.
             <br />
-            <span className="text-forest-light">Save species.</span>
+            <span className="text-forest-light">The animals get to live.</span>
           </h1>
 
           <p className="mt-6 text-lg sm:text-xl text-forest-dark/60 max-w-lg mx-auto lg:mx-0 leading-relaxed">
-            A gamified study app that turns your focus time into real
-            conservation impact. Hatch endangered animals, build sanctuaries,
-            and protect wildlife — one session at a time.
+            Endura turns every focused study session into an endangered animal
+            you hatch, collect, and protect. Finally, a reason to sit down and
+            do the work.
           </p>
 
           <div className="mt-10 flex flex-col sm:flex-row items-center gap-4 justify-center lg:justify-start">

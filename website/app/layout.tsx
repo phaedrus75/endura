@@ -9,9 +9,9 @@ const dmSans = DM_Sans({
 });
 
 export const metadata: Metadata = {
-  title: "Endura — Study Smarter. Save Species.",
+  title: "Endura — You get the grades. The animals get to live.",
   description:
-    "A gamified study app that turns your focus time into real conservation impact. Hatch endangered animals, build sanctuaries, and protect wildlife — one study session at a time.",
+    "Endura turns every focused study session into an endangered animal you hatch, collect, and protect. Finally, a reason to sit down and do the work.",
   keywords: [
     "study app",
     "conservation",
@@ -22,9 +22,9 @@ export const metadata: Metadata = {
     "WWF",
   ],
   openGraph: {
-    title: "Endura — Study Smarter. Save Species.",
+    title: "Endura — You get the grades. The animals get to live.",
     description:
-      "Turn your study sessions into conservation impact. Hatch endangered animals, build sanctuaries, and study with friends.",
+      "Endura turns every focused study session into an endangered animal you hatch, collect, and protect. Finally, a reason to sit down and do the work.",
     type: "website",
     locale: "en_GB",
   },
