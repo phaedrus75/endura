@@ -197,10 +197,10 @@ export default function AppGallery() {
             <ArrowRight size={20} />
           </motion.button>
 
-          {/* Fixed-height content container */}
-          <div className="flex flex-col lg:flex-row items-center gap-10 lg:gap-14 lg:min-h-[540px]">
-            {/* Phone screenshot(s) — enlarged container */}
-            <div className="flex-shrink-0 flex justify-center items-center w-full lg:w-[580px]">
+          {/* Fixed-height content container — equal halves */}
+          <div className="flex flex-col lg:grid lg:grid-cols-2 items-center gap-10 lg:gap-8 lg:min-h-[540px]">
+            {/* Phone screenshot(s) */}
+            <div className="flex justify-center items-center w-full">
               <AnimatePresence mode="wait" custom={direction}>
                 <motion.div
                   key={screen.id}
