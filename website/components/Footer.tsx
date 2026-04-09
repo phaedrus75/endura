@@ -3,16 +3,44 @@
 import { motion } from "framer-motion";
 import Image from "next/image";
 
+function InstagramIcon() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="2" y="2" width="20" height="20" rx="5" />
+      <circle cx="12" cy="12" r="5" />
+      <circle cx="17.5" cy="6.5" r="1.5" fill="currentColor" stroke="none" />
+    </svg>
+  );
+}
+
+function MailIcon() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="2" y="4" width="20" height="16" rx="2" />
+      <path d="M22 4L12 13 2 4" />
+    </svg>
+  );
+}
+
+function GmailIcon() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+      <path d="M24 5.457v13.909c0 .904-.732 1.636-1.636 1.636h-3.819V11.73L12 16.64l-6.545-4.91v9.273H1.636A1.636 1.636 0 010 19.366V5.457c0-2.023 2.309-3.178 3.927-1.964L5.455 4.64 12 9.548l6.545-4.91 1.528-1.145C21.69 2.28 24 3.434 24 5.457z"/>
+    </svg>
+  );
+}
+
 const CONNECT_LINKS = [
-  { label: "Instagram", href: "https://instagram.com/endura.eco" },
-  { label: "Contact Us", href: "mailto:hello@endura.eco" },
+  { label: "Instagram", href: "https://instagram.com/endura.eco", icon: InstagramIcon },
+  { label: "Email", href: "mailto:hello@endura.eco", icon: MailIcon },
+  { label: "Gmail", href: "https://mail.google.com/mail/?view=cm&to=hello@endura.eco", icon: GmailIcon },
 ];
 
 export default function Footer() {
   return (
-    <footer className="bg-forest-dark text-white/60 pt-16 pb-8">
+    <footer className="bg-forest text-white/60 pt-16 pb-8">
       <div className="max-w-6xl mx-auto px-6">
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 mb-12">
+        <div className="grid grid-cols-1 lg:grid-cols-[1fr_auto] gap-12 mb-12">
           {/* Brand */}
           <div>
             <a href="#" className="flex items-center gap-2.5 mb-4">
@@ -64,7 +92,7 @@ export default function Footer() {
           </div>
 
           {/* Connect */}
-          <div className="flex flex-col items-start lg:items-end">
+          <div>
             <h4 className="text-base font-semibold text-white mb-5 uppercase tracking-wider">
               Connect
             </h4>
@@ -73,10 +101,11 @@ export default function Footer() {
                 <li key={link.label}>
                   <a
                     href={link.href}
-                    target={link.href.startsWith("http") ? "_blank" : undefined}
-                    rel={link.href.startsWith("http") ? "noopener noreferrer" : undefined}
-                    className="text-base hover:text-white transition-colors"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center gap-3 text-base text-white/60 hover:text-white transition-colors"
                   >
+                    <link.icon />
                     {link.label}
                   </a>
                 </li>
