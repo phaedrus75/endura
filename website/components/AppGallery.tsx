@@ -58,11 +58,12 @@ const SCREENS: Screen[] = [
   },
   {
     id: "progress",
-    title: "Badges & Study Tips",
+    title: "Study Tips",
     description:
       "Earn 50+ badges as you study and protect wildlife. Discover community-powered study tips with voting and sharing to help you and your friends study smarter.",
     badge: "🏅",
-    image: "/screenshots/progress.png",
+    image: "/screenshots/tips.png",
+    image2: "/screenshots/shop.png",
   },
   {
     id: "donate",
