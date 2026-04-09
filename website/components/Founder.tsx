@@ -19,7 +19,7 @@ export default function Founder() {
       className="py-24 sm:py-32 bg-cream"
     >
       <div className="max-w-6xl mx-auto px-6">
-        <div className="flex flex-col lg:flex-row items-center gap-12 lg:gap-14">
+        <div className="flex flex-col lg:flex-row items-center lg:items-start gap-12 lg:gap-14">
           {/* Photo */}
           <motion.div
             initial={{ opacity: 0, x: -40 }}
@@ -35,7 +35,7 @@ export default function Founder() {
                   alt="Rhea Munshi, Founder of Endura"
                   width={320}
                   height={320}
-                  className="w-full h-full object-cover"
+                  className="w-full h-full object-cover object-[center_30%]"
                 />
               </div>
             </div>
