@@ -61,7 +61,7 @@ export default function Founder() {
             </span>
 
             <h2 className="text-4xl sm:text-5xl font-bold text-forest-dark tracking-tight mb-6">
-              Rhea Munshi
+              Rhea <span className="text-forest-light">Munshi</span>
             </h2>
 
             <div className="space-y-4 text-lg text-forest-dark/60 leading-relaxed">
