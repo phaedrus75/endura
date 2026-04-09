@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
+import Image from "next/image";
 
 const NAV_LINKS = [
   { label: "Features", href: "#features" },
@@ -32,9 +33,15 @@ export default function Navbar() {
     >
       <div className="max-w-6xl mx-auto px-6 py-4 flex items-center justify-between">
         {/* Logo */}
-        <a href="#" className="flex items-center gap-2 group">
-          <span className="text-2xl">🌿</span>
-          <span className="text-xl font-bold text-forest-dark tracking-tight">
+        <a href="#" className="flex items-center gap-2.5 group">
+          <Image
+            src="/endura-logo.png"
+            alt="Endura logo"
+            width={36}
+            height={36}
+            className="rounded-lg"
+          />
+          <span className="text-2xl font-bold text-forest-dark tracking-tight">
             endura
           </span>
         </a>
