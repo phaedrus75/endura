@@ -5,7 +5,7 @@ import { motion } from "framer-motion";
 const FOOTER_LINKS = {
   Product: [
     { label: "Features", href: "#features" },
-    { label: "How It Works", href: "#how-it-works" },
+    { label: "Features", href: "#features" },
     { label: "Download", href: "#hero" },
   ],
   Impact: [

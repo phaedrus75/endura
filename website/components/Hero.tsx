@@ -72,7 +72,7 @@ export default function Hero() {
             <motion.a
               whileHover={{ scale: 1.05 }}
               whileTap={{ scale: 0.97 }}
-              href="#how-it-works"
+              href="#features"
               className="border-2 border-forest/20 text-forest-dark px-8 py-4 rounded-full text-base font-semibold hover:border-forest/40 transition-colors"
             >
               See How It Works
