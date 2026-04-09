@@ -1,34 +1,28 @@
 "use client";
 
 import { motion } from "framer-motion";
+import Image from "next/image";
 
-const FOOTER_LINKS = {
-  Product: [
-    { label: "Features", href: "#features" },
-    { label: "Features", href: "#features" },
-    { label: "Download", href: "#hero" },
-  ],
-  Impact: [
-    { label: "Our Mission", href: "#mission" },
-    { label: "WWF Partnership", href: "#mission" },
-    { label: "Get Involved", href: "mailto:hello@endura.eco" },
-  ],
-  Connect: [
-    { label: "Instagram", href: "https://instagram.com/endura.eco" },
-    { label: "TikTok", href: "https://tiktok.com/@endura.eco" },
-    { label: "Contact Us", href: "mailto:hello@endura.eco" },
-  ],
-};
+const CONNECT_LINKS = [
+  { label: "Instagram", href: "https://instagram.com/endura.eco" },
+  { label: "Contact Us", href: "mailto:hello@endura.eco" },
+];
 
 export default function Footer() {
   return (
     <footer className="bg-forest-dark text-white/60 pt-16 pb-8">
       <div className="max-w-6xl mx-auto px-6">
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-10 mb-12">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 mb-12">
           {/* Brand */}
-          <div className="sm:col-span-2 lg:col-span-1">
-            <a href="#" className="flex items-center gap-2 mb-4">
-              <span className="text-2xl">🌿</span>
+          <div>
+            <a href="#" className="flex items-center gap-2.5 mb-4">
+              <Image
+                src="/endura-logo.png"
+                alt="Endura logo"
+                width={32}
+                height={32}
+                className="rounded-lg"
+              />
               <span className="text-xl font-bold text-white tracking-tight">
                 endura
               </span>
@@ -55,44 +49,40 @@ export default function Footer() {
                   </div>
                 </div>
               </motion.a>
-              <motion.a
-                whileHover={{ scale: 1.05 }}
-                href="#"
-                className="bg-white/10 hover:bg-white/15 transition-colors rounded-xl px-4 py-2.5 flex items-center gap-2"
-              >
+              <div className="bg-white/10 rounded-xl px-4 py-2.5 flex items-center gap-2 opacity-60">
                 <span className="text-lg">▶️</span>
                 <div>
                   <div className="text-[10px] text-white/40 leading-tight">
-                    Get it on
+                    Coming soon on
                   </div>
                   <div className="text-xs font-semibold text-white leading-tight">
                     Google Play
                   </div>
                 </div>
-              </motion.a>
+              </div>
             </div>
           </div>
 
-          {/* Link Columns */}
-          {Object.entries(FOOTER_LINKS).map(([title, links]) => (
-            <div key={title}>
-              <h4 className="text-sm font-semibold text-white mb-4 uppercase tracking-wider">
-                {title}
-              </h4>
-              <ul className="space-y-3">
-                {links.map((link) => (
-                  <li key={link.label}>
-                    <a
-                      href={link.href}
-                      className="text-sm hover:text-white transition-colors"
-                    >
-                      {link.label}
-                    </a>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          ))}
+          {/* Connect */}
+          <div className="flex flex-col items-start lg:items-end">
+            <h4 className="text-base font-semibold text-white mb-5 uppercase tracking-wider">
+              Connect
+            </h4>
+            <ul className="space-y-4">
+              {CONNECT_LINKS.map((link) => (
+                <li key={link.label}>
+                  <a
+                    href={link.href}
+                    target={link.href.startsWith("http") ? "_blank" : undefined}
+                    rel={link.href.startsWith("http") ? "noopener noreferrer" : undefined}
+                    className="text-base hover:text-white transition-colors"
+                  >
+                    {link.label}
+                  </a>
+                </li>
+              ))}
+            </ul>
+          </div>
         </div>
 
         {/* Divider */}
