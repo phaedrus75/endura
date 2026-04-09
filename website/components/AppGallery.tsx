@@ -128,7 +128,7 @@ export default function AppGallery() {
       id="features"
       className="py-24 sm:py-32 bg-gradient-to-b from-forest-dark/[0.04] via-forest/[0.07] to-forest-dark/[0.04] overflow-hidden"
     >
-      <div className="max-w-6xl mx-auto px-6">
+      <div className="max-w-7xl mx-auto px-6">
         {/* Section header */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
@@ -176,7 +176,7 @@ export default function AppGallery() {
         </div>
 
         {/* Content area */}
-        <div className="relative max-w-5xl mx-auto">
+        <div className="relative max-w-6xl mx-auto">
           {/* Desktop navigation arrows */}
           <motion.button
             onClick={prev}
@@ -198,9 +198,9 @@ export default function AppGallery() {
           </motion.button>
 
           {/* Fixed-height content container */}
-          <div className="flex flex-col lg:flex-row items-center gap-10 lg:gap-12 lg:min-h-[540px]">
-            {/* Phone screenshot(s) — wider container for uniform sizing */}
-            <div className="flex-shrink-0 flex justify-center items-center w-full lg:w-[520px]">
+          <div className="flex flex-col lg:flex-row items-center gap-10 lg:gap-14 lg:min-h-[540px]">
+            {/* Phone screenshot(s) — enlarged container */}
+            <div className="flex-shrink-0 flex justify-center items-center w-full lg:w-[580px]">
               <AnimatePresence mode="wait" custom={direction}>
                 <motion.div
                   key={screen.id}
@@ -210,28 +210,28 @@ export default function AppGallery() {
                   animate="center"
                   exit="exit"
                   transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
-                  className={`flex items-center justify-center ${screen.image2 ? "gap-3 sm:gap-4" : ""}`}
+                  className={`flex items-center justify-center ${screen.image2 ? "gap-3 sm:gap-5" : ""}`}
                 >
                   {screen.image2 && (
-                    <div className="w-[190px] sm:w-[215px]">
+                    <div className="w-[200px] sm:w-[230px]">
                       <div className="rounded-[2rem] border-[4px] border-white/80 shadow-2xl shadow-forest/15 overflow-hidden bg-black">
                         <Image
                           src={screen.image2}
                           alt={`${screen.title} — step 1`}
-                          width={215}
-                          height={466}
+                          width={230}
+                          height={498}
                           className="w-full h-auto object-cover"
                         />
                       </div>
                     </div>
                   )}
-                  <div className={screen.image2 ? "w-[190px] sm:w-[215px]" : "w-[220px] sm:w-[250px]"}>
+                  <div className={screen.image2 ? "w-[200px] sm:w-[230px]" : "w-[220px] sm:w-[250px]"}>
                     <div className="rounded-[2rem] border-[4px] border-white/80 shadow-2xl shadow-forest/15 overflow-hidden bg-black">
                       <Image
                         src={screen.image}
                         alt={screen.title}
-                        width={screen.image2 ? 215 : 250}
-                        height={screen.image2 ? 466 : 542}
+                        width={screen.image2 ? 230 : 250}
+                        height={screen.image2 ? 498 : 542}
                         className="w-full h-auto object-cover"
                       />
                     </div>
@@ -266,29 +266,8 @@ export default function AppGallery() {
             </div>
           </div>
 
-          {/* Progress bar indicator */}
-          <div className="mt-12 max-w-xs mx-auto lg:max-w-sm">
-            <div className="flex gap-1.5">
-              {SCREENS.map((_, i) => (
-                <button
-                  key={i}
-                  onClick={() => go(i)}
-                  className="flex-1 h-1 rounded-full overflow-hidden bg-forest-dark/10"
-                  aria-label={`Go to feature ${i + 1}`}
-                >
-                  <motion.div
-                    className="h-full rounded-full bg-forest"
-                    initial={false}
-                    animate={{ width: active === i ? "100%" : "0%" }}
-                    transition={{ duration: 0.4, ease: "easeInOut" }}
-                  />
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Mobile prev/next */}
-          <div className="flex items-center justify-center gap-5 mt-6 lg:hidden">
+          {/* Mobile prev/next with step counter */}
+          <div className="flex items-center justify-center gap-4 mt-8 lg:hidden">
             <motion.button
               onClick={prev}
               whileHover={{ scale: 1.08 }}
@@ -298,6 +277,9 @@ export default function AppGallery() {
             >
               <ArrowLeft size={18} />
             </motion.button>
+            <span className="text-sm font-mono text-forest-dark/40 tracking-wider min-w-[4rem] text-center">
+              {pad(active + 1)} / {pad(SCREENS.length)}
+            </span>
             <motion.button
               onClick={next}
               whileHover={{ scale: 1.08 }}
