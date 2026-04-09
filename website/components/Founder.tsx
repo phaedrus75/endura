@@ -59,44 +59,25 @@ export default function Founder() {
 
             <div className="space-y-4 text-lg text-forest-dark/60 leading-relaxed">
               <p>
-                At 16, Rhea saw a problem she couldn&apos;t ignore: students
-                struggling to stay motivated, and endangered species losing
-                their fight for survival. As an IB Diploma student at
-                Southbank International School in London, she decided to
-                connect the two.
+                At 16, Rhea Munshi was doom-scrolling Reels when it hit her:
+                social media is addictive by design, so why isn&apos;t studying?
+                With a passion for behavioural psychology, an eye for design,
+                and concern for protecting wildlife, she did what any reasonable
+                person would do: closed the app and built a better one.
               </p>
               <p>
-                Endura was born from a simple idea — that the hours young
-                people spend studying can be channelled into something
-                meaningful. Every study session becomes an act of conservation.
-                Every student becomes a guardian of endangered wildlife. Today,
-                170+ active users across 3 continents study and protect species
-                through Endura.
-              </p>
-              <p>
-                Beyond the app, Rhea has represented her school at Harvard and
-                Oxford Model UN, conducted psychology research at the
-                University of Chicago, won 1st place in the IE University
-                Sustainability Datathon, spoken to 400+ students across Delhi
-                about using AI responsibly, and volunteered teaching maths and
-                computer science in underserved communities. She was selected
-                as a student panellist at the international Cognita
-                &ldquo;School of the Future&rdquo; conference in Chile,
-                speaking to global educators about how AI will shape education.
+                Endura is the result. Join her in proving that you can put in
+                the hours — for yourself and for the planet.
               </p>
             </div>
 
-            <motion.blockquote
-              initial={{ opacity: 0 }}
-              whileInView={{ opacity: 1 }}
-              viewport={{ once: true }}
-              transition={{ delay: 0.4, duration: 0.6 }}
-              className="mt-8 pl-6 border-l-4 border-forest-light italic text-forest-dark/70 text-lg"
-            >
-              &ldquo;I believe my generation can be the one that turns the tide
-              for endangered species. We just need the right tools and the right
-              motivation.&rdquo;
-            </motion.blockquote>
+            <p className="mt-6 text-lg text-forest-dark/60 leading-relaxed">
+              Join her in proving that you can{" "}
+              <span className="text-2xl sm:text-3xl font-bold text-forest-light">
+                hatch your potential
+              </span>
+              .
+            </p>
 
             <div className="mt-8 flex flex-wrap gap-2.5 justify-center lg:justify-start">
               {credentials.map((tag) => (
