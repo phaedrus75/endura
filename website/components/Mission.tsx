@@ -1,25 +1,20 @@
 "use client";
 
 import { motion } from "framer-motion";
+import Image from "next/image";
 
-const PILLARS = [
+const IMPACT_AREAS = [
   {
-    number: "01",
     title: "Habitat Protection",
-    description:
-      "Fund the preservation of critical ecosystems — from rainforests to coral reefs — where endangered species depend on every acre.",
+    description: "Preserving critical ecosystems where endangered species live.",
   },
   {
-    number: "02",
     title: "Anti-Poaching",
-    description:
-      "Support ranger patrols, surveillance tech, and community programmes that stand between endangered animals and extinction.",
+    description: "Ranger patrols and tech protecting animals on the ground.",
   },
   {
-    number: "03",
     title: "Species Recovery",
-    description:
-      "Back breeding programmes, wildlife corridors, and scientific research that bring species back from the brink.",
+    description: "Breeding programmes and research bringing species back.",
   },
 ];
 
@@ -27,99 +22,135 @@ export default function Mission() {
   return (
     <section
       id="mission"
-      className="py-28 sm:py-36 bg-forest-dark relative overflow-hidden"
+      className="relative overflow-hidden"
     >
-      {/* Subtle ambient glow */}
-      <div className="absolute inset-0 pointer-events-none">
-        <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-forest-light/5 rounded-full blur-[120px]" />
-        <div className="absolute bottom-1/4 right-1/4 w-80 h-80 bg-leaf/5 rounded-full blur-[100px]" />
+      {/* Photo mosaic band */}
+      <div className="grid grid-cols-3 h-48 sm:h-64 lg:h-80">
+        <div className="relative overflow-hidden">
+          <Image
+            src="/wildlife/savanna.jpg"
+            alt="African savanna wildlife"
+            fill
+            className="object-cover"
+          />
+          <div className="absolute inset-0 bg-forest-dark/30" />
+        </div>
+        <div className="relative overflow-hidden">
+          <Image
+            src="/wildlife/turtle.jpg"
+            alt="Sea turtle in ocean"
+            fill
+            className="object-cover"
+          />
+          <div className="absolute inset-0 bg-forest-dark/30" />
+        </div>
+        <div className="relative overflow-hidden">
+          <Image
+            src="/wildlife/forest.jpg"
+            alt="Tropical forest canopy"
+            fill
+            className="object-cover"
+          />
+          <div className="absolute inset-0 bg-forest-dark/30" />
+        </div>
       </div>
 
-      <div className="max-w-5xl mx-auto px-6 relative z-10">
-        {/* Headline block */}
-        <motion.div
-          initial={{ opacity: 0, y: 24 }}
-          whileInView={{ opacity: 1, y: 0 }}
-          viewport={{ once: true, margin: "-80px" }}
-          transition={{ duration: 0.7 }}
-          className="text-center mb-20"
-        >
-          <span className="inline-flex items-center gap-2 bg-white/[0.06] text-white/60 px-4 py-1.5 rounded-full text-sm font-medium mb-6 border border-white/[0.06]">
-            Endura × WWF
-          </span>
-
-          <h2 className="text-4xl sm:text-5xl lg:text-6xl font-bold text-white tracking-tight leading-[1.1]">
-            Other apps give you streaks.
-            <br />
-            <span className="text-leaf">Endura gives you a reason.</span>
-          </h2>
-
-          <p className="mt-8 text-lg sm:text-xl text-white/50 max-w-2xl mx-auto leading-relaxed">
-            Every eco-credit you earn flows directly to WWF conservation
-            projects. No middlemen. No vague promises. Your study hours
-            fund real action for real animals.
-          </p>
-        </motion.div>
-
-        {/* Impact pillars */}
-        <motion.div
-          initial={{ opacity: 0, y: 30 }}
-          whileInView={{ opacity: 1, y: 0 }}
-          viewport={{ once: true }}
-          transition={{ delay: 0.15, duration: 0.7 }}
-          className="grid grid-cols-1 md:grid-cols-3 gap-px bg-white/[0.06] rounded-2xl overflow-hidden mb-20"
-        >
-          {PILLARS.map((pillar, i) => (
+      {/* Main content */}
+      <div className="bg-forest-dark py-20 sm:py-28">
+        <div className="max-w-5xl mx-auto px-6">
+          <div className="flex flex-col lg:flex-row gap-14 lg:gap-20 items-center">
+            {/* Left — donate screenshot */}
             <motion.div
-              key={pillar.title}
-              initial={{ opacity: 0, y: 20 }}
+              initial={{ opacity: 0, y: 30 }}
               whileInView={{ opacity: 1, y: 0 }}
-              viewport={{ once: true }}
-              transition={{ delay: 0.2 + i * 0.1, duration: 0.5 }}
-              className="bg-forest-dark p-8 sm:p-10 group"
+              viewport={{ once: true, margin: "-80px" }}
+              transition={{ duration: 0.6 }}
+              className="flex-shrink-0 -mt-28 sm:-mt-36 lg:-mt-44 relative z-10"
             >
-              <span className="text-xs font-mono text-leaf/40 tracking-widest block mb-5">
-                {pillar.number}
-              </span>
-              <h3 className="text-xl font-bold text-white mb-3 tracking-tight">
-                {pillar.title}
-              </h3>
-              <p className="text-sm sm:text-base text-white/40 leading-relaxed">
-                {pillar.description}
-              </p>
+              <div className="w-[220px] sm:w-[260px] rounded-[2rem] border-[4px] border-white/20 shadow-2xl shadow-black/30 overflow-hidden bg-black">
+                <Image
+                  src="/screenshots/donate.png"
+                  alt="Endura WWF donation screen"
+                  width={260}
+                  height={563}
+                  className="w-full h-auto object-cover"
+                />
+              </div>
             </motion.div>
-          ))}
-        </motion.div>
 
-        {/* WWF partnership callout */}
-        <motion.div
-          initial={{ opacity: 0 }}
-          whileInView={{ opacity: 1 }}
-          viewport={{ once: true }}
-          transition={{ delay: 0.3, duration: 0.7 }}
-          className="text-center space-y-8"
-        >
-          <div className="inline-flex items-center gap-3 bg-white/[0.04] border border-white/[0.08] rounded-full px-6 py-3">
-            <div className="w-2 h-2 rounded-full bg-leaf animate-pulse" />
-            <span className="text-sm text-white/50">
-              Direct integration — 100% of donations reach WWF projects
-            </span>
-          </div>
-
-          <div>
-            <motion.a
-              whileHover={{ scale: 1.04 }}
-              whileTap={{ scale: 0.97 }}
-              href="https://apps.apple.com/app/endura"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center gap-2.5 bg-white text-forest-dark px-8 py-4 rounded-full text-base font-semibold hover:bg-sand transition-colors shadow-lg shadow-black/20"
+            {/* Right — copy */}
+            <motion.div
+              initial={{ opacity: 0, y: 30 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true, margin: "-80px" }}
+              transition={{ duration: 0.6, delay: 0.1 }}
+              className="flex-1 text-center lg:text-left"
             >
-              Start Studying, Start Saving
-              <span className="text-lg">→</span>
-            </motion.a>
+              <span className="inline-flex items-center gap-2 bg-white/[0.06] text-white/60 px-4 py-1.5 rounded-full text-sm font-medium mb-6 border border-white/[0.06]">
+                Endura × WWF
+              </span>
+
+              <h2 className="text-3xl sm:text-4xl lg:text-5xl font-bold text-white tracking-tight leading-[1.15] mb-6">
+                Study for yourself.
+                <br />
+                <span className="text-leaf">Donate for them.</span>
+              </h2>
+
+              <p className="text-base sm:text-lg text-white/50 leading-relaxed max-w-lg mx-auto lg:mx-0 mb-10">
+                Endura has a built-in WWF integration. When you want to go
+                beyond grades, you can donate directly to real conservation
+                projects — right from the app. No pressure. Your choice,
+                your impact.
+              </p>
+
+              {/* Impact areas */}
+              <div className="space-y-4 mb-10">
+                {IMPACT_AREAS.map((area, i) => (
+                  <motion.div
+                    key={area.title}
+                    initial={{ opacity: 0, x: -20 }}
+                    whileInView={{ opacity: 1, x: 0 }}
+                    viewport={{ once: true }}
+                    transition={{ delay: 0.2 + i * 0.08, duration: 0.4 }}
+                    className="flex items-start gap-3"
+                  >
+                    <div className="mt-1.5 w-2 h-2 rounded-full bg-leaf flex-shrink-0" />
+                    <div className="text-left">
+                      <span className="text-sm font-semibold text-white">
+                        {area.title}
+                      </span>
+                      <span className="text-sm text-white/35 ml-1.5">
+                        — {area.description}
+                      </span>
+                    </div>
+                  </motion.div>
+                ))}
+              </div>
+
+              <div className="flex flex-wrap items-center gap-4 justify-center lg:justify-start">
+                <motion.a
+                  whileHover={{ scale: 1.04 }}
+                  whileTap={{ scale: 0.97 }}
+                  href="https://apps.apple.com/app/endura-study-timer/id6759482612"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-2.5 bg-white text-forest-dark px-7 py-3.5 rounded-full text-sm font-semibold hover:bg-sand transition-colors shadow-lg shadow-black/20"
+                >
+                  Download Endura
+                  <span>→</span>
+                </motion.a>
+                <a
+                  href="https://www.worldwildlife.org"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-sm text-white/40 hover:text-white/60 transition-colors underline underline-offset-4"
+                >
+                  Learn about WWF
+                </a>
+              </div>
+            </motion.div>
           </div>
-        </motion.div>
+        </div>
       </div>
     </section>
   );

@@ -177,7 +177,7 @@ export default function AppGallery() {
 
         {/* Content area */}
         <div className="relative max-w-5xl mx-auto">
-          {/* Desktop navigation arrows — inset, refined style */}
+          {/* Desktop navigation arrows */}
           <motion.button
             onClick={prev}
             whileHover={{ scale: 1.08, backgroundColor: "rgba(47, 74, 62, 0.12)" }}
@@ -197,10 +197,10 @@ export default function AppGallery() {
             <ArrowRight size={20} />
           </motion.button>
 
-          {/* Fixed-height content container to prevent jumpiness */}
-          <div className="flex flex-col lg:flex-row items-center gap-10 lg:gap-16 lg:min-h-[520px]">
-            {/* Phone screenshot(s) — uniform container width */}
-            <div className="flex-shrink-0 flex justify-center items-center w-full lg:w-[420px]">
+          {/* Fixed-height content container */}
+          <div className="flex flex-col lg:flex-row items-center gap-10 lg:gap-12 lg:min-h-[540px]">
+            {/* Phone screenshot(s) — wider container for uniform sizing */}
+            <div className="flex-shrink-0 flex justify-center items-center w-full lg:w-[520px]">
               <AnimatePresence mode="wait" custom={direction}>
                 <motion.div
                   key={screen.id}
@@ -213,25 +213,25 @@ export default function AppGallery() {
                   className={`flex items-center justify-center ${screen.image2 ? "gap-3 sm:gap-4" : ""}`}
                 >
                   {screen.image2 && (
-                    <div className="w-[160px] sm:w-[180px]">
-                      <div className="rounded-[1.75rem] border-[3.5px] border-white/80 shadow-xl shadow-forest/10 overflow-hidden bg-black">
+                    <div className="w-[190px] sm:w-[215px]">
+                      <div className="rounded-[2rem] border-[4px] border-white/80 shadow-2xl shadow-forest/15 overflow-hidden bg-black">
                         <Image
                           src={screen.image2}
                           alt={`${screen.title} — step 1`}
-                          width={180}
-                          height={390}
+                          width={215}
+                          height={466}
                           className="w-full h-auto object-cover"
                         />
                       </div>
                     </div>
                   )}
-                  <div className={screen.image2 ? "w-[160px] sm:w-[180px]" : "w-[220px] sm:w-[240px]"}>
-                    <div className={`${screen.image2 ? "rounded-[1.75rem] border-[3.5px]" : "rounded-[2rem] border-[4px]"} border-white/80 shadow-2xl shadow-forest/15 overflow-hidden bg-black`}>
+                  <div className={screen.image2 ? "w-[190px] sm:w-[215px]" : "w-[220px] sm:w-[250px]"}>
+                    <div className="rounded-[2rem] border-[4px] border-white/80 shadow-2xl shadow-forest/15 overflow-hidden bg-black">
                       <Image
                         src={screen.image}
                         alt={screen.title}
-                        width={screen.image2 ? 180 : 240}
-                        height={screen.image2 ? 390 : 520}
+                        width={screen.image2 ? 215 : 250}
+                        height={screen.image2 ? 466 : 542}
                         className="w-full h-auto object-cover"
                       />
                     </div>
@@ -240,7 +240,7 @@ export default function AppGallery() {
               </AnimatePresence>
             </div>
 
-            {/* Text content — fixed width to prevent reflow */}
+            {/* Text content */}
             <div className="flex-1 text-center lg:text-left flex flex-col justify-center lg:min-h-[280px]">
               <AnimatePresence mode="wait" custom={direction}>
                 <motion.div
@@ -266,8 +266,29 @@ export default function AppGallery() {
             </div>
           </div>
 
-          {/* Mobile prev/next + progress */}
-          <div className="flex items-center justify-center gap-5 mt-10 lg:hidden">
+          {/* Progress bar indicator */}
+          <div className="mt-12 max-w-xs mx-auto lg:max-w-sm">
+            <div className="flex gap-1.5">
+              {SCREENS.map((_, i) => (
+                <button
+                  key={i}
+                  onClick={() => go(i)}
+                  className="flex-1 h-1 rounded-full overflow-hidden bg-forest-dark/10"
+                  aria-label={`Go to feature ${i + 1}`}
+                >
+                  <motion.div
+                    className="h-full rounded-full bg-forest"
+                    initial={false}
+                    animate={{ width: active === i ? "100%" : "0%" }}
+                    transition={{ duration: 0.4, ease: "easeInOut" }}
+                  />
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Mobile prev/next */}
+          <div className="flex items-center justify-center gap-5 mt-6 lg:hidden">
             <motion.button
               onClick={prev}
               whileHover={{ scale: 1.08 }}
@@ -277,20 +298,6 @@ export default function AppGallery() {
             >
               <ArrowLeft size={18} />
             </motion.button>
-            <div className="flex gap-1.5">
-              {SCREENS.map((_, i) => (
-                <button
-                  key={i}
-                  onClick={() => go(i)}
-                  className={`transition-all duration-300 rounded-full ${
-                    active === i
-                      ? "w-6 h-1.5 bg-forest"
-                      : "w-1.5 h-1.5 bg-forest-dark/15 hover:bg-forest-dark/30"
-                  }`}
-                  aria-label={`Go to feature ${i + 1}`}
-                />
-              ))}
-            </div>
             <motion.button
               onClick={next}
               whileHover={{ scale: 1.08 }}
