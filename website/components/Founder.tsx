@@ -6,6 +6,7 @@ import Image from "next/image";
 const credentials = [
   "Founder & CEO",
   "IB Diploma Student",
+  "London, UK",
 ];
 
 export default function Founder() {
@@ -56,12 +57,12 @@ export default function Founder() {
             transition={{ duration: 0.7, delay: 0.1 }}
             className="flex-1 text-center lg:text-left"
           >
-            <h2 className="text-4xl sm:text-5xl font-bold text-forest-dark tracking-tight mb-2">
-              Meet the <span className="text-forest-light">Founder</span>
+            <span className="inline-block bg-forest/10 text-forest-dark px-4 py-1.5 rounded-full text-sm font-medium mb-4">
+              Meet the Founder
+            </span>
+            <h2 className="text-4xl sm:text-5xl font-bold text-forest-dark tracking-tight mb-6">
+              Rhea <span className="text-forest-light">Munshi</span>
             </h2>
-            <p className="text-lg sm:text-xl font-semibold text-forest-dark/50 mb-6">
-              Rhea Munshi
-            </p>
 
             <div className="space-y-4 text-lg text-forest-dark/60 leading-relaxed">
               <p>
@@ -91,7 +92,7 @@ export default function Founder() {
               {credentials.map((tag) => (
                 <span
                   key={tag}
-                  className="bg-sand px-4 py-2 rounded-full text-sm font-medium text-forest-dark/60"
+                  className="bg-forest/10 text-forest-dark px-4 py-2 rounded-full text-sm font-medium"
                 >
                   {tag}
                 </span>
