@@ -69,15 +69,15 @@ export default function Hero() {
             </motion.a>
           </div>
 
-          <div className="mt-10 flex items-center gap-6 justify-center lg:justify-start text-sm text-forest-dark/50">
-            <span className="flex items-center gap-1.5">
-              <span className="text-leaf">●</span> Free to use
+          <div className="mt-10 flex items-center gap-5 sm:gap-8 justify-center lg:justify-start text-base font-medium text-forest-dark/70">
+            <span className="flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full bg-leaf" /> Free to use
             </span>
-            <span className="flex items-center gap-1.5">
-              <span className="text-leaf">●</span> 30+ endangered species
+            <span className="flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full bg-leaf" /> 30+ species
             </span>
-            <span className="flex items-center gap-1.5">
-              <span className="text-leaf">●</span> Real impact
+            <span className="flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full bg-leaf" /> Real impact
             </span>
           </div>
         </motion.div>
