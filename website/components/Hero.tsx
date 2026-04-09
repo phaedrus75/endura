@@ -61,10 +61,12 @@ export default function Hero() {
             <motion.a
               whileHover={{ scale: 1.05 }}
               whileTap={{ scale: 0.97 }}
-              href="#mission"
+              href="https://apps.apple.com/app/endura-study-timer/id6759482612"
+              target="_blank"
+              rel="noopener noreferrer"
               className="bg-forest text-white px-8 py-4 rounded-full text-base font-semibold shadow-lg shadow-forest/25 hover:bg-forest-dark transition-colors"
             >
-              Join the Waitlist
+              Download on the App Store
             </motion.a>
             <motion.a
               whileHover={{ scale: 1.05 }}
