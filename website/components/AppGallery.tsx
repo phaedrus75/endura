@@ -15,7 +15,7 @@ interface Screen {
 const SCREENS: Screen[] = [
   {
     id: "timer",
-    title: "Gamified Study Timer",
+    title: "Study Timer",
     description:
       "Set focused study sessions with our beautiful timer. Pick your subject, start the clock, and watch your egg grow closer to hatching with every minute you study.",
     image: "/screenshots/timer.png",
@@ -30,9 +30,9 @@ const SCREENS: Screen[] = [
   },
   {
     id: "home",
-    title: "Subjects & Task Management",
+    title: "To-Dos & Progress",
     description:
-      "Organise your study by subject, create to-dos with due dates, and track what needs doing. Everything in one place so you can focus on what matters.",
+      "Organise your study by subject, create to-dos with due dates, and track your weekly stats. Everything in one place so you can focus on what matters.",
     image: "/screenshots/progress.png",
     image2: "/screenshots/todos.png",
   },
@@ -63,7 +63,7 @@ const SCREENS: Screen[] = [
     id: "donate",
     title: "Take Action",
     description:
-      "Donate directly to WWF conservation projects straight from the app. 100% goes to protecting endangered wildlife — no middlemen, no detours.",
+      "Donate directly to WWF conservation projects straight from the app. 100% goes to protecting endangered wildlife.",
     image: "/screenshots/donate.png",
   },
 ];
@@ -110,9 +110,15 @@ export default function AppGallery() {
   });
 
   const slideVariants = {
-    enter: (d: number) => ({ opacity: 0, x: d > 0 ? 80 : -80, scale: 0.95 }),
-    center: { opacity: 1, x: 0, scale: 1 },
-    exit: (d: number) => ({ opacity: 0, x: d > 0 ? -80 : 80, scale: 0.95 }),
+    enter: (d: number) => ({ opacity: 0, x: d > 0 ? 60 : -60 }),
+    center: { opacity: 1, x: 0 },
+    exit: (d: number) => ({ opacity: 0, x: d > 0 ? -60 : 60 }),
+  };
+
+  const textVariants = {
+    enter: (d: number) => ({ opacity: 0, x: d > 0 ? 40 : -40 }),
+    center: { opacity: 1, x: 0 },
+    exit: (d: number) => ({ opacity: 0, x: d > 0 ? -40 : 40 }),
   };
 
   const pad = (n: number) => String(n).padStart(2, "0");
@@ -120,7 +126,7 @@ export default function AppGallery() {
   return (
     <section
       id="features"
-      className="py-24 sm:py-32 bg-gradient-to-b from-cream via-sand/30 to-cream overflow-hidden"
+      className="py-24 sm:py-32 bg-gradient-to-b from-forest-dark/[0.04] via-forest/[0.07] to-forest-dark/[0.04] overflow-hidden"
     >
       <div className="max-w-6xl mx-auto px-6">
         {/* Section header */}
@@ -171,29 +177,30 @@ export default function AppGallery() {
 
         {/* Content area */}
         <div className="relative max-w-5xl mx-auto">
-          {/* Desktop navigation arrows */}
+          {/* Desktop navigation arrows — inset, refined style */}
           <motion.button
             onClick={prev}
-            whileHover={{ scale: 1.1 }}
+            whileHover={{ scale: 1.08, backgroundColor: "rgba(47, 74, 62, 0.12)" }}
             whileTap={{ scale: 0.92 }}
-            className="hidden lg:flex absolute -left-16 top-1/2 -translate-y-1/2 w-12 h-12 items-center justify-center rounded-full bg-forest text-white shadow-lg shadow-forest/25 hover:bg-forest-dark transition-colors z-10"
+            className="hidden lg:flex absolute left-0 top-1/2 -translate-y-1/2 -translate-x-1/2 w-11 h-11 items-center justify-center rounded-full bg-white/80 backdrop-blur-sm border border-forest-dark/10 text-forest-dark/60 shadow-md transition-all z-10"
             aria-label="Previous feature"
           >
-            <ArrowLeft size={22} />
+            <ArrowLeft size={20} />
           </motion.button>
           <motion.button
             onClick={next}
-            whileHover={{ scale: 1.1 }}
+            whileHover={{ scale: 1.08, backgroundColor: "rgba(47, 74, 62, 0.12)" }}
             whileTap={{ scale: 0.92 }}
-            className="hidden lg:flex absolute -right-16 top-1/2 -translate-y-1/2 w-12 h-12 items-center justify-center rounded-full bg-forest text-white shadow-lg shadow-forest/25 hover:bg-forest-dark transition-colors z-10"
+            className="hidden lg:flex absolute right-0 top-1/2 -translate-y-1/2 translate-x-1/2 w-11 h-11 items-center justify-center rounded-full bg-white/80 backdrop-blur-sm border border-forest-dark/10 text-forest-dark/60 shadow-md transition-all z-10"
             aria-label="Next feature"
           >
-            <ArrowRight size={22} />
+            <ArrowRight size={20} />
           </motion.button>
 
-          <div className="flex flex-col lg:flex-row items-center gap-10 lg:gap-16">
-            {/* Phone screenshot(s) */}
-            <div className="flex-shrink-0 flex justify-center min-w-[240px]">
+          {/* Fixed-height content container to prevent jumpiness */}
+          <div className="flex flex-col lg:flex-row items-center gap-10 lg:gap-16 lg:min-h-[520px]">
+            {/* Phone screenshot(s) — uniform container width */}
+            <div className="flex-shrink-0 flex justify-center items-center w-full lg:w-[420px]">
               <AnimatePresence mode="wait" custom={direction}>
                 <motion.div
                   key={screen.id}
@@ -202,29 +209,29 @@ export default function AppGallery() {
                   initial="enter"
                   animate="center"
                   exit="exit"
-                  transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
-                  className={`flex items-center ${screen.image2 ? "gap-4" : ""}`}
+                  transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
+                  className={`flex items-center justify-center ${screen.image2 ? "gap-3 sm:gap-4" : ""}`}
                 >
                   {screen.image2 && (
-                    <div className="w-[170px] sm:w-[190px]">
+                    <div className="w-[160px] sm:w-[180px]">
                       <div className="rounded-[1.75rem] border-[3.5px] border-white/80 shadow-xl shadow-forest/10 overflow-hidden bg-black">
                         <Image
                           src={screen.image2}
                           alt={`${screen.title} — step 1`}
-                          width={190}
-                          height={412}
+                          width={180}
+                          height={390}
                           className="w-full h-auto object-cover"
                         />
                       </div>
                     </div>
                   )}
-                  <div className={screen.image2 ? "w-[170px] sm:w-[190px]" : "w-[220px] sm:w-[250px]"}>
+                  <div className={screen.image2 ? "w-[160px] sm:w-[180px]" : "w-[220px] sm:w-[240px]"}>
                     <div className={`${screen.image2 ? "rounded-[1.75rem] border-[3.5px]" : "rounded-[2rem] border-[4px]"} border-white/80 shadow-2xl shadow-forest/15 overflow-hidden bg-black`}>
                       <Image
                         src={screen.image}
                         alt={screen.title}
-                        width={screen.image2 ? 190 : 250}
-                        height={screen.image2 ? 412 : 542}
+                        width={screen.image2 ? 180 : 240}
+                        height={screen.image2 ? 390 : 520}
                         className="w-full h-auto object-cover"
                       />
                     </div>
@@ -233,17 +240,17 @@ export default function AppGallery() {
               </AnimatePresence>
             </div>
 
-            {/* Text content */}
-            <div className="flex-1 text-center lg:text-left min-h-[200px] flex flex-col justify-center">
+            {/* Text content — fixed width to prevent reflow */}
+            <div className="flex-1 text-center lg:text-left flex flex-col justify-center lg:min-h-[280px]">
               <AnimatePresence mode="wait" custom={direction}>
                 <motion.div
                   key={screen.id}
                   custom={direction}
-                  variants={slideVariants}
+                  variants={textVariants}
                   initial="enter"
                   animate="center"
                   exit="exit"
-                  transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1], delay: 0.06 }}
+                  transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1], delay: 0.05 }}
                 >
                   <span className="text-sm font-mono text-forest-light/50 tracking-widest mb-4 block">
                     {pad(active + 1)} / {pad(SCREENS.length)}
@@ -254,39 +261,6 @@ export default function AppGallery() {
                   <p className="text-base sm:text-lg text-forest-dark/55 leading-relaxed max-w-md mx-auto lg:mx-0">
                     {screen.description}
                   </p>
-                  {/* Inline nav for desktop */}
-                  <div className="hidden lg:flex items-center gap-3 mt-8">
-                    <motion.button
-                      onClick={prev}
-                      whileHover={{ scale: 1.08 }}
-                      whileTap={{ scale: 0.92 }}
-                      className="w-10 h-10 flex items-center justify-center rounded-full border-2 border-forest/20 text-forest-dark/50 hover:border-forest hover:text-forest transition-colors"
-                    >
-                      <ArrowLeft size={16} />
-                    </motion.button>
-                    <motion.button
-                      onClick={next}
-                      whileHover={{ scale: 1.08 }}
-                      whileTap={{ scale: 0.92 }}
-                      className="w-10 h-10 flex items-center justify-center rounded-full border-2 border-forest/20 text-forest-dark/50 hover:border-forest hover:text-forest transition-colors"
-                    >
-                      <ArrowRight size={16} />
-                    </motion.button>
-                    <div className="flex gap-1.5 ml-2">
-                      {SCREENS.map((_, i) => (
-                        <button
-                          key={i}
-                          onClick={() => go(i)}
-                          className={`transition-all duration-300 rounded-full ${
-                            active === i
-                              ? "w-7 h-1.5 bg-forest"
-                              : "w-1.5 h-1.5 bg-forest-dark/15 hover:bg-forest-dark/30"
-                          }`}
-                          aria-label={`Go to feature ${i + 1}`}
-                        />
-                      ))}
-                    </div>
-                  </div>
                 </motion.div>
               </AnimatePresence>
             </div>
@@ -298,7 +272,7 @@ export default function AppGallery() {
               onClick={prev}
               whileHover={{ scale: 1.08 }}
               whileTap={{ scale: 0.92 }}
-              className="w-11 h-11 flex items-center justify-center rounded-full bg-forest text-white shadow-md shadow-forest/20"
+              className="w-10 h-10 flex items-center justify-center rounded-full bg-white/80 backdrop-blur-sm border border-forest-dark/10 text-forest-dark/60 shadow-md"
               aria-label="Previous feature"
             >
               <ArrowLeft size={18} />
@@ -321,7 +295,7 @@ export default function AppGallery() {
               onClick={next}
               whileHover={{ scale: 1.08 }}
               whileTap={{ scale: 0.92 }}
-              className="w-11 h-11 flex items-center justify-center rounded-full bg-forest text-white shadow-md shadow-forest/20"
+              className="w-10 h-10 flex items-center justify-center rounded-full bg-white/80 backdrop-blur-sm border border-forest-dark/10 text-forest-dark/60 shadow-md"
               aria-label="Next feature"
             >
               <ArrowRight size={18} />
