@@ -48,7 +48,8 @@ const SCREENS: Screen[] = [
     title: "Sanctuary & Shop",
     description:
       "Build a beautiful habitat for your animals. Spend eco-credits in the shop on accessories and decorations. Make your sanctuary uniquely yours.",
-    image: "/screenshots/sanctuary.png",
+    image: "/screenshots/shop.png",
+    image2: "/screenshots/sanctuary.png",
   },
   {
     id: "progress",
@@ -56,7 +57,6 @@ const SCREENS: Screen[] = [
     description:
       "Earn 50+ badges as you study and protect wildlife. Discover community-powered study tips with voting and sharing to help you and your friends study smarter.",
     image: "/screenshots/tips.png",
-    image2: "/screenshots/shop.png",
   },
   {
     id: "donate",
@@ -66,6 +66,22 @@ const SCREENS: Screen[] = [
     image: "/screenshots/donate.png",
   },
 ];
+
+function ArrowLeft({ size = 20 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M15 18l-6-6 6-6" />
+    </svg>
+  );
+}
+
+function ArrowRight({ size = 20 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M9 18l6-6-6-6" />
+    </svg>
+  );
+}
 
 export default function AppGallery() {
   const [active, setActive] = useState(0);
@@ -93,9 +109,9 @@ export default function AppGallery() {
   });
 
   const slideVariants = {
-    enter: (d: number) => ({ opacity: 0, x: d > 0 ? 60 : -60 }),
-    center: { opacity: 1, x: 0 },
-    exit: (d: number) => ({ opacity: 0, x: d > 0 ? -60 : 60 }),
+    enter: (d: number) => ({ opacity: 0, x: d > 0 ? 80 : -80, scale: 0.95 }),
+    center: { opacity: 1, x: 0, scale: 1 },
+    exit: (d: number) => ({ opacity: 0, x: d > 0 ? -80 : 80, scale: 0.95 }),
   };
 
   const pad = (n: number) => String(n).padStart(2, "0");
@@ -156,29 +172,29 @@ export default function AppGallery() {
 
         {/* Content area */}
         <div className="relative max-w-5xl mx-auto">
-          {/* Navigation arrows */}
-          <button
+          {/* Desktop navigation arrows */}
+          <motion.button
             onClick={prev}
-            className="hidden lg:flex absolute -left-14 top-1/2 -translate-y-1/2 w-10 h-10 items-center justify-center rounded-full bg-white border border-forest-dark/10 text-forest-dark/40 hover:text-forest-dark hover:border-forest-dark/20 hover:shadow-md transition-all z-10"
+            whileHover={{ scale: 1.1 }}
+            whileTap={{ scale: 0.92 }}
+            className="hidden lg:flex absolute -left-16 top-1/2 -translate-y-1/2 w-12 h-12 items-center justify-center rounded-full bg-forest text-white shadow-lg shadow-forest/25 hover:bg-forest-dark transition-colors z-10"
             aria-label="Previous feature"
           >
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M15 18l-6-6 6-6" />
-            </svg>
-          </button>
-          <button
+            <ArrowLeft size={22} />
+          </motion.button>
+          <motion.button
             onClick={next}
-            className="hidden lg:flex absolute -right-14 top-1/2 -translate-y-1/2 w-10 h-10 items-center justify-center rounded-full bg-white border border-forest-dark/10 text-forest-dark/40 hover:text-forest-dark hover:border-forest-dark/20 hover:shadow-md transition-all z-10"
+            whileHover={{ scale: 1.1 }}
+            whileTap={{ scale: 0.92 }}
+            className="hidden lg:flex absolute -right-16 top-1/2 -translate-y-1/2 w-12 h-12 items-center justify-center rounded-full bg-forest text-white shadow-lg shadow-forest/25 hover:bg-forest-dark transition-colors z-10"
             aria-label="Next feature"
           >
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M9 18l6-6-6-6" />
-            </svg>
-          </button>
+            <ArrowRight size={22} />
+          </motion.button>
 
           <div className="flex flex-col lg:flex-row items-center gap-10 lg:gap-16">
             {/* Phone screenshot(s) */}
-            <div className="flex-shrink-0 flex justify-center">
+            <div className="flex-shrink-0 flex justify-center min-w-[240px]">
               <AnimatePresence mode="wait" custom={direction}>
                 <motion.div
                   key={screen.id}
@@ -187,7 +203,7 @@ export default function AppGallery() {
                   initial="enter"
                   animate="center"
                   exit="exit"
-                  transition={{ duration: 0.35, ease: "easeOut" }}
+                  transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
                   className={`flex items-center ${screen.image2 ? "gap-4" : ""}`}
                 >
                   {screen.image2 && (
@@ -203,13 +219,13 @@ export default function AppGallery() {
                       </div>
                     </div>
                   )}
-                  <div className={screen.image2 ? "w-[170px] sm:w-[190px]" : "w-[220px] sm:w-[240px]"}>
+                  <div className={screen.image2 ? "w-[170px] sm:w-[190px]" : "w-[220px] sm:w-[250px]"}>
                     <div className={`${screen.image2 ? "rounded-[1.75rem] border-[3.5px]" : "rounded-[2rem] border-[4px]"} border-white/80 shadow-2xl shadow-forest/15 overflow-hidden bg-black`}>
                       <Image
                         src={screen.image}
                         alt={screen.title}
-                        width={screen.image2 ? 190 : 240}
-                        height={screen.image2 ? 412 : 520}
+                        width={screen.image2 ? 190 : 250}
+                        height={screen.image2 ? 412 : 542}
                         className="w-full h-auto object-cover"
                       />
                     </div>
@@ -219,7 +235,7 @@ export default function AppGallery() {
             </div>
 
             {/* Text content */}
-            <div className="flex-1 text-center lg:text-left min-h-[180px] flex flex-col justify-center">
+            <div className="flex-1 text-center lg:text-left min-h-[200px] flex flex-col justify-center">
               <AnimatePresence mode="wait" custom={direction}>
                 <motion.div
                   key={screen.id}
@@ -228,33 +244,66 @@ export default function AppGallery() {
                   initial="enter"
                   animate="center"
                   exit="exit"
-                  transition={{ duration: 0.35, ease: "easeOut", delay: 0.05 }}
+                  transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1], delay: 0.06 }}
                 >
-                  <span className="text-sm font-mono text-forest-light/60 tracking-wider mb-3 block">
+                  <span className="text-sm font-mono text-forest-light/50 tracking-widest mb-4 block">
                     {pad(active + 1)} / {pad(SCREENS.length)}
                   </span>
-                  <h3 className="text-2xl sm:text-3xl font-bold text-forest-dark mb-4">
+                  <h3 className="text-2xl sm:text-3xl lg:text-4xl font-bold text-forest-dark mb-5 tracking-tight">
                     {screen.title}
                   </h3>
                   <p className="text-base sm:text-lg text-forest-dark/55 leading-relaxed max-w-md mx-auto lg:mx-0">
                     {screen.description}
                   </p>
+                  {/* Inline nav for desktop */}
+                  <div className="hidden lg:flex items-center gap-3 mt-8">
+                    <motion.button
+                      onClick={prev}
+                      whileHover={{ scale: 1.08 }}
+                      whileTap={{ scale: 0.92 }}
+                      className="w-10 h-10 flex items-center justify-center rounded-full border-2 border-forest/20 text-forest-dark/50 hover:border-forest hover:text-forest transition-colors"
+                    >
+                      <ArrowLeft size={16} />
+                    </motion.button>
+                    <motion.button
+                      onClick={next}
+                      whileHover={{ scale: 1.08 }}
+                      whileTap={{ scale: 0.92 }}
+                      className="w-10 h-10 flex items-center justify-center rounded-full border-2 border-forest/20 text-forest-dark/50 hover:border-forest hover:text-forest transition-colors"
+                    >
+                      <ArrowRight size={16} />
+                    </motion.button>
+                    <div className="flex gap-1.5 ml-2">
+                      {SCREENS.map((_, i) => (
+                        <button
+                          key={i}
+                          onClick={() => go(i)}
+                          className={`transition-all duration-300 rounded-full ${
+                            active === i
+                              ? "w-7 h-1.5 bg-forest"
+                              : "w-1.5 h-1.5 bg-forest-dark/15 hover:bg-forest-dark/30"
+                          }`}
+                          aria-label={`Go to feature ${i + 1}`}
+                        />
+                      ))}
+                    </div>
+                  </div>
                 </motion.div>
               </AnimatePresence>
             </div>
           </div>
 
           {/* Mobile prev/next + progress */}
-          <div className="flex items-center justify-center gap-6 mt-10 lg:hidden">
-            <button
+          <div className="flex items-center justify-center gap-5 mt-10 lg:hidden">
+            <motion.button
               onClick={prev}
-              className="w-10 h-10 flex items-center justify-center rounded-full bg-white border border-forest-dark/10 text-forest-dark/40 hover:text-forest-dark transition-all"
+              whileHover={{ scale: 1.08 }}
+              whileTap={{ scale: 0.92 }}
+              className="w-11 h-11 flex items-center justify-center rounded-full bg-forest text-white shadow-md shadow-forest/20"
               aria-label="Previous feature"
             >
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M15 18l-6-6 6-6" />
-              </svg>
-            </button>
+              <ArrowLeft size={18} />
+            </motion.button>
             <div className="flex gap-1.5">
               {SCREENS.map((_, i) => (
                 <button
@@ -269,31 +318,15 @@ export default function AppGallery() {
                 />
               ))}
             </div>
-            <button
+            <motion.button
               onClick={next}
-              className="w-10 h-10 flex items-center justify-center rounded-full bg-white border border-forest-dark/10 text-forest-dark/40 hover:text-forest-dark transition-all"
+              whileHover={{ scale: 1.08 }}
+              whileTap={{ scale: 0.92 }}
+              className="w-11 h-11 flex items-center justify-center rounded-full bg-forest text-white shadow-md shadow-forest/20"
               aria-label="Next feature"
             >
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M9 18l6-6-6-6" />
-              </svg>
-            </button>
-          </div>
-
-          {/* Desktop progress bar */}
-          <div className="hidden lg:flex justify-center gap-1.5 mt-10">
-            {SCREENS.map((_, i) => (
-              <button
-                key={i}
-                onClick={() => go(i)}
-                className={`transition-all duration-300 rounded-full ${
-                  active === i
-                    ? "w-8 h-1.5 bg-forest"
-                    : "w-1.5 h-1.5 bg-forest-dark/15 hover:bg-forest-dark/30"
-                }`}
-                aria-label={`Go to feature ${i + 1}`}
-              />
-            ))}
+              <ArrowRight size={18} />
+            </motion.button>
           </div>
         </div>
       </div>
