@@ -78,6 +78,8 @@ export default function Founder() {
               <p>
                 Join her in proving that you can put in
                 the hours — for yourself and for the planet.
+              </p>
+              <p>
                 Join her in proving that you can{" "}
                 <span className="text-xl sm:text-2xl font-bold text-forest-light">
                   hatch your potential
