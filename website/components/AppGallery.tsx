@@ -10,6 +10,7 @@ interface Screen {
   description: string;
   badge: string;
   image: string;
+  image2?: string;
 }
 
 const SCREENS: Screen[] = [
@@ -28,6 +29,7 @@ const SCREENS: Screen[] = [
       "Complete study sessions to unlock an interactive hatching experience — tap to crack the egg and reveal one of 30+ real endangered species. Collect, nickname, and learn about each one.",
     badge: "🐣",
     image: "/screenshots/hatching.png",
+    image2: "/screenshots/egg-crack.png",
   },
   {
     id: "home",
@@ -125,7 +127,7 @@ export default function AppGallery() {
 
         {/* Content: phone + text side by side */}
         <div className="flex flex-col lg:flex-row items-center gap-10 lg:gap-16 max-w-4xl mx-auto">
-          {/* Phone screenshot */}
+          {/* Phone screenshot(s) */}
           <div className="flex-shrink-0 flex justify-center">
             <AnimatePresence mode="wait">
               <motion.div
@@ -134,16 +136,31 @@ export default function AppGallery() {
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -12 }}
                 transition={{ duration: 0.35, ease: "easeOut" }}
-                className="w-[220px] sm:w-[240px]"
+                className={`flex items-center ${screen.image2 ? "gap-4" : ""}`}
               >
-                <div className="rounded-[2rem] border-[4px] border-white/80 shadow-2xl shadow-forest/15 overflow-hidden bg-black">
-                  <Image
-                    src={screen.image}
-                    alt={screen.title}
-                    width={240}
-                    height={520}
-                    className="w-full h-auto object-cover"
-                  />
+                {screen.image2 && (
+                  <div className="w-[170px] sm:w-[190px]">
+                    <div className="rounded-[1.75rem] border-[3.5px] border-white/80 shadow-xl shadow-forest/10 overflow-hidden bg-black">
+                      <Image
+                        src={screen.image2}
+                        alt={`${screen.title} — step 1`}
+                        width={190}
+                        height={412}
+                        className="w-full h-auto object-cover"
+                      />
+                    </div>
+                  </div>
+                )}
+                <div className={screen.image2 ? "w-[170px] sm:w-[190px]" : "w-[220px] sm:w-[240px]"}>
+                  <div className={`${screen.image2 ? "rounded-[1.75rem] border-[3.5px]" : "rounded-[2rem] border-[4px]"} border-white/80 shadow-2xl shadow-forest/15 overflow-hidden bg-black`}>
+                    <Image
+                      src={screen.image}
+                      alt={screen.title}
+                      width={screen.image2 ? 190 : 240}
+                      height={screen.image2 ? 412 : 520}
+                      className="w-full h-auto object-cover"
+                    />
+                  </div>
                 </div>
               </motion.div>
             </AnimatePresence>
