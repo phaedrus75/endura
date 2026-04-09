@@ -1,6 +1,5 @@
 import Navbar from "@/components/Navbar";
 import Hero from "@/components/Hero";
-import Features from "@/components/Features";
 import AppGallery from "@/components/AppGallery";
 import HowItWorks from "@/components/HowItWorks";
 import Founder from "@/components/Founder";
@@ -12,7 +11,6 @@ export default function Home() {
     <main>
       <Navbar />
       <Hero />
-      <Features />
       <AppGallery />
       <HowItWorks />
       <Founder />

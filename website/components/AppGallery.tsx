@@ -2,382 +2,72 @@
 
 import { useState, useRef, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
+import Image from "next/image";
 
 interface Screen {
   id: string;
   title: string;
-  subtitle: string;
+  description: string;
   badge: string;
-  bg: string;
-  content: React.ReactNode;
+  image: string;
 }
 
 const SCREENS: Screen[] = [
   {
-    id: "home",
-    title: "Home",
-    subtitle: "Your daily dashboard",
-    badge: "🏠",
-    bg: "from-[#E7EFEA] to-[#F2F8F4]",
-    content: (
-      <div className="flex flex-col h-full">
-        <div className="flex items-center justify-between px-1 mb-3">
-          <div>
-            <p className="text-[10px] text-[#5E7F6E]">Good morning</p>
-            <p className="text-sm font-bold text-[#2F4A3E]">Rhea</p>
-          </div>
-          <div className="w-8 h-8 rounded-full bg-[#5E7F6E]/20 flex items-center justify-center text-xs">
-            R
-          </div>
-        </div>
-        <div className="flex gap-2 mb-3">
-          {[
-            { icon: "🔥", val: "12", label: "Streak" },
-            { icon: "🐾", val: "8", label: "Animals" },
-            { icon: "⏱", val: "6.5h", label: "This week" },
-          ].map((c) => (
-            <div
-              key={c.label}
-              className="flex-1 bg-white/70 rounded-xl px-2 py-2 text-center"
-            >
-              <span className="text-xs">{c.icon}</span>
-              <p className="text-xs font-bold text-[#2F4A3E] leading-tight">
-                {c.val}
-              </p>
-              <p className="text-[8px] text-[#5E7F6E]">{c.label}</p>
-            </div>
-          ))}
-        </div>
-        <div className="bg-white/60 rounded-2xl p-3 mb-3 text-center">
-          <span className="text-3xl block mb-1">🥚</span>
-          <p className="text-[9px] font-bold text-[#2F4A3E]">Tap to hatch!</p>
-          <p className="text-[8px] text-[#5E7F6E]">65% — keep studying</p>
-        </div>
-        <div className="bg-white/60 rounded-2xl p-3">
-          <p className="text-[10px] font-bold text-[#2F4A3E] mb-2">
-            Today&apos;s To-Dos
-          </p>
-          {[
-            { task: "Biology revision", subject: "Biology", due: "Today" },
-            { task: "Maths practice", subject: "Maths", due: "Tomorrow" },
-          ].map((t) => (
-            <div
-              key={t.task}
-              className="flex items-center gap-2 py-1.5 border-b border-[#E7EFEA] last:border-0"
-            >
-              <div className="w-3.5 h-3.5 rounded border-2 border-[#5E7F6E]/40" />
-              <div className="flex-1">
-                <span className="text-[10px] text-[#2F4A3E] block">{t.task}</span>
-                <span className="text-[8px] text-[#5E7F6E]">{t.subject} · {t.due}</span>
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-    ),
-  },
-  {
     id: "timer",
-    title: "Study Timer",
-    subtitle: "Focus mode with egg hatching",
+    title: "Gamified Study Timer",
+    description:
+      "Set focused study sessions with our beautiful timer. Pick your subject, start the clock, and watch your egg grow closer to hatching with every minute you study.",
     badge: "⏳",
-    bg: "from-[#E7EFEA] to-[#D4E8DE]",
-    content: (
-      <div className="flex flex-col items-center h-full justify-center">
-        <div className="bg-white/50 rounded-full px-3 py-1 mb-2 flex items-center gap-1.5">
-          <span className="text-[9px]">📚</span>
-          <p className="text-[10px] text-[#5E7F6E] font-medium">Biology</p>
-          <span className="text-[8px] text-[#5E7F6E]/50">▾</span>
-        </div>
-        <div className="relative w-32 h-32 mb-4">
-          <svg className="w-full h-full -rotate-90" viewBox="0 0 100 100">
-            <circle
-              cx="50"
-              cy="50"
-              r="42"
-              fill="none"
-              stroke="#E7EFEA"
-              strokeWidth="6"
-            />
-            <circle
-              cx="50"
-              cy="50"
-              r="42"
-              fill="none"
-              stroke="url(#timerGrad)"
-              strokeWidth="6"
-              strokeLinecap="round"
-              strokeDasharray={`${2 * Math.PI * 42 * 0.65} ${2 * Math.PI * 42}`}
-            />
-            <defs>
-              <linearGradient id="timerGrad" x1="0" y1="0" x2="1" y2="1">
-                <stop offset="0%" stopColor="#5E7F6E" />
-                <stop offset="100%" stopColor="#81C784" />
-              </linearGradient>
-            </defs>
-          </svg>
-          <div className="absolute inset-0 flex flex-col items-center justify-center">
-            <span className="text-2xl mb-0.5">🥚</span>
-            <span className="text-lg font-bold text-[#2F4A3E]">29:15</span>
-          </div>
-        </div>
-        <div className="flex gap-2">
-          <div className="bg-white/70 rounded-full px-4 py-1.5 text-[10px] font-semibold text-[#5E7F6E]">
-            Pause
-          </div>
-          <div className="bg-[#5E7F6E] rounded-full px-4 py-1.5 text-[10px] font-semibold text-white">
-            End Session
-          </div>
-        </div>
-      </div>
-    ),
-  },
-  {
-    id: "sanctuary",
-    title: "Sanctuary",
-    subtitle: "Your animal collection & shop",
-    badge: "🏡",
-    bg: "from-[#D4E8DE] to-[#E7EFEA]",
-    content: (
-      <div className="flex flex-col h-full">
-        <div className="flex items-center justify-between mb-1">
-          <p className="text-sm font-bold text-[#2F4A3E]">My Sanctuary</p>
-          <div className="bg-[#5E7F6E]/10 rounded-full px-2.5 py-1 flex items-center gap-1">
-            <span className="text-[9px]">🛍️</span>
-            <span className="text-[9px] font-semibold text-[#5E7F6E]">Shop</span>
-          </div>
-        </div>
-        <p className="text-[9px] text-[#5E7F6E] mb-3">8 animals collected</p>
-        <div className="flex-1 bg-gradient-to-b from-[#87CEEB]/30 to-[#90EE90]/30 rounded-2xl p-3 relative overflow-hidden mb-3">
-          <div className="absolute bottom-0 left-0 right-0 h-1/3 bg-gradient-to-t from-[#228B22]/20 to-transparent rounded-b-2xl" />
-          <div className="grid grid-cols-4 gap-2 relative z-10 mt-6">
-            {["🐆", "🦏", "🐘", "🦁", "🐼", "🦒", "🐯", "🐧"].map(
-              (a, i) => (
-                <div
-                  key={i}
-                  className="flex items-end justify-center text-xl h-8"
-                >
-                  {a}
-                </div>
-              )
-            )}
-          </div>
-        </div>
-        <div className="flex gap-2">
-          <div className="flex-1 bg-white/60 rounded-xl p-2.5 flex items-center gap-2">
-            <span className="text-sm">🤝</span>
-            <div className="flex-1">
-              <p className="text-[10px] font-bold text-[#2F4A3E]">Take Action</p>
-              <p className="text-[7px] text-[#5E7F6E]">Donate directly to WWF</p>
-            </div>
-          </div>
-          <div className="bg-white/60 rounded-xl p-2.5 flex items-center gap-1.5">
-            <span className="text-xs">🍀</span>
-            <span className="text-[10px] font-bold text-[#2F4A3E]">340</span>
-          </div>
-        </div>
-      </div>
-    ),
+    image: "/screenshots/timer.png",
   },
   {
     id: "hatching",
-    title: "Hatching",
-    subtitle: "Interactive tap-to-hatch",
+    title: "Hatch Endangered Animals",
+    description:
+      "Complete study sessions to unlock an interactive hatching experience — tap to crack the egg and reveal one of 30+ real endangered species. Collect, nickname, and learn about each one.",
     badge: "🐣",
-    bg: "from-[#C2DDD0] to-[#E7EFEA]",
-    content: (
-      <div className="flex flex-col items-center justify-center h-full text-center">
-        <p className="text-[9px] text-[#5E7F6E] font-medium mb-3">Tap the egg to crack it!</p>
-        <div className="w-24 h-24 bg-white/50 rounded-full flex items-center justify-center mb-4 shadow-inner relative">
-          <span className="text-5xl">🐆</span>
-          <div className="absolute -top-2 -right-2 text-lg">✨</div>
-          <div className="absolute -bottom-1 -left-2 text-lg">✨</div>
-        </div>
-        <p className="text-lg font-bold text-[#2F4A3E]">Congratulations!</p>
-        <p className="text-[10px] text-[#5E7F6E] mt-1 mb-3">
-          You hatched an Amur Leopard!
-        </p>
-        <div className="bg-white/50 rounded-xl px-4 py-2 mb-3">
-          <p className="text-[9px] text-[#5E7F6E] font-medium">
-            Critically Endangered — fewer than 100 left in the wild
-          </p>
-        </div>
-        <div className="flex gap-2 text-[9px]">
-          <span className="bg-[#5E7F6E]/10 text-[#2F4A3E] px-3 py-1 rounded-full font-medium">
-            🍀 +50 eco-credits
-          </span>
-          <span className="bg-[#5E7F6E]/10 text-[#2F4A3E] px-3 py-1 rounded-full font-medium">
-            🏅 New badge!
-          </span>
-        </div>
-      </div>
-    ),
+    image: "/screenshots/hatching.png",
   },
   {
-    id: "progress",
-    title: "Progress",
-    subtitle: "Track your study stats",
-    badge: "📊",
-    bg: "from-[#E7EFEA] to-[#F2F8F4]",
-    content: (
-      <div className="flex flex-col h-full">
-        <p className="text-sm font-bold text-[#2F4A3E] mb-3">This Past Week</p>
-        <div className="bg-white/60 rounded-2xl p-3 mb-3">
-          <div className="flex items-end justify-between gap-1 h-20">
-            {[
-              { day: "M", h: 60 },
-              { day: "T", h: 80 },
-              { day: "W", h: 45 },
-              { day: "T", h: 90 },
-              { day: "F", h: 70 },
-              { day: "S", h: 30 },
-              { day: "S", h: 55 },
-            ].map((d, i) => (
-              <div key={i} className="flex flex-col items-center flex-1 gap-1">
-                <div
-                  className="w-full rounded-t-md bg-gradient-to-t from-[#5E7F6E] to-[#81C784]"
-                  style={{ height: `${d.h}%` }}
-                />
-                <span className="text-[8px] text-[#5E7F6E]">{d.day}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-        <div className="flex gap-2 mb-3">
-          <div className="flex-1 bg-white/60 rounded-xl p-2.5 text-center">
-            <p className="text-lg font-bold text-[#2F4A3E]">6.5h</p>
-            <p className="text-[8px] text-[#5E7F6E]">Total this week</p>
-          </div>
-          <div className="flex-1 bg-white/60 rounded-xl p-2.5 text-center">
-            <p className="text-lg font-bold text-[#2F4A3E]">56m</p>
-            <p className="text-[8px] text-[#5E7F6E]">Daily average</p>
-          </div>
-        </div>
-        <div className="bg-white/60 rounded-xl p-2.5">
-          <p className="text-[10px] font-bold text-[#2F4A3E] mb-1.5">
-            Badges
-          </p>
-          <div className="flex gap-2">
-            {["🏅", "⭐", "🎯", "💎", "🔥"].map((b, i) => (
-              <div
-                key={i}
-                className="w-7 h-7 bg-[#E7EFEA] rounded-lg flex items-center justify-center text-sm"
-              >
-                {b}
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
-    ),
+    id: "home",
+    title: "Subjects & Task Management",
+    description:
+      "Organise your study by subject, create to-dos with due dates, and track what needs doing. Everything in one place so you can focus on what matters.",
+    badge: "📋",
+    image: "/screenshots/home.png",
   },
   {
     id: "friends",
-    title: "Friends",
-    subtitle: "Groups, goals & leaderboards",
+    title: "Study With Friends",
+    description:
+      "Join groups, set group goals by subject, compete on weekly and all-time leaderboards, and react to friends' achievements. Studying is better together.",
     badge: "👥",
-    bg: "from-[#E8EFF5] to-[#E7EFEA]",
-    content: (
-      <div className="flex flex-col h-full">
-        <p className="text-sm font-bold text-[#2F4A3E] mb-3">Friends</p>
-        <div className="bg-white/60 rounded-2xl p-3 mb-3">
-          <div className="flex items-center justify-between mb-2">
-            <p className="text-[10px] font-bold text-[#2F4A3E]">Leaderboard</p>
-            <div className="flex gap-1">
-              <span className="text-[7px] bg-[#5E7F6E] text-white px-2 py-0.5 rounded-full font-semibold">Weekly</span>
-              <span className="text-[7px] bg-[#E7EFEA] text-[#5E7F6E] px-2 py-0.5 rounded-full font-medium">All Time</span>
-            </div>
-          </div>
-          {[
-            { name: "Rhea", hrs: "6.5h", emoji: "🥇" },
-            { name: "Alex", hrs: "5.2h", emoji: "🥈" },
-            { name: "Maya", hrs: "4.8h", emoji: "🥉" },
-          ].map((f) => (
-            <div
-              key={f.name}
-              className="flex items-center gap-2 py-1.5 border-b border-[#E7EFEA] last:border-0"
-            >
-              <span className="text-xs">{f.emoji}</span>
-              <div className="w-5 h-5 rounded-full bg-[#5E7F6E]/20 flex items-center justify-center text-[8px] font-bold text-[#2F4A3E]">
-                {f.name[0]}
-              </div>
-              <span className="text-[10px] font-medium text-[#2F4A3E] flex-1">
-                {f.name}
-              </span>
-              <span className="text-[9px] text-[#5E7F6E] font-semibold">
-                {f.hrs}
-              </span>
-            </div>
-          ))}
-        </div>
-        <div className="bg-white/60 rounded-2xl p-3">
-          <p className="text-[10px] font-bold text-[#2F4A3E] mb-2">
-            Study Groups
-          </p>
-          {[
-            { name: "Biology Crew", subject: "Biology", goal: "10h/week" },
-            { name: "GCSE Gang", subject: "Mixed", goal: "8h/week" },
-          ].map((g) => (
-            <div
-              key={g.name}
-              className="flex items-center gap-2 py-1.5 border-b border-[#E7EFEA] last:border-0"
-            >
-              <div className="w-6 h-6 rounded-lg bg-[#5E7F6E]/15 flex items-center justify-center text-[10px]">
-                📚
-              </div>
-              <div className="flex-1">
-                <span className="text-[10px] font-medium text-[#2F4A3E] block">{g.name}</span>
-                <span className="text-[7px] text-[#5E7F6E]">{g.subject} · Goal: {g.goal}</span>
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-    ),
+    image: "/screenshots/friends.png",
+  },
+  {
+    id: "sanctuary",
+    title: "Sanctuary & Shop",
+    description:
+      "Build a beautiful habitat for your animals. Spend eco-credits in the shop on accessories and decorations. Make your sanctuary uniquely yours.",
+    badge: "🏡",
+    image: "/screenshots/sanctuary.png",
+  },
+  {
+    id: "progress",
+    title: "Badges & Study Tips",
+    description:
+      "Earn 50+ badges as you study and protect wildlife. Discover community-powered study tips with voting and sharing to help you and your friends study smarter.",
+    badge: "🏅",
+    image: "/screenshots/progress.png",
   },
   {
     id: "donate",
     title: "Take Action",
-    subtitle: "Donate to protect wildlife",
+    description:
+      "Donate directly to WWF conservation projects straight from the app. 100% goes to protecting endangered wildlife — no middlemen, no detours.",
     badge: "💚",
-    bg: "from-[#E7EFEA] to-[#C2DDD0]",
-    content: (
-      <div className="flex flex-col items-center h-full justify-center text-center">
-        <span className="text-4xl mb-2">🌍</span>
-        <p className="text-sm font-bold text-[#2F4A3E] mb-1">
-          Protect Wildlife
-        </p>
-        <p className="text-[9px] text-[#5E7F6E] mb-4 px-2">
-          100% of donations go directly to WWF conservation projects
-        </p>
-        <div className="w-20 h-20 bg-white/50 rounded-full flex items-center justify-center mb-3 relative">
-          <span className="text-3xl">🏺</span>
-          <div className="absolute -top-1 -right-1 bg-[#5E7F6E] text-white text-[8px] font-bold px-1.5 py-0.5 rounded-full">
-            $347
-          </div>
-        </div>
-        <p className="text-[8px] text-[#5E7F6E] mb-3">
-          Raised by our community
-        </p>
-        <div className="flex gap-1.5 mb-3">
-          {["$1", "$5", "$10", "$25"].map((a) => (
-            <div
-              key={a}
-              className={`px-3 py-1.5 rounded-full text-[10px] font-semibold ${
-                a === "$5"
-                  ? "bg-[#5E7F6E] text-white"
-                  : "bg-white/60 text-[#2F4A3E]"
-              }`}
-            >
-              {a}
-            </div>
-          ))}
-        </div>
-        <div className="bg-[#5E7F6E] text-white rounded-full px-6 py-2 text-[10px] font-semibold">
-          Donate Now
-        </div>
-      </div>
-    ),
+    image: "/screenshots/donate.png",
   },
 ];
 
@@ -446,8 +136,8 @@ export default function AppGallery() {
 
   return (
     <section
-      id="app-gallery"
-      className="py-24 sm:py-32 bg-gradient-to-b from-sand/40 to-cream overflow-hidden"
+      id="features"
+      className="py-24 sm:py-32 bg-gradient-to-b from-cream via-sand/30 to-cream overflow-hidden"
     >
       <div className="max-w-6xl mx-auto px-6">
         <motion.div
@@ -458,16 +148,16 @@ export default function AppGallery() {
           className="text-center mb-6"
         >
           <span className="inline-block bg-forest/10 text-forest-dark px-4 py-1.5 rounded-full text-sm font-medium mb-4">
-            Inside the App
+            Why Endura?
           </span>
           <h2 className="text-4xl sm:text-5xl font-bold text-forest-dark tracking-tight">
-            A sneak peek at
+            Studying that actually
             <br />
-            <span className="text-forest-light">every screen</span>
+            <span className="text-forest-light">makes a difference</span>
           </h2>
           <p className="mt-4 text-lg text-forest-dark/50 max-w-2xl mx-auto">
-            From focused study sessions to hatching endangered animals — explore
-            what makes Endura special.
+            Every feature is designed to keep you focused, motivated, and
+            connected to something bigger than grades.
           </p>
         </motion.div>
 
@@ -515,30 +205,22 @@ export default function AppGallery() {
                   active === i ? "scale-100" : "scale-[0.88] opacity-60"
                 }`}
               >
-                {/* Phone frame */}
+                {/* Phone frame with screenshot */}
                 <div className="w-[280px] sm:w-[300px] relative">
-                  <div
-                    className={`bg-gradient-to-b ${screen.bg} rounded-[2.5rem] border-[5px] border-white/80 shadow-2xl shadow-forest/15 overflow-hidden`}
-                  >
-                    {/* Notch */}
-                    <div className="flex justify-center pt-3 pb-1">
-                      <div className="w-20 h-5 bg-black/10 rounded-full" />
-                    </div>
-
-                    {/* Screen content */}
-                    <div className="px-5 pb-6 min-h-[420px] sm:min-h-[460px]">
-                      {screen.content}
-                    </div>
-
-                    {/* Home indicator */}
-                    <div className="flex justify-center pb-3">
-                      <div className="w-28 h-1 bg-black/10 rounded-full" />
-                    </div>
+                  <div className="rounded-[2.5rem] border-[5px] border-white/80 shadow-2xl shadow-forest/15 overflow-hidden bg-black">
+                    <Image
+                      src={screen.image}
+                      alt={screen.title}
+                      width={300}
+                      height={650}
+                      className="w-full h-auto object-cover"
+                      draggable={false}
+                    />
                   </div>
                 </div>
               </div>
 
-              {/* Label beneath active phone */}
+              {/* Label + description beneath active phone */}
               <AnimatePresence mode="wait">
                 {active === i && (
                   <motion.div
@@ -546,13 +228,13 @@ export default function AppGallery() {
                     animate={{ opacity: 1, y: 0 }}
                     exit={{ opacity: 0, y: -4 }}
                     transition={{ duration: 0.3 }}
-                    className="text-center mt-6"
+                    className="text-center mt-6 max-w-[300px]"
                   >
                     <p className="text-base font-bold text-forest-dark">
                       {screen.title}
                     </p>
-                    <p className="text-sm text-forest-dark/50">
-                      {screen.subtitle}
+                    <p className="text-sm text-forest-dark/50 mt-1.5 leading-relaxed">
+                      {screen.description}
                     </p>
                   </motion.div>
                 )}
