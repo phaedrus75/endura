@@ -214,25 +214,27 @@ export default function AppGallery() {
                 >
                   {screen.image2 && (
                     <div className="w-[200px] sm:w-[230px]">
-                      <div className="rounded-[2rem] border-[4px] border-white/80 shadow-2xl shadow-forest/15 overflow-hidden bg-black">
+                      <div className="rounded-[2rem] border-[4px] border-white/80 shadow-2xl shadow-forest/15 overflow-hidden">
                         <Image
                           src={screen.image2}
                           alt={`${screen.title} — step 1`}
                           width={230}
                           height={498}
                           className="w-full h-auto object-cover"
+                          priority
                         />
                       </div>
                     </div>
                   )}
                   <div className={screen.image2 ? "w-[200px] sm:w-[230px]" : "w-[220px] sm:w-[250px]"}>
-                    <div className="rounded-[2rem] border-[4px] border-white/80 shadow-2xl shadow-forest/15 overflow-hidden bg-black">
+                    <div className="rounded-[2rem] border-[4px] border-white/80 shadow-2xl shadow-forest/15 overflow-hidden">
                       <Image
                         src={screen.image}
                         alt={screen.title}
                         width={screen.image2 ? 230 : 250}
                         height={screen.image2 ? 498 : 542}
                         className="w-full h-auto object-cover"
+                        priority
                       />
                     </div>
                   </div>
@@ -240,8 +242,8 @@ export default function AppGallery() {
               </AnimatePresence>
             </div>
 
-            {/* Text content — centered between screenshots and arrow */}
-            <div className="flex-1 text-center flex flex-col justify-center items-center lg:min-h-[280px]">
+            {/* Text content */}
+            <div className="flex-1 text-center lg:text-left flex flex-col justify-center lg:items-start items-center lg:min-h-[280px]">
               <AnimatePresence mode="wait" custom={direction}>
                 <motion.div
                   key={screen.id}
@@ -258,7 +260,7 @@ export default function AppGallery() {
                   <h3 className="text-2xl sm:text-3xl lg:text-4xl font-bold text-forest-dark mb-5 tracking-tight">
                     {screen.title}
                   </h3>
-                  <p className="text-base sm:text-lg text-forest-dark/55 leading-relaxed max-w-md mx-auto">
+                  <p className="text-base sm:text-lg text-forest-dark/55 leading-relaxed max-w-md mx-auto lg:mx-0">
                     {screen.description}
                   </p>
                 </motion.div>
