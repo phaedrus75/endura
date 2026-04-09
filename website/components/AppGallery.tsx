@@ -42,6 +42,7 @@ const SCREENS: Screen[] = [
     description:
       "Join groups, set group goals by subject, compete on weekly and all-time leaderboards, and react to friends' achievements. Studying is better together.",
     image: "/screenshots/friends.png",
+    image2: "/screenshots/groups.png",
   },
   {
     id: "sanctuary",
