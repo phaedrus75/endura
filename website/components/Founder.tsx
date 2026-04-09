@@ -1,6 +1,7 @@
 "use client";
 
 import { motion } from "framer-motion";
+import Image from "next/image";
 
 const credentials = [
   "Founder & CEO",
@@ -28,14 +29,14 @@ export default function Founder() {
             className="flex-shrink-0"
           >
             <div className="relative">
-              <div className="w-64 h-64 sm:w-80 sm:h-80 rounded-3xl bg-gradient-to-br from-sage-light to-sage overflow-hidden border-4 border-white shadow-xl">
-                <div className="w-full h-full flex flex-col items-center justify-center text-forest-dark/40">
-                  <span className="text-7xl mb-2">🌿</span>
-                  <span className="text-sm font-medium">Photo coming soon</span>
-                </div>
-              </div>
-              <div className="absolute -top-3 -left-3 text-3xl animate-float">
-                🦁
+              <div className="w-64 h-64 sm:w-80 sm:h-80 rounded-3xl overflow-hidden border-4 border-white shadow-xl">
+                <Image
+                  src="/rhea.png"
+                  alt="Rhea Munshi, Founder of Endura"
+                  width={320}
+                  height={320}
+                  className="w-full h-full object-cover"
+                />
               </div>
             </div>
           </motion.div>
