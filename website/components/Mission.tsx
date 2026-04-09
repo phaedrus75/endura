@@ -97,10 +97,11 @@ export default function Mission() {
               </h2>
 
               <p className="text-base sm:text-lg text-white/50 leading-relaxed max-w-lg mx-auto lg:mx-0 mb-10">
-                Endura has a built-in WWF integration. When you want to go
-                beyond grades, you can donate directly to real conservation
-                projects — right from the app. No pressure. Your choice,
-                your impact.
+                Endura has a built-in WWF donation feature. When you want to
+                make an impact beyond grades, you can donate directly to real
+                conservation projects — right from the app.
+                <br /><br />
+                No pressure. Your choice, your impact.
               </p>
 
               {/* Impact areas */}
