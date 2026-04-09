@@ -135,9 +135,7 @@ export default function AppGallery() {
             Why Endura?
           </span>
           <h2 className="text-4xl sm:text-5xl font-bold text-forest-dark tracking-tight">
-            Studying that actually
-            <br />
-            <span className="text-forest-light">makes a difference</span>
+            A closer <span className="text-forest-light">look</span>
           </h2>
           <p className="mt-4 text-lg text-forest-dark/50 max-w-2xl mx-auto">
             Every feature is designed to keep you focused, motivated, and
