@@ -53,7 +53,9 @@ export default function Navbar() {
             </a>
           ))}
           <a
-            href="#hero"
+            href="https://apps.apple.com/app/endura-study-timer/id6759482612"
+            target="_blank"
+            rel="noopener noreferrer"
             className="bg-forest text-white px-5 py-2.5 rounded-full text-sm font-semibold hover:bg-forest-dark transition-colors"
           >
             Get the App
@@ -104,7 +106,9 @@ export default function Navbar() {
                 </a>
               ))}
               <a
-                href="#hero"
+                href="https://apps.apple.com/app/endura-study-timer/id6759482612"
+                target="_blank"
+                rel="noopener noreferrer"
                 onClick={() => setMobileOpen(false)}
                 className="bg-forest text-white px-5 py-3 rounded-full text-sm font-semibold text-center hover:bg-forest-dark transition-colors mt-2"
               >

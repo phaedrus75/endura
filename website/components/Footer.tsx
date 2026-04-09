@@ -38,10 +38,11 @@ export default function Footer() {
               impact. Built by students, for students — and for the planet.
             </p>
             <div className="flex gap-4">
-              {/* App Store Badges (placeholders) */}
               <motion.a
                 whileHover={{ scale: 1.05 }}
-                href="#"
+                href="https://apps.apple.com/app/endura-study-timer/id6759482612"
+                target="_blank"
+                rel="noopener noreferrer"
                 className="bg-white/10 hover:bg-white/15 transition-colors rounded-xl px-4 py-2.5 flex items-center gap-2"
               >
                 <span className="text-lg">🍎</span>
