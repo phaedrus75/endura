@@ -9,25 +9,6 @@ export default function Hero() {
       id="hero"
       className="relative min-h-screen flex items-center justify-center overflow-hidden bg-gradient-to-b from-sage-light/40 via-cream to-cream"
     >
-      {/* Background decorative elements */}
-      <div className="absolute inset-0 overflow-hidden pointer-events-none">
-        <div className="absolute top-20 left-10 text-6xl opacity-20 animate-float">
-          🌿
-        </div>
-        <div className="absolute top-40 right-16 text-5xl opacity-15 animate-float-delay">
-          🦋
-        </div>
-        <div className="absolute bottom-32 left-20 text-4xl opacity-20 animate-float-delay-2">
-          🌱
-        </div>
-        <div className="absolute bottom-20 right-10 text-5xl opacity-15 animate-float">
-          🐾
-        </div>
-        <div className="absolute top-1/3 right-1/4 text-3xl opacity-10 animate-float-delay">
-          🍀
-        </div>
-      </div>
-
       <div className="max-w-6xl mx-auto px-6 pt-24 pb-16 flex flex-col lg:flex-row items-center gap-12 lg:gap-16">
         {/* Text Content */}
         <motion.div
@@ -101,13 +82,6 @@ export default function Hero() {
               />
             </div>
 
-            {/* Floating decorations around phone */}
-            <div className="absolute -top-4 -right-4 text-3xl animate-float-delay">
-              🌸
-            </div>
-            <div className="absolute -bottom-2 -left-6 text-2xl animate-float-delay-2">
-              🌿
-            </div>
           </div>
         </motion.div>
       </div>
