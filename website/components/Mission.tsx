@@ -46,8 +46,8 @@ export default function Mission() {
         </div>
         <div className="relative overflow-hidden">
           <Image
-            src="/wildlife/forest.jpg"
-            alt="Tropical forest canopy"
+            src="/wildlife/orangutan.jpg"
+            alt="Orangutan in natural habitat"
             fill
             className="object-cover"
           />
@@ -59,7 +59,7 @@ export default function Mission() {
       <div className="bg-forest-dark py-20 sm:py-28">
         <div className="max-w-5xl mx-auto px-6">
           <div className="flex flex-col lg:flex-row gap-14 lg:gap-20 items-center">
-            {/* Left — donate screenshot */}
+            {/* Left — donate screenshot (scaled up ~18%) */}
             <motion.div
               initial={{ opacity: 0, y: 30 }}
               whileInView={{ opacity: 1, y: 0 }}
@@ -67,12 +67,12 @@ export default function Mission() {
               transition={{ duration: 0.6 }}
               className="flex-shrink-0 -mt-28 sm:-mt-36 lg:-mt-44 relative z-10"
             >
-              <div className="w-[220px] sm:w-[260px] rounded-[2rem] border-[4px] border-white/20 shadow-2xl shadow-black/30 overflow-hidden bg-black">
+              <div className="w-[260px] sm:w-[305px] rounded-[2.25rem] border-[4px] border-white/20 overflow-hidden shadow-[0_20px_60px_-15px_rgba(0,0,0,0.5)]">
                 <Image
                   src="/screenshots/donate.png"
                   alt="Endura WWF donation screen"
-                  width={260}
-                  height={563}
+                  width={305}
+                  height={661}
                   className="w-full h-auto object-cover"
                 />
               </div>
