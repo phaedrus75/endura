@@ -36,16 +36,6 @@ export default function Hero() {
           transition={{ duration: 0.8, ease: "easeOut" }}
           className="flex-1 text-center lg:text-left"
         >
-          <motion.div
-            initial={{ opacity: 0, scale: 0.9 }}
-            animate={{ opacity: 1, scale: 1 }}
-            transition={{ delay: 0.2, duration: 0.5 }}
-            className="inline-flex items-center gap-2 bg-forest/10 text-forest-dark px-4 py-2 rounded-full text-sm font-medium mb-6"
-          >
-            <span>🌍</span>
-            <span>Youth-led conservation through education</span>
-          </motion.div>
-
           <h1 className="text-5xl sm:text-6xl lg:text-7xl font-bold text-forest-dark leading-tight tracking-tight">
             You get the grades.
             <br />
