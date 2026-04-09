@@ -1,6 +1,7 @@
 "use client";
 
 import { motion } from "framer-motion";
+import Image from "next/image";
 
 export default function Hero() {
   return (
@@ -99,62 +100,15 @@ export default function Hero() {
           className="flex-1 flex justify-center"
         >
           <div className="relative">
-            {/* Phone frame */}
-            <div className="w-[280px] h-[580px] sm:w-[300px] sm:h-[620px] bg-gradient-to-b from-sage-light to-sage rounded-[3rem] shadow-2xl shadow-forest/20 border-[6px] border-white/80 overflow-hidden relative">
-              {/* Status bar */}
-              <div className="h-12 bg-forest-dark/5 flex items-center justify-center">
-                <div className="w-24 h-5 bg-forest-dark/10 rounded-full" />
-              </div>
-
-              {/* App content mockup */}
-              <div className="p-5 flex flex-col items-center gap-4">
-                <div className="text-4xl mt-2">🥚</div>
-                <div className="w-32 h-32 bg-white/60 rounded-full flex items-center justify-center">
-                  <div className="text-6xl animate-float">🐣</div>
-                </div>
-                <div className="text-center mt-2">
-                  <p className="text-sm font-bold text-forest-dark">
-                    Study to Hatch Me!
-                  </p>
-                  <p className="text-xs text-forest-dark/50 mt-1">
-                    Amur Leopard — Critically Endangered
-                  </p>
-                </div>
-
-                {/* Timer mockup */}
-                <div className="w-full bg-white/70 rounded-2xl p-4 mt-2 backdrop-blur-sm">
-                  <div className="flex items-center justify-between mb-3">
-                    <span className="text-xs font-semibold text-forest-dark/60">
-                      Study Session
-                    </span>
-                    <span className="text-xs text-forest-light font-bold">
-                      45:00
-                    </span>
-                  </div>
-                  <div className="h-2 bg-sage-light rounded-full overflow-hidden">
-                    <div className="h-full w-3/5 bg-forest-light rounded-full" />
-                  </div>
-                </div>
-
-                {/* Stats */}
-                <div className="flex gap-3 mt-2">
-                  {[
-                    { emoji: "🔥", label: "12" },
-                    { emoji: "🐾", label: "8" },
-                    { emoji: "🍀", label: "300" },
-                  ].map((s) => (
-                    <div
-                      key={s.emoji}
-                      className="bg-white/60 rounded-xl px-3 py-2 flex items-center gap-1.5"
-                    >
-                      <span className="text-sm">{s.emoji}</span>
-                      <span className="text-xs font-bold text-forest-dark">
-                        {s.label}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              </div>
+            <div className="w-[280px] sm:w-[300px] rounded-[2.5rem] border-[5px] border-white/80 shadow-2xl shadow-forest/20 overflow-hidden bg-black">
+              <Image
+                src="/screenshots/home.png"
+                alt="Endura home screen"
+                width={300}
+                height={650}
+                className="w-full h-auto object-cover"
+                priority
+              />
             </div>
 
             {/* Floating decorations around phone */}
