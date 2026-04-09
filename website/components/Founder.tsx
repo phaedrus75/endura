@@ -6,10 +6,6 @@ import Image from "next/image";
 const credentials = [
   "Founder & CEO",
   "IB Diploma Student",
-  "Harvard MUN Delegate",
-  "UChicago Research Scholar",
-  "1st Place IE Datathon",
-  "Public Speaking Finalist",
 ];
 
 export default function Founder() {
@@ -66,18 +62,18 @@ export default function Founder() {
                 person would do: closed the app and built a better one.
               </p>
               <p>
-                Endura is the result. Join her in proving that you can put in
+                Endura is the result.
+              </p>
+              <p>
+                Join her in proving that you can put in
                 the hours — for yourself and for the planet.
+                Join her in proving that you can{" "}
+                <span className="text-xl sm:text-2xl font-bold text-forest-light">
+                  hatch your potential
+                </span>
+                .
               </p>
             </div>
-
-            <p className="mt-6 text-lg text-forest-dark/60 leading-relaxed">
-              Join her in proving that you can{" "}
-              <span className="text-2xl sm:text-3xl font-bold text-forest-light">
-                hatch your potential
-              </span>
-              .
-            </p>
 
             <div className="mt-8 flex flex-wrap gap-2.5 justify-center lg:justify-start">
               {credentials.map((tag) => (
