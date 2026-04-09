@@ -46,8 +46,8 @@ export default function Mission() {
         </div>
         <div className="relative overflow-hidden">
           <Image
-            src="/wildlife/orangutan.jpg"
-            alt="Orangutan in natural habitat"
+            src="/wildlife/panda.jpg"
+            alt="Giant panda"
             fill
             className="object-cover"
           />
