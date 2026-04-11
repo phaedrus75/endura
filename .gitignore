@@ -27,3 +27,4 @@ frontend/*.log
 Thumbs.db
 website/node_modules
 website/.next
+node_modules/
