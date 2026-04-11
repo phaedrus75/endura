@@ -78,7 +78,7 @@ const PRESET_TIMES = [
 const CircularProgress = ({ progress, size = 260, strokeWidth = 10, children }: any) => {
   const radius = (size - strokeWidth) / 2;
   const circumference = radius * 2 * Math.PI;
-  const clampedProgress = progress < 0.005 ? 0 : progress;
+  const clampedProgress = progress < 0.001 ? 0 : progress;
   const strokeDashoffset = circumference - (clampedProgress * circumference);
   const glowWidth = strokeWidth + 12;
   

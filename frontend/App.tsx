@@ -283,11 +283,14 @@ const styles = StyleSheet.create({
   },
   tabItem: {
     paddingTop: 4,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   tabLabel: {
-    fontSize: 11,
+    fontSize: 9,
     fontWeight: '600',
-    marginTop: 4,
+    marginTop: 3,
+    textAlign: 'center',
   },
   tabIcon: {
     width: 44,
@@ -348,9 +351,10 @@ const styles = StyleSheet.create({
     fontSize: 28,
   },
   timerTabLabel: {
-    fontSize: 10,
+    fontSize: 9,
     fontWeight: '700',
     color: '#7AAFC4',
     marginTop: 1,
+    textAlign: 'center',
   },
 });

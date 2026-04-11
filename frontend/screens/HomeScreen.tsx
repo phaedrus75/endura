@@ -1139,7 +1139,7 @@ const styles = StyleSheet.create({
   nestEmoji: {
     fontSize: 150,
     position: 'absolute',
-    bottom: -58,
+    bottom: -62,
     textAlign: 'center',
     opacity: 0.92,
   },

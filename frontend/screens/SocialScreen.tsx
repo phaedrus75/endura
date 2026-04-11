@@ -492,7 +492,7 @@ export default function SocialScreen() {
         }
       }
       setShowCreateGroup(false);
-      setGroupName(''); setGoalHoursPicker(8); setGoalMinutesPicker(20); setSelectedGroupFriends(new Set()); setCreateSubject(null);
+      setGroupName(''); setGoalHoursPicker(8); setGoalMinutesPicker(20); setSelectedGroupFriends(new Set()); setCreateSubjectId(null);
       const msg = invited.length > 0
         ? `Group created and ${invited.join(', ')} ${invited.length === 1 ? 'has' : 'have'} been added!`
         : 'Group created! Add friends from the group card.';
@@ -1070,7 +1070,7 @@ export default function SocialScreen() {
       </ScrollView>
 
       {/* Create Group Modal */}
-      <Modal visible={showCreateGroup} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => { setShowCreateGroup(false); setSelectedGroupFriends(new Set()); setCreateSubject(null); }}>
+      <Modal visible={showCreateGroup} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => { setShowCreateGroup(false); setSelectedGroupFriends(new Set()); setCreateSubjectId(null); }}>
         <View style={{ flex: 1, backgroundColor: '#fff' }}>
           <DragHandle />
           <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}>
@@ -1183,7 +1183,7 @@ export default function SocialScreen() {
                   <Text style={styles.modalPrimaryText}>Create Group</Text>
                 </LinearGradient>
               </TouchableOpacity>
-              <TouchableOpacity style={styles.modalCancel} onPress={() => { setShowCreateGroup(false); setSelectedGroupFriends(new Set()); setCreateSubject(null); }}>
+              <TouchableOpacity style={styles.modalCancel} onPress={() => { setShowCreateGroup(false); setSelectedGroupFriends(new Set()); setCreateSubjectId(null); }}>
                 <Text style={styles.modalCancelText}>Cancel</Text>
               </TouchableOpacity>
             </ScrollView>
@@ -2586,7 +2586,7 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1, borderBottomColor: colors.divider,
   },
   leaderboardRowSelf: {
-    backgroundColor: '#D8EDDB',
+    backgroundColor: '#D0E4D6',
     borderRadius: 8,
     marginHorizontal: -4,
     paddingHorizontal: 4,
