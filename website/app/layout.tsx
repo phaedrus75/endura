@@ -9,7 +9,7 @@ const dmSans = DM_Sans({
 });
 
 export const metadata: Metadata = {
-  title: "Endura — You get the grades. The animals get to live.",
+  title: "Endura — A study timer app to hatch your potential",
   description:
     "Endura turns every focused study session into an endangered animal you hatch, collect, and protect. Finally, a reason to sit down and do the work.",
   keywords: [
@@ -22,7 +22,7 @@ export const metadata: Metadata = {
     "WWF",
   ],
   openGraph: {
-    title: "Endura — You get the grades. The animals get to live.",
+    title: "Endura — A study timer app to hatch your potential",
     description:
       "Endura turns every focused study session into an endangered animal you hatch, collect, and protect. Finally, a reason to sit down and do the work.",
     type: "website",
