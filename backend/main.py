@@ -447,7 +447,9 @@ def verify_email(request: Request, body: VerifyEmailRequest, db: Session = Depen
     user.verification_attempts = 0
     db.commit()
 
-    _send_welcome_email(user.email, user.username, db)
+    import threading
+    _email, _uname = user.email, user.username
+    threading.Thread(target=_send_welcome_email_delayed, args=(_email, _uname), daemon=True).start()
 
     access_token = create_access_token(
         data={"sub": user.email, "tv": user.token_version or 0},
@@ -558,6 +560,13 @@ def _send_welcome_email(email: str, username: str | None, db: Session | None = N
         return _send_template_email("welcome", email, variables, _db)
     finally:
         _db.close()
+
+
+def _send_welcome_email_delayed(email: str, username: str | None, delay_seconds: int = 600) -> None:
+    """Wait before sending the welcome email so the user can finish account setup."""
+    import time
+    time.sleep(delay_seconds)
+    _send_welcome_email(email, username)
 
 
 @app.post("/auth/login", response_model=schemas.Token)
