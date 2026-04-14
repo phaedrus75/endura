@@ -1700,8 +1700,7 @@ function renderDauChart(data) {
 // ── Android Beta ──
 async function loadAndroidBeta() {
     try {
-        const res = await api('/admin/android-beta');
-        const signups = await res.json();
+        const signups = await adminFetch('/admin/android-beta');
         const total = signups.length;
         const invited = signups.filter(s => s.invited).length;
         document.getElementById('ab-total').textContent = total;
@@ -1722,7 +1721,7 @@ async function loadAndroidBeta() {
 
 async function markInvited(id) {
     try {
-        await api('/admin/android-beta/' + id + '/invite', { method: 'PUT' });
+        await fetch(API_URL + '/admin/android-beta/' + id + '/invite', { method: 'PUT', headers: { 'X-Admin-Key': API_KEY } });
         loadAndroidBeta();
     } catch(e) { alert('Failed to mark invited'); }
 }
