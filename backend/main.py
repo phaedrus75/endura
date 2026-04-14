@@ -50,7 +50,7 @@ else:
             print("Added eco_credits_multiplier column to users")
         if "is_archived" not in _user_cols:
             with engine.connect() as _conn:
-                _conn.execute(text("ALTER TABLE users ADD COLUMN is_archived BOOLEAN DEFAULT 0"))
+                _conn.execute(text("ALTER TABLE users ADD COLUMN is_archived BOOLEAN DEFAULT FALSE"))
                 _conn.commit()
             print("Added is_archived column to users")
     except Exception as e:
@@ -187,7 +187,7 @@ def health_check():
     return {
         "status": "healthy",
         "app": "Endura API",
-        "version": "1.0.51",
+        "version": "1.0.52",
     }
 
 @app.get("/health")
