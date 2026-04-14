@@ -369,14 +369,20 @@
         <div class="page" id="page-users">
             <h1 class="page-title">Users</h1>
             <div class="table-card">
-                <div class="table-toolbar">
-                    <input type="text" id="userSearch" placeholder="Search by username or email...">
+                <div class="table-toolbar" style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+                    <input type="text" id="userSearch" placeholder="Search by username or email..." style="flex:1;min-width:200px">
+                    <select id="countryFilter" onchange="applyUserFilters()" style="padding:10px 14px;border:1px solid var(--border);border-radius:10px;font-size:14px;min-width:140px">
+                        <option value="">All Countries</option>
+                    </select>
+                    <select id="schoolFilter" onchange="applyUserFilters()" style="padding:10px 14px;border:1px solid var(--border);border-radius:10px;font-size:14px;min-width:160px">
+                        <option value="">All Schools</option>
+                    </select>
                 </div>
                 <div style="overflow-x:auto">
                     <table>
                         <thead><tr>
-                            <th>User</th><th>Email</th><th>Study Mins</th>
-                            <th>Streak</th><th>Coins</th><th>Animals</th>
+                            <th>User</th><th>Email</th><th>School</th><th>Country</th>
+                            <th>Study Mins</th><th>Streak</th><th>Coins</th><th>Animals</th>
                             <th>Donated</th><th>Joined</th>
                         </tr></thead>
                         <tbody id="usersBody"></tbody>
@@ -970,11 +976,20 @@ async function loadUsers(search = '') {
 
 function renderUsersTable() {
     const body = document.getElementById('usersBody');
-    if (!usersData.length) { body.innerHTML = '<tr><td colspan="8" class="empty">No users found</td></tr>'; return; }
-    body.innerHTML = usersData.map(u => `
+    const country = document.getElementById('countryFilter').value;
+    const school = document.getElementById('schoolFilter').value;
+    const filtered = usersData.filter(u => {
+        if (country && (u.country || '') !== country) return false;
+        if (school && (u.school || '') !== school) return false;
+        return true;
+    });
+    if (!filtered.length) { body.innerHTML = '<tr><td colspan="10" class="empty">No users found</td></tr>'; return; }
+    body.innerHTML = filtered.map(u => `
         <tr style="cursor:pointer" onclick="showUserDetail(${u.id})">
             <td><strong>${esc(u.username || '—')}</strong></td>
             <td>${esc(u.email)}</td>
+            <td>${esc(u.school || '—')}</td>
+            <td>${esc(u.country || '—')}</td>
             <td>${(u.total_study_minutes||0).toLocaleString()}</td>
             <td>${u.current_streak||0} 🔥</td>
             <td>${(u.current_coins||0).toLocaleString()}</td>
@@ -983,7 +998,23 @@ function renderUsersTable() {
             <td>${u.created_at ? new Date(u.created_at).toLocaleDateString() : '—'}</td>
         </tr>
     `).join('');
+    populateFilterDropdowns();
 }
+
+function populateFilterDropdowns() {
+    const countries = [...new Set(usersData.map(u => u.country).filter(Boolean))].sort();
+    const schools = [...new Set(usersData.map(u => u.school).filter(Boolean))].sort();
+    const cf = document.getElementById('countryFilter');
+    const sf = document.getElementById('schoolFilter');
+    const prevCountry = cf.value;
+    const prevSchool = sf.value;
+    cf.innerHTML = '<option value="">All Countries</option>' + countries.map(c => `<option value="${esc(c)}">${esc(c)}</option>`).join('');
+    sf.innerHTML = '<option value="">All Schools</option>' + schools.map(s => `<option value="${esc(s)}">${esc(s)}</option>`).join('');
+    cf.value = prevCountry;
+    sf.value = prevSchool;
+}
+
+function applyUserFilters() { renderUsersTable(); }
 
 let currentEditUserId = null;
 
@@ -1025,7 +1056,7 @@ async function showUserDetail(id) {
                 <div class="detail-stat"><div class="val">${(u.current_coins||0).toLocaleString()}</div><div class="lbl">Eco-Credits</div></div>
                 <div class="detail-stat"><div class="val">${u.animals?.length||0}</div><div class="lbl">Animals</div></div>
             </div>
-            <p style="font-size:12px;color:var(--text-muted);margin-bottom:4px">Joined ${u.created_at ? new Date(u.created_at).toLocaleDateString() : '—'} &bull; Last studied ${u.last_study_date ? timeAgo(u.last_study_date) : 'never'}</p>
+            <p style="font-size:12px;color:var(--text-muted);margin-bottom:4px">${u.school ? '🏫 ' + esc(u.school) + ' &bull; ' : ''}${u.city ? esc(u.city) + ', ' : ''}${u.country ? esc(u.country) + ' &bull; ' : ''}Joined ${u.created_at ? new Date(u.created_at).toLocaleDateString() : '—'} &bull; Last studied ${u.last_study_date ? timeAgo(u.last_study_date) : 'never'}</p>
 
             ${u.animals?.length ? `<div class="detail-section"><h4>Animals (${u.animals.length})</h4>
                 <div style="display:flex;flex-wrap:wrap;gap:8px">${u.animals.map(a => `<span class="badge badge-green">${esc(a.name)}${a.nickname?' ('+esc(a.nickname)+')':''}</span>`).join('')}</div>
