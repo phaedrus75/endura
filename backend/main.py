@@ -164,11 +164,13 @@ def start_scheduler():
     except Exception as e:
         logger.error(f"Failed to start scheduler: {e}")
 
-_allowed_origins = os.getenv("CORS_ORIGINS", "").split(",") if os.getenv("CORS_ORIGINS") else [
+_allowed_origins = [
     "https://web-production-34028.up.railway.app",
     "https://endura.eco",
     "https://www.endura.eco",
 ]
+if os.getenv("CORS_ORIGINS"):
+    _allowed_origins += [o.strip() for o in os.getenv("CORS_ORIGINS").split(",") if o.strip()]
 if not os.getenv("RAILWAY_ENVIRONMENT"):
     _allowed_origins += ["http://localhost:3000", "http://localhost:3002", "http://localhost:8000", "http://localhost:8081"]
 
