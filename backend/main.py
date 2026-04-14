@@ -2548,6 +2548,25 @@ async def admin_update_user(
     }
 
 
+@app.delete("/admin/users/{user_id}")
+def admin_delete_user(user_id: int, db: Session = Depends(get_db), _=Depends(verify_admin)):
+    user = db.query(models.User).filter(models.User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    if user.is_admin:
+        raise HTTPException(status_code=400, detail="Cannot delete admin users")
+    for tbl in [models.UserBadge, models.UserAnimal, models.StudySession, models.Donation,
+                 models.Task, models.EmailLog, models.UserPurchase, models.UserItemAssignment,
+                 models.UserSubject, models.GroupMember, models.ActivityEvent]:
+        db.query(tbl).filter(tbl.user_id == user_id).delete()
+    db.query(models.Friendship).filter(
+        (models.Friendship.user_id == user_id) | (models.Friendship.friend_id == user_id)
+    ).delete(synchronize_session=False)
+    db.delete(user)
+    db.commit()
+    return {"deleted": True, "user_id": user_id}
+
+
 @app.get("/admin/users/{user_id}")
 def admin_user_detail(user_id: int, db: Session = Depends(get_db), _=Depends(verify_admin)):
     user = db.query(models.User).filter(models.User.id == user_id).first()
