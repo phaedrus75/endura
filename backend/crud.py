@@ -1,5 +1,5 @@
 from sqlalchemy.orm import Session
-from sqlalchemy import func, desc
+from sqlalchemy import func, desc, or_
 from datetime import datetime, timedelta
 from typing import List, Optional
 import models
@@ -449,7 +449,7 @@ def get_friend_suggestions(db: Session, user_id: int, limit: int = 10) -> List[d
         models.User.school == user.school,
         models.User.id.notin_(exclude_ids),
         models.User.username.isnot(None),
-        models.User.is_archived != True,
+        or_(models.User.is_archived == False, models.User.is_archived == None),
     ).order_by(models.User.total_study_minutes.desc()).limit(limit).all()
 
     return [
@@ -512,7 +512,7 @@ def get_global_leaderboard(db: Session, period: str = "all_time") -> List[dict]:
             u.id: u
             for u in db.query(models.User).filter(
                 models.User.id.in_(user_ids),
-                models.User.is_archived != True,
+                or_(models.User.is_archived == False, models.User.is_archived == None),
             ).all()
         }
         sorted_ids = sorted(user_ids, key=lambda uid: weekly.get(uid, 0), reverse=True)[:100]
@@ -534,7 +534,7 @@ def get_global_leaderboard(db: Session, period: str = "all_time") -> List[dict]:
         return leaderboard
 
     users = db.query(models.User).filter(
-        models.User.is_archived != True,
+        or_(models.User.is_archived == False, models.User.is_archived == None),
     ).order_by(
         models.User.total_study_minutes.desc()
     ).limit(100).all()
@@ -561,7 +561,7 @@ def get_school_leaderboard(db: Session, current_user, period: str = "all_time") 
     users = db.query(models.User).filter(
         models.User.school.isnot(None),
         func.lower(func.trim(models.User.school)) == school_lower,
-        models.User.is_archived != True,
+        or_(models.User.is_archived == False, models.User.is_archived == None),
     ).limit(100).all()
 
     if period == "week":
@@ -605,7 +605,7 @@ def get_leaderboard(db: Session, user_id: int, limit: int = 20, period: str = "a
 
     users = db.query(models.User).filter(
         models.User.id.in_(friend_ids),
-        models.User.is_archived != True,
+        or_(models.User.is_archived == False, models.User.is_archived == None),
     ).limit(limit).all()
 
     if period == "week":
