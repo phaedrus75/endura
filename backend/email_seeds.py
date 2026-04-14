@@ -43,7 +43,7 @@ DEFAULT_EMAIL_TEMPLATES = [
         </table>
     </div>
     <div style="text-align:center;margin-bottom:20px">
-        <a href="https://endura.eco" style="display:inline-block;background:#4A7C59;color:#fff;text-decoration:none;padding:14px 32px;border-radius:12px;font-size:15px;font-weight:600">Open Endura</a>
+        <a href="https://apps.apple.com/app/endura-study-timer/id6759482612" style="display:inline-block;background:#4A7C59;color:#fff;text-decoration:none;padding:14px 32px;border-radius:12px;font-size:15px;font-weight:600">Open Endura</a>
     </div>
     <p style="color:#999;font-size:12px;text-align:center;margin:0">
         Study smarter. Save wildlife. 🌍<br>
@@ -65,7 +65,7 @@ DEFAULT_EMAIL_TEMPLATES = [
         <p style="color:#333;font-size:15px;line-height:1.7;margin:0 0 12px">🔥 Current streak: <strong>{streak} days</strong></p>
         <p style="color:#333;font-size:14px;line-height:1.7;margin:0"><strong>Tip:</strong> Add friends to compete on the leaderboard and stay motivated!</p>
     </div>
-    <div style="text-align:center"><a href="https://endura.eco" style="display:inline-block;background:#4A7C59;color:#fff;text-decoration:none;padding:12px 28px;border-radius:12px;font-size:14px;font-weight:600">Open Endura</a></div>
+    <div style="text-align:center"><a href="https://apps.apple.com/app/endura-study-timer/id6759482612" style="display:inline-block;background:#4A7C59;color:#fff;text-decoration:none;padding:12px 28px;border-radius:12px;font-size:14px;font-weight:600">Open Endura</a></div>
     <p style="color:#999;font-size:11px;text-align:center;margin:16px 0 0">Study smarter. Save wildlife. 🌍</p>
 </div>""",
     },
@@ -87,7 +87,7 @@ DEFAULT_EMAIL_TEMPLATES = [
         </table>
     </div>
     <p style="color:#555;font-size:14px;text-align:center;margin:0 0 16px">Every session helps protect endangered wildlife. Keep it going!</p>
-    <div style="text-align:center"><a href="https://endura.eco" style="display:inline-block;background:#4A7C59;color:#fff;text-decoration:none;padding:12px 28px;border-radius:12px;font-size:14px;font-weight:600">Open Endura</a></div>
+    <div style="text-align:center"><a href="https://apps.apple.com/app/endura-study-timer/id6759482612" style="display:inline-block;background:#4A7C59;color:#fff;text-decoration:none;padding:12px 28px;border-radius:12px;font-size:14px;font-weight:600">Open Endura</a></div>
     <p style="color:#999;font-size:11px;text-align:center;margin:16px 0 0">Study smarter. Save wildlife. 🌍</p>
 </div>""",
     },
@@ -144,7 +144,7 @@ DEFAULT_EMAIL_TEMPLATES = [
         <p style="color:#333;font-size:15px;line-height:1.7;margin:0 0 12px">Your sanctuary is waiting and there are still more species left to discover.</p>
         <p style="color:#333;font-size:14px;line-height:1.7;margin:0">Even a quick 15-minute session earns eco-credits and keeps your progress going. Your {streak}-day streak is at risk!</p>
     </div>
-    <div style="text-align:center"><a href="https://endura.eco" style="display:inline-block;background:#4A7C59;color:#fff;text-decoration:none;padding:12px 28px;border-radius:12px;font-size:14px;font-weight:600">Start a Quick Session</a></div>
+    <div style="text-align:center"><a href="https://apps.apple.com/app/endura-study-timer/id6759482612" style="display:inline-block;background:#4A7C59;color:#fff;text-decoration:none;padding:12px 28px;border-radius:12px;font-size:14px;font-weight:600">Start a Quick Session</a></div>
     <p style="color:#999;font-size:11px;text-align:center;margin:16px 0 0">Study smarter. Save wildlife. 🌍</p>
 </div>""",
     },

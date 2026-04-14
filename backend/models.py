@@ -631,6 +631,24 @@ class EmailTemplate(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 
+class EmailLog(Base):
+    """Record of every email sent, with open/click tracking via Resend webhooks"""
+    __tablename__ = "email_logs"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)
+    email = Column(String, nullable=False, index=True)
+    template_key = Column(String, nullable=False, index=True)
+    subject = Column(String, nullable=True)
+    resend_message_id = Column(String, nullable=True, index=True)
+    sent_at = Column(DateTime, default=datetime.utcnow)
+    delivered = Column(Boolean, default=False)
+    opened = Column(Boolean, default=False)
+    opened_at = Column(DateTime, nullable=True)
+    clicked = Column(Boolean, default=False)
+    clicked_at = Column(DateTime, nullable=True)
+
+
 class School(Base):
     __tablename__ = "schools"
 

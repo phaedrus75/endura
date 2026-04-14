@@ -38,7 +38,7 @@ else:
     from sqlalchemy import inspect as sa_inspect
     try:
         _insp = sa_inspect(engine)
-        for _tbl in ["android_beta_signups", "email_templates"]:
+        for _tbl in ["android_beta_signups", "email_templates", "email_logs"]:
             if not _insp.has_table(_tbl):
                 Base.metadata.tables[_tbl].create(bind=engine)
                 print(f"Created missing table: {_tbl}")
@@ -62,6 +62,12 @@ try:
         ).first()
         if not existing:
             _seed_db.add(models.EmailTemplate(**_tmpl))
+    _seed_db.commit()
+    _old_cta = 'href="https://endura.eco"'
+    _new_cta = 'href="https://apps.apple.com/app/endura-study-timer/id6759482612"'
+    for _et in _seed_db.query(models.EmailTemplate).all():
+        if _old_cta in (_et.body_html or ""):
+            _et.body_html = _et.body_html.replace(_old_cta, _new_cta)
     _seed_db.commit()
     _seed_db.close()
 except Exception as e:
@@ -175,6 +181,35 @@ def health_check():
 def health():
     return {"status": "ok"}
 
+
+# ── Resend Webhook (open/click tracking) ─────────────────────────
+
+@app.post("/webhooks/resend")
+def resend_webhook(data: dict, db: Session = Depends(get_db)):
+    """Receive Resend webhook events for email delivery, open, and click tracking."""
+    event_type = data.get("type", "")
+    event_data = data.get("data", {})
+    email_id = event_data.get("email_id")
+    if not email_id:
+        return {"ok": True}
+
+    log = db.query(models.EmailLog).filter(models.EmailLog.resend_message_id == email_id).first()
+    if not log:
+        return {"ok": True}
+
+    now = datetime.utcnow()
+    if event_type == "email.delivered":
+        log.delivered = True
+    elif event_type == "email.opened":
+        log.opened = True
+        if not log.opened_at:
+            log.opened_at = now
+    elif event_type == "email.clicked":
+        log.clicked = True
+        if not log.clicked_at:
+            log.clicked_at = now
+    db.commit()
+    return {"ok": True}
 
 
 # ============ Startup: Seed Animals ============
@@ -617,8 +652,21 @@ def _send_template_email(template_key: str, to_email: str, variables: dict, db: 
     try:
         import resend
         resend.api_key = resend_key
-        resend.Emails.send({"from": resend_from, "to": [to_email], "subject": subject, "html": body})
-        logger.info(f"Template '{template_key}' email sent to {to_email}")
+        result = resend.Emails.send({
+            "from": resend_from, "to": [to_email], "subject": subject, "html": body,
+        })
+        resend_id = result.get("id") if isinstance(result, dict) else getattr(result, "id", None)
+        user = db.query(models.User).filter(models.User.email == to_email).first()
+        log = models.EmailLog(
+            user_id=user.id if user else None,
+            email=to_email,
+            template_key=template_key,
+            subject=subject,
+            resend_message_id=resend_id,
+        )
+        db.add(log)
+        db.commit()
+        logger.info(f"Template '{template_key}' email sent to {to_email} (resend_id={resend_id})")
         return True
     except Exception as e:
         logger.error(f"Failed to send '{template_key}' email to {to_email}: {e}")
@@ -2534,6 +2582,20 @@ def admin_user_detail(user_id: int, db: Session = Depends(get_db), _=Depends(ver
         "nonprofit_name": d.nonprofit_name,
     } for d in donations]
 
+    email_logs = db.query(models.EmailLog).filter(
+        models.EmailLog.user_id == user_id
+    ).order_by(models.EmailLog.sent_at.desc()).all()
+    email_log_list = [{
+        "template_key": el.template_key,
+        "subject": el.subject,
+        "sent_at": el.sent_at.isoformat() if el.sent_at else None,
+        "delivered": el.delivered,
+        "opened": el.opened,
+        "opened_at": el.opened_at.isoformat() if el.opened_at else None,
+        "clicked": el.clicked,
+        "clicked_at": el.clicked_at.isoformat() if el.clicked_at else None,
+    } for el in email_logs]
+
     return {
         "id": user.id,
         "email": user.email,
@@ -2554,6 +2616,7 @@ def admin_user_detail(user_id: int, db: Session = Depends(get_db), _=Depends(ver
         "badges": badge_list,
         "recent_sessions": session_list,
         "donations": donation_list,
+        "email_logs": email_log_list,
     }
 
 
@@ -2965,13 +3028,22 @@ def admin_delete_shop_item(item_id: int, db: Session = Depends(get_db), _=Depend
 @app.get("/admin/email-templates")
 def admin_get_email_templates(db: Session = Depends(get_db), _=Depends(verify_admin)):
     templates = db.query(models.EmailTemplate).order_by(models.EmailTemplate.id).all()
-    return [{
-        "id": t.id, "template_key": t.template_key, "name": t.name,
-        "subject": t.subject, "body_html": t.body_html,
-        "trigger_day": t.trigger_day, "inactive_days": t.inactive_days,
-        "is_active": t.is_active,
-        "updated_at": t.updated_at.isoformat() if t.updated_at else None,
-    } for t in templates]
+    result = []
+    for t in templates:
+        sent = db.query(func.count(models.EmailLog.id)).filter(models.EmailLog.template_key == t.template_key).scalar() or 0
+        opened = db.query(func.count(models.EmailLog.id)).filter(models.EmailLog.template_key == t.template_key, models.EmailLog.opened == True).scalar() or 0
+        clicked = db.query(func.count(models.EmailLog.id)).filter(models.EmailLog.template_key == t.template_key, models.EmailLog.clicked == True).scalar() or 0
+        result.append({
+            "id": t.id, "template_key": t.template_key, "name": t.name,
+            "subject": t.subject, "body_html": t.body_html,
+            "trigger_day": t.trigger_day, "inactive_days": t.inactive_days,
+            "is_active": t.is_active,
+            "updated_at": t.updated_at.isoformat() if t.updated_at else None,
+            "stats": {"sent": sent, "opened": opened, "clicked": clicked,
+                      "open_rate": round(opened / sent * 100, 1) if sent else 0,
+                      "click_rate": round(clicked / sent * 100, 1) if sent else 0},
+        })
+    return result
 
 
 @app.put("/admin/email-templates/{template_key}")
