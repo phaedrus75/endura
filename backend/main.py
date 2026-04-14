@@ -72,6 +72,81 @@ app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 app.add_middleware(SlowAPIMiddleware)
 
+
+def _cron_run_onboarding_emails():
+    """Background job: send onboarding lifecycle emails daily."""
+    from database import SessionLocal
+    _db = SessionLocal()
+    try:
+        resend_key = os.getenv("RESEND_API_KEY")
+        if not resend_key:
+            logger.warning("Cron: RESEND_API_KEY not set, skipping onboarding emails")
+            return
+        now = datetime.utcnow()
+        sent = {"day3": 0, "day7": 0, "day14": 0, "day30": 0, "reengagement": 0}
+
+        milestone_templates = _db.query(models.EmailTemplate).filter(
+            models.EmailTemplate.is_active == True,
+            models.EmailTemplate.trigger_day.isnot(None),
+        ).all()
+        reengagement_tmpl = _db.query(models.EmailTemplate).filter(
+            models.EmailTemplate.template_key == "reengagement",
+            models.EmailTemplate.is_active == True,
+        ).first()
+        if not milestone_templates and not reengagement_tmpl:
+            return
+
+        day_to_key = {t.trigger_day: t.template_key for t in milestone_templates}
+        inactive_threshold = reengagement_tmpl.inactive_days if reengagement_tmpl else 5
+
+        users = _db.query(models.User).filter(models.User.email_verified == True).all()
+        for user in users:
+            if not user.created_at or not user.email:
+                continue
+            days_since_signup = (now - user.created_at).days
+            last_active_days = (now - user.last_study_date).days if user.last_study_date else None
+            name = user.username or "there"
+            animals_count = _db.query(func.count(models.UserAnimal.id)).filter(models.UserAnimal.user_id == user.id).scalar() or 0
+            badges_count = _db.query(func.count(models.UserBadge.id)).filter(models.UserBadge.user_id == user.id).scalar() or 0
+            variables = {
+                "name": name, "total_minutes": str(user.total_study_minutes or 0),
+                "animals_count": str(animals_count), "streak": str(user.current_streak or 0),
+                "longest_streak": str(user.longest_streak or 0), "sessions": str(user.total_sessions or 0),
+                "badges": str(badges_count),
+            }
+            try:
+                if days_since_signup in day_to_key:
+                    tkey = day_to_key[days_since_signup]
+                    if _send_template_email(tkey, user.email, variables, _db):
+                        label = f"day{days_since_signup}"
+                        if label in sent:
+                            sent[label] += 1
+                if (reengagement_tmpl and last_active_days is not None
+                        and last_active_days >= inactive_threshold
+                        and last_active_days <= inactive_threshold + 2
+                        and days_since_signup > 3):
+                    if _send_template_email("reengagement", user.email, variables, _db):
+                        sent["reengagement"] += 1
+            except Exception as e:
+                logger.error(f"Cron: Failed to send onboarding email to {user.email}: {e}")
+        logger.info(f"Cron: Onboarding emails sent: {sent}, users checked: {len(users)}")
+    except Exception as e:
+        logger.error(f"Cron: Error running onboarding emails: {e}", exc_info=True)
+    finally:
+        _db.close()
+
+
+@app.on_event("startup")
+def start_scheduler():
+    try:
+        from apscheduler.schedulers.background import BackgroundScheduler
+        scheduler = BackgroundScheduler()
+        scheduler.add_job(_cron_run_onboarding_emails, "cron", hour=8, minute=0, id="onboarding_emails")
+        scheduler.start()
+        logger.info("Scheduler started: onboarding emails daily at 08:00 UTC")
+    except Exception as e:
+        logger.error(f"Failed to start scheduler: {e}")
+
 _allowed_origins = os.getenv("CORS_ORIGINS", "").split(",") if os.getenv("CORS_ORIGINS") else [
     "https://web-production-34028.up.railway.app",
     "https://endura.eco",
