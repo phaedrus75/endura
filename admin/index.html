@@ -333,6 +333,7 @@
             <a data-page="activity"><span class="icon">⚡</span> Activity</a>
             <a data-page="analytics"><span class="icon">📈</span> Analytics</a>
             <a data-page="android-beta"><span class="icon">🤖</span> Android Beta</a>
+            <a data-page="email-templates"><span class="icon">📧</span> Email Templates</a>
         </nav>
         <div class="api-cfg">
             <label>API Connection</label>
@@ -545,6 +546,65 @@
                 </div>
             </div>
         </div>
+
+        <div class="page" id="page-email-templates">
+            <h1 class="page-title">Email Templates</h1>
+            <p style="color:var(--text-muted);margin-bottom:20px;font-size:14px">
+                Edit email content, subjects, and trigger criteria. Changes take effect immediately — no deploy needed.<br>
+                <strong>Available variables:</strong> <code>{name}</code> <code>{total_minutes}</code> <code>{animals_count}</code> <code>{streak}</code> <code>{longest_streak}</code> <code>{sessions}</code> <code>{badges}</code>
+            </p>
+            <div id="emailTemplatesList" style="display:grid;gap:16px"></div>
+        </div>
+    </div>
+</div>
+
+<!-- Email Template Edit Modal -->
+<div class="modal-overlay" id="emailModal">
+    <div class="modal-box" style="max-width:740px">
+        <div class="modal-header">
+            <h2 id="emailModalTitle">Edit Template</h2>
+            <button class="modal-close" onclick="closeEmailModal()">&times;</button>
+        </div>
+        <form id="emailEditForm" onsubmit="saveEmailTemplate(event)">
+            <input type="hidden" id="etKey">
+            <div style="margin-bottom:14px">
+                <label style="font-size:13px;font-weight:600;color:var(--text-muted);display:block;margin-bottom:4px">Display Name</label>
+                <input id="etName" style="width:100%;padding:10px 14px;border:2px solid var(--border);border-radius:10px;font-size:14px" />
+            </div>
+            <div style="margin-bottom:14px">
+                <label style="font-size:13px;font-weight:600;color:var(--text-muted);display:block;margin-bottom:4px">Subject Line</label>
+                <input id="etSubject" style="width:100%;padding:10px 14px;border:2px solid var(--border);border-radius:10px;font-size:14px" />
+            </div>
+            <div style="display:flex;gap:14px;margin-bottom:14px">
+                <div style="flex:1">
+                    <label style="font-size:13px;font-weight:600;color:var(--text-muted);display:block;margin-bottom:4px">Trigger Day <span style="font-weight:400">(e.g. 3, 7, 14, 30)</span></label>
+                    <input id="etTriggerDay" type="number" min="0" style="width:100%;padding:10px 14px;border:2px solid var(--border);border-radius:10px;font-size:14px" />
+                </div>
+                <div style="flex:1">
+                    <label style="font-size:13px;font-weight:600;color:var(--text-muted);display:block;margin-bottom:4px">Inactive Days <span style="font-weight:400">(re-engagement)</span></label>
+                    <input id="etInactiveDays" type="number" min="0" style="width:100%;padding:10px 14px;border:2px solid var(--border);border-radius:10px;font-size:14px" />
+                </div>
+            </div>
+            <div style="margin-bottom:14px">
+                <label style="font-size:13px;font-weight:600;color:var(--text-muted);display:block;margin-bottom:4px">Body HTML</label>
+                <textarea id="etBodyHtml" rows="15" style="width:100%;padding:12px 14px;border:2px solid var(--border);border-radius:10px;font-size:13px;font-family:'SFMono-Regular',Consolas,monospace;resize:vertical;line-height:1.5"></textarea>
+            </div>
+            <div style="display:flex;gap:12px;align-items:center;margin-bottom:14px">
+                <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:14px;font-weight:600">
+                    <input type="checkbox" id="etActive" style="width:18px;height:18px;accent-color:var(--forest)">
+                    Active
+                </label>
+            </div>
+            <div id="emailPreviewArea" style="display:none;margin-bottom:14px;border:2px solid var(--border);border-radius:12px;padding:16px;background:#fafafa">
+                <div style="font-size:12px;font-weight:600;color:var(--text-muted);margin-bottom:8px">PREVIEW (sample data)</div>
+                <div id="emailPreviewSubject" style="font-weight:700;margin-bottom:8px"></div>
+                <div id="emailPreviewBody"></div>
+            </div>
+            <div style="display:flex;gap:10px;justify-content:flex-end">
+                <button type="button" onclick="previewEmailTemplate()" style="padding:10px 20px;background:var(--blue);color:#fff;border:none;border-radius:10px;font-size:14px;font-weight:600;cursor:pointer">Preview</button>
+                <button type="submit" style="padding:10px 20px;background:var(--forest);color:#fff;border:none;border-radius:10px;font-size:14px;font-weight:600;cursor:pointer">Save</button>
+            </div>
+        </form>
     </div>
 </div>
 
@@ -815,6 +875,7 @@ document.querySelectorAll('.sidebar nav a').forEach(link => {
         else if (link.dataset.page === 'activity') loadActivity();
         else if (link.dataset.page === 'analytics') initAnalytics();
         else if (link.dataset.page === 'android-beta') loadAndroidBeta();
+        else if (link.dataset.page === 'email-templates') loadEmailTemplates();
     });
 });
 
@@ -1732,6 +1793,91 @@ function exportBetaEmails() {
     rows.forEach(r => { const td = r.querySelector('td'); if (td) emails.push(td.textContent.trim()); });
     const text = emails.join('\n');
     navigator.clipboard.writeText(text).then(() => alert('Copied ' + emails.length + ' emails to clipboard'));
+}
+
+// ── Email Templates ──
+async function loadEmailTemplates() {
+    try {
+        const templates = await adminFetch('/admin/email-templates');
+        const list = document.getElementById('emailTemplatesList');
+        if (!templates || !templates.length) {
+            list.innerHTML = '<p style="color:var(--text-muted)">No templates found. They will be created on the next backend restart.</p>';
+            return;
+        }
+        list.innerHTML = templates.map(t => {
+            const triggerInfo = t.trigger_day ? `Day ${t.trigger_day}` : t.inactive_days ? `After ${t.inactive_days} days inactive` : 'Event-based';
+            const statusColor = t.is_active ? 'var(--accent)' : 'var(--red)';
+            const statusLabel = t.is_active ? 'Active' : 'Inactive';
+            const updated = t.updated_at ? new Date(t.updated_at).toLocaleDateString() : '—';
+            return `<div style="background:var(--card);border-radius:16px;padding:20px 24px;box-shadow:0 2px 8px rgba(0,0,0,.05);display:flex;justify-content:space-between;align-items:center;cursor:pointer;transition:transform .15s" onclick='openEmailModal(${JSON.stringify(JSON.stringify(t))})' onmouseover="this.style.transform='translateY(-2px)'" onmouseout="this.style.transform=''">
+                <div>
+                    <div style="font-weight:700;font-size:15px;margin-bottom:4px">${t.name}</div>
+                    <div style="font-size:13px;color:var(--text-muted)">Subject: ${escH(t.subject)}</div>
+                    <div style="font-size:12px;color:var(--text-muted);margin-top:2px">Trigger: ${triggerInfo} · Updated: ${updated}</div>
+                </div>
+                <div style="display:flex;align-items:center;gap:12px">
+                    <span style="display:inline-block;padding:4px 12px;border-radius:20px;font-size:12px;font-weight:600;color:#fff;background:${statusColor}">${statusLabel}</span>
+                    <span style="font-size:18px;color:var(--text-muted)">✏️</span>
+                </div>
+            </div>`;
+        }).join('');
+    } catch(e) { console.error('Failed to load email templates:', e); }
+}
+
+function escH(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+
+function openEmailModal(jsonStr) {
+    const t = JSON.parse(jsonStr);
+    document.getElementById('etKey').value = t.template_key;
+    document.getElementById('etName').value = t.name;
+    document.getElementById('etSubject').value = t.subject;
+    document.getElementById('etBodyHtml').value = t.body_html;
+    document.getElementById('etTriggerDay').value = t.trigger_day ?? '';
+    document.getElementById('etInactiveDays').value = t.inactive_days ?? '';
+    document.getElementById('etActive').checked = t.is_active;
+    document.getElementById('emailPreviewArea').style.display = 'none';
+    document.getElementById('emailModalTitle').textContent = 'Edit: ' + t.name;
+    document.getElementById('emailModal').classList.add('active');
+}
+
+function closeEmailModal() {
+    document.getElementById('emailModal').classList.remove('active');
+}
+
+async function saveEmailTemplate(e) {
+    e.preventDefault();
+    const key = document.getElementById('etKey').value;
+    const payload = {
+        name: document.getElementById('etName').value,
+        subject: document.getElementById('etSubject').value,
+        body_html: document.getElementById('etBodyHtml').value,
+        trigger_day: document.getElementById('etTriggerDay').value ? parseInt(document.getElementById('etTriggerDay').value) : null,
+        inactive_days: document.getElementById('etInactiveDays').value ? parseInt(document.getElementById('etInactiveDays').value) : null,
+        is_active: document.getElementById('etActive').checked,
+    };
+    try {
+        await fetch(API_URL + '/admin/email-templates/' + key, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json', 'X-Admin-Key': API_KEY },
+            body: JSON.stringify(payload),
+        });
+        closeEmailModal();
+        loadEmailTemplates();
+    } catch(e) { alert('Failed to save template'); }
+}
+
+async function previewEmailTemplate() {
+    const key = document.getElementById('etKey').value;
+    try {
+        const res = await fetch(API_URL + '/admin/email-templates/' + key + '/preview', {
+            method: 'POST',
+            headers: { 'X-Admin-Key': API_KEY },
+        });
+        const data = await res.json();
+        document.getElementById('emailPreviewSubject').textContent = 'Subject: ' + data.subject;
+        document.getElementById('emailPreviewBody').innerHTML = data.body_html;
+        document.getElementById('emailPreviewArea').style.display = 'block';
+    } catch(e) { alert('Failed to preview template'); }
 }
 </script>
 </body>

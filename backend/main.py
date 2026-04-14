@@ -38,14 +38,14 @@ else:
     from sqlalchemy import inspect as sa_inspect
     try:
         _insp = sa_inspect(engine)
-        for _tbl in ["android_beta_signups"]:
+        for _tbl in ["android_beta_signups", "email_templates"]:
             if not _insp.has_table(_tbl):
                 Base.metadata.tables[_tbl].create(bind=engine)
                 print(f"Created missing table: {_tbl}")
     except Exception as e:
         print(f"Warning: Could not check/create tables: {e}")
 
-# Seed default subjects and mark admin users on startup
+# Seed default subjects, admin users, and email templates on startup
 try:
     from database import SessionLocal
     _seed_db = SessionLocal()
@@ -55,6 +55,14 @@ try:
         if _u and not _u.is_admin:
             _u.is_admin = True
             _seed_db.commit()
+    from email_seeds import DEFAULT_EMAIL_TEMPLATES
+    for _tmpl in DEFAULT_EMAIL_TEMPLATES:
+        existing = _seed_db.query(models.EmailTemplate).filter(
+            models.EmailTemplate.template_key == _tmpl["template_key"]
+        ).first()
+        if not existing:
+            _seed_db.add(models.EmailTemplate(**_tmpl))
+    _seed_db.commit()
     _seed_db.close()
 except Exception as e:
     print(f"Warning: Could not seed startup data: {e}")
@@ -439,7 +447,7 @@ def verify_email(request: Request, body: VerifyEmailRequest, db: Session = Depen
     user.verification_attempts = 0
     db.commit()
 
-    _send_welcome_email(user.email, user.username)
+    _send_welcome_email(user.email, user.username, db)
 
     access_token = create_access_token(
         data={"sub": user.email, "tv": user.token_version or 0},
@@ -507,73 +515,49 @@ def _send_verification_email(email: str, code: str) -> bool:
         return False
 
 
-def _send_welcome_email(email: str, username: str | None) -> bool:
+def _render_template(template, variables: dict) -> tuple[str, str]:
+    """Apply variable substitution to a template's subject and body_html."""
+    subject = template.subject
+    body = template.body_html
+    for key, val in variables.items():
+        subject = subject.replace("{" + key + "}", str(val))
+        body = body.replace("{" + key + "}", str(val))
+    return subject, body
+
+
+def _send_template_email(template_key: str, to_email: str, variables: dict, db: Session) -> bool:
+    """Send an email using a DB-stored template. Returns False if template is inactive or missing."""
     resend_key = os.getenv("RESEND_API_KEY")
     resend_from = os.getenv("RESEND_FROM", "Endura <onboarding@resend.dev>")
     if not resend_key:
         return False
-    name = username or "there"
+    tmpl = db.query(models.EmailTemplate).filter(
+        models.EmailTemplate.template_key == template_key
+    ).first()
+    if not tmpl or not tmpl.is_active:
+        return False
+    subject, body = _render_template(tmpl, variables)
     try:
         import resend
         resend.api_key = resend_key
-        resend.Emails.send({
-            "from": resend_from,
-            "to": [email],
-            "subject": "Welcome to Endura! 🌿🥚",
-            "html": f"""
-            <div style="font-family:'Segoe UI',sans-serif;max-width:520px;margin:0 auto;padding:40px 32px;background:#E7EFEA;border-radius:20px">
-                <h1 style="color:#4A7C59;margin:0 0 4px;font-size:28px">Welcome to Endura!</h1>
-                <p style="color:#6B9B7A;margin:0 0 24px;font-size:15px">Hey {name}, you're officially part of the flock.</p>
-
-                <div style="background:#fff;border-radius:16px;padding:28px;margin-bottom:20px">
-                    <p style="color:#333;font-size:15px;line-height:1.7;margin:0 0 16px">
-                        Every minute you study hatches a real endangered animal — from Snow Leopards to Giant Pandas.
-                        Here's how to get started:
-                    </p>
-                    <table style="width:100%;border-collapse:collapse">
-                        <tr>
-                            <td style="padding:10px 12px;vertical-align:top;font-size:22px">🥚</td>
-                            <td style="padding:10px 0;color:#333;font-size:14px;line-height:1.6">
-                                <strong>Set your first timer</strong> — pick a subject, choose your duration, and start studying.
-                            </td>
-                        </tr>
-                        <tr>
-                            <td style="padding:10px 12px;vertical-align:top;font-size:22px">🐾</td>
-                            <td style="padding:10px 0;color:#333;font-size:14px;line-height:1.6">
-                                <strong>Hatch your first animal</strong> — earn eco-credits as you study and watch your egg hatch into a real endangered species.
-                            </td>
-                        </tr>
-                        <tr>
-                            <td style="padding:10px 12px;vertical-align:top;font-size:22px">👥</td>
-                            <td style="padding:10px 0;color:#333;font-size:14px;line-height:1.6">
-                                <strong>Add your friends</strong> — compete on leaderboards, create study groups, and motivate each other.
-                            </td>
-                        </tr>
-                        <tr>
-                            <td style="padding:10px 12px;vertical-align:top;font-size:22px">🔥</td>
-                            <td style="padding:10px 0;color:#333;font-size:14px;line-height:1.6">
-                                <strong>Build your streak</strong> — study every day to grow your streak and unlock badges.
-                            </td>
-                        </tr>
-                    </table>
-                </div>
-
-                <div style="text-align:center;margin-bottom:20px">
-                    <a href="https://endura.eco" style="display:inline-block;background:#4A7C59;color:#fff;text-decoration:none;padding:14px 32px;border-radius:12px;font-size:15px;font-weight:600">Open Endura</a>
-                </div>
-
-                <p style="color:#999;font-size:12px;text-align:center;margin:0">
-                    Study smarter. Save wildlife. 🌍<br>
-                    <a href="https://instagram.com/endura.eco" style="color:#6B9B7A;text-decoration:none">Follow us on Instagram</a>
-                </p>
-            </div>
-            """,
-        })
-        logger.info(f"Welcome email sent to {email}")
+        resend.Emails.send({"from": resend_from, "to": [to_email], "subject": subject, "html": body})
+        logger.info(f"Template '{template_key}' email sent to {to_email}")
         return True
     except Exception as e:
-        logger.error(f"Failed to send welcome email to {email}: {e}")
+        logger.error(f"Failed to send '{template_key}' email to {to_email}: {e}")
         return False
+
+
+def _send_welcome_email(email: str, username: str | None, db: Session | None = None) -> bool:
+    variables = {"name": username or "there"}
+    if db:
+        return _send_template_email("welcome", email, variables, db)
+    from database import SessionLocal
+    _db = SessionLocal()
+    try:
+        return _send_template_email("welcome", email, variables, _db)
+    finally:
+        _db.close()
 
 
 @app.post("/auth/login", response_model=schemas.Token)
@@ -2892,6 +2876,54 @@ def admin_delete_shop_item(item_id: int, db: Session = Depends(get_db), _=Depend
     return {"deleted": True, "id": item_id}
 
 
+# ── Email Templates Admin ─────────────────────────────────────────
+
+@app.get("/admin/email-templates")
+def admin_get_email_templates(db: Session = Depends(get_db), _=Depends(verify_admin)):
+    templates = db.query(models.EmailTemplate).order_by(models.EmailTemplate.id).all()
+    return [{
+        "id": t.id, "template_key": t.template_key, "name": t.name,
+        "subject": t.subject, "body_html": t.body_html,
+        "trigger_day": t.trigger_day, "inactive_days": t.inactive_days,
+        "is_active": t.is_active,
+        "updated_at": t.updated_at.isoformat() if t.updated_at else None,
+    } for t in templates]
+
+
+@app.put("/admin/email-templates/{template_key}")
+def admin_update_email_template(template_key: str, data: dict, db: Session = Depends(get_db), _=Depends(verify_admin)):
+    tmpl = db.query(models.EmailTemplate).filter(models.EmailTemplate.template_key == template_key).first()
+    if not tmpl:
+        raise HTTPException(status_code=404, detail="Template not found")
+    for field in ["subject", "body_html", "name"]:
+        if field in data and data[field] is not None:
+            setattr(tmpl, field, data[field])
+    if "trigger_day" in data:
+        tmpl.trigger_day = data["trigger_day"]
+    if "inactive_days" in data:
+        tmpl.inactive_days = data["inactive_days"]
+    if "is_active" in data:
+        tmpl.is_active = bool(data["is_active"])
+    tmpl.updated_at = datetime.utcnow()
+    db.commit()
+    return {"template_key": tmpl.template_key, "updated": True}
+
+
+@app.post("/admin/email-templates/{template_key}/preview")
+def admin_preview_email_template(template_key: str, db: Session = Depends(get_db), _=Depends(verify_admin)):
+    tmpl = db.query(models.EmailTemplate).filter(models.EmailTemplate.template_key == template_key).first()
+    if not tmpl:
+        raise HTTPException(status_code=404, detail="Template not found")
+    sample = {"name": "Alex", "total_minutes": "247", "animals_count": "5", "streak": "8",
+              "longest_streak": "12", "sessions": "18", "badges": "3"}
+    rendered_subject = tmpl.subject
+    rendered_html = tmpl.body_html
+    for key, val in sample.items():
+        rendered_subject = rendered_subject.replace("{" + key + "}", val)
+        rendered_html = rendered_html.replace("{" + key + "}", val)
+    return {"subject": rendered_subject, "body_html": rendered_html}
+
+
 # ── Android Beta Signups ──────────────────────────────────────────
 
 @app.post("/android-beta")
@@ -2927,63 +2959,20 @@ def admin_mark_invited(signup_id: int, db: Session = Depends(get_db), _=Depends(
     signup.invited = True
     signup.invited_at = datetime.utcnow()
     db.commit()
-    _send_android_invite_email(signup.email)
+    _send_android_invite_email(signup.email, db)
     return {"id": signup.id, "invited": True}
 
 
-def _send_android_invite_email(email: str) -> bool:
-    resend_key = os.getenv("RESEND_API_KEY")
-    resend_from = os.getenv("RESEND_FROM", "Endura <onboarding@resend.dev>")
-    if not resend_key:
-        return False
+def _send_android_invite_email(email: str, db: Session | None = None) -> bool:
+    variables = {"name": "there"}
+    if db:
+        return _send_template_email("android_invite", email, variables, db)
+    from database import SessionLocal
+    _db = SessionLocal()
     try:
-        import resend
-        resend.api_key = resend_key
-        resend.Emails.send({
-            "from": resend_from,
-            "to": [email],
-            "subject": "You're in! Endura is ready on Android 🎉",
-            "html": """
-            <div style="font-family:'Segoe UI',sans-serif;max-width:520px;margin:0 auto;padding:40px 32px;background:#E7EFEA;border-radius:20px">
-                <h1 style="color:#4A7C59;margin:0 0 4px;font-size:28px">You're in!</h1>
-                <p style="color:#6B9B7A;margin:0 0 24px;font-size:15px">Endura is now available for you on Android.</p>
-
-                <div style="background:#fff;border-radius:16px;padding:28px;margin-bottom:20px">
-                    <p style="color:#333;font-size:15px;line-height:1.7;margin:0 0 16px">
-                        Thanks for signing up for the Android beta! You can now download Endura and start
-                        turning your study sessions into real wildlife conservation.
-                    </p>
-                    <p style="color:#333;font-size:15px;line-height:1.7;margin:0 0 8px">
-                        <strong>To get started:</strong>
-                    </p>
-                    <ol style="color:#333;font-size:14px;line-height:2;margin:0 0 16px;padding-left:20px">
-                        <li>Click the link below to join the beta</li>
-                        <li>Accept the invitation on Google Play</li>
-                        <li>Download Endura from the Play Store</li>
-                        <li>Create your account and start studying!</li>
-                    </ol>
-                </div>
-
-                <div style="text-align:center;margin-bottom:20px">
-                    <a href="https://play.google.com/apps/testing/com.endura.study"
-                       style="display:inline-block;background:#4A7C59;color:#fff;text-decoration:none;padding:14px 32px;border-radius:12px;font-size:15px;font-weight:600">
-                        Join the Android Beta
-                    </a>
-                </div>
-
-                <p style="color:#999;font-size:12px;text-align:center;margin:0">
-                    Study smarter. Save wildlife. 🌍<br>
-                    <a href="https://endura.eco" style="color:#6B9B7A;text-decoration:none">endura.eco</a> ·
-                    <a href="https://instagram.com/endura.eco" style="color:#6B9B7A;text-decoration:none">@endura.eco</a>
-                </p>
-            </div>
-            """,
-        })
-        logger.info(f"Android invite email sent to {email}")
-        return True
-    except Exception as e:
-        logger.error(f"Failed to send Android invite email to {email}: {e}")
-        return False
+        return _send_template_email("android_invite", email, variables, _db)
+    finally:
+        _db.close()
 
 
 # ── Onboarding Lifecycle Emails ───────────────────────────────────
@@ -2992,14 +2981,26 @@ def _send_android_invite_email(email: str) -> bool:
 def run_onboarding_emails(db: Session = Depends(get_db), _=Depends(verify_admin)):
     """Trigger onboarding emails for users at key milestones. Run daily via cron."""
     resend_key = os.getenv("RESEND_API_KEY")
-    resend_from = os.getenv("RESEND_FROM", "Endura <onboarding@resend.dev>")
     if not resend_key:
         return {"error": "RESEND_API_KEY not set"}
 
-    import resend
-    resend.api_key = resend_key
     now = datetime.utcnow()
     sent = {"day3": 0, "day7": 0, "day14": 0, "day30": 0, "reengagement": 0}
+
+    milestone_templates = db.query(models.EmailTemplate).filter(
+        models.EmailTemplate.is_active == True,
+        models.EmailTemplate.trigger_day.isnot(None),
+    ).all()
+    reengagement_tmpl = db.query(models.EmailTemplate).filter(
+        models.EmailTemplate.template_key == "reengagement",
+        models.EmailTemplate.is_active == True,
+    ).first()
+
+    if not milestone_templates and not reengagement_tmpl:
+        return {"sent": sent, "total_users_checked": 0, "note": "No active templates"}
+
+    day_to_key = {t.trigger_day: t.template_key for t in milestone_templates}
+    inactive_threshold = reengagement_tmpl.inactive_days if reengagement_tmpl else 5
 
     users = db.query(models.User).filter(models.User.email_verified == True).all()
 
@@ -3009,122 +3010,37 @@ def run_onboarding_emails(db: Session = Depends(get_db), _=Depends(verify_admin)
         days_since_signup = (now - user.created_at).days
         last_active_days = (now - user.last_study_date).days if user.last_study_date else None
         name = user.username or "there"
+        animals_count = db.query(func.count(models.UserAnimal.id)).filter(
+            models.UserAnimal.user_id == user.id
+        ).scalar() or 0
+        badges_count = db.query(func.count(models.UserBadge.id)).filter(
+            models.UserBadge.user_id == user.id
+        ).scalar() or 0
+
+        variables = {
+            "name": name,
+            "total_minutes": str(user.total_study_minutes or 0),
+            "animals_count": str(animals_count),
+            "streak": str(user.current_streak or 0),
+            "longest_streak": str(user.longest_streak or 0),
+            "sessions": str(user.total_sessions or 0),
+            "badges": str(badges_count),
+        }
 
         try:
-            # Day 3 — First check-in
-            if days_since_signup == 3:
-                stats_line = f"You've studied for {user.total_study_minutes or 0} minutes"
-                animals_count = db.query(func.count(models.UserAnimal.id)).filter(models.UserAnimal.user_id == user.id).scalar() or 0
-                if animals_count:
-                    stats_line += f" and hatched {animals_count} animal{'s' if animals_count != 1 else ''}"
-                resend.Emails.send({
-                    "from": resend_from, "to": [user.email],
-                    "subject": "Your First 3 Days on Endura 🐾",
-                    "html": f"""
-                    <div style="font-family:'Segoe UI',sans-serif;max-width:520px;margin:0 auto;padding:40px 32px;background:#E7EFEA;border-radius:20px">
-                        <h1 style="color:#4A7C59;margin:0 0 4px;font-size:24px">3 Days In!</h1>
-                        <p style="color:#6B9B7A;margin:0 0 24px;font-size:15px">Hey {name}, here's your progress so far.</p>
-                        <div style="background:#fff;border-radius:16px;padding:24px;margin-bottom:20px">
-                            <p style="color:#333;font-size:15px;line-height:1.7;margin:0 0 12px">{stats_line}. {'Nice work!' if user.total_study_minutes and user.total_study_minutes > 0 else 'Set your first timer to get started!'}</p>
-                            <p style="color:#333;font-size:15px;line-height:1.7;margin:0 0 12px">🔥 Current streak: <strong>{user.current_streak or 0} days</strong></p>
-                            <p style="color:#333;font-size:14px;line-height:1.7;margin:0"><strong>Tip:</strong> Add friends to compete on the leaderboard and stay motivated!</p>
-                        </div>
-                        <div style="text-align:center"><a href="https://endura.eco" style="display:inline-block;background:#4A7C59;color:#fff;text-decoration:none;padding:12px 28px;border-radius:12px;font-size:14px;font-weight:600">Open Endura</a></div>
-                        <p style="color:#999;font-size:11px;text-align:center;margin:16px 0 0">Study smarter. Save wildlife. 🌍</p>
-                    </div>""",
-                })
-                sent["day3"] += 1
+            if days_since_signup in day_to_key:
+                tkey = day_to_key[days_since_signup]
+                if _send_template_email(tkey, user.email, variables, db):
+                    label = f"day{days_since_signup}"
+                    if label in sent:
+                        sent[label] += 1
 
-            # Day 7 — Week 1 recap
-            elif days_since_signup == 7:
-                animals_count = db.query(func.count(models.UserAnimal.id)).filter(models.UserAnimal.user_id == user.id).scalar() or 0
-                resend.Emails.send({
-                    "from": resend_from, "to": [user.email],
-                    "subject": "Your Week 1 Recap 🌿",
-                    "html": f"""
-                    <div style="font-family:'Segoe UI',sans-serif;max-width:520px;margin:0 auto;padding:40px 32px;background:#E7EFEA;border-radius:20px">
-                        <h1 style="color:#4A7C59;margin:0 0 4px;font-size:24px">Week 1 Complete!</h1>
-                        <p style="color:#6B9B7A;margin:0 0 24px;font-size:15px">Hey {name}, what a first week.</p>
-                        <div style="background:#fff;border-radius:16px;padding:24px;margin-bottom:20px">
-                            <table style="width:100%;border-collapse:collapse">
-                                <tr><td style="padding:8px 0;color:#333;font-size:15px">📚 Total study time</td><td style="padding:8px 0;color:#4A7C59;font-size:15px;font-weight:700;text-align:right">{user.total_study_minutes or 0} min</td></tr>
-                                <tr><td style="padding:8px 0;color:#333;font-size:15px">🐾 Animals hatched</td><td style="padding:8px 0;color:#4A7C59;font-size:15px;font-weight:700;text-align:right">{animals_count}</td></tr>
-                                <tr><td style="padding:8px 0;color:#333;font-size:15px">🔥 Longest streak</td><td style="padding:8px 0;color:#4A7C59;font-size:15px;font-weight:700;text-align:right">{user.longest_streak or 0} days</td></tr>
-                                <tr><td style="padding:8px 0;color:#333;font-size:15px">📝 Total sessions</td><td style="padding:8px 0;color:#4A7C59;font-size:15px;font-weight:700;text-align:right">{user.total_sessions or 0}</td></tr>
-                            </table>
-                        </div>
-                        <p style="color:#555;font-size:14px;text-align:center;margin:0 0 16px">Every session helps protect endangered wildlife. Keep it going!</p>
-                        <div style="text-align:center"><a href="https://endura.eco" style="display:inline-block;background:#4A7C59;color:#fff;text-decoration:none;padding:12px 28px;border-radius:12px;font-size:14px;font-weight:600">Open Endura</a></div>
-                        <p style="color:#999;font-size:11px;text-align:center;margin:16px 0 0">Study smarter. Save wildlife. 🌍</p>
-                    </div>""",
-                })
-                sent["day7"] += 1
-
-            # Day 14 — Two week milestone
-            elif days_since_signup == 14:
-                animals_count = db.query(func.count(models.UserAnimal.id)).filter(models.UserAnimal.user_id == user.id).scalar() or 0
-                resend.Emails.send({
-                    "from": resend_from, "to": [user.email],
-                    "subject": "2 Weeks of Endura! 🎉",
-                    "html": f"""
-                    <div style="font-family:'Segoe UI',sans-serif;max-width:520px;margin:0 auto;padding:40px 32px;background:#E7EFEA;border-radius:20px">
-                        <h1 style="color:#4A7C59;margin:0 0 4px;font-size:24px">2 Weeks Strong!</h1>
-                        <p style="color:#6B9B7A;margin:0 0 24px;font-size:15px">Hey {name}, you're building a real habit.</p>
-                        <div style="background:#fff;border-radius:16px;padding:24px;margin-bottom:20px">
-                            <p style="color:#333;font-size:15px;line-height:1.7;margin:0 0 12px">In 14 days, you've studied for <strong>{user.total_study_minutes or 0} minutes</strong>, hatched <strong>{animals_count} animals</strong>, and built a streak of <strong>{user.longest_streak or 0} days</strong>.</p>
-                            <p style="color:#333;font-size:14px;line-height:1.7;margin:0">Know someone who'd love Endura? Share the app with a friend — studying together makes it even better!</p>
-                        </div>
-                        <div style="text-align:center"><a href="https://apps.apple.com/app/endura-study-timer/id6759482612" style="display:inline-block;background:#4A7C59;color:#fff;text-decoration:none;padding:12px 28px;border-radius:12px;font-size:14px;font-weight:600">Share Endura</a></div>
-                        <p style="color:#999;font-size:11px;text-align:center;margin:16px 0 0">Study smarter. Save wildlife. 🌍</p>
-                    </div>""",
-                })
-                sent["day14"] += 1
-
-            # Day 30 — Month milestone
-            elif days_since_signup == 30:
-                animals_count = db.query(func.count(models.UserAnimal.id)).filter(models.UserAnimal.user_id == user.id).scalar() or 0
-                badges_count = db.query(func.count(models.UserBadge.id)).filter(models.UserBadge.user_id == user.id).scalar() or 0
-                resend.Emails.send({
-                    "from": resend_from, "to": [user.email],
-                    "subject": "Your First Month with Endura 🌟",
-                    "html": f"""
-                    <div style="font-family:'Segoe UI',sans-serif;max-width:520px;margin:0 auto;padding:40px 32px;background:#E7EFEA;border-radius:20px">
-                        <h1 style="color:#4A7C59;margin:0 0 4px;font-size:24px">1 Month!</h1>
-                        <p style="color:#6B9B7A;margin:0 0 24px;font-size:15px">Hey {name}, you're officially an Endura regular.</p>
-                        <div style="background:#fff;border-radius:16px;padding:24px;margin-bottom:20px">
-                            <table style="width:100%;border-collapse:collapse">
-                                <tr><td style="padding:8px 0;color:#333;font-size:15px">📚 Total study time</td><td style="padding:8px 0;color:#4A7C59;font-size:15px;font-weight:700;text-align:right">{user.total_study_minutes or 0} min</td></tr>
-                                <tr><td style="padding:8px 0;color:#333;font-size:15px">🐾 Animals hatched</td><td style="padding:8px 0;color:#4A7C59;font-size:15px;font-weight:700;text-align:right">{animals_count}</td></tr>
-                                <tr><td style="padding:8px 0;color:#333;font-size:15px">🏆 Badges earned</td><td style="padding:8px 0;color:#4A7C59;font-size:15px;font-weight:700;text-align:right">{badges_count}</td></tr>
-                                <tr><td style="padding:8px 0;color:#333;font-size:15px">🔥 Best streak</td><td style="padding:8px 0;color:#4A7C59;font-size:15px;font-weight:700;text-align:right">{user.longest_streak or 0} days</td></tr>
-                                <tr><td style="padding:8px 0;color:#333;font-size:15px">📝 Total sessions</td><td style="padding:8px 0;color:#4A7C59;font-size:15px;font-weight:700;text-align:right">{user.total_sessions or 0}</td></tr>
-                            </table>
-                        </div>
-                        <p style="color:#555;font-size:14px;text-align:center;margin:0 0 16px">Enjoying Endura? A quick review on the App Store helps other students find us ⭐</p>
-                        <div style="text-align:center"><a href="https://apps.apple.com/app/endura-study-timer/id6759482612?action=write-review" style="display:inline-block;background:#4A7C59;color:#fff;text-decoration:none;padding:12px 28px;border-radius:12px;font-size:14px;font-weight:600">Leave a Review</a></div>
-                        <p style="color:#999;font-size:11px;text-align:center;margin:16px 0 0">Study smarter. Save wildlife. 🌍</p>
-                    </div>""",
-                })
-                sent["day30"] += 1
-
-            # Re-engagement — inactive 5+ days
-            if last_active_days and last_active_days >= 5 and last_active_days <= 7 and days_since_signup > 3:
-                resend.Emails.send({
-                    "from": resend_from, "to": [user.email],
-                    "subject": f"Your animals miss you, {name}! 🐾",
-                    "html": f"""
-                    <div style="font-family:'Segoe UI',sans-serif;max-width:520px;margin:0 auto;padding:40px 32px;background:#E7EFEA;border-radius:20px">
-                        <h1 style="color:#4A7C59;margin:0 0 4px;font-size:24px">We miss you!</h1>
-                        <p style="color:#6B9B7A;margin:0 0 24px;font-size:15px">It's been a few days since your last session.</p>
-                        <div style="background:#fff;border-radius:16px;padding:24px;margin-bottom:20px">
-                            <p style="color:#333;font-size:15px;line-height:1.7;margin:0 0 12px">Your sanctuary is waiting and there are still {30 - (db.query(func.count(models.UserAnimal.id)).filter(models.UserAnimal.user_id == user.id).scalar() or 0)}+ species left to discover.</p>
-                            <p style="color:#333;font-size:14px;line-height:1.7;margin:0">Even a quick 15-minute session earns eco-credits and keeps your progress going. Your {user.current_streak or 0}-day streak is at risk!</p>
-                        </div>
-                        <div style="text-align:center"><a href="https://endura.eco" style="display:inline-block;background:#4A7C59;color:#fff;text-decoration:none;padding:12px 28px;border-radius:12px;font-size:14px;font-weight:600">Start a Quick Session</a></div>
-                        <p style="color:#999;font-size:11px;text-align:center;margin:16px 0 0">Study smarter. Save wildlife. 🌍</p>
-                    </div>""",
-                })
-                sent["reengagement"] += 1
+            if (reengagement_tmpl and last_active_days is not None
+                    and last_active_days >= inactive_threshold
+                    and last_active_days <= inactive_threshold + 2
+                    and days_since_signup > 3):
+                if _send_template_email("reengagement", user.email, variables, db):
+                    sent["reengagement"] += 1
 
         except Exception as e:
             logger.error(f"Failed to send onboarding email to {user.email}: {e}")

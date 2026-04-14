@@ -616,6 +616,21 @@ class AndroidBetaSignup(Base):
     invited_at = Column(DateTime, nullable=True)
 
 
+class EmailTemplate(Base):
+    """Configurable email templates for onboarding and lifecycle emails"""
+    __tablename__ = "email_templates"
+
+    id = Column(Integer, primary_key=True, index=True)
+    template_key = Column(String, unique=True, nullable=False, index=True)
+    name = Column(String, nullable=False)
+    subject = Column(String, nullable=False)
+    body_html = Column(Text, nullable=False)
+    trigger_day = Column(Integer, nullable=True)
+    inactive_days = Column(Integer, nullable=True)
+    is_active = Column(Boolean, default=True)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
 class School(Base):
     __tablename__ = "schools"
 
