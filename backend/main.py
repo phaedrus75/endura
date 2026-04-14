@@ -42,6 +42,12 @@ else:
             if not _insp.has_table(_tbl):
                 Base.metadata.tables[_tbl].create(bind=engine)
                 print(f"Created missing table: {_tbl}")
+        _user_cols = [c["name"] for c in _insp.get_columns("users")]
+        if "eco_credits_multiplier" not in _user_cols:
+            with engine.connect() as _conn:
+                _conn.execute(text("ALTER TABLE users ADD COLUMN eco_credits_multiplier FLOAT DEFAULT 1.0"))
+                _conn.commit()
+            print("Added eco_credits_multiplier column to users")
     except Exception as e:
         print(f"Warning: Could not check/create tables: {e}")
 
@@ -3021,6 +3027,42 @@ def admin_delete_shop_item(item_id: int, db: Session = Depends(get_db), _=Depend
     db.delete(item)
     db.commit()
     return {"deleted": True, "id": item_id}
+
+
+# ── Founding Members Admin ────────────────────────────────────────
+
+@app.get("/admin/founding-members")
+def admin_founding_members(db: Session = Depends(get_db), _=Depends(verify_admin)):
+    members = db.query(models.UserBadge).filter(models.UserBadge.badge_id == "founding_member").all()
+    result = []
+    for ub in members:
+        user = db.query(models.User).filter(models.User.id == ub.user_id).first()
+        if user:
+            result.append({
+                "id": user.id, "email": user.email, "username": user.username,
+                "multiplier": user.eco_credits_multiplier,
+                "earned_at": ub.earned_at.isoformat() if ub.earned_at else None,
+            })
+    total_eligible = db.query(func.count(models.User.id)).filter(models.User.email_verified == True).scalar() or 0
+    return {"founding_members": result, "count": len(result), "total_verified_users": total_eligible}
+
+
+@app.post("/admin/founding-members/grant/{user_id}")
+def admin_grant_founding(user_id: int, db: Session = Depends(get_db), _=Depends(verify_admin)):
+    user = db.query(models.User).filter(models.User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    existing = db.query(models.UserBadge).filter(
+        models.UserBadge.user_id == user_id, models.UserBadge.badge_id == "founding_member"
+    ).first()
+    if existing:
+        return {"message": "Already a founding member", "user_id": user_id}
+    db.add(models.UserBadge(user_id=user_id, badge_id="founding_member"))
+    user.current_coins = (user.current_coins or 0) + 500
+    user.total_coins = (user.total_coins or 0) + 500
+    user.eco_credits_multiplier = 1.25
+    db.commit()
+    return {"message": "Founding member granted", "user_id": user_id, "bonus_credits": 500, "multiplier": 1.25}
 
 
 # ── Email Templates Admin ─────────────────────────────────────────

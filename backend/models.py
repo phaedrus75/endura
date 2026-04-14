@@ -246,6 +246,9 @@ class User(Base):
     study_reminder_hour = Column(Integer, nullable=True)
     study_reminder_minute = Column(Integer, nullable=True)
 
+    # Founding member program
+    eco_credits_multiplier = Column(Float, default=1.0, server_default="1.0")
+
     # Admin & dev settings
     is_admin = Column(Boolean, default=False, server_default="0")
     use_test_timer = Column(Boolean, default=False, server_default="0")

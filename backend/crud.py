@@ -116,11 +116,16 @@ def delete_task(db: Session, task_id: int, user_id: int) -> bool:
 # ============ Study Session CRUD ============
 
 def create_study_session(db: Session, user_id: int, duration_minutes: int, task_id: int = None, animal_name: str = None, subject_id: int = None) -> tuple:
+    user = db.query(models.User).filter(models.User.id == user_id).first()
+
     coins = duration_minutes
     if duration_minutes >= 25:
         coins += 5
     if duration_minutes >= 50:
         coins += 10
+    multiplier = getattr(user, "eco_credits_multiplier", None) or 1.0
+    if multiplier > 1.0:
+        coins = int(coins * multiplier)
     
     session = models.StudySession(
         user_id=user_id,
@@ -133,7 +138,6 @@ def create_study_session(db: Session, user_id: int, duration_minutes: int, task_
     db.add(session)
     
     # Update user stats
-    user = db.query(models.User).filter(models.User.id == user_id).first()
     user.total_coins += coins
     user.current_coins += coins
     user.total_study_minutes += duration_minutes
@@ -995,6 +999,8 @@ BADGE_DEFINITIONS = [
     {"id": "study_squad", "name": "Study Squad", "icon": "👥", "description": "Stronger together.", "category": "social", "tier": "gold"},
     {"id": "first_friend_social", "name": "First Friend", "icon": "🤝", "description": "Every friendship starts somewhere.", "category": "social", "tier": "bronze"},
     {"id": "team_player", "name": "Team Player", "icon": "🏅", "description": "Contributing to the group goal.", "category": "social", "tier": "silver"},
+    # Special
+    {"id": "founding_member", "name": "Founding Member", "icon": "⭐", "description": "One of the first 100 Endura members. 1.25x eco-credits forever.", "category": "special", "tier": "diamond"},
 ]
 
 BADGE_MAP = {b["id"]: b for b in BADGE_DEFINITIONS}
@@ -1063,6 +1069,7 @@ BADGE_REQUIREMENTS = {
     "sanctuary_master": "Place 10+ items in your sanctuary",
     "first_friend_social": "Add your first friend",
     "team_player": "Contribute 60+ minutes to a group goal",
+    "founding_member": "Be among the first 100 verified Endura users",
 }
 
 
@@ -1276,6 +1283,20 @@ def check_badges(db: Session, user_id: int, session_hour: int = None, session_mi
             if mins_in_group >= 60:
                 capped_award("team_player")
                 break
+
+    # Founding Member — first 100 verified users (bypasses cap, one-time bonus)
+    if "founding_member" not in already and user.email_verified:
+        FOUNDING_MEMBER_LIMIT = 100
+        founding_ids = [r[0] for r in db.query(models.User.id).filter(
+            models.User.email_verified == True
+        ).order_by(models.User.created_at).limit(FOUNDING_MEMBER_LIMIT).all()]
+        if user.id in founding_ids:
+            awarded = _award(db, user_id, "founding_member", already)
+            if awarded:
+                new_badges.append(awarded)
+                user.current_coins = (user.current_coins or 0) + 500
+                user.total_coins = (user.total_coins or 0) + 500
+                user.eco_credits_multiplier = 1.25
 
     if new_badges:
         db.commit()
