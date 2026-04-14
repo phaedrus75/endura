@@ -2927,7 +2927,209 @@ def admin_mark_invited(signup_id: int, db: Session = Depends(get_db), _=Depends(
     signup.invited = True
     signup.invited_at = datetime.utcnow()
     db.commit()
+    _send_android_invite_email(signup.email)
     return {"id": signup.id, "invited": True}
+
+
+def _send_android_invite_email(email: str) -> bool:
+    resend_key = os.getenv("RESEND_API_KEY")
+    resend_from = os.getenv("RESEND_FROM", "Endura <onboarding@resend.dev>")
+    if not resend_key:
+        return False
+    try:
+        import resend
+        resend.api_key = resend_key
+        resend.Emails.send({
+            "from": resend_from,
+            "to": [email],
+            "subject": "You're in! Endura is ready on Android 🎉",
+            "html": """
+            <div style="font-family:'Segoe UI',sans-serif;max-width:520px;margin:0 auto;padding:40px 32px;background:#E7EFEA;border-radius:20px">
+                <h1 style="color:#4A7C59;margin:0 0 4px;font-size:28px">You're in!</h1>
+                <p style="color:#6B9B7A;margin:0 0 24px;font-size:15px">Endura is now available for you on Android.</p>
+
+                <div style="background:#fff;border-radius:16px;padding:28px;margin-bottom:20px">
+                    <p style="color:#333;font-size:15px;line-height:1.7;margin:0 0 16px">
+                        Thanks for signing up for the Android beta! You can now download Endura and start
+                        turning your study sessions into real wildlife conservation.
+                    </p>
+                    <p style="color:#333;font-size:15px;line-height:1.7;margin:0 0 8px">
+                        <strong>To get started:</strong>
+                    </p>
+                    <ol style="color:#333;font-size:14px;line-height:2;margin:0 0 16px;padding-left:20px">
+                        <li>Click the link below to join the beta</li>
+                        <li>Accept the invitation on Google Play</li>
+                        <li>Download Endura from the Play Store</li>
+                        <li>Create your account and start studying!</li>
+                    </ol>
+                </div>
+
+                <div style="text-align:center;margin-bottom:20px">
+                    <a href="https://play.google.com/apps/testing/com.endura.study"
+                       style="display:inline-block;background:#4A7C59;color:#fff;text-decoration:none;padding:14px 32px;border-radius:12px;font-size:15px;font-weight:600">
+                        Join the Android Beta
+                    </a>
+                </div>
+
+                <p style="color:#999;font-size:12px;text-align:center;margin:0">
+                    Study smarter. Save wildlife. 🌍<br>
+                    <a href="https://endura.eco" style="color:#6B9B7A;text-decoration:none">endura.eco</a> ·
+                    <a href="https://instagram.com/endura.eco" style="color:#6B9B7A;text-decoration:none">@endura.eco</a>
+                </p>
+            </div>
+            """,
+        })
+        logger.info(f"Android invite email sent to {email}")
+        return True
+    except Exception as e:
+        logger.error(f"Failed to send Android invite email to {email}: {e}")
+        return False
+
+
+# ── Onboarding Lifecycle Emails ───────────────────────────────────
+
+@app.post("/admin/onboarding-emails")
+def run_onboarding_emails(db: Session = Depends(get_db), _=Depends(verify_admin)):
+    """Trigger onboarding emails for users at key milestones. Run daily via cron."""
+    resend_key = os.getenv("RESEND_API_KEY")
+    resend_from = os.getenv("RESEND_FROM", "Endura <onboarding@resend.dev>")
+    if not resend_key:
+        return {"error": "RESEND_API_KEY not set"}
+
+    import resend
+    resend.api_key = resend_key
+    now = datetime.utcnow()
+    sent = {"day3": 0, "day7": 0, "day14": 0, "day30": 0, "reengagement": 0}
+
+    users = db.query(models.User).filter(models.User.email_verified == True).all()
+
+    for user in users:
+        if not user.created_at or not user.email:
+            continue
+        days_since_signup = (now - user.created_at).days
+        last_active_days = (now - user.last_study_date).days if user.last_study_date else None
+        name = user.username or "there"
+
+        try:
+            # Day 3 — First check-in
+            if days_since_signup == 3:
+                stats_line = f"You've studied for {user.total_study_minutes or 0} minutes"
+                animals_count = db.query(func.count(models.UserAnimal.id)).filter(models.UserAnimal.user_id == user.id).scalar() or 0
+                if animals_count:
+                    stats_line += f" and hatched {animals_count} animal{'s' if animals_count != 1 else ''}"
+                resend.Emails.send({
+                    "from": resend_from, "to": [user.email],
+                    "subject": "Your First 3 Days on Endura 🐾",
+                    "html": f"""
+                    <div style="font-family:'Segoe UI',sans-serif;max-width:520px;margin:0 auto;padding:40px 32px;background:#E7EFEA;border-radius:20px">
+                        <h1 style="color:#4A7C59;margin:0 0 4px;font-size:24px">3 Days In!</h1>
+                        <p style="color:#6B9B7A;margin:0 0 24px;font-size:15px">Hey {name}, here's your progress so far.</p>
+                        <div style="background:#fff;border-radius:16px;padding:24px;margin-bottom:20px">
+                            <p style="color:#333;font-size:15px;line-height:1.7;margin:0 0 12px">{stats_line}. {'Nice work!' if user.total_study_minutes and user.total_study_minutes > 0 else 'Set your first timer to get started!'}</p>
+                            <p style="color:#333;font-size:15px;line-height:1.7;margin:0 0 12px">🔥 Current streak: <strong>{user.current_streak or 0} days</strong></p>
+                            <p style="color:#333;font-size:14px;line-height:1.7;margin:0"><strong>Tip:</strong> Add friends to compete on the leaderboard and stay motivated!</p>
+                        </div>
+                        <div style="text-align:center"><a href="https://endura.eco" style="display:inline-block;background:#4A7C59;color:#fff;text-decoration:none;padding:12px 28px;border-radius:12px;font-size:14px;font-weight:600">Open Endura</a></div>
+                        <p style="color:#999;font-size:11px;text-align:center;margin:16px 0 0">Study smarter. Save wildlife. 🌍</p>
+                    </div>""",
+                })
+                sent["day3"] += 1
+
+            # Day 7 — Week 1 recap
+            elif days_since_signup == 7:
+                animals_count = db.query(func.count(models.UserAnimal.id)).filter(models.UserAnimal.user_id == user.id).scalar() or 0
+                resend.Emails.send({
+                    "from": resend_from, "to": [user.email],
+                    "subject": "Your Week 1 Recap 🌿",
+                    "html": f"""
+                    <div style="font-family:'Segoe UI',sans-serif;max-width:520px;margin:0 auto;padding:40px 32px;background:#E7EFEA;border-radius:20px">
+                        <h1 style="color:#4A7C59;margin:0 0 4px;font-size:24px">Week 1 Complete!</h1>
+                        <p style="color:#6B9B7A;margin:0 0 24px;font-size:15px">Hey {name}, what a first week.</p>
+                        <div style="background:#fff;border-radius:16px;padding:24px;margin-bottom:20px">
+                            <table style="width:100%;border-collapse:collapse">
+                                <tr><td style="padding:8px 0;color:#333;font-size:15px">📚 Total study time</td><td style="padding:8px 0;color:#4A7C59;font-size:15px;font-weight:700;text-align:right">{user.total_study_minutes or 0} min</td></tr>
+                                <tr><td style="padding:8px 0;color:#333;font-size:15px">🐾 Animals hatched</td><td style="padding:8px 0;color:#4A7C59;font-size:15px;font-weight:700;text-align:right">{animals_count}</td></tr>
+                                <tr><td style="padding:8px 0;color:#333;font-size:15px">🔥 Longest streak</td><td style="padding:8px 0;color:#4A7C59;font-size:15px;font-weight:700;text-align:right">{user.longest_streak or 0} days</td></tr>
+                                <tr><td style="padding:8px 0;color:#333;font-size:15px">📝 Total sessions</td><td style="padding:8px 0;color:#4A7C59;font-size:15px;font-weight:700;text-align:right">{user.total_sessions or 0}</td></tr>
+                            </table>
+                        </div>
+                        <p style="color:#555;font-size:14px;text-align:center;margin:0 0 16px">Every session helps protect endangered wildlife. Keep it going!</p>
+                        <div style="text-align:center"><a href="https://endura.eco" style="display:inline-block;background:#4A7C59;color:#fff;text-decoration:none;padding:12px 28px;border-radius:12px;font-size:14px;font-weight:600">Open Endura</a></div>
+                        <p style="color:#999;font-size:11px;text-align:center;margin:16px 0 0">Study smarter. Save wildlife. 🌍</p>
+                    </div>""",
+                })
+                sent["day7"] += 1
+
+            # Day 14 — Two week milestone
+            elif days_since_signup == 14:
+                animals_count = db.query(func.count(models.UserAnimal.id)).filter(models.UserAnimal.user_id == user.id).scalar() or 0
+                resend.Emails.send({
+                    "from": resend_from, "to": [user.email],
+                    "subject": "2 Weeks of Endura! 🎉",
+                    "html": f"""
+                    <div style="font-family:'Segoe UI',sans-serif;max-width:520px;margin:0 auto;padding:40px 32px;background:#E7EFEA;border-radius:20px">
+                        <h1 style="color:#4A7C59;margin:0 0 4px;font-size:24px">2 Weeks Strong!</h1>
+                        <p style="color:#6B9B7A;margin:0 0 24px;font-size:15px">Hey {name}, you're building a real habit.</p>
+                        <div style="background:#fff;border-radius:16px;padding:24px;margin-bottom:20px">
+                            <p style="color:#333;font-size:15px;line-height:1.7;margin:0 0 12px">In 14 days, you've studied for <strong>{user.total_study_minutes or 0} minutes</strong>, hatched <strong>{animals_count} animals</strong>, and built a streak of <strong>{user.longest_streak or 0} days</strong>.</p>
+                            <p style="color:#333;font-size:14px;line-height:1.7;margin:0">Know someone who'd love Endura? Share the app with a friend — studying together makes it even better!</p>
+                        </div>
+                        <div style="text-align:center"><a href="https://apps.apple.com/app/endura-study-timer/id6759482612" style="display:inline-block;background:#4A7C59;color:#fff;text-decoration:none;padding:12px 28px;border-radius:12px;font-size:14px;font-weight:600">Share Endura</a></div>
+                        <p style="color:#999;font-size:11px;text-align:center;margin:16px 0 0">Study smarter. Save wildlife. 🌍</p>
+                    </div>""",
+                })
+                sent["day14"] += 1
+
+            # Day 30 — Month milestone
+            elif days_since_signup == 30:
+                animals_count = db.query(func.count(models.UserAnimal.id)).filter(models.UserAnimal.user_id == user.id).scalar() or 0
+                badges_count = db.query(func.count(models.UserBadge.id)).filter(models.UserBadge.user_id == user.id).scalar() or 0
+                resend.Emails.send({
+                    "from": resend_from, "to": [user.email],
+                    "subject": "Your First Month with Endura 🌟",
+                    "html": f"""
+                    <div style="font-family:'Segoe UI',sans-serif;max-width:520px;margin:0 auto;padding:40px 32px;background:#E7EFEA;border-radius:20px">
+                        <h1 style="color:#4A7C59;margin:0 0 4px;font-size:24px">1 Month!</h1>
+                        <p style="color:#6B9B7A;margin:0 0 24px;font-size:15px">Hey {name}, you're officially an Endura regular.</p>
+                        <div style="background:#fff;border-radius:16px;padding:24px;margin-bottom:20px">
+                            <table style="width:100%;border-collapse:collapse">
+                                <tr><td style="padding:8px 0;color:#333;font-size:15px">📚 Total study time</td><td style="padding:8px 0;color:#4A7C59;font-size:15px;font-weight:700;text-align:right">{user.total_study_minutes or 0} min</td></tr>
+                                <tr><td style="padding:8px 0;color:#333;font-size:15px">🐾 Animals hatched</td><td style="padding:8px 0;color:#4A7C59;font-size:15px;font-weight:700;text-align:right">{animals_count}</td></tr>
+                                <tr><td style="padding:8px 0;color:#333;font-size:15px">🏆 Badges earned</td><td style="padding:8px 0;color:#4A7C59;font-size:15px;font-weight:700;text-align:right">{badges_count}</td></tr>
+                                <tr><td style="padding:8px 0;color:#333;font-size:15px">🔥 Best streak</td><td style="padding:8px 0;color:#4A7C59;font-size:15px;font-weight:700;text-align:right">{user.longest_streak or 0} days</td></tr>
+                                <tr><td style="padding:8px 0;color:#333;font-size:15px">📝 Total sessions</td><td style="padding:8px 0;color:#4A7C59;font-size:15px;font-weight:700;text-align:right">{user.total_sessions or 0}</td></tr>
+                            </table>
+                        </div>
+                        <p style="color:#555;font-size:14px;text-align:center;margin:0 0 16px">Enjoying Endura? A quick review on the App Store helps other students find us ⭐</p>
+                        <div style="text-align:center"><a href="https://apps.apple.com/app/endura-study-timer/id6759482612?action=write-review" style="display:inline-block;background:#4A7C59;color:#fff;text-decoration:none;padding:12px 28px;border-radius:12px;font-size:14px;font-weight:600">Leave a Review</a></div>
+                        <p style="color:#999;font-size:11px;text-align:center;margin:16px 0 0">Study smarter. Save wildlife. 🌍</p>
+                    </div>""",
+                })
+                sent["day30"] += 1
+
+            # Re-engagement — inactive 5+ days
+            if last_active_days and last_active_days >= 5 and last_active_days <= 7 and days_since_signup > 3:
+                resend.Emails.send({
+                    "from": resend_from, "to": [user.email],
+                    "subject": f"Your animals miss you, {name}! 🐾",
+                    "html": f"""
+                    <div style="font-family:'Segoe UI',sans-serif;max-width:520px;margin:0 auto;padding:40px 32px;background:#E7EFEA;border-radius:20px">
+                        <h1 style="color:#4A7C59;margin:0 0 4px;font-size:24px">We miss you!</h1>
+                        <p style="color:#6B9B7A;margin:0 0 24px;font-size:15px">It's been a few days since your last session.</p>
+                        <div style="background:#fff;border-radius:16px;padding:24px;margin-bottom:20px">
+                            <p style="color:#333;font-size:15px;line-height:1.7;margin:0 0 12px">Your sanctuary is waiting and there are still {30 - (db.query(func.count(models.UserAnimal.id)).filter(models.UserAnimal.user_id == user.id).scalar() or 0)}+ species left to discover.</p>
+                            <p style="color:#333;font-size:14px;line-height:1.7;margin:0">Even a quick 15-minute session earns eco-credits and keeps your progress going. Your {user.current_streak or 0}-day streak is at risk!</p>
+                        </div>
+                        <div style="text-align:center"><a href="https://endura.eco" style="display:inline-block;background:#4A7C59;color:#fff;text-decoration:none;padding:12px 28px;border-radius:12px;font-size:14px;font-weight:600">Start a Quick Session</a></div>
+                        <p style="color:#999;font-size:11px;text-align:center;margin:16px 0 0">Study smarter. Save wildlife. 🌍</p>
+                    </div>""",
+                })
+                sent["reengagement"] += 1
+
+        except Exception as e:
+            logger.error(f"Failed to send onboarding email to {user.email}: {e}")
+
+    return {"sent": sent, "total_users_checked": len(users)}
 
 
 # Public endpoint so the app can fetch shop items dynamically
