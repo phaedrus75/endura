@@ -348,7 +348,7 @@ def create_study_tip(db: Session, user_id: int, content: str, category: str = "g
 
 def send_friend_request(db: Session, user_id: int, friend_username: str) -> tuple[bool, str]:
     friend = db.query(models.User).filter(models.User.username == friend_username).first()
-    if not friend:
+    if not friend or getattr(friend, "is_archived", False):
         return False, "User not found"
     
     if friend.id == user_id:
@@ -391,7 +391,7 @@ def get_pending_requests(db: Session, user_id: int) -> List[dict]:
     results = []
     for f in pending:
         sender = db.query(models.User).filter(models.User.id == f.user_id).first()
-        if sender:
+        if sender and not getattr(sender, "is_archived", False):
             results.append({
                 "id": f.id,
                 "user_id": sender.id,
@@ -411,7 +411,7 @@ def get_friends(db: Session, user_id: int):
     for f in friendships:
         friend_id = f.friend_id if f.user_id == user_id else f.user_id
         friend = db.query(models.User).filter(models.User.id == friend_id).first()
-        if friend:
+        if friend and not getattr(friend, "is_archived", False):
             results.append({"user": friend, "friends_since": f.created_at})
     return results
 
@@ -449,6 +449,7 @@ def get_friend_suggestions(db: Session, user_id: int, limit: int = 10) -> List[d
         models.User.school == user.school,
         models.User.id.notin_(exclude_ids),
         models.User.username.isnot(None),
+        models.User.is_archived != True,
     ).order_by(models.User.total_study_minutes.desc()).limit(limit).all()
 
     return [
@@ -509,7 +510,10 @@ def get_global_leaderboard(db: Session, period: str = "all_time") -> List[dict]:
             return []
         users_by_id = {
             u.id: u
-            for u in db.query(models.User).filter(models.User.id.in_(user_ids)).all()
+            for u in db.query(models.User).filter(
+                models.User.id.in_(user_ids),
+                models.User.is_archived != True,
+            ).all()
         }
         sorted_ids = sorted(user_ids, key=lambda uid: weekly.get(uid, 0), reverse=True)[:100]
         leaderboard = []
@@ -529,7 +533,9 @@ def get_global_leaderboard(db: Session, period: str = "all_time") -> List[dict]:
             })
         return leaderboard
 
-    users = db.query(models.User).order_by(
+    users = db.query(models.User).filter(
+        models.User.is_archived != True,
+    ).order_by(
         models.User.total_study_minutes.desc()
     ).limit(100).all()
 
@@ -554,7 +560,8 @@ def get_school_leaderboard(db: Session, current_user, period: str = "all_time") 
     school_lower = current_user.school.strip().lower()
     users = db.query(models.User).filter(
         models.User.school.isnot(None),
-        func.lower(func.trim(models.User.school)) == school_lower
+        func.lower(func.trim(models.User.school)) == school_lower,
+        models.User.is_archived != True,
     ).limit(100).all()
 
     if period == "week":
@@ -597,7 +604,8 @@ def get_leaderboard(db: Session, user_id: int, limit: int = 20, period: str = "a
     friend_ids = [entry["user"].id for entry in friends] + [user_id]
 
     users = db.query(models.User).filter(
-        models.User.id.in_(friend_ids)
+        models.User.id.in_(friend_ids),
+        models.User.is_archived != True,
     ).limit(limit).all()
 
     if period == "week":

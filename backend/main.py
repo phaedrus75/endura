@@ -2362,7 +2362,7 @@ def get_donation_leaderboard(
     leaderboard = []
     for rank, row in enumerate(results, 1):
         user = db.query(models.User).filter(models.User.id == row.user_id).first()
-        if not user:
+        if not user or getattr(user, "is_archived", False):
             continue
         leaderboard.append({
             "rank": rank,
