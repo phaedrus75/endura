@@ -334,6 +334,7 @@
             <a data-page="analytics"><span class="icon">📈</span> Analytics</a>
             <a data-page="android-beta"><span class="icon">🤖</span> Android Beta</a>
             <a data-page="email-templates"><span class="icon">📧</span> Email Templates</a>
+            <a data-page="founding"><span class="icon">⭐</span> Founding Members</a>
         </nav>
         <div class="api-cfg">
             <label>API Connection</label>
@@ -560,6 +561,33 @@
                 <strong>Available variables:</strong> <code>{name}</code> <code>{total_minutes}</code> <code>{animals_count}</code> <code>{streak}</code> <code>{longest_streak}</code> <code>{sessions}</code> <code>{badges}</code>
             </p>
             <div id="emailTemplatesList" style="display:grid;gap:16px"></div>
+        </div>
+
+        <div class="page" id="page-founding">
+            <h1 class="page-title">Founding Members</h1>
+            <p style="color:var(--text-muted);margin-bottom:20px;font-size:14px">
+                First 100 verified users earn a diamond badge, 500 bonus eco-credits, and a permanent 1.25x multiplier.
+            </p>
+            <div class="kpi-grid" style="margin-bottom:20px">
+                <div class="kpi"><div class="kpi-value" id="fm-count">—</div><div class="kpi-label">Founding Members</div></div>
+                <div class="kpi"><div class="kpi-value" id="fm-total">—</div><div class="kpi-label">Total Verified Users</div></div>
+                <div class="kpi"><div class="kpi-value" id="fm-remaining">—</div><div class="kpi-label">Spots Remaining</div></div>
+            </div>
+            <div class="table-card">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+                    <h3>Members</h3>
+                    <div style="display:flex;gap:8px;align-items:center">
+                        <input type="number" id="fmGrantId" placeholder="User ID" min="1" style="padding:8px 12px;border:1px solid var(--border);border-radius:8px;font-size:13px;width:100px">
+                        <button onclick="grantFoundingMember()" style="padding:8px 16px;background:var(--forest);color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer">Grant Manually</button>
+                    </div>
+                </div>
+                <div style="overflow-x:auto">
+                    <table>
+                        <thead><tr><th>#</th><th>User</th><th>Email</th><th>Multiplier</th><th>Earned</th></tr></thead>
+                        <tbody id="fmBody"></tbody>
+                    </table>
+                </div>
+            </div>
         </div>
     </div>
 </div>
@@ -882,6 +910,7 @@ document.querySelectorAll('.sidebar nav a').forEach(link => {
         else if (link.dataset.page === 'analytics') initAnalytics();
         else if (link.dataset.page === 'android-beta') loadAndroidBeta();
         else if (link.dataset.page === 'email-templates') loadEmailTemplates();
+        else if (link.dataset.page === 'founding') loadFoundingMembers();
     });
 });
 
@@ -1932,6 +1961,46 @@ async function previewEmailTemplate() {
         document.getElementById('emailPreviewBody').innerHTML = data.body_html;
         document.getElementById('emailPreviewArea').style.display = 'block';
     } catch(e) { alert('Failed to preview template'); }
+}
+
+// ── Founding Members ──
+async function loadFoundingMembers() {
+    try {
+        const data = await adminFetch('/admin/founding-members');
+        const count = data.count || 0;
+        const total = data.total_verified_users || 0;
+        const remaining = Math.max(0, 100 - count);
+        document.getElementById('fm-count').textContent = count;
+        document.getElementById('fm-total').textContent = total;
+        document.getElementById('fm-remaining').textContent = remaining;
+        const body = document.getElementById('fmBody');
+        if (!data.founding_members || !data.founding_members.length) {
+            body.innerHTML = '<tr><td colspan="5" class="empty">No founding members yet. They are awarded automatically when users check badges.</td></tr>';
+            return;
+        }
+        body.innerHTML = data.founding_members.map((m, i) => `<tr>
+            <td><strong>#${i + 1}</strong></td>
+            <td>${esc(m.username || '—')}</td>
+            <td>${esc(m.email)}</td>
+            <td>${m.multiplier || 1.0}x</td>
+            <td>${m.earned_at ? new Date(m.earned_at).toLocaleDateString() : '—'}</td>
+        </tr>`).join('');
+    } catch(e) { console.error('Failed to load founding members:', e); }
+}
+
+async function grantFoundingMember() {
+    const uid = document.getElementById('fmGrantId').value;
+    if (!uid) { alert('Enter a user ID'); return; }
+    try {
+        const res = await fetch(API_URL + '/admin/founding-members/grant/' + uid, {
+            method: 'POST',
+            headers: { 'X-Admin-Key': API_KEY },
+        });
+        const data = await res.json();
+        alert(data.message || 'Done');
+        document.getElementById('fmGrantId').value = '';
+        loadFoundingMembers();
+    } catch(e) { alert('Failed to grant founding member status'); }
 }
 </script>
 </body>
