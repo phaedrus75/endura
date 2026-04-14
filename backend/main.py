@@ -2811,6 +2811,44 @@ def admin_delete_shop_item(item_id: int, db: Session = Depends(get_db), _=Depend
     return {"deleted": True, "id": item_id}
 
 
+# ── Android Beta Signups ──────────────────────────────────────────
+
+@app.post("/android-beta")
+def android_beta_signup(data: dict, db: Session = Depends(get_db)):
+    email = (data.get("email") or "").strip().lower()
+    if not email or "@" not in email:
+        raise HTTPException(status_code=400, detail="Valid email required")
+    existing = db.query(models.AndroidBetaSignup).filter(models.AndroidBetaSignup.email == email).first()
+    if existing:
+        return {"status": "already_registered"}
+    signup = models.AndroidBetaSignup(email=email)
+    db.add(signup)
+    db.commit()
+    return {"status": "registered"}
+
+
+@app.get("/admin/android-beta")
+def admin_get_android_beta(db: Session = Depends(get_db), _=Depends(verify_admin)):
+    signups = db.query(models.AndroidBetaSignup).order_by(models.AndroidBetaSignup.created_at.desc()).all()
+    return [{
+        "id": s.id, "email": s.email,
+        "created_at": s.created_at.isoformat() if s.created_at else None,
+        "invited": s.invited,
+        "invited_at": s.invited_at.isoformat() if s.invited_at else None,
+    } for s in signups]
+
+
+@app.put("/admin/android-beta/{signup_id}/invite")
+def admin_mark_invited(signup_id: int, db: Session = Depends(get_db), _=Depends(verify_admin)):
+    signup = db.query(models.AndroidBetaSignup).filter(models.AndroidBetaSignup.id == signup_id).first()
+    if not signup:
+        raise HTTPException(status_code=404, detail="Signup not found")
+    signup.invited = True
+    signup.invited_at = datetime.utcnow()
+    db.commit()
+    return {"id": signup.id, "invited": True}
+
+
 # Public endpoint so the app can fetch shop items dynamically
 @app.get("/shop/items")
 def get_shop_items(db: Session = Depends(get_db)):

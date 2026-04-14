@@ -605,6 +605,17 @@ class UserItemAssignment(Base):
     )
 
 
+class AndroidBetaSignup(Base):
+    """Android beta interest signups from the website"""
+    __tablename__ = "android_beta_signups"
+
+    id = Column(Integer, primary_key=True, index=True)
+    email = Column(String, unique=True, nullable=False, index=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    invited = Column(Boolean, default=False)
+    invited_at = Column(DateTime, nullable=True)
+
+
 class School(Base):
     __tablename__ = "schools"
 

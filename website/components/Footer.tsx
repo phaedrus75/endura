@@ -77,17 +77,21 @@ export default function Footer() {
                   </div>
                 </div>
               </motion.a>
-              <div className="bg-white/10 rounded-xl px-4 py-2.5 flex items-center gap-2 opacity-60">
-                <span className="text-lg">▶️</span>
+              <motion.a
+                whileHover={{ scale: 1.05 }}
+                href="#android-beta"
+                className="bg-white/10 hover:bg-white/15 transition-colors rounded-xl px-4 py-2.5 flex items-center gap-2"
+              >
+                <span className="text-lg">🤖</span>
                 <div>
                   <div className="text-[10px] text-white/40 leading-tight">
-                    Coming soon on
+                    Join the Beta on
                   </div>
                   <div className="text-xs font-semibold text-white leading-tight">
                     Google Play
                   </div>
                 </div>
-              </div>
+              </motion.a>
             </div>
           </div>
 

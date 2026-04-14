@@ -332,6 +332,7 @@
             <a data-page="content"><span class="icon">🦁</span> Content</a>
             <a data-page="activity"><span class="icon">⚡</span> Activity</a>
             <a data-page="analytics"><span class="icon">📈</span> Analytics</a>
+            <a data-page="android-beta"><span class="icon">🤖</span> Android Beta</a>
         </nav>
         <div class="api-cfg">
             <label>API Connection</label>
@@ -520,6 +521,27 @@
                             <tbody id="phRecentEvents"></tbody>
                         </table>
                     </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="page" id="page-android-beta">
+            <h1 class="page-title">Android Beta Signups</h1>
+            <div class="kpi-grid" style="margin-bottom:20px">
+                <div class="kpi"><div class="kpi-value" id="ab-total">—</div><div class="kpi-label">Total Signups</div></div>
+                <div class="kpi"><div class="kpi-value" id="ab-invited">—</div><div class="kpi-label">Invited</div></div>
+                <div class="kpi"><div class="kpi-value" id="ab-pending">—</div><div class="kpi-label">Pending</div></div>
+            </div>
+            <div class="table-card">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+                    <h3>Signups</h3>
+                    <button onclick="exportBetaEmails()" style="padding:8px 16px;background:var(--forest);color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer">Export Emails</button>
+                </div>
+                <div style="overflow-x:auto">
+                    <table>
+                        <thead><tr><th>Email</th><th>Signed Up</th><th>Status</th><th>Action</th></tr></thead>
+                        <tbody id="abSignups"></tbody>
+                    </table>
                 </div>
             </div>
         </div>
@@ -792,6 +814,7 @@ document.querySelectorAll('.sidebar nav a').forEach(link => {
         else if (link.dataset.page === 'content') loadContent();
         else if (link.dataset.page === 'activity') loadActivity();
         else if (link.dataset.page === 'analytics') initAnalytics();
+        else if (link.dataset.page === 'android-beta') loadAndroidBeta();
     });
 });
 
@@ -1672,6 +1695,44 @@ function renderDauChart(data) {
             },
         },
     });
+}
+
+// ── Android Beta ──
+async function loadAndroidBeta() {
+    try {
+        const res = await api('/admin/android-beta');
+        const signups = await res.json();
+        const total = signups.length;
+        const invited = signups.filter(s => s.invited).length;
+        document.getElementById('ab-total').textContent = total;
+        document.getElementById('ab-invited').textContent = invited;
+        document.getElementById('ab-pending').textContent = total - invited;
+
+        const tbody = document.getElementById('abSignups');
+        tbody.innerHTML = signups.map(s => `
+            <tr>
+                <td style="font-weight:500">${s.email}</td>
+                <td>${new Date(s.created_at).toLocaleDateString()}</td>
+                <td><span class="badge ${s.invited ? 'badge-green' : 'badge-amber'}">${s.invited ? 'Invited' : 'Pending'}</span></td>
+                <td>${s.invited ? '<span style="color:var(--text-muted);font-size:12px">Sent ' + new Date(s.invited_at).toLocaleDateString() + '</span>' : '<button onclick="markInvited(' + s.id + ')" style="padding:4px 12px;background:var(--forest);color:#fff;border:none;border-radius:6px;font-size:12px;cursor:pointer">Mark Invited</button>'}</td>
+            </tr>
+        `).join('');
+    } catch(e) { console.error('Failed to load android beta', e); }
+}
+
+async function markInvited(id) {
+    try {
+        await api('/admin/android-beta/' + id + '/invite', { method: 'PUT' });
+        loadAndroidBeta();
+    } catch(e) { alert('Failed to mark invited'); }
+}
+
+function exportBetaEmails() {
+    const rows = document.querySelectorAll('#abSignups tr');
+    const emails = [];
+    rows.forEach(r => { const td = r.querySelector('td'); if (td) emails.push(td.textContent.trim()); });
+    const text = emails.join('\n');
+    navigator.clipboard.writeText(text).then(() => alert('Copied ' + emails.length + ' emails to clipboard'));
 }
 </script>
 </body>

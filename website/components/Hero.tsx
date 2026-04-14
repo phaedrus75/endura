@@ -2,8 +2,31 @@
 
 import { motion } from "framer-motion";
 import Image from "next/image";
+import { useState } from "react";
+
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "https://endura-production.up.railway.app";
 
 export default function Hero() {
+  const [androidEmail, setAndroidEmail] = useState("");
+  const [androidStatus, setAndroidStatus] = useState<"idle" | "loading" | "success" | "already" | "error">("idle");
+
+  const handleAndroidSignup = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!androidEmail.trim()) return;
+    setAndroidStatus("loading");
+    try {
+      const res = await fetch(`${API_URL}/android-beta`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: androidEmail.trim() }),
+      });
+      const data = await res.json();
+      setAndroidStatus(data.status === "already_registered" ? "already" : "success");
+    } catch {
+      setAndroidStatus("error");
+    }
+  };
+
   return (
     <section
       id="hero"
@@ -43,10 +66,10 @@ export default function Hero() {
             <motion.a
               whileHover={{ scale: 1.05 }}
               whileTap={{ scale: 0.97 }}
-              href="#features"
+              href="#android-beta"
               className="border-2 border-forest/20 text-forest-dark px-8 py-4 rounded-full text-base font-semibold hover:border-forest/40 transition-colors"
             >
-              See How It Works
+              Android? Join the Beta
             </motion.a>
           </div>
 
@@ -60,6 +83,40 @@ export default function Hero() {
             <span className="flex items-center gap-2">
               <span className="w-2 h-2 rounded-full bg-leaf" /> Real impact
             </span>
+          </div>
+
+          {/* Android Beta Signup */}
+          <div id="android-beta" className="mt-8 p-5 bg-white/60 backdrop-blur-sm rounded-2xl border border-forest/10 max-w-md mx-auto lg:mx-0">
+            <div className="flex items-center gap-2 mb-3">
+              <span className="text-lg">🤖</span>
+              <span className="text-sm font-semibold text-forest-dark">Android Beta — Coming Soon</span>
+            </div>
+            {androidStatus === "success" ? (
+              <p className="text-sm text-forest font-medium">You&apos;re on the list! We&apos;ll email you when Android is ready.</p>
+            ) : androidStatus === "already" ? (
+              <p className="text-sm text-forest font-medium">You&apos;re already signed up! We&apos;ll be in touch soon.</p>
+            ) : (
+              <form onSubmit={handleAndroidSignup} className="flex gap-2">
+                <input
+                  type="email"
+                  placeholder="Enter your Gmail address"
+                  value={androidEmail}
+                  onChange={(e) => setAndroidEmail(e.target.value)}
+                  required
+                  className="flex-1 px-4 py-2.5 rounded-xl border border-forest/20 text-sm focus:outline-none focus:border-forest/50 bg-white"
+                />
+                <button
+                  type="submit"
+                  disabled={androidStatus === "loading"}
+                  className="px-5 py-2.5 bg-forest text-white rounded-xl text-sm font-semibold hover:bg-forest-dark transition-colors disabled:opacity-50"
+                >
+                  {androidStatus === "loading" ? "..." : "Notify Me"}
+                </button>
+              </form>
+            )}
+            {androidStatus === "error" && (
+              <p className="text-sm text-red-500 mt-2">Something went wrong. Try again.</p>
+            )}
           </div>
         </motion.div>
 
