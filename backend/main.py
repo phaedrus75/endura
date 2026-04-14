@@ -34,6 +34,16 @@ if SQLALCHEMY_DATABASE_URL.startswith("sqlite"):
         Base.metadata.create_all(bind=engine)
     except Exception as e:
         print(f"Warning: Could not create tables on startup: {e}")
+else:
+    from sqlalchemy import inspect as sa_inspect
+    try:
+        _insp = sa_inspect(engine)
+        for _tbl in ["android_beta_signups"]:
+            if not _insp.has_table(_tbl):
+                Base.metadata.tables[_tbl].create(bind=engine)
+                print(f"Created missing table: {_tbl}")
+    except Exception as e:
+        print(f"Warning: Could not check/create tables: {e}")
 
 # Seed default subjects and mark admin users on startup
 try:
@@ -429,6 +439,8 @@ def verify_email(request: Request, body: VerifyEmailRequest, db: Session = Depen
     user.verification_attempts = 0
     db.commit()
 
+    _send_welcome_email(user.email, user.username)
+
     access_token = create_access_token(
         data={"sub": user.email, "tv": user.token_version or 0},
         expires_delta=timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
@@ -492,6 +504,75 @@ def _send_verification_email(email: str, code: str) -> bool:
             return False
     else:
         logger.warning("RESEND_API_KEY not set — verification email could not be sent")
+        return False
+
+
+def _send_welcome_email(email: str, username: str | None) -> bool:
+    resend_key = os.getenv("RESEND_API_KEY")
+    resend_from = os.getenv("RESEND_FROM", "Endura <onboarding@resend.dev>")
+    if not resend_key:
+        return False
+    name = username or "there"
+    try:
+        import resend
+        resend.api_key = resend_key
+        resend.Emails.send({
+            "from": resend_from,
+            "to": [email],
+            "subject": "Welcome to Endura! 🌿🥚",
+            "html": f"""
+            <div style="font-family:'Segoe UI',sans-serif;max-width:520px;margin:0 auto;padding:40px 32px;background:#E7EFEA;border-radius:20px">
+                <h1 style="color:#4A7C59;margin:0 0 4px;font-size:28px">Welcome to Endura!</h1>
+                <p style="color:#6B9B7A;margin:0 0 24px;font-size:15px">Hey {name}, you're officially part of the flock.</p>
+
+                <div style="background:#fff;border-radius:16px;padding:28px;margin-bottom:20px">
+                    <p style="color:#333;font-size:15px;line-height:1.7;margin:0 0 16px">
+                        Every minute you study hatches a real endangered animal — from Snow Leopards to Giant Pandas.
+                        Here's how to get started:
+                    </p>
+                    <table style="width:100%;border-collapse:collapse">
+                        <tr>
+                            <td style="padding:10px 12px;vertical-align:top;font-size:22px">🥚</td>
+                            <td style="padding:10px 0;color:#333;font-size:14px;line-height:1.6">
+                                <strong>Set your first timer</strong> — pick a subject, choose your duration, and start studying.
+                            </td>
+                        </tr>
+                        <tr>
+                            <td style="padding:10px 12px;vertical-align:top;font-size:22px">🐾</td>
+                            <td style="padding:10px 0;color:#333;font-size:14px;line-height:1.6">
+                                <strong>Hatch your first animal</strong> — earn eco-credits as you study and watch your egg hatch into a real endangered species.
+                            </td>
+                        </tr>
+                        <tr>
+                            <td style="padding:10px 12px;vertical-align:top;font-size:22px">👥</td>
+                            <td style="padding:10px 0;color:#333;font-size:14px;line-height:1.6">
+                                <strong>Add your friends</strong> — compete on leaderboards, create study groups, and motivate each other.
+                            </td>
+                        </tr>
+                        <tr>
+                            <td style="padding:10px 12px;vertical-align:top;font-size:22px">🔥</td>
+                            <td style="padding:10px 0;color:#333;font-size:14px;line-height:1.6">
+                                <strong>Build your streak</strong> — study every day to grow your streak and unlock badges.
+                            </td>
+                        </tr>
+                    </table>
+                </div>
+
+                <div style="text-align:center;margin-bottom:20px">
+                    <a href="https://endura.eco" style="display:inline-block;background:#4A7C59;color:#fff;text-decoration:none;padding:14px 32px;border-radius:12px;font-size:15px;font-weight:600">Open Endura</a>
+                </div>
+
+                <p style="color:#999;font-size:12px;text-align:center;margin:0">
+                    Study smarter. Save wildlife. 🌍<br>
+                    <a href="https://instagram.com/endura.eco" style="color:#6B9B7A;text-decoration:none">Follow us on Instagram</a>
+                </p>
+            </div>
+            """,
+        })
+        logger.info(f"Welcome email sent to {email}")
+        return True
+    except Exception as e:
+        logger.error(f"Failed to send welcome email to {email}: {e}")
         return False
 
 

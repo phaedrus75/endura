@@ -4,7 +4,7 @@ import { motion } from "framer-motion";
 import Image from "next/image";
 import { useState } from "react";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "https://endura-production.up.railway.app";
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "https://web-production-34028.up.railway.app";
 
 export default function Hero() {
   const [androidEmail, setAndroidEmail] = useState("");
