@@ -48,6 +48,11 @@ else:
                 _conn.execute(text("ALTER TABLE users ADD COLUMN eco_credits_multiplier FLOAT DEFAULT 1.0"))
                 _conn.commit()
             print("Added eco_credits_multiplier column to users")
+        if "is_archived" not in _user_cols:
+            with engine.connect() as _conn:
+                _conn.execute(text("ALTER TABLE users ADD COLUMN is_archived BOOLEAN DEFAULT 0"))
+                _conn.commit()
+            print("Added is_archived column to users")
     except Exception as e:
         print(f"Warning: Could not check/create tables: {e}")
 
@@ -707,7 +712,9 @@ def login(request: Request, user: schemas.UserLogin, db: Session = Depends(get_d
     
     if not db_user.email_verified:
         raise HTTPException(status_code=403, detail="Please verify your email before logging in")
-    
+    if getattr(db_user, "is_archived", False):
+        raise HTTPException(status_code=403, detail="This account has been deactivated. Please contact support.")
+
     access_token = create_access_token(
         data={"sub": db_user.email, "tv": db_user.token_version or 0},
         expires_delta=timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
@@ -2487,6 +2494,7 @@ def admin_users(
             "total_donated": float(donated),
             "created_at": u.created_at.isoformat() if u.created_at else None,
             "last_study_date": u.last_study_date.isoformat() if u.last_study_date else None,
+            "is_archived": getattr(u, "is_archived", False) or False,
         })
 
     return {"total": total, "users": result}
@@ -2549,22 +2557,27 @@ async def admin_update_user(
 
 
 @app.delete("/admin/users/{user_id}")
-def admin_delete_user(user_id: int, db: Session = Depends(get_db), _=Depends(verify_admin)):
+def admin_archive_user(user_id: int, db: Session = Depends(get_db), _=Depends(verify_admin)):
+    """Soft-delete: archives the user so they can't log in, but data is preserved."""
     user = db.query(models.User).filter(models.User.id == user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
     if user.is_admin:
-        raise HTTPException(status_code=400, detail="Cannot delete admin users")
-    for tbl in [models.UserBadge, models.UserAnimal, models.StudySession, models.Donation,
-                 models.Task, models.EmailLog, models.UserPurchase, models.UserItemAssignment,
-                 models.UserSubject, models.GroupMember, models.ActivityEvent]:
-        db.query(tbl).filter(tbl.user_id == user_id).delete()
-    db.query(models.Friendship).filter(
-        (models.Friendship.user_id == user_id) | (models.Friendship.friend_id == user_id)
-    ).delete(synchronize_session=False)
-    db.delete(user)
+        raise HTTPException(status_code=400, detail="Cannot archive admin users")
+    user.is_archived = True
+    user.token_version = (user.token_version or 0) + 1
     db.commit()
-    return {"deleted": True, "user_id": user_id}
+    return {"archived": True, "user_id": user_id}
+
+
+@app.post("/admin/users/{user_id}/reactivate")
+def admin_reactivate_user(user_id: int, db: Session = Depends(get_db), _=Depends(verify_admin)):
+    user = db.query(models.User).filter(models.User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    user.is_archived = False
+    db.commit()
+    return {"reactivated": True, "user_id": user_id}
 
 
 @app.get("/admin/users/{user_id}")
@@ -2642,6 +2655,7 @@ def admin_user_detail(user_id: int, db: Session = Depends(get_db), _=Depends(ver
         "recent_sessions": session_list,
         "donations": donation_list,
         "email_logs": email_log_list,
+        "is_archived": getattr(user, "is_archived", False) or False,
     }
 
 

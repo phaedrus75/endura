@@ -82,6 +82,11 @@ def get_current_user(
     token_ver = payload.get("tv", 0)
     if token_ver != (user.token_version or 0):
         raise credentials_exception
+    if getattr(user, "is_archived", False):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="This account has been deactivated. Please contact support.",
+        )
     return user
 
 

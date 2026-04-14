@@ -1015,7 +1015,7 @@ function renderUsersTable() {
     if (!filtered.length) { body.innerHTML = '<tr><td colspan="10" class="empty">No users found</td></tr>'; return; }
     body.innerHTML = filtered.map(u => `
         <tr style="cursor:pointer" onclick="showUserDetail(${u.id})">
-            <td><strong>${esc(u.username || '—')}</strong></td>
+            <td><strong>${esc(u.username || '—')}</strong>${u.is_archived ? ' <span style="background:#e74c3c;color:#fff;font-size:10px;padding:2px 6px;border-radius:4px;font-weight:600">ARCHIVED</span>' : ''}</td>
             <td>${esc(u.email)}</td>
             <td>${esc(u.school || '—')}</td>
             <td>${esc(u.country || '—')}</td>
@@ -1051,7 +1051,7 @@ async function showUserDetail(id) {
     try {
         currentEditUserId = id;
         const u = await adminFetch(`/admin/users/${id}`);
-        document.getElementById('modalUserTitle').textContent = u.username || u.email;
+        document.getElementById('modalUserTitle').innerHTML = esc(u.username || u.email) + (u.is_archived ? ' <span style="background:#e74c3c;color:#fff;font-size:11px;padding:2px 8px;border-radius:4px;font-weight:600">ARCHIVED</span>' : '');
         document.getElementById('modalUserBody').innerHTML = `
             <div class="detail-section" style="background:#f8faf9;border-radius:12px;padding:16px;margin-bottom:16px">
                 <h4 style="margin-top:0;margin-bottom:12px">Edit Profile</h4>
@@ -1075,7 +1075,10 @@ async function showUserDetail(id) {
                     <button onclick="saveUserEdits()" style="background:#5f8c87;color:#fff;border:none;padding:8px 20px;border-radius:8px;cursor:pointer;font-weight:600;font-size:13px">Save Changes</button>
                     <span id="adminSaveStatus" style="font-size:12px;color:#888;line-height:34px"></span>
                     <div style="flex:1"></div>
-                    <button onclick="deleteUser()" style="background:var(--red);color:#fff;border:none;padding:8px 16px;border-radius:8px;cursor:pointer;font-weight:600;font-size:12px">Delete User</button>
+                    ${u.is_archived
+                        ? '<button onclick="reactivateUser()" style="background:var(--accent);color:#fff;border:none;padding:8px 16px;border-radius:8px;cursor:pointer;font-weight:600;font-size:12px">Reactivate User</button>'
+                        : '<button onclick="archiveUser()" style="background:var(--red);color:#fff;border:none;padding:8px 16px;border-radius:8px;cursor:pointer;font-weight:600;font-size:12px">Archive User</button>'
+                    }
                 </div>
             </div>
 
@@ -1173,19 +1176,34 @@ async function saveUserEdits() {
     }
 }
 
-async function deleteUser() {
+async function archiveUser() {
     if (!currentEditUserId) return;
-    if (!confirm('Are you sure you want to permanently delete this user and all their data? This cannot be undone.')) return;
+    if (!confirm('Archive this user? They will be logged out and unable to sign in. Their data is preserved and you can reactivate them later.')) return;
     try {
         const res = await fetch(API_URL + '/admin/users/' + currentEditUserId, {
             method: 'DELETE',
             headers: { 'X-Admin-Key': API_KEY },
         });
         const data = await res.json();
-        if (!res.ok) { alert(data.detail || 'Delete failed'); return; }
+        if (!res.ok) { alert(data.detail || 'Archive failed'); return; }
         closeUserModal();
         loadUsers(document.getElementById('userSearch').value);
-    } catch(e) { alert('Failed to delete user'); }
+    } catch(e) { alert('Failed to archive user'); }
+}
+
+async function reactivateUser() {
+    if (!currentEditUserId) return;
+    if (!confirm('Reactivate this user? They will be able to sign in again.')) return;
+    try {
+        const res = await fetch(API_URL + '/admin/users/' + currentEditUserId + '/reactivate', {
+            method: 'POST',
+            headers: { 'X-Admin-Key': API_KEY },
+        });
+        const data = await res.json();
+        if (!res.ok) { alert(data.detail || 'Reactivate failed'); return; }
+        closeUserModal();
+        loadUsers(document.getElementById('userSearch').value);
+    } catch(e) { alert('Failed to reactivate user'); }
 }
 
 function closeUserModal() { document.getElementById('userModal').classList.remove('active'); }

@@ -249,6 +249,9 @@ class User(Base):
     # Founding member program
     eco_credits_multiplier = Column(Float, default=1.0, server_default="1.0")
 
+    # Soft-delete
+    is_archived = Column(Boolean, default=False, server_default="0")
+
     # Admin & dev settings
     is_admin = Column(Boolean, default=False, server_default="0")
     use_test_timer = Column(Boolean, default=False, server_default="0")
