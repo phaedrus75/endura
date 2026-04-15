@@ -171,9 +171,9 @@ def start_scheduler():
         scheduler = BackgroundScheduler()
         scheduler.add_job(_cron_run_onboarding_emails, "cron", hour=8, minute=0, id="onboarding_emails")
         scheduler.start()
-        logger.info("Scheduler started: onboarding emails daily at 08:00 UTC")
+        print("✅ Scheduler started: onboarding emails daily at 08:00 UTC")
     except Exception as e:
-        logger.error(f"Failed to start scheduler: {e}")
+        print(f"❌ Failed to start scheduler: {e}")
 
 _allowed_origins = [
     "https://web-production-34028.up.railway.app",
