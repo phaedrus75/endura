@@ -2,7 +2,7 @@ from fastapi import FastAPI, Depends, HTTPException, status, Request, Header, Up
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
-from sqlalchemy import text, func
+from sqlalchemy import text, func, or_
 from datetime import timedelta, datetime
 from typing import List, Optional
 from slowapi import Limiter, _rate_limit_exceeded_handler
@@ -113,10 +113,16 @@ def _cron_run_onboarding_emails():
         if not milestone_templates and not reengagement_tmpl:
             return
 
-        day_to_key = {t.trigger_day: t.template_key for t in milestone_templates}
+        milestones = sorted(
+            [(t.trigger_day, t.template_key) for t in milestone_templates],
+            key=lambda x: x[0],
+        )
         inactive_threshold = reengagement_tmpl.inactive_days if reengagement_tmpl else 5
 
-        users = _db.query(models.User).filter(models.User.email_verified == True).all()
+        users = _db.query(models.User).filter(
+            models.User.email_verified == True,
+            or_(models.User.is_archived == False, models.User.is_archived == None),
+        ).all()
         for user in users:
             if not user.created_at or not user.email:
                 continue
@@ -131,16 +137,21 @@ def _cron_run_onboarding_emails():
                 "longest_streak": str(user.longest_streak or 0), "sessions": str(user.total_sessions or 0),
                 "badges": str(badges_count),
             }
+            sent_keys = {el.template_key for el in _db.query(models.EmailLog.template_key).filter(
+                models.EmailLog.user_id == user.id
+            ).all()}
             try:
-                if days_since_signup in day_to_key:
-                    tkey = day_to_key[days_since_signup]
-                    if _send_template_email(tkey, user.email, variables, _db):
-                        label = f"day{days_since_signup}"
-                        if label in sent:
-                            sent[label] += 1
-                if (reengagement_tmpl and last_active_days is not None
+                for trigger_day, tkey in milestones:
+                    if days_since_signup >= trigger_day and tkey not in sent_keys:
+                        if _send_template_email(tkey, user.email, variables, _db):
+                            label = f"day{trigger_day}"
+                            if label in sent:
+                                sent[label] += 1
+                            sent_keys.add(tkey)
+                            break  # one milestone email per user per run
+                if (reengagement_tmpl and "reengagement" not in sent_keys
+                        and last_active_days is not None
                         and last_active_days >= inactive_threshold
-                        and last_active_days <= inactive_threshold + 2
                         and days_since_signup > 3):
                     if _send_template_email("reengagement", user.email, variables, _db):
                         sent["reengagement"] += 1
@@ -3232,10 +3243,16 @@ def run_onboarding_emails(db: Session = Depends(get_db), _=Depends(verify_admin)
     if not milestone_templates and not reengagement_tmpl:
         return {"sent": sent, "total_users_checked": 0, "note": "No active templates"}
 
-    day_to_key = {t.trigger_day: t.template_key for t in milestone_templates}
+    milestones = sorted(
+        [(t.trigger_day, t.template_key) for t in milestone_templates],
+        key=lambda x: x[0],
+    )
     inactive_threshold = reengagement_tmpl.inactive_days if reengagement_tmpl else 5
 
-    users = db.query(models.User).filter(models.User.email_verified == True).all()
+    users = db.query(models.User).filter(
+        models.User.email_verified == True,
+        or_(models.User.is_archived == False, models.User.is_archived == None),
+    ).all()
 
     for user in users:
         if not user.created_at or not user.email:
@@ -3260,17 +3277,23 @@ def run_onboarding_emails(db: Session = Depends(get_db), _=Depends(verify_admin)
             "badges": str(badges_count),
         }
 
-        try:
-            if days_since_signup in day_to_key:
-                tkey = day_to_key[days_since_signup]
-                if _send_template_email(tkey, user.email, variables, db):
-                    label = f"day{days_since_signup}"
-                    if label in sent:
-                        sent[label] += 1
+        sent_keys = {el.template_key for el in db.query(models.EmailLog.template_key).filter(
+            models.EmailLog.user_id == user.id
+        ).all()}
 
-            if (reengagement_tmpl and last_active_days is not None
+        try:
+            for trigger_day, tkey in milestones:
+                if days_since_signup >= trigger_day and tkey not in sent_keys:
+                    if _send_template_email(tkey, user.email, variables, db):
+                        label = f"day{trigger_day}"
+                        if label in sent:
+                            sent[label] += 1
+                        sent_keys.add(tkey)
+                        break  # one milestone email per user per run
+
+            if (reengagement_tmpl and "reengagement" not in sent_keys
+                    and last_active_days is not None
                     and last_active_days >= inactive_threshold
-                    and last_active_days <= inactive_threshold + 2
                     and days_since_signup > 3):
                 if _send_template_email("reengagement", user.email, variables, db):
                     sent["reengagement"] += 1
