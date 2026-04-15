@@ -919,7 +919,7 @@ async function loadOverview() {
     try {
         const d = await adminFetch('/admin/overview');
         document.getElementById('k-users').textContent = d.total_users;
-        document.getElementById('k-users-sub').textContent = `+${d.signups_7d} this week`;
+        document.getElementById('k-users-sub').textContent = `+${d.signups_7d} this week` + (d.archived_users ? ` (${d.archived_users} archived)` : '');
         document.getElementById('k-active').textContent = d.active_users_7d;
         document.getElementById('k-sessions').textContent = d.total_sessions.toLocaleString();
         document.getElementById('k-hours').textContent = Math.round(d.total_study_minutes / 60).toLocaleString();

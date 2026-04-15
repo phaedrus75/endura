@@ -2398,6 +2398,9 @@ def admin_overview(db: Session = Depends(get_db), _=Depends(verify_admin)):
     month_ago = now - timedelta(days=30)
 
     total_users = db.query(func.count(models.User.id)).scalar() or 0
+    archived_users = db.query(func.count(models.User.id)).filter(
+        models.User.is_archived == True
+    ).scalar() or 0
     active_7d = db.query(func.count(models.User.id)).filter(
         models.User.last_study_date >= week_ago
     ).scalar() or 0
@@ -2446,6 +2449,7 @@ def admin_overview(db: Session = Depends(get_db), _=Depends(verify_admin)):
 
     return {
         "total_users": total_users,
+        "archived_users": archived_users,
         "active_users_7d": active_7d,
         "signups_7d": signups_7d,
         "signups_30d": signups_30d,
