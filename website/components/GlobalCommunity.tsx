@@ -284,27 +284,26 @@ export default function GlobalCommunity() {
           <WorldMap countries={data.countries} geoFeatures={geoFeatures} />
         </motion.div>
 
-        {/* Schools */}
+        {/* Schools — auto-scrolling ticker */}
         {data.schools.length > 0 && (
           <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            whileInView={{ opacity: 1, y: 0 }}
+            initial={{ opacity: 0 }}
+            whileInView={{ opacity: 1 }}
             viewport={{ once: true }}
             transition={{ duration: 0.6, delay: 0.3 }}
+            className="relative overflow-hidden"
           >
-            <h3 className="text-center text-sm font-semibold text-forest-dark/40 uppercase tracking-wider mb-6">
-              Schools &amp; Colleges using Endura
-            </h3>
-            <div className="flex flex-wrap justify-center gap-3">
-              {data.schools.map((s, i) => (
+            <div className="absolute left-0 top-0 bottom-0 w-16 bg-gradient-to-r from-cream to-transparent z-10" />
+            <div className="absolute right-0 top-0 bottom-0 w-16 bg-gradient-to-l from-cream to-transparent z-10" />
+            <div className="flex animate-marquee gap-4 whitespace-nowrap py-2">
+              {[...data.schools, ...data.schools].map((s, i) => (
                 <span
                   key={i}
-                  className="inline-flex items-center gap-1.5 bg-white px-4 py-2 rounded-full text-sm font-medium text-forest-dark/70 shadow-sm border border-forest/5"
+                  className="inline-flex items-center gap-1.5 bg-white/70 px-3 py-1.5 rounded-full text-xs font-medium text-forest-dark/60 border border-forest/5 flex-shrink-0"
                 >
-                  <span className="text-forest-light">🏫</span>
-                  {s.school}
+                  🏫 {s.school}
                   {s.country && (
-                    <span className="text-forest-dark/30 text-xs">· {s.country}</span>
+                    <span className="text-forest-dark/25">· {s.country}</span>
                   )}
                 </span>
               ))}
