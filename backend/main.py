@@ -2512,6 +2512,69 @@ def admin_overview(db: Session = Depends(get_db), _=Depends(verify_admin)):
     }
 
 
+@app.get("/public/geography")
+def public_geography(db: Session = Depends(get_db)):
+    """Public-facing geography summary for the website."""
+    country_rows = (
+        db.query(models.User.country, func.count(models.User.id))
+        .filter(models.User.country.isnot(None), models.User.country != "")
+        .group_by(models.User.country)
+        .order_by(func.count(models.User.id).desc())
+        .all()
+    )
+    school_rows = (
+        db.query(models.User.school, models.User.city, models.User.country)
+        .filter(models.User.school.isnot(None), models.User.school != "")
+        .distinct()
+        .all()
+    )
+    return {
+        "total_countries": len(country_rows),
+        "total_schools": len(school_rows),
+        "countries": [{"country": r[0], "users": r[1]} for r in country_rows],
+        "schools": [{"school": r[0], "city": r[1], "country": r[2]} for r in school_rows],
+    }
+
+
+@app.get("/admin/geography")
+def admin_geography(db: Session = Depends(get_db), _=Depends(verify_admin)):
+    country_rows = (
+        db.query(models.User.country, func.count(models.User.id))
+        .filter(models.User.country.isnot(None), models.User.country != "")
+        .group_by(models.User.country)
+        .order_by(func.count(models.User.id).desc())
+        .all()
+    )
+    countries = [{"country": r[0], "users": r[1]} for r in country_rows]
+
+    school_rows = (
+        db.query(
+            models.User.school,
+            models.User.city,
+            models.User.country,
+            func.count(models.User.id),
+        )
+        .filter(models.User.school.isnot(None), models.User.school != "")
+        .group_by(models.User.school, models.User.city, models.User.country)
+        .order_by(func.count(models.User.id).desc())
+        .all()
+    )
+    schools = [
+        {"school": r[0], "city": r[1], "country": r[2], "users": r[3]}
+        for r in school_rows
+    ]
+
+    total_countries = len(countries)
+    total_schools = len(schools)
+
+    return {
+        "total_countries": total_countries,
+        "total_schools": total_schools,
+        "countries": countries,
+        "schools": schools,
+    }
+
+
 @app.get("/admin/users")
 def admin_users(
     search: Optional[str] = None,

@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Endura Admin</title>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="anonymous">
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         :root {
@@ -327,6 +328,7 @@
         }
     </style>
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js" crossorigin="anonymous"></script>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin="anonymous"></script>
 </head>
 <body>
 
@@ -358,6 +360,7 @@
             <a data-page="users"><span class="icon">👥</span> Users</a>
             <a data-page="donations"><span class="icon">💚</span> Donations</a>
             <a data-page="content"><span class="icon">🦁</span> Content</a>
+            <a data-page="geography"><span class="icon">🌍</span> Geography</a>
             <a data-page="activity"><span class="icon">⚡</span> Activity</a>
             <a data-page="analytics"><span class="icon">📈</span> Analytics</a>
             <a data-page="android-beta"><span class="icon">🤖</span> Android Beta</a>
@@ -499,6 +502,39 @@
                         <button onclick="openCreateShop('decorations')" style="padding:8px 18px;background:linear-gradient(135deg,var(--forest-light),var(--forest));color:#fff;border:none;border-radius:10px;font-size:13px;font-weight:600;cursor:pointer">+ Add Decoration</button>
                     </div>
                     <div class="animal-grid" id="shopDecorationsGrid"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Geography Page -->
+        <div class="page" id="page-geography">
+            <h1 class="page-title">Geography</h1>
+            <div class="kpi-grid" style="margin-bottom:20px">
+                <div class="kpi"><div class="kpi-icon">🌍</div><div class="kpi-val" id="g-countries">—</div><div class="kpi-label">Countries</div></div>
+                <div class="kpi"><div class="kpi-icon">🏫</div><div class="kpi-val" id="g-schools">—</div><div class="kpi-label">Schools / Colleges</div></div>
+            </div>
+            <div class="table-card" style="margin-bottom:20px">
+                <h3>User Map</h3>
+                <div id="geoMap" style="height:420px;border-radius:10px;overflow:hidden;margin-top:12px"></div>
+            </div>
+            <div class="chart-row">
+                <div class="table-card">
+                    <h3>Users by Country</h3>
+                    <div style="overflow-x:auto">
+                        <table>
+                            <thead><tr><th>Country</th><th>Users</th><th></th></tr></thead>
+                            <tbody id="geoCountryBody"></tbody>
+                        </table>
+                    </div>
+                </div>
+                <div class="table-card">
+                    <h3>Schools &amp; Colleges</h3>
+                    <div style="overflow-x:auto">
+                        <table>
+                            <thead><tr><th>School</th><th>Location</th><th>Users</th></tr></thead>
+                            <tbody id="geoSchoolBody"></tbody>
+                        </table>
+                    </div>
                 </div>
             </div>
         </div>
@@ -940,6 +976,7 @@ document.querySelectorAll('.sidebar nav a').forEach(link => {
         else if (link.dataset.page === 'users') loadUsers();
         else if (link.dataset.page === 'donations') loadDonations();
         else if (link.dataset.page === 'content') loadContent();
+        else if (link.dataset.page === 'geography') loadGeography();
         else if (link.dataset.page === 'activity') loadActivity();
         else if (link.dataset.page === 'analytics') initAnalytics();
         else if (link.dataset.page === 'android-beta') loadAndroidBeta();
@@ -1709,6 +1746,112 @@ const ANIMAL_EMOJIS = {
     'Kakapo':'🦜','Axolotl':'🦎','Saola':'🦌'
 };
 function getAnimalEmoji(name) { return ANIMAL_EMOJIS[name] || '🐾'; }
+
+// ----- Geography -----
+let geoMap = null;
+
+const COUNTRY_COORDS = {
+    'Afghanistan':[33,65],'Albania':[41,20],'Algeria':[28,3],'Argentina':[-34,-64],'Armenia':[40,45],
+    'Australia':[-25,134],'Austria':[47.3,13.3],'Azerbaijan':[40.5,47.5],'Bahrain':[26,50.5],
+    'Bangladesh':[24,90],'Belarus':[53.5,28],'Belgium':[50.8,4],'Bolivia':[-17,-65],'Bosnia and Herzegovina':[44,18],
+    'Brazil':[-10,-55],'Bulgaria':[43,25],'Cambodia':[12.5,105],'Cameroon':[6,12],'Canada':[56,-106],
+    'Chile':[-35.7,-71.5],'China':[35,105],'Colombia':[4,-72],'Costa Rica':[10,-84],'Croatia':[45.2,15.5],
+    'Cuba':[22,-80],'Cyprus':[35,33],'Czech Republic':[49.8,15.5],'Czechia':[49.8,15.5],
+    'Denmark':[56,10],'Dominican Republic':[19,-70.7],'Ecuador':[-1.8,-78.2],'Egypt':[27,30],
+    'El Salvador':[13.8,-88.9],'Estonia':[59,26],'Ethiopia':[8,38],'Finland':[64,26],
+    'France':[46.6,2.5],'Georgia':[42,43.5],'Germany':[51.2,10.4],'Ghana':[7.9,-1.2],
+    'Greece':[39,22],'Guatemala':[15.5,-90.2],'Honduras':[14.1,-87.2],'Hong Kong':[22.3,114.2],
+    'Hungary':[47.2,19.5],'Iceland':[65,-18],'India':[21,78],'Indonesia':[-5,120],
+    'Iran':[32,53],'Iraq':[33,44],'Ireland':[53.4,-8],'Israel':[31.5,34.8],
+    'Italy':[42.8,12.8],'Jamaica':[18.1,-77.3],'Japan':[36,138],'Jordan':[31,36.6],
+    'Kazakhstan':[48,68],'Kenya':[-1,38],'Kuwait':[29.3,47.5],'Latvia':[57,25],
+    'Lebanon':[33.9,35.8],'Libya':[27,17],'Lithuania':[55.9,23.9],'Luxembourg':[49.8,6.1],
+    'Malaysia':[4.2,101.9],'Malta':[35.9,14.4],'Mexico':[23,-102],'Moldova':[47,29],
+    'Mongolia':[46.9,103.8],'Montenegro':[42.5,19.3],'Morocco':[32,-5],'Mozambique':[-18.2,35.3],
+    'Myanmar':[22,98],'Nepal':[28.2,84.2],'Netherlands':[52.1,5.3],'New Zealand':[-41,174],
+    'Nicaragua':[12.8,-85.2],'Nigeria':[10,8],'North Korea':[40,127],'North Macedonia':[41.5,21.7],
+    'Norway':[62,10],'Oman':[21,57],'Pakistan':[30,69],'Palestine':[31.9,35.2],
+    'Panama':[9,-80],'Paraguay':[-23,-58],'Peru':[-10,-76],'Philippines':[13,122],
+    'Poland':[52,20],'Portugal':[39.4,-8],'Qatar':[25.3,51.2],'Romania':[46,25],
+    'Russia':[60,100],'Rwanda':[-2,30],'Saudi Arabia':[24,45],'Senegal':[14.5,-14.5],
+    'Serbia':[44.8,20.5],'Singapore':[1.35,103.8],'Slovakia':[48.7,19.7],'Slovenia':[46.1,14.8],
+    'South Africa':[-29,24],'South Korea':[36,128],'Spain':[40,-4],'Sri Lanka':[7.9,80.8],
+    'Sudan':[16,30],'Sweden':[62,15],'Switzerland':[46.8,8.2],'Syria':[35,38],
+    'Taiwan':[23.7,121],'Tanzania':[-6.4,34.9],'Thailand':[15.9,101],'Trinidad and Tobago':[10.4,-61.3],
+    'Tunisia':[34,9],'Turkey':[39.9,32.9],'Türkiye':[39.9,32.9],'UAE':[24,54],'United Arab Emirates':[24,54],
+    'Uganda':[1.4,32.3],'Ukraine':[49,32],'United Kingdom':[54,-2],'UK':[54,-2],
+    'United States':[38,-97],'USA':[38,-97],'US':[38,-97],'Uruguay':[-33,-56],
+    'Uzbekistan':[41.4,64.6],'Venezuela':[7,-66],'Vietnam':[16.2,107.8],'Yemen':[15.5,48.5],
+    'Zambia':[-13.1,27.8],'Zimbabwe':[-20,30],
+};
+
+async function loadGeography() {
+    try {
+        const d = await adminFetch('/admin/geography');
+        document.getElementById('g-countries').textContent = d.total_countries;
+        document.getElementById('g-schools').textContent = d.total_schools;
+
+        renderGeoMap(d.countries);
+        renderCountryTable(d.countries);
+        renderSchoolTable(d.schools);
+    } catch (e) { console.error('Geography load failed', e); }
+}
+
+function renderGeoMap(countries) {
+    if (geoMap) { geoMap.remove(); geoMap = null; }
+    geoMap = L.map('geoMap', { scrollWheelZoom: true, zoomControl: true }).setView([25, 10], 2);
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+        attribution: '&copy; OpenStreetMap &copy; CARTO',
+        maxZoom: 18,
+    }).addTo(geoMap);
+
+    const maxUsers = countries.length ? Math.max(...countries.map(c => c.users)) : 1;
+    countries.forEach(c => {
+        const coords = COUNTRY_COORDS[c.country];
+        if (!coords) return;
+        const radius = Math.max(6, Math.min(28, 6 + (c.users / maxUsers) * 22));
+        const marker = L.circleMarker(coords, {
+            radius: radius,
+            fillColor: '#4A7C59',
+            fillOpacity: 0.7,
+            color: '#2d5a3a',
+            weight: 2,
+        }).addTo(geoMap);
+        marker.bindPopup(`<div style="text-align:center;font-family:Inter,sans-serif">
+            <strong style="font-size:14px">${esc(c.country)}</strong><br>
+            <span style="font-size:20px;font-weight:800;color:#4A7C59">${c.users}</span>
+            <span style="font-size:12px;color:#666"> user${c.users !== 1 ? 's' : ''}</span>
+        </div>`);
+    });
+
+    setTimeout(() => geoMap.invalidateSize(), 100);
+}
+
+function renderCountryTable(countries) {
+    const body = document.getElementById('geoCountryBody');
+    if (!countries.length) { body.innerHTML = '<tr><td colspan="3" class="empty">No country data yet</td></tr>'; return; }
+    const max = countries[0].users;
+    body.innerHTML = countries.map(c => {
+        const pct = (c.users / max * 100).toFixed(0);
+        return `<tr>
+            <td><strong>${esc(c.country)}</strong></td>
+            <td>${c.users}</td>
+            <td style="width:40%"><div style="background:linear-gradient(90deg,var(--forest-light),var(--forest));height:16px;border-radius:4px;width:${pct}%"></div></td>
+        </tr>`;
+    }).join('');
+}
+
+function renderSchoolTable(schools) {
+    const body = document.getElementById('geoSchoolBody');
+    if (!schools.length) { body.innerHTML = '<tr><td colspan="3" class="empty">No school data yet</td></tr>'; return; }
+    body.innerHTML = schools.map(s => `
+        <tr>
+            <td><strong>${esc(s.school)}</strong></td>
+            <td>${[s.city, s.country].filter(Boolean).map(esc).join(', ') || '—'}</td>
+            <td>${s.users}</td>
+        </tr>
+    `).join('');
+}
 
 // ----- Activity -----
 const EVENT_META = {
