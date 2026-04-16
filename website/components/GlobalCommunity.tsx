@@ -147,6 +147,132 @@ function LeafletMap({ countries }: { countries: CountryData[] }) {
   return <div ref={mapRef} style={{ height: "100%", width: "100%" }} />;
 }
 
+const ACCENT_COLORS = [
+  "#4A7C59", "#3d8b6e", "#2e7d6f", "#5b8c5a", "#6b9b7a",
+  "#3a7054", "#528a65", "#447a5c", "#609678", "#4e8860",
+];
+
+function getInitials(name: string): string {
+  return name
+    .split(/[\s&,\-]+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((w) => w[0])
+    .join("")
+    .toUpperCase();
+}
+
+function getColor(name: string): string {
+  let hash = 0;
+  for (let i = 0; i < name.length; i++) hash = name.charCodeAt(i) + ((hash << 5) - hash);
+  return ACCENT_COLORS[Math.abs(hash) % ACCENT_COLORS.length];
+}
+
+function guessSchoolDomain(name: string): string | null {
+  const lower = name.toLowerCase().trim();
+  const known: Record<string, string> = {
+    harvard: "harvard.edu",
+    stanford: "stanford.edu",
+    mit: "mit.edu",
+    oxford: "ox.ac.uk",
+    cambridge: "cam.ac.uk",
+    yale: "yale.edu",
+    princeton: "princeton.edu",
+    columbia: "columbia.edu",
+    uchicago: "uchicago.edu",
+    berkeley: "berkeley.edu",
+    imperial: "imperial.ac.uk",
+    ucl: "ucl.ac.uk",
+    lse: "lse.ac.uk",
+    nyu: "nyu.edu",
+    caltech: "caltech.edu",
+    duke: "duke.edu",
+    penn: "upenn.edu",
+    cornell: "cornell.edu",
+    brown: "brown.edu",
+    dartmouth: "dartmouth.edu",
+  };
+  for (const [key, domain] of Object.entries(known)) {
+    if (lower.includes(key)) return domain;
+  }
+  return null;
+}
+
+function SchoolChip({ school }: { school: SchoolData }) {
+  const domain = guessSchoolDomain(school.school);
+  const initials = getInitials(school.school);
+  const color = getColor(school.school);
+
+  return (
+    <span className="inline-flex items-center gap-2.5 bg-white px-4 py-2.5 rounded-xl text-sm font-medium text-forest-dark/70 shadow-sm border border-forest/5 flex-shrink-0">
+      {domain ? (
+        <img
+          src={`https://logo.clearbit.com/${domain}`}
+          alt=""
+          width={28}
+          height={28}
+          className="rounded-md"
+          onError={(e) => {
+            const el = e.currentTarget;
+            el.style.display = "none";
+            el.nextElementSibling?.removeAttribute("style");
+          }}
+        />
+      ) : null}
+      <span
+        style={{
+          width: 28,
+          height: 28,
+          borderRadius: 6,
+          background: color,
+          color: "#fff",
+          display: domain ? "none" : "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          fontSize: 11,
+          fontWeight: 700,
+          flexShrink: 0,
+          letterSpacing: "0.5px",
+        }}
+      >
+        {initials}
+      </span>
+      {school.school}
+    </span>
+  );
+}
+
+function SchoolMarqueeWall({ schools }: { schools: SchoolData[] }) {
+  const rows = [[] as SchoolData[], [] as SchoolData[], [] as SchoolData[]];
+  schools.forEach((s, i) => rows[i % 3].push(s));
+
+  const speeds = [35, 45, 38];
+  const directions = ["normal", "reverse", "normal"];
+
+  return (
+    <div className="relative overflow-hidden">
+      <div className="absolute left-0 top-0 bottom-0 w-20 bg-gradient-to-r from-cream to-transparent z-10" />
+      <div className="absolute right-0 top-0 bottom-0 w-20 bg-gradient-to-l from-cream to-transparent z-10" />
+      <div className="flex flex-col gap-3">
+        {rows.map((row, ri) => (
+          <div
+            key={ri}
+            className="flex gap-3 whitespace-nowrap"
+            style={{
+              animation: `marquee ${speeds[ri]}s linear infinite`,
+              animationDirection: directions[ri],
+            }}
+          >
+            {[...row, ...row].map((s, i) => (
+              <SchoolChip key={`${ri}-${i}`} school={s} />
+            ))}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export default function GlobalCommunity() {
   const [data, setData] = useState<GeoData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -239,30 +365,18 @@ export default function GlobalCommunity() {
           <LeafletMap countries={data.countries} />
         </motion.div>
 
-        {/* Schools — auto-scrolling ticker */}
+        {/* Schools — 3-row scrolling wall */}
         {data.schools.length > 0 && (
           <motion.div
             initial={{ opacity: 0 }}
             whileInView={{ opacity: 1 }}
             viewport={{ once: true }}
             transition={{ duration: 0.6, delay: 0.3 }}
-            className="relative overflow-hidden"
           >
-            <div className="absolute left-0 top-0 bottom-0 w-16 bg-gradient-to-r from-cream to-transparent z-10" />
-            <div className="absolute right-0 top-0 bottom-0 w-16 bg-gradient-to-l from-cream to-transparent z-10" />
-            <div className="flex animate-marquee gap-4 whitespace-nowrap py-2">
-              {[...data.schools, ...data.schools].map((s, i) => (
-                <span
-                  key={i}
-                  className="inline-flex items-center gap-1.5 bg-white/70 px-3 py-1.5 rounded-full text-xs font-medium text-forest-dark/60 border border-forest/5 flex-shrink-0"
-                >
-                  🏫 {s.school}
-                  {s.country && (
-                    <span className="text-forest-dark/25">· {s.country}</span>
-                  )}
-                </span>
-              ))}
-            </div>
+            <h3 className="text-center text-sm font-semibold text-forest-dark/40 uppercase tracking-wider mb-5">
+              Schools &amp; Colleges using Endura
+            </h3>
+            <SchoolMarqueeWall schools={data.schools} />
           </motion.div>
         )}
       </div>
