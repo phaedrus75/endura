@@ -2445,16 +2445,33 @@ def admin_overview(db: Session = Depends(get_db), _=Depends(verify_admin)):
         real_donated = total_donated
         real_donation_count = total_donation_count
 
-    # User funnel
+    # User funnel (excluding archived users)
+    real_users = total_users - archived_users
+    funnel_user_filter = models.User.is_archived == False
     verified_users = db.query(func.count(models.User.id)).filter(
-        models.User.email_verified == True
+        funnel_user_filter, models.User.email_verified == True
     ).scalar() or 0
-    started_timer = db.query(func.count(func.distinct(models.StudySession.user_id))).scalar() or 0
-    completed_timer = db.query(func.count(func.distinct(models.StudySession.user_id))).filter(
-        models.StudySession.duration_minutes > 0
-    ).scalar() or 0
-    hatched_animal = db.query(func.count(func.distinct(models.UserAnimal.user_id))).scalar() or 0
-    earned_badge = db.query(func.count(func.distinct(models.UserBadge.user_id))).scalar() or 0
+    if archived_ids:
+        started_timer = db.query(func.count(func.distinct(models.StudySession.user_id))).filter(
+            models.StudySession.user_id.notin_(archived_ids)
+        ).scalar() or 0
+        completed_timer = db.query(func.count(func.distinct(models.StudySession.user_id))).filter(
+            models.StudySession.duration_minutes > 0,
+            models.StudySession.user_id.notin_(archived_ids),
+        ).scalar() or 0
+        hatched_animal = db.query(func.count(func.distinct(models.UserAnimal.user_id))).filter(
+            models.UserAnimal.user_id.notin_(archived_ids)
+        ).scalar() or 0
+        earned_badge = db.query(func.count(func.distinct(models.UserBadge.user_id))).filter(
+            models.UserBadge.user_id.notin_(archived_ids)
+        ).scalar() or 0
+    else:
+        started_timer = db.query(func.count(func.distinct(models.StudySession.user_id))).scalar() or 0
+        completed_timer = db.query(func.count(func.distinct(models.StudySession.user_id))).filter(
+            models.StudySession.duration_minutes > 0
+        ).scalar() or 0
+        hatched_animal = db.query(func.count(func.distinct(models.UserAnimal.user_id))).scalar() or 0
+        earned_badge = db.query(func.count(func.distinct(models.UserBadge.user_id))).scalar() or 0
 
     daily_signups = []
     for i in range(30):
@@ -2502,7 +2519,7 @@ def admin_overview(db: Session = Depends(get_db), _=Depends(verify_admin)):
         "daily_signups": daily_signups,
         "daily_sessions": daily_sessions,
         "funnel": {
-            "signed_up": total_users,
+            "signed_up": real_users,
             "verified_email": verified_users,
             "started_timer": started_timer,
             "completed_timer": completed_timer,
