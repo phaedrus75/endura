@@ -353,12 +353,12 @@
         <div class="page active" id="page-overview">
             <h1 class="page-title">Overview</h1>
             <div class="kpi-grid" id="kpiGrid">
-                <div class="kpi"><div class="kpi-icon">👥</div><div class="kpi-val" id="k-users">—</div><div class="kpi-label">Total Users</div><div class="kpi-sub" id="k-users-sub"></div></div>
+                <div class="kpi"><div class="kpi-icon">👥</div><div class="kpi-val" id="k-users">—</div><div class="kpi-label">Real Users</div><div class="kpi-sub" id="k-users-sub"></div></div>
                 <div class="kpi"><div class="kpi-icon">🟢</div><div class="kpi-val" id="k-active">—</div><div class="kpi-label">Active (7d)</div></div>
-                <div class="kpi"><div class="kpi-icon">📚</div><div class="kpi-val" id="k-sessions">—</div><div class="kpi-label">Study Sessions</div></div>
-                <div class="kpi"><div class="kpi-icon">⏱️</div><div class="kpi-val" id="k-hours">—</div><div class="kpi-label">Study Hours</div></div>
+                <div class="kpi"><div class="kpi-icon">📚</div><div class="kpi-val" id="k-sessions">—</div><div class="kpi-label">Study Sessions</div><div class="kpi-sub" id="k-sessions-sub"></div></div>
+                <div class="kpi"><div class="kpi-icon">⏱️</div><div class="kpi-val" id="k-hours">—</div><div class="kpi-label">Study Hours</div><div class="kpi-sub" id="k-hours-sub"></div></div>
                 <div class="kpi"><div class="kpi-icon">💚</div><div class="kpi-val" id="k-donated">—</div><div class="kpi-label">Total Donated</div><div class="kpi-sub" id="k-donated-sub"></div></div>
-                <div class="kpi"><div class="kpi-icon">🐣</div><div class="kpi-val" id="k-animals">—</div><div class="kpi-label">Animals Hatched</div></div>
+                <div class="kpi"><div class="kpi-icon">🐣</div><div class="kpi-val" id="k-animals">—</div><div class="kpi-label">Animals Hatched</div><div class="kpi-sub" id="k-animals-sub"></div></div>
             </div>
             <div class="chart-row">
                 <div class="chart-card"><h3>Signups (30 days)</h3><canvas id="chartSignups"></canvas></div>
@@ -918,14 +918,18 @@ document.querySelectorAll('.sidebar nav a').forEach(link => {
 async function loadOverview() {
     try {
         const d = await adminFetch('/admin/overview');
-        document.getElementById('k-users').textContent = d.total_users;
+        document.getElementById('k-users').textContent = d.real_users;
         document.getElementById('k-users-sub').textContent = `+${d.signups_7d} this week` + (d.archived_users ? ` (${d.archived_users} archived)` : '');
         document.getElementById('k-active').textContent = d.active_users_7d;
-        document.getElementById('k-sessions').textContent = d.total_sessions.toLocaleString();
-        document.getElementById('k-hours').textContent = Math.round(d.total_study_minutes / 60).toLocaleString();
-        document.getElementById('k-donated').textContent = '$' + d.total_donated.toFixed(2);
-        document.getElementById('k-donated-sub').textContent = `${d.total_donation_count} donations`;
-        document.getElementById('k-animals').textContent = d.total_animals_hatched;
+        document.getElementById('k-sessions').textContent = (d.real_sessions || 0).toLocaleString();
+        document.getElementById('k-sessions-sub').textContent = d.archived_users ? `${d.total_sessions.toLocaleString()} incl. archived` : '';
+        const realHrs = Math.round((d.real_study_minutes || 0) / 60);
+        document.getElementById('k-hours').textContent = realHrs.toLocaleString();
+        document.getElementById('k-hours-sub').textContent = d.archived_users ? `${Math.round(d.total_study_minutes / 60).toLocaleString()} incl. archived` : '';
+        document.getElementById('k-donated').textContent = '$' + (d.real_donated || 0).toFixed(2);
+        document.getElementById('k-donated-sub').textContent = `${d.real_donation_count || 0} donations` + (d.archived_users && d.total_donated !== d.real_donated ? ` ($${d.total_donated.toFixed(2)} incl. archived)` : '');
+        document.getElementById('k-animals').textContent = d.real_animals_hatched || 0;
+        document.getElementById('k-animals-sub').textContent = d.archived_users ? `${d.total_animals_hatched} incl. archived` : '';
 
         renderSignupsChart(d.daily_signups);
         renderStudyChart(d.daily_sessions);

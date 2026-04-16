@@ -2421,6 +2421,30 @@ def admin_overview(db: Session = Depends(get_db), _=Depends(verify_admin)):
     total_donated = float(donation_row[0])
     total_donation_count = donation_row[1]
 
+    archived_ids = [u.id for u in db.query(models.User.id).filter(models.User.is_archived == True).all()]
+    if archived_ids:
+        real_sessions = db.query(func.count(models.StudySession.id)).filter(
+            models.StudySession.user_id.notin_(archived_ids)
+        ).scalar() or 0
+        real_minutes = db.query(func.coalesce(func.sum(models.StudySession.duration_minutes), 0)).filter(
+            models.StudySession.user_id.notin_(archived_ids)
+        ).scalar()
+        real_animals = db.query(func.count(models.UserAnimal.id)).filter(
+            models.UserAnimal.user_id.notin_(archived_ids)
+        ).scalar() or 0
+        real_donation_row = db.query(
+            func.coalesce(func.sum(models.Donation.amount), 0),
+            func.count(models.Donation.id),
+        ).filter(models.Donation.user_id.notin_(archived_ids)).first()
+        real_donated = float(real_donation_row[0])
+        real_donation_count = real_donation_row[1]
+    else:
+        real_sessions = total_sessions
+        real_minutes = total_minutes
+        real_animals = total_animals_hatched
+        real_donated = total_donated
+        real_donation_count = total_donation_count
+
     daily_signups = []
     for i in range(30):
         day = now - timedelta(days=29 - i)
@@ -2450,6 +2474,7 @@ def admin_overview(db: Session = Depends(get_db), _=Depends(verify_admin)):
     return {
         "total_users": total_users,
         "archived_users": archived_users,
+        "real_users": total_users - archived_users,
         "active_users_7d": active_7d,
         "signups_7d": signups_7d,
         "signups_30d": signups_30d,
@@ -2458,6 +2483,11 @@ def admin_overview(db: Session = Depends(get_db), _=Depends(verify_admin)):
         "total_animals_hatched": total_animals_hatched,
         "total_donated": total_donated,
         "total_donation_count": total_donation_count,
+        "real_sessions": real_sessions,
+        "real_study_minutes": int(real_minutes),
+        "real_animals_hatched": real_animals,
+        "real_donated": real_donated,
+        "real_donation_count": real_donation_count,
         "daily_signups": daily_signups,
         "daily_sessions": daily_sessions,
     }
