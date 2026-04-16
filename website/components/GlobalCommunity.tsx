@@ -1,12 +1,9 @@
 "use client";
 
 import { motion } from "framer-motion";
-import { useEffect, useState, useMemo } from "react";
-import { feature } from "topojson-client";
-import type { Topology, GeometryCollection } from "topojson-specification";
+import { useEffect, useRef, useState } from "react";
 
 const API_URL = "https://web-production-34028.up.railway.app";
-const TOPO_URL = "https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json";
 
 interface CountryData {
   country: string;
@@ -58,178 +55,135 @@ const COUNTRY_COORDS: Record<string, [number, number]> = {
   Uruguay:[-33,-56],Venezuela:[7,-66],Vietnam:[16.2,107.8],
 };
 
-/* Equirectangular projection — simple, lightweight */
-const W = 960;
-const H = 500;
-function projectLng(lng: number) { return ((lng + 180) / 360) * W; }
-function projectLat(lat: number) { return ((90 - lat) / 180) * H; }
+function LeafletMap({ countries }: { countries: CountryData[] }) {
+  const mapRef = useRef<HTMLDivElement>(null);
+  const mapInstanceRef = useRef<L.Map | null>(null);
 
-function projectCoords(coords: number[]): string {
-  return `${projectLng(coords[0])},${projectLat(coords[1])}`;
-}
+  useEffect(() => {
+    if (!mapRef.current || mapInstanceRef.current) return;
 
-function ringToPath(ring: number[][]): string {
-  return ring.map((pt, i) => `${i === 0 ? "M" : "L"}${projectCoords(pt)}`).join("") + "Z";
-}
+    import("leaflet").then((L) => {
+      if (!mapRef.current) return;
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function geoToPath(geometry: any): string {
-  if (geometry.type === "Polygon") {
-    return geometry.coordinates.map(ringToPath).join(" ");
-  }
-  if (geometry.type === "MultiPolygon") {
-    return geometry.coordinates
-      .map((poly: number[][][]) => poly.map(ringToPath).join(" "))
-      .join(" ");
-  }
-  return "";
-}
+      const map = L.map(mapRef.current, {
+        center: [25, 15],
+        zoom: 2,
+        minZoom: 2,
+        maxZoom: 6,
+        zoomControl: false,
+        attributionControl: false,
+        scrollWheelZoom: false,
+      });
 
-interface WorldMapProps {
-  countries: CountryData[];
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  geoFeatures: any[];
-}
+      L.control.zoom({ position: "bottomright" }).addTo(map);
 
-function WorldMap({ countries, geoFeatures }: WorldMapProps) {
-  const maxUsers = Math.max(...countries.map((c) => c.users), 1);
+      L.tileLayer(
+        "https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png",
+        { maxZoom: 18 }
+      ).addTo(map);
 
-  const pins = useMemo(
-    () =>
-      countries
-        .map((c) => {
-          const coords = COUNTRY_COORDS[c.country];
-          if (!coords) return null;
-          const x = projectLng(coords[1]);
-          const y = projectLat(coords[0]);
-          const r = Math.max(5, Math.min(18, 5 + (c.users / maxUsers) * 13));
-          return { ...c, x, y, r };
-        })
-        .filter(Boolean) as {
-        country: string;
-        users: number;
-        x: number;
-        y: number;
-        r: number;
-      }[],
-    [countries, maxUsers]
-  );
+      const maxUsers = Math.max(...countries.map((c) => c.users), 1);
 
-  const [hoveredPin, setHoveredPin] = useState<number | null>(null);
+      countries.forEach((c) => {
+        const coords = COUNTRY_COORDS[c.country];
+        if (!coords) return;
 
-  return (
-    <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-auto" style={{ background: "#f0f7f2" }}>
-      {/* Country shapes */}
-      {geoFeatures.map((feat, i) => (
-        <path
-          key={i}
-          d={geoToPath(feat.geometry)}
-          fill="#dceade"
-          stroke="#c3d8c6"
-          strokeWidth="0.5"
-        />
-      ))}
+        const radius = Math.max(6, Math.min(24, 6 + (c.users / maxUsers) * 18));
 
-      {/* Pulsing glow + pin for each country */}
-      {pins.map((p, i) => (
-        <g
-          key={i}
-          onMouseEnter={() => setHoveredPin(i)}
-          onMouseLeave={() => setHoveredPin(null)}
-          style={{ cursor: "pointer" }}
-        >
-          {/* Outer glow */}
-          <circle cx={p.x} cy={p.y} r={p.r + 5} fill="#4A7C59" opacity="0.12">
-            <animate attributeName="r" values={`${p.r + 3};${p.r + 8};${p.r + 3}`} dur="3s" repeatCount="indefinite" />
-            <animate attributeName="opacity" values="0.12;0.06;0.12" dur="3s" repeatCount="indefinite" />
-          </circle>
-          {/* Main dot */}
-          <circle
-            cx={p.x}
-            cy={p.y}
-            r={p.r}
-            fill="#4A7C59"
-            opacity="0.85"
-            stroke="#2d5a3a"
-            strokeWidth="1.5"
-          />
-          {/* User count inside larger dots */}
-          {p.r >= 8 && (
-            <text
-              x={p.x}
-              y={p.y + 4}
-              textAnchor="middle"
-              fill="#fff"
-              fontSize="10"
-              fontWeight="700"
-              style={{ pointerEvents: "none" }}
-            >
-              {p.users}
-            </text>
-          )}
-          {/* Tooltip on hover */}
-          {hoveredPin === i && (
-            <g>
-              <rect
-                x={p.x - 50}
-                y={p.y - p.r - 34}
-                width="100"
-                height="26"
-                rx="6"
-                fill="#1a2e22"
-                opacity="0.92"
-              />
-              <polygon
-                points={`${p.x - 5},${p.y - p.r - 8} ${p.x + 5},${p.y - p.r - 8} ${p.x},${p.y - p.r - 2}`}
-                fill="#1a2e22"
-                opacity="0.92"
-              />
-              <text
-                x={p.x}
-                y={p.y - p.r - 17}
-                textAnchor="middle"
-                fill="#fff"
-                fontSize="11"
-                fontWeight="600"
-                style={{ pointerEvents: "none" }}
-              >
-                {p.country} — {p.users} user{p.users !== 1 ? "s" : ""}
-              </text>
-            </g>
-          )}
-        </g>
-      ))}
-    </svg>
-  );
+        const pulseHtml = `
+          <div style="position:relative;width:${radius * 2 + 16}px;height:${radius * 2 + 16}px">
+            <div style="
+              position:absolute;inset:0;
+              border-radius:50%;
+              background:rgba(74,124,89,0.15);
+              animation:mapPulse 2.5s ease-in-out infinite;
+            "></div>
+            <div style="
+              position:absolute;
+              top:50%;left:50%;
+              transform:translate(-50%,-50%);
+              width:${radius * 2}px;height:${radius * 2}px;
+              border-radius:50%;
+              background:rgba(74,124,89,0.85);
+              border:2px solid rgba(45,90,58,0.9);
+              box-shadow:0 2px 8px rgba(74,124,89,0.4);
+              display:flex;align-items:center;justify-content:center;
+              color:#fff;font-weight:700;font-size:${radius >= 10 ? 11 : 0}px;
+              font-family:Inter,system-ui,sans-serif;
+            ">${radius >= 10 ? c.users : ""}</div>
+          </div>
+        `;
+
+        const icon = L.divIcon({
+          html: pulseHtml,
+          className: "",
+          iconSize: [radius * 2 + 16, radius * 2 + 16],
+          iconAnchor: [radius + 8, radius + 8],
+        });
+
+        L.marker(coords as L.LatLngExpression, { icon })
+          .addTo(map)
+          .bindPopup(
+            `<div style="text-align:center;font-family:Inter,system-ui,sans-serif;padding:4px 0">
+              <div style="font-size:14px;font-weight:700;color:#2D4A32">${c.country}</div>
+              <div style="font-size:22px;font-weight:800;color:#4A7C59;margin:2px 0">${c.users}</div>
+              <div style="font-size:11px;color:#888">user${c.users !== 1 ? "s" : ""}</div>
+            </div>`,
+            { closeButton: false, className: "endura-popup" }
+          );
+      });
+
+      mapInstanceRef.current = map;
+    });
+
+    return () => {
+      if (mapInstanceRef.current) {
+        mapInstanceRef.current.remove();
+        mapInstanceRef.current = null;
+      }
+    };
+  }, [countries]);
+
+  return <div ref={mapRef} style={{ height: "100%", width: "100%" }} />;
 }
 
 export default function GlobalCommunity() {
   const [data, setData] = useState<GeoData | null>(null);
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const [geoFeatures, setGeoFeatures] = useState<any[] | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    Promise.all([
-      fetch(`${API_URL}/public/geography`).then((r) => r.json()),
-      fetch(TOPO_URL).then((r) => r.json()),
-    ])
-      .then(([geoData, topo]) => {
-        setData(geoData);
-        const countries = feature(
-          topo as Topology,
-          topo.objects.countries as GeometryCollection
-        );
-        setGeoFeatures(countries.features);
-      })
+    fetch(`${API_URL}/public/geography`)
+      .then((r) => r.json())
+      .then((d) => setData(d))
       .catch(() => {})
       .finally(() => setLoading(false));
   }, []);
 
-  if (loading || !data || data.total_countries === 0 || !geoFeatures) return null;
+  if (loading || !data || data.total_countries === 0) return null;
 
   return (
     <section className="py-20 bg-cream">
+      {/* Leaflet CSS */}
+      {/* eslint-disable-next-line @next/next/no-css-tags */}
+      <link
+        rel="stylesheet"
+        href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+        crossOrigin="anonymous"
+      />
+      <style>{`
+        @keyframes mapPulse {
+          0%, 100% { transform: scale(1); opacity: 0.15; }
+          50% { transform: scale(1.5); opacity: 0.05; }
+        }
+        .endura-popup .leaflet-popup-content-wrapper {
+          border-radius: 12px;
+          box-shadow: 0 4px 20px rgba(0,0,0,0.12);
+        }
+        .endura-popup .leaflet-popup-tip {
+          box-shadow: none;
+        }
+      `}</style>
+
       <div className="max-w-6xl mx-auto px-6">
         {/* Header */}
         <motion.div
@@ -280,8 +234,9 @@ export default function GlobalCommunity() {
           viewport={{ once: true }}
           transition={{ duration: 0.6, delay: 0.2 }}
           className="rounded-2xl overflow-hidden shadow-lg shadow-forest/5 border border-forest/10 mb-12"
+          style={{ height: 420 }}
         >
-          <WorldMap countries={data.countries} geoFeatures={geoFeatures} />
+          <LeafletMap countries={data.countries} />
         </motion.div>
 
         {/* Schools — auto-scrolling ticker */}
