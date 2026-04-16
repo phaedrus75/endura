@@ -3,7 +3,7 @@ import { DM_Sans } from "next/font/google";
 import Script from "next/script";
 import "./globals.css";
 
-const GA_ID = process.env.NEXT_PUBLIC_GA_ID;
+const GA_ID = process.env.NEXT_PUBLIC_GA_ID || "G-RJ8Y52Y99T";
 
 const dmSans = DM_Sans({
   subsets: ["latin"],
