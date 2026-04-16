@@ -297,6 +297,34 @@
 
         .loading { text-align: center; padding: 40px; color: var(--text-muted); }
         .empty { text-align: center; padding: 40px; color: var(--text-muted); font-style: italic; }
+
+        /* ---- Funnel ---- */
+        .funnel-row {
+            display: flex; align-items: center; gap: 14px;
+        }
+        .funnel-label {
+            width: 160px; text-align: right; font-size: 13px; font-weight: 600;
+            color: var(--text); flex-shrink: 0;
+        }
+        .funnel-bar-wrap {
+            flex: 1; position: relative; height: 38px;
+        }
+        .funnel-bar {
+            height: 100%; border-radius: 8px; transition: width .6s ease;
+            display: flex; align-items: center; padding: 0 12px;
+            min-width: 44px;
+        }
+        .funnel-bar-val {
+            font-size: 14px; font-weight: 700; color: #fff;
+        }
+        .funnel-pct {
+            width: 60px; font-size: 12px; font-weight: 600; color: var(--text-muted);
+            flex-shrink: 0; text-align: left;
+        }
+        .funnel-drop {
+            font-size: 11px; color: var(--red); font-weight: 600;
+            margin-left: 4px;
+        }
     </style>
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js" crossorigin="anonymous"></script>
 </head>
@@ -360,6 +388,12 @@
                 <div class="kpi"><div class="kpi-icon">💚</div><div class="kpi-val" id="k-donated">—</div><div class="kpi-label">Total Donated</div><div class="kpi-sub" id="k-donated-sub"></div></div>
                 <div class="kpi"><div class="kpi-icon">🐣</div><div class="kpi-val" id="k-animals">—</div><div class="kpi-label">Animals Hatched</div><div class="kpi-sub" id="k-animals-sub"></div></div>
             </div>
+            <!-- User Funnel -->
+            <div class="table-card" style="margin-bottom:28px">
+                <h3 style="margin-bottom:20px">User Funnel</h3>
+                <div id="funnelChart" style="display:flex;flex-direction:column;gap:6px"></div>
+            </div>
+
             <div class="chart-row">
                 <div class="chart-card"><h3>Signups (30 days)</h3><canvas id="chartSignups"></canvas></div>
                 <div class="chart-card"><h3>Study Minutes (30 days)</h3><canvas id="chartStudy"></canvas></div>
@@ -933,9 +967,38 @@ async function loadOverview() {
 
         renderSignupsChart(d.daily_signups);
         renderStudyChart(d.daily_sessions);
+        if (d.funnel) renderFunnel(d.funnel);
     } catch (e) {
         console.error('Overview load failed', e);
     }
+}
+
+function renderFunnel(f) {
+    const steps = [
+        { label: 'Signed Up',       value: f.signed_up,       icon: '👥', color: '#4A7C59' },
+        { label: 'Verified Email',   value: f.verified_email,  icon: '✉️', color: '#3d8b6e' },
+        { label: 'Started Timer',    value: f.started_timer,   icon: '▶️', color: '#2e9980' },
+        { label: 'Completed Timer',  value: f.completed_timer, icon: '✅', color: '#3b82f6' },
+        { label: 'Hatched Animal',   value: f.hatched_animal,  icon: '🐣', color: '#8b5cf6' },
+        { label: 'Earned Badge',     value: f.earned_badge,    icon: '🏅', color: '#f59e0b' },
+    ];
+    const max = steps[0].value || 1;
+    const container = document.getElementById('funnelChart');
+    container.innerHTML = steps.map((s, i) => {
+        const pct = max > 0 ? (s.value / max * 100) : 0;
+        const convRate = i === 0 ? '100%' : (max > 0 ? (s.value / max * 100).toFixed(1) + '%' : '0%');
+        const dropoff = i > 0 ? steps[i-1].value - s.value : 0;
+        const dropPct = i > 0 && steps[i-1].value > 0 ? ((dropoff / steps[i-1].value) * 100).toFixed(0) : 0;
+        return `<div class="funnel-row">
+            <div class="funnel-label">${s.icon} ${s.label}</div>
+            <div class="funnel-bar-wrap">
+                <div class="funnel-bar" style="width:${Math.max(pct, 3)}%;background:${s.color}">
+                    <span class="funnel-bar-val">${s.value.toLocaleString()}</span>
+                </div>
+            </div>
+            <div class="funnel-pct">${convRate}${i > 0 && dropoff > 0 ? `<span class="funnel-drop">↓${dropPct}%</span>` : ''}</div>
+        </div>`;
+    }).join('');
 }
 
 function renderSignupsChart(data) {

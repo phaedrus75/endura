@@ -2445,6 +2445,17 @@ def admin_overview(db: Session = Depends(get_db), _=Depends(verify_admin)):
         real_donated = total_donated
         real_donation_count = total_donation_count
 
+    # User funnel
+    verified_users = db.query(func.count(models.User.id)).filter(
+        models.User.email_verified == True
+    ).scalar() or 0
+    started_timer = db.query(func.count(func.distinct(models.StudySession.user_id))).scalar() or 0
+    completed_timer = db.query(func.count(func.distinct(models.StudySession.user_id))).filter(
+        models.StudySession.duration_minutes > 0
+    ).scalar() or 0
+    hatched_animal = db.query(func.count(func.distinct(models.UserAnimal.user_id))).scalar() or 0
+    earned_badge = db.query(func.count(func.distinct(models.UserBadge.user_id))).scalar() or 0
+
     daily_signups = []
     for i in range(30):
         day = now - timedelta(days=29 - i)
@@ -2490,6 +2501,14 @@ def admin_overview(db: Session = Depends(get_db), _=Depends(verify_admin)):
         "real_donation_count": real_donation_count,
         "daily_signups": daily_signups,
         "daily_sessions": daily_sessions,
+        "funnel": {
+            "signed_up": total_users,
+            "verified_email": verified_users,
+            "started_timer": started_timer,
+            "completed_timer": completed_timer,
+            "hatched_animal": hatched_animal,
+            "earned_badge": earned_badge,
+        },
     }
 
 
