@@ -296,6 +296,24 @@
             .main { margin-left: 0; padding: 20px; }
         }
 
+        /* ---- Pagination ---- */
+        .pagination {
+            display: flex; align-items: center; justify-content: space-between;
+            padding: 14px 0 4px; gap: 12px; flex-wrap: wrap;
+        }
+        .pagination .pg-info { font-size: 13px; color: var(--text-muted); }
+        .pagination .pg-btns { display: flex; gap: 4px; align-items: center; }
+        .pagination .pg-btn {
+            width: 34px; height: 34px; display: flex; align-items: center; justify-content: center;
+            border-radius: 8px; border: 1px solid var(--border); background: var(--card);
+            font-size: 13px; font-weight: 600; cursor: pointer; color: var(--text-muted);
+            transition: all .15s;
+        }
+        .pagination .pg-btn:hover:not(.disabled):not(.active) { background: var(--bg); color: var(--text); }
+        .pagination .pg-btn.active { background: var(--forest); color: #fff; border-color: var(--forest); }
+        .pagination .pg-btn.disabled { opacity: .35; cursor: default; }
+        .pg-size { padding: 6px 10px; border: 1px solid var(--border); border-radius: 8px; font-size: 13px; background: var(--card); }
+
         .loading { text-align: center; padding: 40px; color: var(--text-muted); }
         .empty { text-align: center; padding: 40px; color: var(--text-muted); font-style: italic; }
 
@@ -426,6 +444,7 @@
                         <tbody id="usersBody"></tbody>
                     </table>
                 </div>
+                <div class="pagination" id="usersPagination"></div>
             </div>
         </div>
 
@@ -1092,32 +1111,49 @@ function renderStudyChart(data) {
 // ----- Users -----
 let usersData = [];
 let searchTimeout = null;
+let usersPage = 1;
+let usersPerPage = 25;
 
 document.getElementById('userSearch').addEventListener('input', e => {
     clearTimeout(searchTimeout);
-    searchTimeout = setTimeout(() => loadUsers(e.target.value), 300);
+    searchTimeout = setTimeout(() => { usersPage = 1; loadUsers(e.target.value); }, 300);
 });
 
 async function loadUsers(search = '') {
     try {
-        const q = search ? `?search=${encodeURIComponent(search)}` : '';
+        const q = search ? `?search=${encodeURIComponent(search)}&limit=1000` : '?limit=1000';
         const d = await adminFetch('/admin/users' + q);
         usersData = d.users;
+        populateFilterDropdowns();
         renderUsersTable();
     } catch (e) { console.error('Users load failed', e); }
 }
 
-function renderUsersTable() {
-    const body = document.getElementById('usersBody');
+function getFilteredUsers() {
     const country = document.getElementById('countryFilter').value;
     const school = document.getElementById('schoolFilter').value;
-    const filtered = usersData.filter(u => {
+    return usersData.filter(u => {
         if (country && (u.country || '') !== country) return false;
         if (school && (u.school || '') !== school) return false;
         return true;
     });
-    if (!filtered.length) { body.innerHTML = '<tr><td colspan="10" class="empty">No users found</td></tr>'; return; }
-    body.innerHTML = filtered.map(u => `
+}
+
+function renderUsersTable() {
+    const body = document.getElementById('usersBody');
+    const filtered = getFilteredUsers();
+    const total = filtered.length;
+    const totalPages = Math.max(1, Math.ceil(total / usersPerPage));
+    if (usersPage > totalPages) usersPage = totalPages;
+    const start = (usersPage - 1) * usersPerPage;
+    const pageUsers = filtered.slice(start, start + usersPerPage);
+
+    if (!total) {
+        body.innerHTML = '<tr><td colspan="10" class="empty">No users found</td></tr>';
+        document.getElementById('usersPagination').innerHTML = '';
+        return;
+    }
+    body.innerHTML = pageUsers.map(u => `
         <tr style="cursor:pointer" onclick="showUserDetail(${u.id})">
             <td><strong>${esc(u.username || '—')}</strong>${u.is_archived ? ' <span style="background:#e74c3c;color:#fff;font-size:10px;padding:2px 6px;border-radius:4px;font-weight:600">ARCHIVED</span>' : ''}</td>
             <td>${esc(u.email)}</td>
@@ -1131,7 +1167,56 @@ function renderUsersTable() {
             <td>${u.created_at ? new Date(u.created_at).toLocaleDateString() : '—'}</td>
         </tr>
     `).join('');
-    populateFilterDropdowns();
+    renderUsersPagination(total, totalPages, start);
+}
+
+function renderUsersPagination(total, totalPages, start) {
+    const end = Math.min(start + usersPerPage, total);
+    const pg = document.getElementById('usersPagination');
+    let btns = '';
+    btns += `<button class="pg-btn ${usersPage <= 1 ? 'disabled' : ''}" onclick="goUsersPage(${usersPage - 1})">&lsaquo;</button>`;
+    const maxVis = 7;
+    let pages = [];
+    if (totalPages <= maxVis) {
+        for (let i = 1; i <= totalPages; i++) pages.push(i);
+    } else {
+        pages.push(1);
+        let lo = Math.max(2, usersPage - 1), hi = Math.min(totalPages - 1, usersPage + 1);
+        if (usersPage <= 3) { lo = 2; hi = 5; }
+        if (usersPage >= totalPages - 2) { lo = totalPages - 4; hi = totalPages - 1; }
+        if (lo > 2) pages.push('...');
+        for (let i = lo; i <= hi; i++) pages.push(i);
+        if (hi < totalPages - 1) pages.push('...');
+        pages.push(totalPages);
+    }
+    pages.forEach(p => {
+        if (p === '...') btns += `<span style="padding:0 4px;color:var(--text-muted)">…</span>`;
+        else btns += `<button class="pg-btn ${p === usersPage ? 'active' : ''}" onclick="goUsersPage(${p})">${p}</button>`;
+    });
+    btns += `<button class="pg-btn ${usersPage >= totalPages ? 'disabled' : ''}" onclick="goUsersPage(${usersPage + 1})">&rsaquo;</button>`;
+    pg.innerHTML = `
+        <div class="pg-info">Showing ${start + 1}–${end} of ${total} users</div>
+        <div style="display:flex;align-items:center;gap:10px">
+            <select class="pg-size" onchange="changeUsersPerPage(this.value)">
+                <option value="25" ${usersPerPage===25?'selected':''}>25 / page</option>
+                <option value="50" ${usersPerPage===50?'selected':''}>50 / page</option>
+                <option value="100" ${usersPerPage===100?'selected':''}>100 / page</option>
+            </select>
+            <div class="pg-btns">${btns}</div>
+        </div>`;
+}
+
+function goUsersPage(p) {
+    const totalPages = Math.max(1, Math.ceil(getFilteredUsers().length / usersPerPage));
+    if (p < 1 || p > totalPages) return;
+    usersPage = p;
+    renderUsersTable();
+}
+
+function changeUsersPerPage(val) {
+    usersPerPage = parseInt(val) || 25;
+    usersPage = 1;
+    renderUsersTable();
 }
 
 function populateFilterDropdowns() {
@@ -1147,7 +1232,7 @@ function populateFilterDropdowns() {
     sf.value = prevSchool;
 }
 
-function applyUserFilters() { renderUsersTable(); }
+function applyUserFilters() { usersPage = 1; renderUsersTable(); }
 
 let currentEditUserId = null;
 

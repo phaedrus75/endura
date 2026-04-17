@@ -2597,7 +2597,7 @@ def admin_users(
     search: Optional[str] = None,
     sort: str = "created_at",
     order: str = "desc",
-    limit: int = 100,
+    limit: int = 1000,
     offset: int = 0,
     db: Session = Depends(get_db),
     _=Depends(verify_admin),
