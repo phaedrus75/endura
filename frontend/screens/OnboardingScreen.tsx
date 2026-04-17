@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import {
   View,
   TouchableOpacity,
@@ -22,6 +22,7 @@ import { colors, shadows, spacing, borderRadius } from '../theme/colors';
 import { useAuth } from '../contexts/AuthContext';
 import * as SecureStore from 'expo-secure-store';
 import { API_URL, authAPI, SchoolSearchResult, subjectsAPI, Subject } from '../services/api';
+import COUNTRIES from '../constants/countries';
 
 const { width: SW, height: SH } = Dimensions.get('window');
 
@@ -123,9 +124,17 @@ export default function OnboardingScreen() {
   const [profilePicUri, setProfilePicUri] = useState<string | null>(null);
   const [school, setSchool] = useState('');
   const [country, setCountry] = useState('');
+  const [countrySearch, setCountrySearch] = useState('');
+  const [showCountryPicker, setShowCountryPicker] = useState(false);
   const [schoolSuggestions, setSchoolSuggestions] = useState<SchoolSearchResult[]>([]);
   const [showSchoolSuggestions, setShowSchoolSuggestions] = useState(false);
   const schoolSearchTimeout = useRef<NodeJS.Timeout | null>(null);
+
+  const filteredCountries = useMemo(() => {
+    if (!countrySearch.trim()) return COUNTRIES.slice();
+    const q = countrySearch.toLowerCase();
+    return COUNTRIES.filter(c => c.toLowerCase().includes(q));
+  }, [countrySearch]);
   const [isLoading, setIsLoading] = useState(false);
   const { refreshUser, setProfilePic } = useAuth();
 
@@ -396,9 +405,43 @@ export default function OnboardingScreen() {
                 )}
               </View>
 
-              <View style={ps.field}>
+              <View style={[ps.field, { zIndex: 5 }]}>
                 <Text style={ps.label}>Country *</Text>
-                <TextInput style={ps.input} placeholder="e.g. United Kingdom" placeholderTextColor={C.textMute} value={country} onChangeText={setCountry} autoCapitalize="words" />
+                <TouchableOpacity
+                  style={ps.input}
+                  onPress={() => { setShowCountryPicker(true); setCountrySearch(''); }}
+                  activeOpacity={0.7}
+                >
+                  <Text style={country ? { color: C.text, fontSize: 16 } : { color: C.textMute, fontSize: 16 }}>
+                    {country || 'Select your country'}
+                  </Text>
+                </TouchableOpacity>
+                {showCountryPicker && (
+                  <View style={ps.sugBox}>
+                    <TextInput
+                      style={[ps.input, { marginBottom: 4 }]}
+                      placeholder="Search countries..."
+                      placeholderTextColor={C.textMute}
+                      value={countrySearch}
+                      onChangeText={setCountrySearch}
+                      autoFocus
+                    />
+                    <ScrollView style={{ maxHeight: 180 }} keyboardShouldPersistTaps="handled" nestedScrollEnabled>
+                      {filteredCountries.map((c) => (
+                        <TouchableOpacity
+                          key={c}
+                          style={ps.sugItem}
+                          onPress={() => { setCountry(c); setShowCountryPicker(false); setCountrySearch(''); }}
+                        >
+                          <Text style={[ps.sugName, country === c && { color: C.primary, fontWeight: '700' }]}>{c}</Text>
+                        </TouchableOpacity>
+                      ))}
+                      {filteredCountries.length === 0 && (
+                        <Text style={{ padding: 12, color: C.textMute, textAlign: 'center', fontSize: 14 }}>No countries found</Text>
+                      )}
+                    </ScrollView>
+                  </View>
+                )}
               </View>
 
               <TouchableOpacity style={[ps.cta, isLoading && { opacity: 0.7 }, { marginTop: spacing.md }]} onPress={handleComplete} disabled={isLoading} activeOpacity={0.8}>

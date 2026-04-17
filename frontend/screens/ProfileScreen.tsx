@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useMemo } from 'react';
 import {
   View,
   StyleSheet,
@@ -37,6 +37,7 @@ import {
   Friend,
   SchoolSearchResult,
 } from '../services/api';
+import COUNTRIES from '../constants/countries';
 
 const { width } = Dimensions.get('window');
 const CHART_WIDTH = width - spacing.lg * 2;
@@ -209,9 +210,15 @@ export default function ProfileScreen() {
   const [editCountry, setEditCountry] = useState('');
   const [schoolSuggestions, setSchoolSuggestions] = useState<SchoolSearchResult[]>([]);
   const [showSchoolSuggestions, setShowSchoolSuggestions] = useState(false);
-  const [filteredCountries, setFilteredCountries] = useState<string[]>([]);
-  const [showCountrySuggestions, setShowCountrySuggestions] = useState(false);
+  const [countrySearch, setCountrySearch] = useState('');
+  const [showCountryPicker, setShowCountryPicker] = useState(false);
   const schoolSearchTimeout = React.useRef<NodeJS.Timeout | null>(null);
+
+  const filteredCountries = useMemo(() => {
+    if (!countrySearch.trim()) return COUNTRIES.slice();
+    const q = countrySearch.toLowerCase();
+    return COUNTRIES.filter(c => c.toLowerCase().includes(q));
+  }, [countrySearch]);
 
   const openEditProfile = () => {
     setEditSchool(user?.school || '');
@@ -824,14 +831,41 @@ export default function ProfileScreen() {
               />
 
               <Text style={styles.epLabel}>Country</Text>
-              <TextInput
+              <TouchableOpacity
                 style={styles.epInput}
-                placeholder="e.g. United Kingdom"
-                placeholderTextColor={colors.textMuted}
-                value={editCountry}
-                onChangeText={setEditCountry}
-                autoCapitalize="words"
-              />
+                onPress={() => { setShowCountryPicker(true); setCountrySearch(''); }}
+                activeOpacity={0.7}
+              >
+                <Text style={editCountry ? { color: colors.text, fontSize: 16 } : { color: colors.textMuted, fontSize: 16 }}>
+                  {editCountry || 'Select your country'}
+                </Text>
+              </TouchableOpacity>
+              {showCountryPicker && (
+                <View style={styles.epSuggestions}>
+                  <TextInput
+                    style={[styles.epInput, { marginBottom: 4 }]}
+                    placeholder="Search countries..."
+                    placeholderTextColor={colors.textMuted}
+                    value={countrySearch}
+                    onChangeText={setCountrySearch}
+                    autoFocus
+                  />
+                  <ScrollView style={{ maxHeight: 180 }} keyboardShouldPersistTaps="handled">
+                    {filteredCountries.map((c) => (
+                      <TouchableOpacity
+                        key={c}
+                        style={styles.epSuggestionItem}
+                        onPress={() => { setEditCountry(c); setShowCountryPicker(false); setCountrySearch(''); }}
+                      >
+                        <Text style={[styles.epSuggestionName, editCountry === c && { color: colors.primary, fontWeight: '700' as const }]}>{c}</Text>
+                      </TouchableOpacity>
+                    ))}
+                    {filteredCountries.length === 0 && (
+                      <Text style={{ padding: 12, color: colors.textMuted, textAlign: 'center', fontSize: 14 }}>No countries found</Text>
+                    )}
+                  </ScrollView>
+                </View>
+              )}
 
               <TouchableOpacity onPress={saveProfile} activeOpacity={0.8} style={{ marginTop: 20 }}>
                 <ExpoLinearGradient
