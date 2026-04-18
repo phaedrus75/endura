@@ -1034,9 +1034,12 @@ function renderFunnel(f) {
         { label: 'Signed Up',       value: f.signed_up,       icon: '👥', color: '#4A7C59' },
         { label: 'Verified Email',   value: f.verified_email,  icon: '✉️', color: '#3d8b6e' },
         { label: 'Started Timer',    value: f.started_timer,   icon: '▶️', color: '#2e9980' },
-        { label: 'Completed Timer',  value: f.completed_timer, icon: '✅', color: '#3b82f6' },
-        { label: 'Hatched Animal',   value: f.hatched_animal,  icon: '🐣', color: '#8b5cf6' },
-        { label: 'Earned Badge',     value: f.earned_badge,    icon: '🏅', color: '#f59e0b' },
+        { label: 'Completed Timer',  value: f.completed_timer, icon: '✅', color: '#2980b9' },
+        { label: 'Hatched Animal',   value: f.hatched_animal,  icon: '🐣', color: '#3b82f6' },
+        { label: 'Earned Badge',     value: f.earned_badge,    icon: '🏅', color: '#8b5cf6' },
+        { label: 'Added Friend',     value: f.added_friend,    icon: '🤝', color: '#e67e22' },
+        { label: 'Joined Group',     value: f.joined_group,    icon: '👥', color: '#e74c3c' },
+        { label: 'Bought from Shop', value: f.bought_shop,     icon: '🛍️', color: '#f59e0b' },
     ];
     const max = steps[0].value || 1;
     const container = document.getElementById('funnelChart');

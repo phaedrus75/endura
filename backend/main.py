@@ -2465,6 +2465,16 @@ def admin_overview(db: Session = Depends(get_db), _=Depends(verify_admin)):
         earned_badge = db.query(func.count(func.distinct(models.UserBadge.user_id))).filter(
             models.UserBadge.user_id.notin_(archived_ids)
         ).scalar() or 0
+        added_friend = db.query(func.count(func.distinct(models.Friendship.user_id))).filter(
+            models.Friendship.status == "accepted",
+            models.Friendship.user_id.notin_(archived_ids),
+        ).scalar() or 0
+        joined_group = db.query(func.count(func.distinct(models.GroupMember.user_id))).filter(
+            models.GroupMember.user_id.notin_(archived_ids)
+        ).scalar() or 0
+        bought_shop = db.query(func.count(func.distinct(models.UserPurchase.user_id))).filter(
+            models.UserPurchase.user_id.notin_(archived_ids)
+        ).scalar() or 0
     else:
         started_timer = db.query(func.count(func.distinct(models.StudySession.user_id))).scalar() or 0
         completed_timer = db.query(func.count(func.distinct(models.StudySession.user_id))).filter(
@@ -2472,6 +2482,11 @@ def admin_overview(db: Session = Depends(get_db), _=Depends(verify_admin)):
         ).scalar() or 0
         hatched_animal = db.query(func.count(func.distinct(models.UserAnimal.user_id))).scalar() or 0
         earned_badge = db.query(func.count(func.distinct(models.UserBadge.user_id))).scalar() or 0
+        added_friend = db.query(func.count(func.distinct(models.Friendship.user_id))).filter(
+            models.Friendship.status == "accepted"
+        ).scalar() or 0
+        joined_group = db.query(func.count(func.distinct(models.GroupMember.user_id))).scalar() or 0
+        bought_shop = db.query(func.count(func.distinct(models.UserPurchase.user_id))).scalar() or 0
 
     daily_signups = []
     for i in range(30):
@@ -2525,6 +2540,9 @@ def admin_overview(db: Session = Depends(get_db), _=Depends(verify_admin)):
             "completed_timer": completed_timer,
             "hatched_animal": hatched_animal,
             "earned_badge": earned_badge,
+            "added_friend": added_friend,
+            "joined_group": joined_group,
+            "bought_shop": bought_shop,
         },
     }
 
