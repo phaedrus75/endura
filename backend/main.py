@@ -2475,6 +2475,10 @@ def admin_overview(db: Session = Depends(get_db), _=Depends(verify_admin)):
         bought_shop = db.query(func.count(func.distinct(models.UserPurchase.user_id))).filter(
             models.UserPurchase.user_id.notin_(archived_ids)
         ).scalar() or 0
+        completed_3_timers = db.query(models.StudySession.user_id).filter(
+            models.StudySession.duration_minutes > 0,
+            models.StudySession.user_id.notin_(archived_ids),
+        ).group_by(models.StudySession.user_id).having(func.count(models.StudySession.id) >= 3).count()
         earned_3_badges = db.query(models.UserBadge.user_id).filter(
             models.UserBadge.user_id.notin_(archived_ids)
         ).group_by(models.UserBadge.user_id).having(func.count(models.UserBadge.id) >= 3).count()
@@ -2494,6 +2498,9 @@ def admin_overview(db: Session = Depends(get_db), _=Depends(verify_admin)):
         ).scalar() or 0
         joined_group = db.query(func.count(func.distinct(models.GroupMember.user_id))).scalar() or 0
         bought_shop = db.query(func.count(func.distinct(models.UserPurchase.user_id))).scalar() or 0
+        completed_3_timers = db.query(models.StudySession.user_id).filter(
+            models.StudySession.duration_minutes > 0
+        ).group_by(models.StudySession.user_id).having(func.count(models.StudySession.id) >= 3).count()
         earned_3_badges = db.query(models.UserBadge.user_id).group_by(
             models.UserBadge.user_id
         ).having(func.count(models.UserBadge.id) >= 3).count()
@@ -2551,6 +2558,7 @@ def admin_overview(db: Session = Depends(get_db), _=Depends(verify_admin)):
             "verified_email": verified_users,
             "started_timer": started_timer,
             "completed_timer": completed_timer,
+            "completed_3_timers": completed_3_timers,
             "hatched_animal": hatched_animal,
             "earned_badge": earned_badge,
             "added_friend": added_friend,
