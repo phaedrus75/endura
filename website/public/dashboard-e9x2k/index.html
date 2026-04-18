@@ -1036,10 +1036,12 @@ function renderFunnel(f) {
         { label: 'Started Timer',    value: f.started_timer   || 0, icon: '▶️', color: '#2e9980' },
         { label: 'Completed Timer',  value: f.completed_timer || 0, icon: '✅', color: '#2980b9' },
         { label: 'Hatched Animal',   value: f.hatched_animal  || 0, icon: '🐣', color: '#3b82f6' },
-        { label: 'Earned Badge',     value: f.earned_badge    || 0, icon: '🏅', color: '#8b5cf6' },
-        { label: 'Added Friend',     value: f.added_friend    || 0, icon: '🤝', color: '#e67e22' },
-        { label: 'Joined Group',     value: f.joined_group    || 0, icon: '👥', color: '#e74c3c' },
-        { label: 'Bought from Shop', value: f.bought_shop     || 0, icon: '🛍️', color: '#f59e0b' },
+        { label: 'Earned Badge',       value: f.earned_badge      || 0, icon: '🏅', color: '#8b5cf6' },
+        { label: 'Earned 3+ Badges',  value: f.earned_3_badges  || 0, icon: '🥇', color: '#7c3aed' },
+        { label: 'Added Friend',      value: f.added_friend     || 0, icon: '🤝', color: '#e67e22' },
+        { label: 'Added 3+ Friends',  value: f.added_3_friends  || 0, icon: '👫', color: '#d35400' },
+        { label: 'Joined Group',      value: f.joined_group     || 0, icon: '👥', color: '#e74c3c' },
+        { label: 'Bought from Shop',  value: f.bought_shop      || 0, icon: '🛍️', color: '#f59e0b' },
     ];
     const max = steps[0].value || 1;
     const container = document.getElementById('funnelChart');

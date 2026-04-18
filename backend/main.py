@@ -2475,6 +2475,13 @@ def admin_overview(db: Session = Depends(get_db), _=Depends(verify_admin)):
         bought_shop = db.query(func.count(func.distinct(models.UserPurchase.user_id))).filter(
             models.UserPurchase.user_id.notin_(archived_ids)
         ).scalar() or 0
+        earned_3_badges = db.query(models.UserBadge.user_id).filter(
+            models.UserBadge.user_id.notin_(archived_ids)
+        ).group_by(models.UserBadge.user_id).having(func.count(models.UserBadge.id) >= 3).count()
+        added_3_friends = db.query(models.Friendship.user_id).filter(
+            models.Friendship.status == "accepted",
+            models.Friendship.user_id.notin_(archived_ids),
+        ).group_by(models.Friendship.user_id).having(func.count(models.Friendship.id) >= 3).count()
     else:
         started_timer = db.query(func.count(func.distinct(models.StudySession.user_id))).scalar() or 0
         completed_timer = db.query(func.count(func.distinct(models.StudySession.user_id))).filter(
@@ -2487,6 +2494,12 @@ def admin_overview(db: Session = Depends(get_db), _=Depends(verify_admin)):
         ).scalar() or 0
         joined_group = db.query(func.count(func.distinct(models.GroupMember.user_id))).scalar() or 0
         bought_shop = db.query(func.count(func.distinct(models.UserPurchase.user_id))).scalar() or 0
+        earned_3_badges = db.query(models.UserBadge.user_id).group_by(
+            models.UserBadge.user_id
+        ).having(func.count(models.UserBadge.id) >= 3).count()
+        added_3_friends = db.query(models.Friendship.user_id).filter(
+            models.Friendship.status == "accepted"
+        ).group_by(models.Friendship.user_id).having(func.count(models.Friendship.id) >= 3).count()
 
     daily_signups = []
     for i in range(30):
@@ -2541,8 +2554,10 @@ def admin_overview(db: Session = Depends(get_db), _=Depends(verify_admin)):
             "hatched_animal": hatched_animal,
             "earned_badge": earned_badge,
             "added_friend": added_friend,
+            "added_3_friends": added_3_friends,
             "joined_group": joined_group,
             "bought_shop": bought_shop,
+            "earned_3_badges": earned_3_badges,
         },
     }
 
