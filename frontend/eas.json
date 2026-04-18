@@ -25,7 +25,8 @@
   "submit": {
     "production": {
       "ios": {
-        "appleId": "munshiaseem@yahoo.com"
+        "appleId": "munshiaseem@yahoo.com",
+        "ascAppId": "6759482612"
       }
     }
   }

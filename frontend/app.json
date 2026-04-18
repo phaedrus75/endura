@@ -2,7 +2,7 @@
   "expo": {
     "name": "Endura",
     "slug": "endura",
-    "version": "1.0.0",
+    "version": "1.0.2",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
@@ -14,7 +14,7 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.endura.study",
-      "buildNumber": "13",
+      "buildNumber": "15",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
         "NSCameraUsageDescription": "Endura uses your camera to let you take a profile photo that is visible to your friends and study group members.",
@@ -27,7 +27,7 @@
         "backgroundColor": "#B5CFB7"
       },
       "package": "com.endura.study",
-      "versionCode": 1
+      "versionCode": 3
     },
     "web": {
       "favicon": "./assets/favicon.png"
