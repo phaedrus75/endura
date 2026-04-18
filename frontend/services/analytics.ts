@@ -55,4 +55,21 @@ export const Analytics = {
   todoCompleted: () => trackEvent('todo_completed'),
   screenViewed: (screenName: string) =>
     trackEvent('screen_viewed', { screen: screenName }),
+
+  // ── Onboarding funnel ──
+  onboardingStarted: () => trackEvent('onboarding_started'),
+  onboardingSlideViewed: (slideNumber: number, slideName: string) =>
+    trackEvent('onboarding_slide_viewed', { slide_number: slideNumber, slide_name: slideName }),
+  onboardingWalkthroughSkipped: (atSlide: number) =>
+    trackEvent('onboarding_walkthrough_skipped', { at_slide: atSlide }),
+  onboardingWalkthroughCompleted: () => trackEvent('onboarding_walkthrough_completed'),
+  onboardingProfileSubmitted: (props: { has_photo: boolean; has_school: boolean; has_country: boolean }) =>
+    trackEvent('onboarding_profile_submitted', props),
+  onboardingProfileSaveFailed: (step: string, error: string) =>
+    trackEvent('onboarding_profile_save_failed', { step, error }),
+  onboardingSubjectsSaved: (count: number) =>
+    trackEvent('onboarding_subjects_saved', { count }),
+  onboardingSubjectsSkipped: () => trackEvent('onboarding_subjects_skipped'),
+  onboardingCompleted: (totalSeconds: number) =>
+    trackEvent('onboarding_completed', { total_seconds: totalSeconds }),
 };

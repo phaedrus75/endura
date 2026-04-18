@@ -22,6 +22,7 @@ import { colors, shadows, spacing, borderRadius } from '../theme/colors';
 import { useAuth } from '../contexts/AuthContext';
 import * as SecureStore from 'expo-secure-store';
 import { API_URL, authAPI, SchoolSearchResult, subjectsAPI, Subject } from '../services/api';
+import { Analytics } from '../services/analytics';
 import COUNTRIES from '../constants/countries';
 
 const { width: SW, height: SH } = Dimensions.get('window');
@@ -118,6 +119,17 @@ export default function OnboardingScreen() {
   const slideOpacities = useRef(SLIDES.map((_, i) => new Animated.Value(i === 0 ? 1 : 0))).current;
   const textOpacity = useRef(new Animated.Value(1)).current;
   const isAnimating = useRef(false);
+  const onboardingStartRef = useRef<number>(Date.now());
+
+  useEffect(() => {
+    Analytics.onboardingStarted();
+  }, []);
+
+  useEffect(() => {
+    if (step < SLIDES.length) {
+      Analytics.onboardingSlideViewed(step, SLIDES[step].tag);
+    }
+  }, [step]);
 
   // Profile setup state
   const [username, setUsername] = useState('');
@@ -258,11 +270,18 @@ export default function OnboardingScreen() {
 
   const handleSaveSubjects = async () => {
     setSubjectSaving(true);
+    if (selectedSubjects.length > 0) {
+      Analytics.onboardingSubjectsSaved(selectedSubjects.length);
+    } else {
+      Analytics.onboardingSubjectsSkipped();
+    }
     try {
       for (const sub of selectedSubjects) {
         try { await subjectsAPI.addSubject(sub.id); } catch {}
       }
       await refreshUser();
+      const totalSeconds = Math.round((Date.now() - onboardingStartRef.current) / 1000);
+      Analytics.onboardingCompleted(totalSeconds);
     } catch {}
     finally { setSubjectSaving(false); }
   };
@@ -274,6 +293,12 @@ export default function OnboardingScreen() {
     if (!school.trim()) { Alert.alert('School Required', 'Please enter your school to continue.'); return; }
     if (!country.trim()) { Alert.alert('Country Required', 'Please enter your country to continue.'); return; }
 
+    Analytics.onboardingProfileSubmitted({
+      has_photo: !!profilePicUri,
+      has_school: !!school.trim(),
+      has_country: !!country.trim(),
+    });
+
     setIsLoading(true);
     try {
       const token = await SecureStore.getItemAsync('authToken');
@@ -281,14 +306,26 @@ export default function OnboardingScreen() {
       if (!res.ok) {
         const err = await res.json().catch(() => ({ detail: 'Failed to set username' }));
         const d = err.detail || 'Failed to set username';
+        Analytics.onboardingProfileSaveFailed('username', typeof d === 'string' ? d : 'Failed to set username');
         if (typeof d === 'string' && d.toLowerCase().includes('taken')) Alert.alert('Username Taken', `@${u} is already in use. Try a different one.`);
         else Alert.alert('Error', d);
         return;
       }
-      try { await authAPI.updateProfile({ school: school.trim(), country: country.trim() }); } catch {}
-      try { await setProfilePic(profilePicUri); } catch {}
+      try {
+        await authAPI.updateProfile({ school: school.trim(), country: country.trim() });
+      } catch (err: any) {
+        Analytics.onboardingProfileSaveFailed('profile_update', err?.message || 'unknown');
+      }
+      try {
+        await setProfilePic(profilePicUri);
+      } catch (err: any) {
+        Analytics.onboardingProfileSaveFailed('profile_pic', err?.message || 'unknown');
+      }
       setShowSubjectPicker(true);
-    } catch (e: any) { Alert.alert('Error', e?.message || 'Something went wrong'); }
+    } catch (e: any) {
+      Analytics.onboardingProfileSaveFailed('exception', e?.message || 'unknown');
+      Alert.alert('Error', e?.message || 'Something went wrong');
+    }
     finally { setIsLoading(false); }
   };
 
@@ -506,13 +543,26 @@ export default function OnboardingScreen() {
               <Text style={wb.backText}>Back</Text>
             </TouchableOpacity>
           )}
-          <TouchableOpacity style={wb.nextBtn} onPress={() => go(step + 1)} activeOpacity={0.8}>
+          <TouchableOpacity
+            style={wb.nextBtn}
+            onPress={() => {
+              if (step === SLIDES.length - 1) Analytics.onboardingWalkthroughCompleted();
+              go(step + 1);
+            }}
+            activeOpacity={0.8}
+          >
             <LinearGradient colors={['#5F8C87', '#3B5466']} style={wb.nextGrad} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}>
               <Text style={wb.nextText}>{step === SLIDES.length - 1 ? 'Set Up Profile' : 'Next'}</Text>
             </LinearGradient>
           </TouchableOpacity>
         </View>
-        <TouchableOpacity style={{ paddingVertical: 6 }} onPress={() => go(SLIDES.length)}>
+        <TouchableOpacity
+          style={{ paddingVertical: 6 }}
+          onPress={() => {
+            Analytics.onboardingWalkthroughSkipped(step);
+            go(SLIDES.length);
+          }}
+        >
           <Text style={wb.skipText}>Skip</Text>
         </TouchableOpacity>
       </View>
