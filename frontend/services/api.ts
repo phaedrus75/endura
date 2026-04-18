@@ -356,6 +356,11 @@ export const authAPI = {
       method: 'POST',
     }),
 
+  completeOnboarding: () =>
+    apiFetch<{ ok: boolean; onboarding_completed_at: string | null }>('/user/onboarding/complete', {
+      method: 'POST',
+    }),
+
   updateProfile: (data: { school?: string; city?: string; country?: string }) =>
     apiFetch('/user/profile', {
       method: 'PUT',

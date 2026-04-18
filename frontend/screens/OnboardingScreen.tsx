@@ -279,6 +279,7 @@ export default function OnboardingScreen() {
       for (const sub of selectedSubjects) {
         try { await subjectsAPI.addSubject(sub.id); } catch {}
       }
+      try { await authAPI.completeOnboarding(); } catch {}
       await refreshUser();
       const totalSeconds = Math.round((Date.now() - onboardingStartRef.current) / 1000);
       Analytics.onboardingCompleted(totalSeconds);

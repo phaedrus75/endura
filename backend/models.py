@@ -204,6 +204,10 @@ class User(Base):
     hashed_password = Column(String)
     username = Column(String, unique=True, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
+
+    # Onboarding funnel timestamps
+    username_set_at = Column(DateTime, nullable=True)
+    onboarding_completed_at = Column(DateTime, nullable=True)
     
     # Coin and streak tracking
     total_coins = Column(Integer, default=0)

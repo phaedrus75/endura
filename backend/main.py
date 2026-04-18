@@ -977,6 +977,21 @@ def set_username(
     return {"message": "Username updated"}
 
 
+@app.post("/user/onboarding/complete")
+def complete_onboarding(
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Mark onboarding as complete (idempotent). Sets onboarding_completed_at
+    only on the first successful call per user so we can measure true funnel
+    drop-off from the DB."""
+    user = db.query(models.User).filter(models.User.id == current_user.id).first()
+    if user and user.onboarding_completed_at is None:
+        user.onboarding_completed_at = datetime.utcnow()
+        db.commit()
+    return {"ok": True, "onboarding_completed_at": user.onboarding_completed_at.isoformat() if user and user.onboarding_completed_at else None}
+
+
 @app.put("/user/profile")
 def update_profile(
     profile: schemas.UpdateProfileRequest,

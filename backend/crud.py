@@ -52,6 +52,8 @@ def update_username(db: Session, user_id: int, username: str) -> models.User:
     user = db.query(models.User).filter(models.User.id == user_id).first()
     if user:
         user.username = username
+        if user.username_set_at is None:
+            user.username_set_at = datetime.utcnow()
         db.commit()
         db.refresh(user)
     return user
