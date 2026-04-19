@@ -290,6 +290,10 @@ export default function TipsScreen() {
       seenTipIdsRef.current.add(tipId);
       persistSeen(seenTipIdsRef.current);
       Analytics.tipViewed(tipId);
+      // Persist the view to the DB so admin analytics + recap have real data.
+      tipsAPI.markViewed(tipId).catch(e => {
+        if (__DEV__) console.log('Tip view sync failed (silent):', e);
+      });
       delete tipViewTimers.current[tipId];
     }, 10000);
   }, []);
