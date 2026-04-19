@@ -3548,10 +3548,42 @@ COUNTRY_CLEANUP_MAP = {
 
 COUNTRY_JUNK_VALUES = {"Haha", "blublublu", "cute"}
 
+# PostHog GeoIP backfill: username → country (for users with blank country)
+POSTHOG_GEOIP_BACKFILL = {
+    "Aiden": "United Kingdom", "Aminaa": "Mongolia", "Axel": "United Kingdom",
+    "Aysukaa": "Mongolia", "Castellanos": "Colombia", "Daham Nimsilu": "Sri Lanka",
+    "Eleonor": "United Kingdom", "Eline": "Norway", "Emilie 😛": "United Kingdom",
+    "Emma": "United Kingdom", "Hanae": "United Kingdom", "Hassan Almishal": "Israel",
+    "Ibarat": "Kyrgyzstan", "Lucaw1": "United Kingdom", "MC": "United Kingdom",
+    "Marilena": "Greece", "Maxwell": "United Kingdom", "Miia": "United Kingdom",
+    "Mishka": "Mongolia", "Molly": "United Kingdom", "Moon": "United Kingdom",
+    "N0tCarlaXD": "United Kingdom", "Nuni": "Kazakhstan", "Oggy 800": "Mongolia",
+    "Penny": "United Kingdom", "Petronella": "Uganda", "RIDH": "India",
+    "Resego": "Botswana", "Sonu": "Sri Lanka", "Thisuri": "Sri Lanka",
+    "Ysuu": "Mongolia", "aninipanini": "United Kingdom", "applereviewer": "United Kingdom",
+    "astraea.xvii": "United Arab Emirates", "barkingdog": "India",
+    "charlie": "Netherlands", "chloeschneider": "United Kingdom",
+    "cynthia": "Uganda", "daniel": "Honduras", "devin": "Sri Lanka",
+    "dul": "Argentina", "emilie.anders": "United Kingdom",
+    "francescav": "United Kingdom", "gabriel": "United Kingdom",
+    "gauthierf": "United Kingdom", "isaadestefano": "Argentina",
+    "joshua fayinka": "United Kingdom", "junaid": "India",
+    "larissa<3": "United Kingdom", "letsstudy": "United Kingdom",
+    "lucia": "United Kingdom", "malaika": "United Kingdom",
+    "malsha": "Sri Lanka", "mariaglez": "Spain", "matteo": "Belgium",
+    "myzdrl": "United Kingdom", "nazwah naura": "Indonesia",
+    "nurxx": "Kazakhstan", "paulaa": "Spain", "pazz": "Spain",
+    "pfranetzki": "Germany", "puja": "Nepal", "serene_09": "India",
+    "shams": "Netherlands", "sonya": "United Kingdom",
+    "uh.masonn": "United Kingdom", "vihagana nethmini": "Sri Lanka",
+    "vusu": "Azerbaijan", "xb": "United Kingdom", "youcef": "Algeria",
+    "\U0001f338crystalstudies\U0001f338": "Uganda",
+}
+
 
 @app.post("/admin/cleanup-countries")
 def admin_cleanup_countries(db: Session = Depends(get_db), _=Depends(verify_admin)):
-    """Normalize messy country values in the users table. Safe to run repeatedly."""
+    """Normalize messy country values and backfill blanks from PostHog GeoIP. Safe to run repeatedly."""
     updated = {}
 
     for old_val, new_val in COUNTRY_CLEANUP_MAP.items():
@@ -3568,6 +3600,18 @@ def admin_cleanup_countries(db: Session = Depends(get_db), _=Depends(verify_admi
         if count:
             updated[f"{junk} → NULL"] = count
 
+    # Backfill blank countries from PostHog GeoIP data
+    backfilled = 0
+    blank_users = db.query(models.User).filter(
+        (models.User.country.is_(None)) | (models.User.country == "")
+    ).all()
+    for user in blank_users:
+        geo_country = POSTHOG_GEOIP_BACKFILL.get(user.username)
+        if geo_country:
+            user.country = geo_country
+            backfilled += 1
+            updated[f"backfill: {user.username} → {geo_country}"] = 1
+
     db.commit()
 
     country_rows = (
@@ -3580,7 +3624,8 @@ def admin_cleanup_countries(db: Session = Depends(get_db), _=Depends(verify_admi
 
     return {
         "changes": updated,
-        "total_users_updated": sum(updated.values()),
+        "total_users_updated": sum(v for k, v in updated.items() if not k.startswith("backfill")),
+        "total_backfilled": backfilled,
         "current_countries": [{"country": r[0], "users": r[1]} for r in country_rows],
     }
 
