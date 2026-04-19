@@ -3417,6 +3417,189 @@ def admin_preview_email_template(template_key: str, db: Session = Depends(get_db
     return {"subject": rendered_subject, "body_html": rendered_html}
 
 
+# ── Email Campaigns ───────────────────────────────────────────────
+
+CAMPAIGN_COHORTS = {
+    "verify_email": {
+        "label": "Signed up but not verified",
+        "template_key": "campaign_verify_email",
+    },
+    "start_timer": {
+        "label": "Verified but never started a timer",
+        "template_key": "campaign_start_timer",
+    },
+    "second_timer": {
+        "label": "Only 1 session (encourage session 2)",
+        "template_key": "campaign_second_timer",
+    },
+    "invite_friends": {
+        "label": "2+ sessions — invite friends & groups",
+        "template_key": "campaign_invite_friends",
+    },
+}
+
+
+@app.get("/admin/campaign-cohorts")
+def admin_campaign_cohorts(db: Session = Depends(get_db), _=Depends(verify_admin)):
+    """Return the 4 campaign cohorts with user counts and lists."""
+    archived_filter = or_(models.User.is_archived == False, models.User.is_archived == None)
+    cohorts = {}
+
+    # 1) Signed up but email NOT verified
+    unverified = db.query(models.User).filter(
+        archived_filter,
+        models.User.email_verified == False,
+        models.User.email.isnot(None),
+        models.User.email != "",
+    ).all()
+    cohorts["verify_email"] = {
+        **CAMPAIGN_COHORTS["verify_email"],
+        "count": len(unverified),
+        "users": [{"id": u.id, "email": u.email, "username": u.username, "created_at": u.created_at.isoformat() if u.created_at else None} for u in unverified],
+    }
+
+    # 2) Verified but 0 study sessions
+    verified_ids = [u.id for u in db.query(models.User.id).filter(
+        archived_filter, models.User.email_verified == True,
+        models.User.email.isnot(None), models.User.email != "",
+    ).all()]
+    if verified_ids:
+        users_with_sessions = {r[0] for r in db.query(models.StudySession.user_id).filter(
+            models.StudySession.user_id.in_(verified_ids)
+        ).distinct().all()}
+    else:
+        users_with_sessions = set()
+    no_timer_ids = [uid for uid in verified_ids if uid not in users_with_sessions]
+    no_timer_users = db.query(models.User).filter(models.User.id.in_(no_timer_ids)).all() if no_timer_ids else []
+    cohorts["start_timer"] = {
+        **CAMPAIGN_COHORTS["start_timer"],
+        "count": len(no_timer_users),
+        "users": [{"id": u.id, "email": u.email, "username": u.username} for u in no_timer_users],
+    }
+
+    # 3) Exactly 1 session
+    session_counts = dict(
+        db.query(models.StudySession.user_id, func.count(models.StudySession.id))
+        .filter(models.StudySession.user_id.in_(verified_ids))
+        .group_by(models.StudySession.user_id).all()
+    ) if verified_ids else {}
+    one_session_ids = [uid for uid, cnt in session_counts.items() if cnt == 1]
+    one_session_users = db.query(models.User).filter(models.User.id.in_(one_session_ids)).all() if one_session_ids else []
+    cohorts["second_timer"] = {
+        **CAMPAIGN_COHORTS["second_timer"],
+        "count": len(one_session_users),
+        "users": [{"id": u.id, "email": u.email, "username": u.username, "sessions": 1} for u in one_session_users],
+    }
+
+    # 4) 2+ sessions
+    multi_session_ids = [uid for uid, cnt in session_counts.items() if cnt >= 2]
+    multi_session_users = db.query(models.User).filter(models.User.id.in_(multi_session_ids)).all() if multi_session_ids else []
+    cohorts["invite_friends"] = {
+        **CAMPAIGN_COHORTS["invite_friends"],
+        "count": len(multi_session_users),
+        "users": [{"id": u.id, "email": u.email, "username": u.username, "sessions": session_counts.get(u.id, 0)} for u in multi_session_users],
+    }
+
+    return cohorts
+
+
+@app.post("/admin/campaign-send/{cohort_key}")
+def admin_campaign_send(cohort_key: str, db: Session = Depends(get_db), _=Depends(verify_admin)):
+    """Send a campaign email to all users in a cohort. Skips users already sent this template."""
+    if cohort_key not in CAMPAIGN_COHORTS:
+        raise HTTPException(status_code=400, detail=f"Unknown cohort: {cohort_key}")
+
+    resend_key = os.getenv("RESEND_API_KEY")
+    if not resend_key:
+        raise HTTPException(status_code=500, detail="RESEND_API_KEY not configured")
+
+    template_key = CAMPAIGN_COHORTS[cohort_key]["template_key"]
+    cohorts = admin_campaign_cohorts.__wrapped__(db=db, _=None) if hasattr(admin_campaign_cohorts, '__wrapped__') else None
+
+    # Re-fetch cohort to get users
+    archived_filter = or_(models.User.is_archived == False, models.User.is_archived == None)
+    if cohort_key == "verify_email":
+        users = db.query(models.User).filter(
+            archived_filter, models.User.email_verified == False,
+            models.User.email.isnot(None), models.User.email != "",
+        ).all()
+    elif cohort_key == "start_timer":
+        verified_ids = [u.id for u in db.query(models.User.id).filter(
+            archived_filter, models.User.email_verified == True,
+            models.User.email.isnot(None), models.User.email != "",
+        ).all()]
+        with_sessions = {r[0] for r in db.query(models.StudySession.user_id).filter(
+            models.StudySession.user_id.in_(verified_ids)
+        ).distinct().all()} if verified_ids else set()
+        no_timer_ids = [uid for uid in verified_ids if uid not in with_sessions]
+        users = db.query(models.User).filter(models.User.id.in_(no_timer_ids)).all() if no_timer_ids else []
+    elif cohort_key == "second_timer":
+        verified_ids = [u.id for u in db.query(models.User.id).filter(
+            archived_filter, models.User.email_verified == True,
+            models.User.email.isnot(None), models.User.email != "",
+        ).all()]
+        counts = dict(
+            db.query(models.StudySession.user_id, func.count(models.StudySession.id))
+            .filter(models.StudySession.user_id.in_(verified_ids))
+            .group_by(models.StudySession.user_id).all()
+        ) if verified_ids else {}
+        one_ids = [uid for uid, c in counts.items() if c == 1]
+        users = db.query(models.User).filter(models.User.id.in_(one_ids)).all() if one_ids else []
+    elif cohort_key == "invite_friends":
+        verified_ids = [u.id for u in db.query(models.User.id).filter(
+            archived_filter, models.User.email_verified == True,
+            models.User.email.isnot(None), models.User.email != "",
+        ).all()]
+        counts = dict(
+            db.query(models.StudySession.user_id, func.count(models.StudySession.id))
+            .filter(models.StudySession.user_id.in_(verified_ids))
+            .group_by(models.StudySession.user_id).all()
+        ) if verified_ids else {}
+        multi_ids = [uid for uid, c in counts.items() if c >= 2]
+        users = db.query(models.User).filter(models.User.id.in_(multi_ids)).all() if multi_ids else []
+    else:
+        users = []
+
+    already_sent = {r[0] for r in db.query(models.EmailLog.user_id).filter(
+        models.EmailLog.template_key == template_key
+    ).all()}
+
+    sent_count = 0
+    skipped = 0
+    failed = 0
+    for user in users:
+        if not user.email:
+            continue
+        if user.id in already_sent:
+            skipped += 1
+            continue
+        name = user.username or "there"
+        animals_count = db.query(func.count(models.UserAnimal.id)).filter(models.UserAnimal.user_id == user.id).scalar() or 0
+        badges_count = db.query(func.count(models.UserBadge.id)).filter(models.UserBadge.user_id == user.id).scalar() or 0
+        variables = {
+            "name": name,
+            "total_minutes": str(user.total_study_minutes or 0),
+            "animals_count": str(animals_count),
+            "streak": str(user.current_streak or 0),
+            "longest_streak": str(user.longest_streak or 0),
+            "sessions": str(user.total_sessions or 0),
+            "badges": str(badges_count),
+        }
+        if _send_template_email(template_key, user.email, variables, db):
+            sent_count += 1
+        else:
+            failed += 1
+
+    return {
+        "cohort": cohort_key,
+        "template": template_key,
+        "total_in_cohort": len(users),
+        "sent": sent_count,
+        "skipped_already_sent": skipped,
+        "failed": failed,
+    }
+
+
 # ── Android Beta Signups ──────────────────────────────────────────
 
 @app.post("/android-beta")

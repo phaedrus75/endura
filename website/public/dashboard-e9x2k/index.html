@@ -382,6 +382,7 @@
             <a data-page="activity"><span class="icon">⚡</span> Activity</a>
             <a data-page="analytics"><span class="icon">📈</span> Analytics</a>
             <a data-page="android-beta"><span class="icon">🤖</span> Android Beta</a>
+            <a data-page="campaigns"><span class="icon">📣</span> Campaigns</a>
             <a data-page="email-templates"><span class="icon">📧</span> Email Templates</a>
             <a data-page="founding"><span class="icon">⭐</span> Founding Members</a>
         </nav>
@@ -646,6 +647,14 @@
                     </table>
                 </div>
             </div>
+        </div>
+
+        <div class="page" id="page-campaigns">
+            <h1 class="page-title">Email Campaigns</h1>
+            <p style="color:var(--text-muted);margin-bottom:20px;font-size:14px">
+                Targeted emails based on user behaviour. Each cohort gets a specific nudge. Emails are de-duped — users who already received a campaign won't get it again.
+            </p>
+            <div id="campaignCohorts" style="display:grid;gap:16px"></div>
         </div>
 
         <div class="page" id="page-email-templates">
@@ -1006,6 +1015,7 @@ document.querySelectorAll('.sidebar nav a').forEach(link => {
         else if (link.dataset.page === 'activity') loadActivity();
         else if (link.dataset.page === 'analytics') initAnalytics();
         else if (link.dataset.page === 'android-beta') loadAndroidBeta();
+        else if (link.dataset.page === 'campaigns') loadCampaigns();
         else if (link.dataset.page === 'email-templates') loadEmailTemplates();
         else if (link.dataset.page === 'founding') loadFoundingMembers();
     });
@@ -2325,6 +2335,54 @@ function exportBetaEmails() {
     rows.forEach(r => { const td = r.querySelector('td'); if (td) emails.push(td.textContent.trim()); });
     const text = emails.join('\n');
     navigator.clipboard.writeText(text).then(() => alert('Copied ' + emails.length + ' emails to clipboard'));
+}
+
+// ── Email Campaigns ──
+
+async function loadCampaigns() {
+    const container = document.getElementById('campaignCohorts');
+    container.innerHTML = '<p style="color:var(--text-muted)">Loading cohorts...</p>';
+    try {
+        const cohorts = await adminFetch('/admin/campaign-cohorts');
+        const icons = { verify_email: '✉️', start_timer: '▶️', second_timer: '🔁', invite_friends: '👥' };
+        const colors = { verify_email: '#e67e22', start_timer: '#3b82f6', second_timer: '#8b5cf6', invite_friends: '#4A7C59' };
+        container.innerHTML = Object.entries(cohorts).map(([key, c]) => {
+            const userRows = (c.users || []).slice(0, 20).map(u =>
+                `<tr><td>${u.id}</td><td>${esc(u.username || '—')}</td><td>${esc(u.email || '—')}</td><td>${u.sessions != null ? u.sessions : '—'}</td></tr>`
+            ).join('');
+            return `<div class="table-card">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:10px">
+                    <div>
+                        <h3 style="margin:0">${icons[key] || '📧'} ${esc(c.label)}</h3>
+                        <p style="margin:4px 0 0;font-size:13px;color:var(--text-muted)">Template: <code>${esc(c.template_key)}</code></p>
+                    </div>
+                    <div style="display:flex;align-items:center;gap:12px">
+                        <span style="font-size:24px;font-weight:700;color:${colors[key] || 'var(--forest)'}">${c.count}</span>
+                        <button onclick="sendCampaign('${key}','${esc(c.label)}',${c.count})" style="padding:10px 20px;background:${colors[key] || 'var(--forest)'};color:#fff;border:none;border-radius:10px;font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap">Send Campaign</button>
+                    </div>
+                </div>
+                ${c.count > 0 ? `<div style="overflow-x:auto;max-height:300px;overflow-y:auto"><table><thead><tr><th>ID</th><th>Username</th><th>Email</th><th>Sessions</th></tr></thead><tbody>${userRows}</tbody></table>${c.count > 20 ? `<p style="color:var(--text-muted);font-size:12px;margin:8px 0 0">...and ${c.count - 20} more</p>` : ''}</div>` : '<p style="color:var(--text-muted);font-size:13px;margin:0">No users in this cohort.</p>'}
+            </div>`;
+        }).join('');
+    } catch (e) {
+        container.innerHTML = '<p style="color:var(--red)">Failed to load cohorts: ' + esc(e.message) + '</p>';
+    }
+}
+
+async function sendCampaign(cohortKey, label, count) {
+    if (!confirm(`Send "${label}" campaign to ${count} user(s)?\n\nUsers who already received this email will be skipped.`)) return;
+    try {
+        const res = await fetch(API_URL + '/admin/campaign-send/' + cohortKey, {
+            method: 'POST',
+            headers: { 'X-Admin-Key': API_KEY },
+        });
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        const d = await res.json();
+        alert(`Campaign "${label}" complete!\n\nSent: ${d.sent}\nSkipped (already sent): ${d.skipped_already_sent}\nFailed: ${d.failed}`);
+        loadCampaigns();
+    } catch (e) {
+        alert('Campaign send failed: ' + e.message);
+    }
 }
 
 // ── Email Templates ──
