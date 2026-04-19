@@ -481,27 +481,20 @@ def seed_check():
         existing_tips = db.query(models.StudyTip).count()
         if existing_tips >= 160:
             print(f"[STARTUP] Found {existing_tips} tips already seeded, skipping re-seed")
+        elif existing_tips > 0:
+            print(f"[STARTUP] Found {existing_tips} tips (partial seed), adding missing ones only")
+            existing_contents = {t.content for t in db.query(models.StudyTip.content).all()}
+            added = 0
+            for tip_data in tips:
+                if tip_data["content"] not in existing_contents:
+                    db.add(models.StudyTip(**tip_data))
+                    added += 1
+            db.commit()
+            print(f"[STARTUP] Added {added} new tips (preserved existing tip_views)")
         else:
-            print(f"[STARTUP] Found {existing_tips} tips, seeding {len(tip_texts)} new ones")
-            try:
-                db.execute(text("DELETE FROM tip_views"))
-                db.execute(text("DELETE FROM study_tips"))
-                db.commit()
-                print(f"[STARTUP] Cleared old tips via raw SQL")
-            except Exception as del_err:
-                print(f"[STARTUP] Raw delete failed: {del_err}, trying TRUNCATE CASCADE")
-                db.rollback()
-                try:
-                    db.execute(text("TRUNCATE TABLE tip_views, study_tips RESTART IDENTITY CASCADE"))
-                    db.commit()
-                    print("[STARTUP] Truncated tips tables with CASCADE")
-                except Exception as trunc_err:
-                    print(f"[STARTUP] TRUNCATE also failed: {trunc_err}")
-                    db.rollback()
-
+            print(f"[STARTUP] No tips found, seeding {len(tip_texts)} tips")
             for tip_data in tips:
                 db.add(models.StudyTip(**tip_data))
-
             db.commit()
             final_count = db.query(models.StudyTip).count()
             sample = db.query(models.StudyTip).first()
