@@ -3548,36 +3548,57 @@ COUNTRY_CLEANUP_MAP = {
 
 COUNTRY_JUNK_VALUES = {"Haha", "blublublu", "cute"}
 
-# PostHog GeoIP backfill: username → country (for users with blank country)
+# PostHog GeoIP backfill: DB user_id → country (for users with blank country)
 POSTHOG_GEOIP_BACKFILL = {
-    "Aiden": "United Kingdom", "Aminaa": "Mongolia", "Axel": "United Kingdom",
-    "Aysukaa": "Mongolia", "Castellanos": "Colombia", "Daham Nimsilu": "Sri Lanka",
-    "Eleonor": "United Kingdom", "Eline": "Norway", "Emilie 😛": "United Kingdom",
-    "Emma": "United Kingdom", "Hanae": "United Kingdom", "Hassan Almishal": "Israel",
-    "Ibarat": "Kyrgyzstan", "Lucaw1": "United Kingdom", "MC": "United Kingdom",
-    "Marilena": "Greece", "Maxwell": "United Kingdom", "Miia": "United Kingdom",
-    "Mishka": "Mongolia", "Molly": "United Kingdom", "Moon": "United Kingdom",
-    "N0tCarlaXD": "United Kingdom", "Nuni": "Kazakhstan", "Oggy 800": "Mongolia",
-    "Penny": "United Kingdom", "Petronella": "Uganda", "RIDH": "India",
-    "Resego": "Botswana", "Sonu": "Sri Lanka", "Thisuri": "Sri Lanka",
-    "Ysuu": "Mongolia", "aninipanini": "United Kingdom", "applereviewer": "United Kingdom",
-    "astraea.xvii": "United Arab Emirates", "barkingdog": "India",
-    "charlie": "Netherlands", "chloeschneider": "United Kingdom",
-    "cynthia": "Uganda", "daniel": "Honduras", "devin": "Sri Lanka",
-    "dul": "Argentina", "emilie.anders": "United Kingdom",
-    "francescav": "United Kingdom", "gabriel": "United Kingdom",
-    "gauthierf": "United Kingdom", "isaadestefano": "Argentina",
-    "joshua fayinka": "United Kingdom", "junaid": "India",
-    "larissa<3": "United Kingdom", "letsstudy": "United Kingdom",
-    "lucia": "United Kingdom", "malaika": "United Kingdom",
-    "malsha": "Sri Lanka", "mariaglez": "Spain", "matteo": "Belgium",
-    "myzdrl": "United Kingdom", "nazwah naura": "Indonesia",
-    "nurxx": "Kazakhstan", "paulaa": "Spain", "pazz": "Spain",
-    "pfranetzki": "Germany", "puja": "Nepal", "serene_09": "India",
-    "shams": "Netherlands", "sonya": "United Kingdom",
-    "uh.masonn": "United Kingdom", "vihagana nethmini": "Sri Lanka",
-    "vusu": "Azerbaijan", "xb": "United Kingdom", "youcef": "Algeria",
-    "\U0001f338crystalstudies\U0001f338": "Uganda",
+    1: "United Kingdom", 2: "United Kingdom", 3: "United Kingdom",
+    4: "United Kingdom", 5: "United Kingdom", 6: "United Kingdom",
+    7: "United Kingdom", 8: "United States", 9: "United Kingdom",
+    14: "United Kingdom", 15: "United Kingdom", 16: "United Kingdom",
+    17: "United Kingdom", 18: "United Kingdom", 19: "United Kingdom",
+    20: "United Kingdom", 22: "United Kingdom", 23: "Norway",
+    24: "Botswana", 25: "Uganda", 26: "Norway", 27: "Uganda",
+    28: "Uganda", 29: "United Kingdom", 31: "Mongolia",
+    32: "Netherlands", 33: "United Kingdom", 34: "United Kingdom",
+    35: "United Kingdom", 37: "United Kingdom", 38: "United Kingdom",
+    40: "United Kingdom", 41: "United Kingdom", 42: "United Kingdom",
+    43: "United Kingdom", 44: "United Kingdom", 45: "United Kingdom",
+    47: "United Kingdom", 48: "United Kingdom", 49: "United Kingdom",
+    50: "United Kingdom", 51: "Ireland", 52: "Ireland",
+    53: "Belgium", 54: "United Kingdom", 55: "United Kingdom",
+    56: "United Kingdom", 58: "Netherlands", 59: "United Kingdom",
+    60: "United Kingdom", 62: "United Kingdom", 64: "United Kingdom",
+    65: "United Kingdom", 66: "United Kingdom", 67: "Turkey",
+    68: "Azerbaijan", 69: "United Kingdom", 70: "Mongolia",
+    71: "United Kingdom", 72: "United Kingdom", 73: "Ecuador",
+    74: "United Arab Emirates", 75: "Italy", 77: "Mongolia",
+    78: "Turkey", 80: "United Kingdom", 81: "Iraq", 82: "Turkey",
+    83: "Algeria", 84: "Sri Lanka", 85: "Colombia", 86: "Germany",
+    88: "India", 89: "Mongolia", 90: "India", 91: "India",
+    92: "India", 93: "France", 94: "Jordan", 95: "Kazakhstan",
+    96: "United Kingdom", 98: "United Kingdom", 99: "Algeria",
+    100: "Pakistan", 101: "South Korea", 102: "Algeria",
+    103: "Algeria", 104: "Sri Lanka", 105: "Oman",
+    106: "Israel", 107: "Egypt", 109: "Argentina",
+    110: "Argentina", 111: "Mexico", 112: "Nepal",
+    115: "Indonesia", 116: "Honduras", 118: "India", 119: "India",
+    120: "Kazakhstan", 121: "Sri Lanka", 122: "Philippines",
+    123: "United Kingdom", 124: "India", 125: "Indonesia",
+    126: "Greece", 127: "India", 128: "Sri Lanka",
+    130: "United Kingdom", 132: "Iraq", 134: "Kazakhstan",
+    136: "Turkey", 137: "Philippines", 138: "Algeria",
+    139: "United Kingdom", 140: "Spain", 141: "Chile",
+    142: "Kyrgyzstan", 143: "Mongolia", 144: "Sri Lanka",
+    145: "Vietnam", 146: "Vietnam", 147: "Sri Lanka",
+    148: "Armenia", 151: "Azerbaijan", 153: "Mongolia",
+    154: "Nepal", 155: "Cambodia", 157: "Malaysia",
+    158: "Germany", 159: "Sri Lanka", 162: "India",
+    163: "India", 164: "Spain", 165: "Spain", 166: "Greece",
+    167: "Spain", 168: "India", 169: "Sri Lanka",
+    173: "Spain", 174: "Argentina", 175: "Panama",
+    177: "Philippines", 178: "Chile", 179: "Nepal",
+    180: "India", 181: "Sri Lanka", 182: "Vietnam",
+    183: "Pakistan", 184: "Vietnam", 185: "Vietnam",
+    186: "Vietnam", 187: "Indonesia", 188: "India", 189: "Armenia",
 }
 
 
@@ -3600,17 +3621,17 @@ def admin_cleanup_countries(db: Session = Depends(get_db), _=Depends(verify_admi
         if count:
             updated[f"{junk} → NULL"] = count
 
-    # Backfill blank countries from PostHog GeoIP data
+    # Backfill blank countries from PostHog GeoIP data (matched by DB user_id)
     backfilled = 0
     blank_users = db.query(models.User).filter(
         (models.User.country.is_(None)) | (models.User.country == "")
     ).all()
     for user in blank_users:
-        geo_country = POSTHOG_GEOIP_BACKFILL.get(user.username)
+        geo_country = POSTHOG_GEOIP_BACKFILL.get(user.id)
         if geo_country:
             user.country = geo_country
             backfilled += 1
-            updated[f"backfill: {user.username} → {geo_country}"] = 1
+            updated[f"backfill: {user.username or user.id} → {geo_country}"] = 1
 
     db.commit()
 
