@@ -430,7 +430,7 @@
                 <div class="chart-card"><h3>Study Setup (Apr)</h3><canvas id="chartStudySetup"></canvas><div style="font-size:11px;color:var(--text-muted);margin-top:6px;text-align:center"><span style="display:inline-block;width:10px;height:10px;background:rgba(245,158,11,.7);border-radius:2px;margin-right:3px"></span>Subjects Added <span style="display:inline-block;width:10px;height:10px;background:rgba(16,185,129,.7);border-radius:2px;margin-left:10px;margin-right:3px"></span>Todos Created</div></div>
             </div>
             <div class="chart-row">
-                <div class="chart-card" style="grid-column:1 / -1"><h3>Tip Engagement (Apr)</h3><canvas id="chartTips"></canvas><div style="font-size:11px;color:var(--text-muted);margin-top:6px;text-align:center"><span style="display:inline-block;width:10px;height:10px;background:rgba(59,130,246,.7);border-radius:2px;margin-right:3px"></span>Tips Viewed <span style="display:inline-block;width:10px;height:10px;background:rgba(239,68,68,.7);border-radius:2px;margin-left:10px;margin-right:3px"></span>Tips Liked</div></div>
+                <div class="chart-card" style="grid-column:1 / -1"><h3>Tip Engagement (Apr)</h3><canvas id="chartTips"></canvas><div style="font-size:11px;color:var(--text-muted);margin-top:6px;text-align:center"><span style="display:inline-block;width:10px;height:10px;background:rgba(59,130,246,.7);border-radius:2px;margin-right:3px"></span>Viewed (PostHog) <span style="display:inline-block;width:10px;height:10px;background:rgba(16,185,129,.7);border-radius:2px;margin-left:10px;margin-right:3px"></span>Saved (PostHog) <span style="display:inline-block;width:10px;height:10px;background:rgba(239,68,68,.7);border-radius:2px;margin-left:10px;margin-right:3px"></span>Liked (DB)</div></div>
             </div>
 
             <!-- User Funnel -->
@@ -1123,12 +1123,12 @@ async function loadOverview() {
         renderStudyChart(d.daily_sessions);
         renderSocialChart(d.daily_friendships, d.daily_groups_created);
         renderStudySetupChart(d.daily_user_subjects, d.daily_tasks_created);
-        renderTipsChart(d.daily_tip_views, d.daily_tip_likes);
         if (d.funnel) renderFunnel(d.funnel);
 
-        // DAU chart: DB study users + PostHog app opens
+        // PostHog enrichment: DAU + tip events
         const dbDau = d.daily_active || [];
         let phDauData = null;
+        let phTipData = { viewed: null, saved: null };
         try {
             if (PH_KEY) {
                 if (!phProjectId) {
@@ -1137,17 +1137,28 @@ async function loadOverview() {
                 }
                 if (phProjectId && dbDau.length > 0) {
                     const startDate = dbDau[0].date;
-                    const phResult = await phQuery(`SELECT toDate(timestamp) as day, count(DISTINCT distinct_id) as users FROM events WHERE timestamp >= '${startDate}' GROUP BY day ORDER BY day`);
-                    if (phResult.results) {
+                    const [dauResult, tipViewedResult, tipSavedResult] = await Promise.all([
+                        phQuery(`SELECT toDate(timestamp) as day, count(DISTINCT distinct_id) as users FROM events WHERE timestamp >= '${startDate}' GROUP BY day ORDER BY day`),
+                        phQuery(`SELECT toDate(timestamp) as day, count() as cnt FROM events WHERE event = 'tip_viewed' AND timestamp >= '${startDate}' GROUP BY day ORDER BY day`),
+                        phQuery(`SELECT toDate(timestamp) as day, count() as cnt FROM events WHERE event = 'tip_saved' AND timestamp >= '${startDate}' GROUP BY day ORDER BY day`),
+                    ]);
+                    if (dauResult.results) {
                         phDauData = {};
-                        for (const row of phResult.results) {
-                            phDauData[row[0]] = row[1];
-                        }
+                        for (const row of dauResult.results) phDauData[row[0]] = row[1];
+                    }
+                    if (tipViewedResult.results) {
+                        phTipData.viewed = {};
+                        for (const row of tipViewedResult.results) phTipData.viewed[row[0]] = row[1];
+                    }
+                    if (tipSavedResult.results) {
+                        phTipData.saved = {};
+                        for (const row of tipSavedResult.results) phTipData.saved[row[0]] = row[1];
                     }
                 }
             }
-        } catch (e) { console.warn('PostHog DAU fetch failed', e); }
+        } catch (e) { console.warn('PostHog enrichment failed', e); }
         renderDAUChart(dbDau, phDauData);
+        renderTipsChart(d.daily_tip_views, d.daily_tip_likes, phTipData);
     } catch (e) {
         console.error('Overview load failed', e);
     }
@@ -1340,12 +1351,17 @@ function renderStudySetupChart(subjects, tasks) {
     ]);
 }
 
-function renderTipsChart(views, likes) {
+function renderTipsChart(views, likes, phTip) {
     const labels = (views || []).map(d => d.date.slice(5));
-    tipsChart = renderMultiLineChart('chartTips', tipsChart, labels, [
-        { label: 'Tips Viewed', data: (views || []).map(d => d.count), color: 'rgba(59,130,246,.9)' },
-        { label: 'Tips Liked', data: (likes || []).map(d => d.count), color: 'rgba(239,68,68,.9)' },
-    ]);
+    const datasets = [];
+    if (phTip && phTip.viewed) {
+        datasets.push({ label: 'Viewed (PostHog)', data: (views || []).map(d => phTip.viewed[d.date] || 0), color: 'rgba(59,130,246,.9)' });
+    }
+    if (phTip && phTip.saved) {
+        datasets.push({ label: 'Saved (PostHog)', data: (views || []).map(d => phTip.saved[d.date] || 0), color: 'rgba(16,185,129,.9)' });
+    }
+    datasets.push({ label: 'Liked (DB)', data: (likes || []).map(d => d.count), color: 'rgba(239,68,68,.9)' });
+    tipsChart = renderMultiLineChart('chartTips', tipsChart, labels, datasets);
 }
 
 // ----- Users -----
