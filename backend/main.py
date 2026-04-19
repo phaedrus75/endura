@@ -3388,11 +3388,49 @@ def _appfigures_get(path: str, params: Optional[dict] = None):
             r = client.get(url, headers=headers, params=params or {})
     except httpx.HTTPError as e:
         raise HTTPException(status_code=502, detail=f"AppFigures network error: {e}")
-    if r.status_code == 401 or r.status_code == 403:
-        raise HTTPException(status_code=502, detail="AppFigures auth failed; check APPFIGURES_PAT")
     if r.status_code >= 400:
-        raise HTTPException(status_code=502, detail=f"AppFigures {r.status_code}: {r.text[:200]}")
+        body = (r.text or "").strip()[:300]
+        raise HTTPException(
+            status_code=502,
+            detail=f"AppFigures {r.status_code} on {path}: {body or '(empty body)'}",
+        )
     return r.json()
+
+
+@app.get("/admin/appfigures-debug")
+def admin_appfigures_debug(_=Depends(verify_admin)):
+    """Diagnostics — calls AppFigures and reports what's failing without
+    masking the response body. Safe to remove after rankings work."""
+    out = {
+        "pat_set": bool(os.environ.get("APPFIGURES_PAT", "").strip()),
+        "pat_prefix": (os.environ.get("APPFIGURES_PAT", "") or "")[:6],
+        "pat_length": len((os.environ.get("APPFIGURES_PAT", "") or "").strip()),
+        "appstore_id_set": bool(os.environ.get("APPFIGURES_APPSTORE_ID", "").strip()),
+        "appstore_id_value": os.environ.get("APPFIGURES_APPSTORE_ID", "").strip() or None,
+        "product_id_set": bool(os.environ.get("APPFIGURES_PRODUCT_ID", "").strip()),
+        "tests": [],
+    }
+    if not out["pat_set"]:
+        out["error"] = "APPFIGURES_PAT not set"
+        return out
+    headers = {"Authorization": f"Bearer {os.environ['APPFIGURES_PAT'].strip()}", "Accept": "application/json"}
+    test_paths = [
+        "/products/mine",
+        f"/products/apple/{os.environ.get('APPFIGURES_APPSTORE_ID', '').strip() or '6759482612'}",
+        f"/products/search/@iTunesId={os.environ.get('APPFIGURES_APPSTORE_ID', '').strip() or '6759482612'}",
+    ]
+    for path in test_paths:
+        try:
+            with httpx.Client(timeout=15.0) as c:
+                r = c.get(f"{_APPFIGURES_BASE}{path}", headers=headers)
+            out["tests"].append({
+                "path": path,
+                "status": r.status_code,
+                "body_preview": (r.text or "")[:400],
+            })
+        except Exception as e:
+            out["tests"].append({"path": path, "error": str(e)})
+    return out
 
 
 def _resolve_appfigures_product():
