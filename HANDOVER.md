@@ -102,8 +102,8 @@ endura-v-2/
 - **Animal images hosted at**: `https://www.endura.eco/animals/{name}.png`
 
 ### Admin Dashboard
-- **Tech**: Single HTML file (`admin/index.html`) with vanilla JS + Chart.js
-- **Run locally**: `cd admin && python3 -m http.server 3002`
+- **Tech**: Single HTML file (`website/public/dashboard-e9x2k/index.html`) with vanilla JS + Chart.js
+- **Deployed at**: `https://www.endura.eco/dashboard-e9x2k/` (the obscure path is the only "auth" on the page itself; the API still requires `X-Admin-Key`)
 - **Auth**: Uses `X-Admin-Key` header against backend's `ADMIN_API_KEY`
 - **Features**: Overview KPIs, Users (search + detail), Donations, Content (Animals/Tips/Shop with full CRUD), Activity Feed, PostHog Analytics
 
@@ -339,6 +339,6 @@ cd admin && python3 -m http.server 3002
 | Shop image mapping | `frontend/assets/shop/index.ts` |
 | Notification framework | `frontend/components/InAppNotification.tsx` |
 | Theme/colors | `frontend/theme/colors.ts` |
-| Admin dashboard | `admin/index.html` |
+| Admin dashboard | `website/public/dashboard-e9x2k/index.html` |
 | Website landing page | `website/src/app/page.tsx` |
 | Hosted animal images | `website/public/animals/` |

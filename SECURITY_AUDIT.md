@@ -255,11 +255,11 @@ The dashboard has an `esc()` helper function but it is not applied consistently.
 **Description:** Chart.js loaded from jsdelivr CDN without `integrity` or `crossorigin` attributes.
 **Recommendation:** Add SRI hash and `crossorigin="anonymous"`.
 
-### M8. Duplicate Admin Dashboard Files
+### M8. Duplicate Admin Dashboard Files [RESOLVED]
 
-**Files:** `admin/index.html` and `website/public/dashboard-e9x2k/index.html`
-**Description:** Two copies of the same admin SPA maintained separately. Security fixes applied to one may not reach the other.
-**Recommendation:** Consolidate to a single source of truth.
+**Files:** ~~`admin/index.html`~~ and `website/public/dashboard-e9x2k/index.html`
+**Description:** Two copies of the same admin SPA were maintained separately. Security fixes applied to one may not reach the other.
+**Resolution:** Local `admin/` folder retired (2026-04-19). Single source of truth is now `website/public/dashboard-e9x2k/index.html`.
 
 ### M9. Console.log Statements in Production
 
@@ -321,7 +321,7 @@ The dashboard has an `esc()` helper function but it is not applied consistently.
 | L10 | Profile picture URLs stored in AsyncStorage (not SecureStore) | `frontend/contexts/AuthContext.tsx` |
 | L11 | `passlib` in requirements.txt but unused (auth uses `bcrypt` directly) | `backend/requirements.txt` |
 | L12 | Recent donor names and amounts exposed in community stats | `backend/main.py` ~line 1639 |
-| L13 | Admin standalone server uses `CORS *` | `admin/serve.py` ~line 19 |
+| L13 | ~~Admin standalone server uses `CORS *`~~ [RESOLVED — `admin/serve.py` removed 2026-04-19] | — |
 | L14 | JWT dev fallback key for SQLite mode | `backend/auth.py` ~line 15 |
 | L15 | `Upload.data` as LargeBinary in DB (size DoS risk) | `backend/models.py` ~line 306 |
 

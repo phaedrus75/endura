@@ -409,6 +409,12 @@
                 <div class="kpi"><div class="kpi-icon">⏱️</div><div class="kpi-val" id="k-hours">—</div><div class="kpi-label">Study Hours</div><div class="kpi-sub" id="k-hours-sub"></div></div>
                 <div class="kpi"><div class="kpi-icon">💚</div><div class="kpi-val" id="k-donated">—</div><div class="kpi-label">Total Donated</div><div class="kpi-sub" id="k-donated-sub"></div></div>
                 <div class="kpi"><div class="kpi-icon">🐣</div><div class="kpi-val" id="k-animals">—</div><div class="kpi-label">Animals Hatched</div><div class="kpi-sub" id="k-animals-sub"></div></div>
+                <div class="kpi"><div class="kpi-icon">🤝</div><div class="kpi-val" id="k-friends">—</div><div class="kpi-label">Friendships</div><div class="kpi-sub" id="k-friends-sub"></div></div>
+                <div class="kpi"><div class="kpi-icon">👨‍👩‍👧</div><div class="kpi-val" id="k-groups">—</div><div class="kpi-label">Study Groups</div><div class="kpi-sub" id="k-groups-sub"></div></div>
+                <div class="kpi"><div class="kpi-icon">📖</div><div class="kpi-val" id="k-subjects">—</div><div class="kpi-label">Subjects Added</div><div class="kpi-sub" id="k-subjects-sub"></div></div>
+                <div class="kpi"><div class="kpi-icon">✅</div><div class="kpi-val" id="k-tasks">—</div><div class="kpi-label">Todos Created</div><div class="kpi-sub" id="k-tasks-sub"></div></div>
+                <div class="kpi"><div class="kpi-icon">💡</div><div class="kpi-val" id="k-tipviews">—</div><div class="kpi-label">Tips Viewed</div><div class="kpi-sub" id="k-tipviews-sub"></div></div>
+                <div class="kpi"><div class="kpi-icon">❤️</div><div class="kpi-val" id="k-tiplikes">—</div><div class="kpi-label">Tips Liked</div><div class="kpi-sub" id="k-tiplikes-sub"></div></div>
             </div>
             <div class="chart-row">
                 <div class="chart-card"><h3>Signups (Apr)</h3><canvas id="chartSignups"></canvas></div>
@@ -417,6 +423,13 @@
             <div class="chart-row">
                 <div class="chart-card"><h3>Timer Sessions (Apr)</h3><canvas id="chartTimerSessions"></canvas></div>
                 <div class="chart-card"><h3>Study Minutes (Apr)</h3><canvas id="chartStudy"></canvas></div>
+            </div>
+            <div class="chart-row">
+                <div class="chart-card"><h3>Social Activity (Apr)</h3><canvas id="chartSocial"></canvas><div style="font-size:11px;color:var(--text-muted);margin-top:6px;text-align:center"><span style="display:inline-block;width:10px;height:10px;background:rgba(236,72,153,.7);border-radius:2px;margin-right:3px"></span>Friendships <span style="display:inline-block;width:10px;height:10px;background:rgba(139,92,246,.7);border-radius:2px;margin-left:10px;margin-right:3px"></span>Groups Created</div></div>
+                <div class="chart-card"><h3>Study Setup (Apr)</h3><canvas id="chartStudySetup"></canvas><div style="font-size:11px;color:var(--text-muted);margin-top:6px;text-align:center"><span style="display:inline-block;width:10px;height:10px;background:rgba(245,158,11,.7);border-radius:2px;margin-right:3px"></span>Subjects Added <span style="display:inline-block;width:10px;height:10px;background:rgba(16,185,129,.7);border-radius:2px;margin-left:10px;margin-right:3px"></span>Todos Created</div></div>
+            </div>
+            <div class="chart-row">
+                <div class="chart-card" style="grid-column:1 / -1"><h3>Tip Engagement (Apr)</h3><canvas id="chartTips"></canvas><div style="font-size:11px;color:var(--text-muted);margin-top:6px;text-align:center"><span style="display:inline-block;width:10px;height:10px;background:rgba(59,130,246,.7);border-radius:2px;margin-right:3px"></span>Tips Viewed <span style="display:inline-block;width:10px;height:10px;background:rgba(239,68,68,.7);border-radius:2px;margin-left:10px;margin-right:3px"></span>Tips Liked</div></div>
             </div>
 
             <!-- User Funnel -->
@@ -581,7 +594,7 @@
                 <p style="font-size:13px;color:var(--text-muted);margin:8px 0 14px">
                     Enter your <strong>Personal API Key</strong> from
                     <a href="https://us.posthog.com/settings/user-api-keys" target="_blank" style="color:var(--forest)">PostHog Settings → Personal API Keys</a>.
-                    Create one with <em>insight:read</em>, <em>query:read</em>, and <em>person:read</em> scopes.
+                    Create one with <em>project:read</em>, <em>query:read</em>, <em>insight:read</em>, and <em>person:read</em> scopes.
                 </p>
                 <div style="display:flex;gap:10px;align-items:flex-end">
                     <div style="flex:1">
@@ -890,6 +903,9 @@ let signupsChart = null;
 let dauChart = null;
 let timerSessionsChart = null;
 let studyChart = null;
+let socialChart = null;
+let studySetupChart = null;
+let tipsChart = null;
 
 // ----- Auth -----
 document.getElementById('loginForm').addEventListener('submit', async e => {
@@ -927,6 +943,8 @@ function enterDashboard() {
     document.getElementById('shell').classList.add('active');
     document.getElementById('statusDot').className = 'status-dot ok';
     document.getElementById('statusText').textContent = 'Connected';
+    const savedPhKey = localStorage.getItem('phPersonalKey') || sessionStorage.getItem('phPersonalKey');
+    if (savedPhKey) PH_KEY = savedPhKey;
     loadOverview();
 }
 
@@ -934,6 +952,7 @@ function logout() {
     sessionStorage.removeItem('adminApiUrl');
     sessionStorage.removeItem('adminApiKey');
     sessionStorage.removeItem('phPersonalKey');
+    localStorage.removeItem('phPersonalKey');
     location.reload();
 }
 
@@ -1038,9 +1057,25 @@ async function loadOverview() {
         document.getElementById('k-animals').textContent = d.real_animals_hatched || 0;
         document.getElementById('k-animals-sub').textContent = d.archived_users ? `${d.total_animals_hatched} incl. archived` : '';
 
+        document.getElementById('k-friends').textContent = (d.total_friendships || 0).toLocaleString();
+        document.getElementById('k-friends-sub').textContent = `+${d.friendships_7d || 0} this week`;
+        document.getElementById('k-groups').textContent = (d.total_groups_created || 0).toLocaleString();
+        document.getElementById('k-groups-sub').textContent = `+${d.groups_created_7d || 0} this week`;
+        document.getElementById('k-subjects').textContent = (d.total_user_subjects || 0).toLocaleString();
+        document.getElementById('k-subjects-sub').textContent = `+${d.user_subjects_7d || 0} this week`;
+        document.getElementById('k-tasks').textContent = (d.total_tasks_created || 0).toLocaleString();
+        document.getElementById('k-tasks-sub').textContent = `+${d.tasks_created_7d || 0} this week`;
+        document.getElementById('k-tipviews').textContent = (d.total_tip_views || 0).toLocaleString();
+        document.getElementById('k-tipviews-sub').textContent = `+${d.tip_views_7d || 0} this week`;
+        document.getElementById('k-tiplikes').textContent = (d.total_tip_likes || 0).toLocaleString();
+        document.getElementById('k-tiplikes-sub').textContent = `+${d.tip_likes_7d || 0} this week`;
+
         renderSignupsChart(d.daily_signups);
         renderTimerSessionsChart(d.daily_sessions);
         renderStudyChart(d.daily_sessions);
+        renderSocialChart(d.daily_friendships, d.daily_groups_created);
+        renderStudySetupChart(d.daily_user_subjects, d.daily_tasks_created);
+        renderTipsChart(d.daily_tip_views, d.daily_tip_likes);
         if (d.funnel) renderFunnel(d.funnel);
 
         // DAU chart: DB study users + PostHog app opens
@@ -1052,8 +1087,9 @@ async function loadOverview() {
                     const proj = await phFetch('/api/projects/');
                     if (proj.results && proj.results.length > 0) phProjectId = proj.results[0].id;
                 }
-                if (phProjectId) {
-                    const phResult = await phQuery(`SELECT toDate(timestamp) as day, count(DISTINCT distinct_id) as users FROM events WHERE timestamp >= '2026-04-01' GROUP BY day ORDER BY day`);
+                if (phProjectId && dbDau.length > 0) {
+                    const startDate = dbDau[0].date;
+                    const phResult = await phQuery(`SELECT toDate(timestamp) as day, count(DISTINCT distinct_id) as users FROM events WHERE timestamp >= '${startDate}' GROUP BY day ORDER BY day`);
                     if (phResult.results) {
                         phDauData = {};
                         for (const row of phResult.results) {
@@ -1212,6 +1248,56 @@ function renderStudyChart(data) {
             }
         }
     });
+}
+
+function renderMultiLineChart(canvasId, existingChart, labels, series) {
+    const ctx = document.getElementById(canvasId).getContext('2d');
+    if (existingChart) existingChart.destroy();
+    return new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels,
+            datasets: series.map(s => ({
+                label: s.label,
+                data: s.data,
+                borderColor: s.color,
+                backgroundColor: s.color.replace(/,[\d.]+\)$/, ',.08)'),
+                fill: true, tension: .3, pointRadius: 2,
+            })),
+        },
+        options: {
+            responsive: true, maintainAspectRatio: false,
+            plugins: { legend: { display: false } },
+            scales: {
+                y: { beginAtZero: true, ticks: { stepSize: 1, precision: 0 } },
+                x: { grid: { display: false }, ticks: { maxTicksLimit: 15, font: { size: 10 } } }
+            }
+        }
+    });
+}
+
+function renderSocialChart(friends, groups) {
+    const labels = (friends || []).map(d => d.date.slice(5));
+    socialChart = renderMultiLineChart('chartSocial', socialChart, labels, [
+        { label: 'Friendships', data: (friends || []).map(d => d.count), color: 'rgba(236,72,153,.9)' },
+        { label: 'Groups Created', data: (groups || []).map(d => d.count), color: 'rgba(139,92,246,.9)' },
+    ]);
+}
+
+function renderStudySetupChart(subjects, tasks) {
+    const labels = (subjects || []).map(d => d.date.slice(5));
+    studySetupChart = renderMultiLineChart('chartStudySetup', studySetupChart, labels, [
+        { label: 'Subjects Added', data: (subjects || []).map(d => d.count), color: 'rgba(245,158,11,.9)' },
+        { label: 'Todos Created', data: (tasks || []).map(d => d.count), color: 'rgba(16,185,129,.9)' },
+    ]);
+}
+
+function renderTipsChart(views, likes) {
+    const labels = (views || []).map(d => d.date.slice(5));
+    tipsChart = renderMultiLineChart('chartTips', tipsChart, labels, [
+        { label: 'Tips Viewed', data: (views || []).map(d => d.count), color: 'rgba(59,130,246,.9)' },
+        { label: 'Tips Liked', data: (likes || []).map(d => d.count), color: 'rgba(239,68,68,.9)' },
+    ]);
 }
 
 // ----- Users -----
@@ -2127,7 +2213,7 @@ let phProjectId = null;
 let phDauChart = null;
 
 function initAnalytics() {
-    const saved = sessionStorage.getItem('phPersonalKey');
+    const saved = localStorage.getItem('phPersonalKey') || sessionStorage.getItem('phPersonalKey');
     if (saved) {
         PH_KEY = saved;
         document.getElementById('phApiKey').value = '••••••••';
@@ -2156,7 +2242,7 @@ async function connectPostHog() {
         const data = await phFetch('/api/projects/');
         if (data.results && data.results.length > 0) {
             phProjectId = data.results[0].id;
-            sessionStorage.setItem('phPersonalKey', PH_KEY);
+            localStorage.setItem('phPersonalKey', PH_KEY);
             showPhStatus('Connected to project: ' + esc(data.results[0].name), 'var(--accent)');
             loadPostHogData();
         } else {
