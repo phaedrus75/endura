@@ -1040,29 +1040,20 @@ def verify_admin(x_admin_key: str = Header(...)):
         raise HTTPException(status_code=403, detail="Invalid admin key")
 
 
-@app.post("/schools/seed")
-def seed_schools(
-    db: Session = Depends(get_db),
-    _=Depends(verify_admin),
-):
-    """Seed schools from bundled UK data + Hipo university API."""
-    existing = db.query(models.School).first()
-    if existing:
-        return {"message": "Schools already seeded", "count": db.query(models.School).count()}
-
-    import json as json_lib, os, urllib.request
+def _seed_schools_from_json(db, filepath, country_override, errors):
+    """Load schools from a bundled JSON file. Returns count of schools added."""
+    import json as json_lib
     count = 0
-    errors = []
-
-    # UK schools from bundled JSON
     try:
-        uk_path = os.path.join(os.path.dirname(__file__), "uk_schools.json")
-        with open(uk_path, "r") as f:
-            uk_data = json_lib.load(f)
+        with open(filepath, "r", encoding="utf-8") as f:
+            data = json_lib.load(f)
         batch = []
-        for s in uk_data:
+        for s in data:
             batch.append(models.School(
-                name=s["name"], city=s.get("city"), region=s.get("region"), country="UK",
+                name=s["name"],
+                city=s.get("city"),
+                region=s.get("region"),
+                country=country_override or s.get("country", ""),
             ))
             if len(batch) >= 2000:
                 db.bulk_save_objects(batch)
@@ -1074,9 +1065,36 @@ def seed_schools(
             db.commit()
             count += len(batch)
     except Exception as e:
-        errors.append(f"UK: {str(e)}")
+        errors.append(f"{os.path.basename(filepath)}: {str(e)}")
+    return count
 
-    uk_count = count
+
+@app.post("/schools/seed")
+def seed_schools(
+    db: Session = Depends(get_db),
+    _=Depends(verify_admin),
+):
+    """Seed schools from bundled UK/India/Sri Lanka data + Hipo university API."""
+    existing = db.query(models.School).first()
+    if existing:
+        return {"message": "Schools already seeded", "count": db.query(models.School).count()}
+
+    import json as json_lib, urllib.request
+    count = 0
+    errors = []
+    breakdown = {}
+
+    bundled = [
+        ("uk_schools.json", "United Kingdom"),
+        ("india_schools.json", None),
+        ("srilanka_schools.json", None),
+    ]
+    for filename, country_override in bundled:
+        filepath = os.path.join(os.path.dirname(__file__), filename)
+        if os.path.exists(filepath):
+            n = _seed_schools_from_json(db, filepath, country_override, errors)
+            breakdown[filename.replace("_schools.json", "").replace(".json", "")] = n
+            count += n
 
     # Global universities from Hipo
     try:
@@ -1102,13 +1120,45 @@ def seed_schools(
             db.bulk_save_objects(batch)
             db.commit()
             count += len(batch)
+        breakdown["hipo_universities"] = count - sum(v for k, v in breakdown.items())
     except Exception as e:
         errors.append(f"Unis: {str(e)}")
 
     return {
-        "message": f"Seeded {count} schools (UK: {uk_count}, Universities: {count - uk_count})",
+        "message": f"Seeded {count} schools",
+        "breakdown": breakdown,
         "errors": errors if errors else None,
     }
+
+
+@app.post("/schools/seed-additional")
+def seed_additional_schools(
+    db: Session = Depends(get_db),
+    _=Depends(verify_admin),
+):
+    """Add India and Sri Lanka schools if not already present. Safe to run on existing DB."""
+    import json as json_lib
+    errors = []
+    added = {}
+
+    for filename, country in [("india_schools.json", "India"), ("srilanka_schools.json", "Sri Lanka")]:
+        filepath = os.path.join(os.path.dirname(__file__), filename)
+        if not os.path.exists(filepath):
+            errors.append(f"{filename} not found")
+            continue
+
+        existing = db.query(models.School).filter(models.School.country == country).count()
+        if filename == "india_schools.json" and existing > 1000:
+            added[country] = f"skipped ({existing} already exist)"
+            continue
+        if filename == "srilanka_schools.json" and existing > 100:
+            added[country] = f"skipped ({existing} already exist)"
+            continue
+
+        n = _seed_schools_from_json(db, filepath, None, errors)
+        added[country] = n
+
+    return {"added": added, "errors": errors if errors else None}
 
 
 # ============ Task Endpoints ============
