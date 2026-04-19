@@ -3509,6 +3509,82 @@ def get_shop_items(db: Session = Depends(get_db)):
     } for i in items]
 
 
+# ── Country Data Cleanup ─────────────────────────────────────────
+
+COUNTRY_CLEANUP_MAP = {
+    "uk": "United Kingdom",
+    "UK": "United Kingdom",
+    "india": "India",
+    "egypt": "Egypt",
+    "argentina": "Argentina",
+    "armenia": "Armenia",
+    "norway": "Norway",
+    "italia": "Italy",
+    "Srilanka": "Sri Lanka",
+    "Sri lanka": "Sri Lanka",
+    "sri Lanka": "Sri Lanka",
+    "Phillipines": "Philippines",
+    "Algria": "Algeria",
+    "Aljeria": "Algeria",
+    "españa": "Spain",
+    "España": "Spain",
+    "Việt Nam": "Vietnam",
+    "Viet Nam": "Vietnam",
+    "viet nam": "Vietnam",
+    "Türkiye": "Turkey",
+    "türkiye": "Turkey",
+    "Казак": "Kazakhstan",
+    "UAE": "United Arab Emirates",
+    "Kz": "Kazakhstan",
+    "Baku": "Azerbaijan",
+    "Guayaquil": "Ecuador",
+    "Kurdistan": "Iraq",
+    "Kalimantan utara": "Indonesia",
+    "ub": "Mongolia",
+    "Korea, Republic of": "South Korea",
+    "Korea": "South Korea",
+    "\U0001f1ee\U0001f1f6": "Iraq",
+}
+
+COUNTRY_JUNK_VALUES = {"Haha", "blublublu", "cute"}
+
+
+@app.post("/admin/cleanup-countries")
+def admin_cleanup_countries(db: Session = Depends(get_db), _=Depends(verify_admin)):
+    """Normalize messy country values in the users table. Safe to run repeatedly."""
+    updated = {}
+
+    for old_val, new_val in COUNTRY_CLEANUP_MAP.items():
+        count = db.query(models.User).filter(models.User.country == old_val).update(
+            {models.User.country: new_val}, synchronize_session="fetch"
+        )
+        if count:
+            updated[f"{old_val} → {new_val}"] = count
+
+    for junk in COUNTRY_JUNK_VALUES:
+        count = db.query(models.User).filter(models.User.country == junk).update(
+            {models.User.country: None}, synchronize_session="fetch"
+        )
+        if count:
+            updated[f"{junk} → NULL"] = count
+
+    db.commit()
+
+    country_rows = (
+        db.query(models.User.country, func.count(models.User.id))
+        .filter(models.User.country.isnot(None), models.User.country != "")
+        .group_by(models.User.country)
+        .order_by(func.count(models.User.id).desc())
+        .all()
+    )
+
+    return {
+        "changes": updated,
+        "total_users_updated": sum(updated.values()),
+        "current_countries": [{"country": r[0], "users": r[1]} for r in country_rows],
+    }
+
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)

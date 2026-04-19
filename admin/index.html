@@ -378,6 +378,7 @@
                     <select id="schoolFilter" onchange="applyUserFilters()" style="padding:10px 14px;border:1px solid var(--border);border-radius:10px;font-size:14px;min-width:160px">
                         <option value="">All Schools</option>
                     </select>
+                    <button id="cleanupCountriesBtn" onclick="runCountryCleanup()" style="padding:10px 18px;background:var(--forest);color:#fff;border:none;border-radius:10px;font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap;transition:all .15s" onmouseover="this.style.opacity='0.9'" onmouseout="this.style.opacity='1'">🧹 Cleanup Countries</button>
                 </div>
                 <div style="overflow-x:auto">
                     <table>
@@ -1048,6 +1049,40 @@ function populateFilterDropdowns() {
 }
 
 function applyUserFilters() { renderUsersTable(); }
+
+async function runCountryCleanup() {
+    const btn = document.getElementById('cleanupCountriesBtn');
+    if (!confirm('Run country cleanup? This will normalize misspelled/duplicate country names in the database.')) return;
+    btn.disabled = true;
+    btn.textContent = '⏳ Running...';
+    try {
+        const res = await fetch(API_URL + '/admin/cleanup-countries', {
+            method: 'POST',
+            headers: { 'X-Admin-Key': API_KEY },
+        });
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        const data = await res.json();
+        const count = data.total_users_updated || 0;
+        const changes = data.changes || {};
+        let msg = `Done! ${count} user(s) updated.\n`;
+        if (count > 0) {
+            msg += '\nChanges:\n';
+            for (const [change, n] of Object.entries(changes)) {
+                msg += `  ${change}: ${n} user(s)\n`;
+            }
+            msg += `\nCurrent countries: ${(data.current_countries || []).length}`;
+        } else {
+            msg += 'All countries are already clean.';
+        }
+        alert(msg);
+        loadUsers();
+    } catch (e) {
+        alert('Cleanup failed: ' + e.message);
+    } finally {
+        btn.disabled = false;
+        btn.textContent = '🧹 Cleanup Countries';
+    }
+}
 
 let currentEditUserId = null;
 
