@@ -3530,6 +3530,7 @@ def _resolve_appfigures_product():
 def _appfigures_fetch_ranks(start_date: date, end_date: date) -> tuple[dict, list[str]]:
     """Fetch raw ranks from AppFigures with country auto-pruning.
     Returns (raw_response, pruned_country_codes).
+    Uses daily granularity (AppFigures end-of-day snapshots).
     """
     import re as _re
     product_id = _resolve_appfigures_product()
@@ -3540,8 +3541,7 @@ def _appfigures_fetch_ranks(start_date: date, end_date: date) -> tuple[dict, lis
         try:
             raw = _appfigures_get(
                 f"/ranks/{product_id}/daily/{start_date.isoformat()}/{end_date.isoformat()}",
-                # filter=1000 captures the full chart (AppFigures max). Without
-                # this we'd silently drop ranks #401-1000.
+                # filter=1000 captures the full chart (AppFigures max).
                 params={"countries": ";".join(countries), "filter": 1000, "tz": "utc"},
             )
             break
@@ -3558,6 +3558,68 @@ def _appfigures_fetch_ranks(start_date: date, end_date: date) -> tuple[dict, lis
     if raw is None:
         raise HTTPException(status_code=502, detail=f"Too many unsupported countries (pruned {pruned})")
     return raw, pruned
+
+
+@app.post("/admin/app-rankings/manual-insert")
+def admin_app_rankings_manual_insert(
+    rank_date: str = Query(..., description="ISO date YYYY-MM-DD"),
+    country: str = Query(..., description="ISO 3166-1 alpha-2"),
+    category_name: str = Query(..., description="e.g. Productivity"),
+    subtype: str = Query(..., description="free | paid | grossing"),
+    position: int = Query(..., ge=1, le=2000),
+    device: Optional[str] = Query("Handheld", description="Handheld | Tablet | Desktop"),
+    note: Optional[str] = Query(None, description="Free-form note (not stored, just logged)"),
+    db: Session = Depends(get_db),
+    _=Depends(verify_admin),
+):
+    """Manually upsert a single rank row when AppFigures' daily granularity
+    misses an intraday peak. Idempotent — re-running with same key updates
+    in place."""
+    try:
+        slot_date = datetime.fromisoformat(rank_date)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="rank_date must be YYYY-MM-DD")
+    country = country.upper()
+    existing = (
+        db.query(models.AppRank)
+        .filter(
+            models.AppRank.rank_date == slot_date,
+            models.AppRank.country == country,
+            models.AppRank.category_name == category_name,
+            models.AppRank.subtype == subtype,
+            models.AppRank.device == device,
+        )
+        .first()
+    )
+    if existing:
+        existing.position = position
+        existing.fetched_at = datetime.utcnow()
+        action = "updated"
+    else:
+        db.add(models.AppRank(
+            rank_date=slot_date,
+            country=country,
+            category_name=category_name,
+            subtype=subtype,
+            device=device,
+            store="apple",
+            position=position,
+            delta=None,
+            fetched_at=datetime.utcnow(),
+        ))
+        action = "inserted"
+    db.commit()
+    if note:
+        logger.info(f"Manual rank insert ({action}): {country} {category_name} {subtype} #{position} on {rank_date} — {note}")
+    return {
+        "action": action,
+        "rank_date": rank_date,
+        "country": country,
+        "category_name": category_name,
+        "subtype": subtype,
+        "device": device,
+        "position": position,
+    }
 
 
 def _sync_app_ranks(start_date: date, end_date: date, db: Session) -> dict:
