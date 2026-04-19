@@ -165,14 +165,32 @@ def _cron_run_onboarding_emails():
         _db.close()
 
 
+def _cron_sync_app_ranks():
+    """Daily — fetches yesterday + today's ranks from AppFigures and upserts."""
+    if not os.environ.get("APPFIGURES_PAT", "").strip():
+        logger.info("Cron app_ranks: APPFIGURES_PAT not set, skipping")
+        return
+    from database import SessionLocal
+    _db = SessionLocal()
+    try:
+        today = datetime.utcnow().date()
+        result = _sync_app_ranks(today - timedelta(days=2), today, _db)
+        logger.info(f"Cron app_ranks: {result}")
+    except Exception as e:
+        logger.error(f"Cron app_ranks: failed: {e}", exc_info=True)
+    finally:
+        _db.close()
+
+
 @app.on_event("startup")
 def start_scheduler():
     try:
         from apscheduler.schedulers.background import BackgroundScheduler
         scheduler = BackgroundScheduler()
         scheduler.add_job(_cron_run_onboarding_emails, "cron", hour=8, minute=0, id="onboarding_emails")
+        scheduler.add_job(_cron_sync_app_ranks, "cron", hour=4, minute=0, id="sync_app_ranks")
         scheduler.start()
-        print("✅ Scheduler started: onboarding emails daily at 08:00 UTC")
+        print("✅ Scheduler started: onboarding emails 08:00 UTC, app_ranks sync 04:00 UTC")
     except Exception as e:
         print(f"❌ Failed to start scheduler: {e}")
 
@@ -3509,38 +3527,19 @@ def _resolve_appfigures_product():
     return _appfigures_state["product_id"]
 
 
-@app.get("/admin/app-rankings")
-def admin_app_rankings(
-    refresh: bool = Query(default=False, description="Bypass the 1h cache"),
-    _=Depends(verify_admin),
-):
-    """Current App Store chart positions per country, sourced from AppFigures.
-    Cached in-process for 1h to stay polite with AppFigures rate limits.
+def _appfigures_fetch_ranks(start_date: date, end_date: date) -> tuple[dict, list[str]]:
+    """Fetch raw ranks from AppFigures with country auto-pruning.
+    Returns (raw_response, pruned_country_codes).
     """
-    cached = _appfigures_state["rankings_payload"]
-    fetched_at = _appfigures_state["rankings_fetched_at"]
-    if not refresh and cached and fetched_at:
-        age = (datetime.utcnow() - fetched_at).total_seconds()
-        if age < _APPFIGURES_CACHE_TTL_SECONDS:
-            return {**cached, "cache_age_seconds": int(age)}
-
-    product_id = _resolve_appfigures_product()
-
-    # Pull the last 7 days at daily granularity so we capture peaks even when
-    # the app has dropped off the chart in the most recent slot.
-    today = datetime.utcnow().date()
-    start = today - timedelta(days=7)
-
-    # AppFigures rejects the whole request if any country isn't supported for
-    # ranks. Auto-prune offenders by parsing the 400 error and retrying.
     import re as _re
+    product_id = _resolve_appfigures_product()
     countries = _APPFIGURES_COUNTRIES.split(";")
     pruned: list[str] = []
     raw = None
-    for _ in range(20):
+    for _ in range(25):
         try:
             raw = _appfigures_get(
-                f"/ranks/{product_id}/daily/{start.isoformat()}/{today.isoformat()}",
+                f"/ranks/{product_id}/daily/{start_date.isoformat()}/{end_date.isoformat()}",
                 params={"countries": ";".join(countries), "filter": 400, "tz": "utc"},
             )
             break
@@ -3556,73 +3555,224 @@ def admin_app_rankings(
                 raise
     if raw is None:
         raise HTTPException(status_code=502, detail=f"Too many unsupported countries (pruned {pruned})")
+    return raw, pruned
 
-    dates = raw.get("dates", []) or []
-    rows = []
+
+def _sync_app_ranks(start_date: date, end_date: date, db: Session) -> dict:
+    """Fetch ranks from AppFigures for a date range and upsert into app_ranks.
+    Idempotent: re-running for the same date range overwrites existing rows
+    via the (rank_date, country, category_name, subtype, device) unique slot.
+    """
+    raw, pruned = _appfigures_fetch_ranks(start_date, end_date)
+    dates_iso = raw.get("dates", []) or []
+    parsed_dates: list[Optional[datetime]] = []
+    for d in dates_iso:
+        try:
+            parsed_dates.append(datetime.fromisoformat(d.replace("Z", "")))
+        except Exception:
+            parsed_dates.append(None)
+
+    inserted = updated = skipped = 0
     for series in raw.get("data", []) or []:
+        country = series.get("country")
+        cat = series.get("category") or {}
+        category_name = cat.get("name")
+        subtype = cat.get("subtype")
+        device = cat.get("device")
+        store = cat.get("store")
+        if not (country and category_name and subtype):
+            continue
         positions = series.get("positions") or []
         deltas = series.get("deltas") or []
-        latest_pos = latest_delta = latest_date = None
-        for i in range(len(positions) - 1, -1, -1):
-            if positions[i] is not None:
-                latest_pos = positions[i]
-                latest_delta = deltas[i] if i < len(deltas) else None
-                latest_date = dates[i] if i < len(dates) else None
-                break
-        # Peak position in the window (lowest rank number = best)
-        peak_pos = peak_date = None
-        for i, p in enumerate(positions):
-            if p is None:
+        for i, pos in enumerate(positions):
+            if pos is None:
+                skipped += 1
                 continue
-            if peak_pos is None or p < peak_pos:
-                peak_pos = p
-                peak_date = dates[i] if i < len(dates) else None
-        if peak_pos is None:
-            continue
-        cat = series.get("category") or {}
-        rows.append({
-            "country": series.get("country"),
-            "category_name": cat.get("name"),
-            "subtype": cat.get("subtype"),
-            "device": cat.get("device"),
-            "store": cat.get("store"),
-            # `position` = peak in window (best moment, what users care about)
-            "position": peak_pos,
-            "peak_date": peak_date,
-            "current_position": latest_pos,
-            "current_date": latest_date,
-            "delta": latest_delta,
-            "as_of": latest_date or peak_date,
+            slot_date = parsed_dates[i] if i < len(parsed_dates) else None
+            if slot_date is None:
+                skipped += 1
+                continue
+            delta = deltas[i] if i < len(deltas) else None
+            existing = (
+                db.query(models.AppRank)
+                .filter(
+                    models.AppRank.rank_date == slot_date,
+                    models.AppRank.country == country,
+                    models.AppRank.category_name == category_name,
+                    models.AppRank.subtype == subtype,
+                    models.AppRank.device == device,
+                )
+                .first()
+            )
+            if existing:
+                if existing.position != pos or existing.delta != delta:
+                    existing.position = pos
+                    existing.delta = delta
+                    existing.fetched_at = datetime.utcnow()
+                    updated += 1
+                else:
+                    skipped += 1
+            else:
+                db.add(models.AppRank(
+                    rank_date=slot_date,
+                    country=country,
+                    category_name=category_name,
+                    subtype=subtype,
+                    device=device,
+                    store=store,
+                    position=pos,
+                    delta=delta,
+                    fetched_at=datetime.utcnow(),
+                ))
+                inserted += 1
+    db.commit()
+    return {
+        "inserted": inserted,
+        "updated": updated,
+        "skipped": skipped,
+        "pruned_countries": pruned,
+        "window": {"start": start_date.isoformat(), "end": end_date.isoformat()},
+    }
+
+
+def _aggregate_ranks_from_db(rows: list[models.AppRank], window_days: int) -> dict:
+    """Group rows by (country, category, subtype, device) and compute peak +
+    current per slot. Returns the same shape as the old live endpoint."""
+    by_slot: dict[tuple, list[models.AppRank]] = {}
+    for r in rows:
+        key = (r.country, r.category_name, r.subtype, r.device)
+        by_slot.setdefault(key, []).append(r)
+
+    out_rows = []
+    for key, slot_rows in by_slot.items():
+        slot_rows.sort(key=lambda x: x.rank_date)
+        peak = min(slot_rows, key=lambda x: x.position)
+        latest = slot_rows[-1]
+        out_rows.append({
+            "country": key[0],
+            "category_name": key[1],
+            "subtype": key[2],
+            "device": key[3],
+            "store": latest.store,
+            "position": peak.position,
+            "peak_date": peak.rank_date.isoformat() if peak.rank_date else None,
+            "current_position": latest.position,
+            "current_date": latest.rank_date.isoformat() if latest.rank_date else None,
+            "delta": latest.delta,
+            "as_of": (latest.rank_date or peak.rank_date).isoformat() if (latest.rank_date or peak.rank_date) else None,
+            "samples": len(slot_rows),
         })
-
-    rows.sort(key=lambda r: r["position"])
-
-    countries_visible = sorted({r["country"] for r in rows if r.get("country")})
-    best = rows[0] if rows else None
-
-    payload = {
-        "product_id": product_id,
-        "product_name": _appfigures_state.get("product_name"),
-        "product_icon": _appfigures_state.get("product_icon"),
-        "rankings": rows,
+    out_rows.sort(key=lambda r: r["position"])
+    countries_visible = sorted({r["country"] for r in out_rows})
+    best = out_rows[0] if out_rows else None
+    return {
+        "rankings": out_rows,
         "country_count": len(countries_visible),
-        "rank_count": len(rows),
+        "rank_count": len(out_rows),
         "best_rank": (
             {
                 "country": best["country"],
                 "category_name": best["category_name"],
                 "subtype": best["subtype"],
                 "position": best["position"],
+                "peak_date": best.get("peak_date"),
             } if best else None
         ),
-        "fetched_at": datetime.utcnow().isoformat(),
-        "data_window": {"start": start.isoformat(), "end": today.isoformat()},
-        "pruned_countries": pruned,
-        "cache_age_seconds": 0,
+        "window_days": window_days,
     }
-    _appfigures_state["rankings_payload"] = payload
-    _appfigures_state["rankings_fetched_at"] = datetime.utcnow()
+
+
+@app.get("/admin/app-rankings")
+def admin_app_rankings(
+    window_days: int = Query(default=7, ge=1, le=365, description="Lookback window in days"),
+    sync: bool = Query(default=False, description="Sync today's data from AppFigures before reading"),
+    db: Session = Depends(get_db),
+    _=Depends(verify_admin),
+):
+    """App Store chart positions, served from app_ranks table.
+    Daily cron syncs yesterday's data at 04:00 UTC. Pass sync=true to fetch
+    today's snapshot on demand (rate-limited to once every 5 minutes)."""
+    sync_result = None
+    if sync:
+        # Light rate limit: don't allow on-demand sync more than every 5 min
+        now = datetime.utcnow()
+        last = _appfigures_state.get("last_on_demand_sync")
+        if last and (now - last).total_seconds() < 300:
+            sync_result = {"skipped": "rate-limited", "last_sync_seconds_ago": int((now - last).total_seconds())}
+        else:
+            today = datetime.utcnow().date()
+            sync_result = _sync_app_ranks(today - timedelta(days=1), today, db)
+            _appfigures_state["last_on_demand_sync"] = now
+
+    cutoff = datetime.utcnow() - timedelta(days=window_days)
+    rows = db.query(models.AppRank).filter(models.AppRank.rank_date >= cutoff).all()
+    payload = _aggregate_ranks_from_db(rows, window_days)
+
+    # Find the most recent fetched_at across the rows for "data freshness"
+    latest_fetch = max((r.fetched_at for r in rows), default=None)
+    payload.update({
+        "product_id": _appfigures_state.get("product_id"),
+        "product_name": _appfigures_state.get("product_name"),
+        "product_icon": _appfigures_state.get("product_icon"),
+        "data_source": "database",
+        "last_synced_at": latest_fetch.isoformat() if latest_fetch else None,
+        "fetched_at": datetime.utcnow().isoformat(),
+        "sync_result": sync_result,
+    })
     return payload
+
+
+@app.get("/admin/app-rankings/timeseries")
+def admin_app_rankings_timeseries(
+    country: str = Query(..., description="ISO 3166-1 alpha-2 (e.g. US, GB)"),
+    category: str = Query(..., description="Category name as stored, e.g. 'Education'"),
+    subtype: str = Query(..., description="free | paid | grossing"),
+    device: Optional[str] = Query(None, description="iphone | ipad | universal"),
+    days: int = Query(default=30, ge=1, le=365),
+    db: Session = Depends(get_db),
+    _=Depends(verify_admin),
+):
+    """Daily rank trajectory for a single (country × category × subtype × device) slot.
+    Used by the dashboard's per-row trajectory chart.
+    """
+    cutoff = datetime.utcnow() - timedelta(days=days)
+    q = db.query(models.AppRank).filter(
+        models.AppRank.rank_date >= cutoff,
+        models.AppRank.country == country.upper(),
+        models.AppRank.category_name == category,
+        models.AppRank.subtype == subtype,
+    )
+    if device:
+        q = q.filter(models.AppRank.device == device)
+    points = q.order_by(models.AppRank.rank_date.asc()).all()
+    return {
+        "country": country.upper(),
+        "category_name": category,
+        "subtype": subtype,
+        "device": device,
+        "days": days,
+        "points": [
+            {
+                "date": p.rank_date.isoformat(),
+                "position": p.position,
+                "delta": p.delta,
+            }
+            for p in points
+        ],
+    }
+
+
+@app.post("/admin/app-rankings/sync")
+def admin_app_rankings_sync(
+    days: int = Query(default=2, ge=1, le=90, description="How many days back to sync"),
+    db: Session = Depends(get_db),
+    _=Depends(verify_admin),
+):
+    """Manually trigger a sync from AppFigures into app_ranks.
+    Use days=90 for a one-shot backfill if the script approach isn't convenient.
+    """
+    today = datetime.utcnow().date()
+    return _sync_app_ranks(today - timedelta(days=days), today, db)
 
 
 @app.get("/admin/activity")

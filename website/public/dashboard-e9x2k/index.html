@@ -656,33 +656,40 @@
         <div class="page" id="page-rankings">
             <h1 class="page-title">App Store Rankings</h1>
             <p style="font-size:13px;color:var(--text-muted);margin:0 0 16px">
-                Live App Store chart positions per country, sourced from AppFigures.
-                Shows <b>peak rank in the last 7 days</b> alongside current rank.
-                Cached for 1 hour. Lower number = better.
+                App Store chart positions per country, stored in our DB and synced daily from AppFigures at 04:00 UTC.
+                Click any row to see its rank trajectory over time.
+                Shows <b>peak rank</b> in the chosen window alongside current rank. Lower number = better.
             </p>
             <div class="kpi-grid" style="margin-bottom:20px">
-                <div class="kpi"><div class="kpi-icon">🥇</div><div class="kpi-val" id="r-best">—</div><div class="kpi-label">Peak Rank (7d)</div><div class="kpi-sub" id="r-best-sub"></div></div>
-                <div class="kpi"><div class="kpi-icon">🌍</div><div class="kpi-val" id="r-countries">—</div><div class="kpi-label">Countries Charted (7d)</div></div>
+                <div class="kpi"><div class="kpi-icon">🥇</div><div class="kpi-val" id="r-best">—</div><div class="kpi-label" id="r-best-label">Peak Rank</div><div class="kpi-sub" id="r-best-sub"></div></div>
+                <div class="kpi"><div class="kpi-icon">🌍</div><div class="kpi-val" id="r-countries">—</div><div class="kpi-label">Countries Charted</div></div>
                 <div class="kpi"><div class="kpi-icon">📊</div><div class="kpi-val" id="r-charts">—</div><div class="kpi-label">Chart Positions</div></div>
-                <div class="kpi"><div class="kpi-icon">🕐</div><div class="kpi-val" id="r-asof" style="font-size:18px">—</div><div class="kpi-label">Last Refreshed</div><div class="kpi-sub" id="r-asof-sub"></div></div>
+                <div class="kpi"><div class="kpi-icon">🕐</div><div class="kpi-val" id="r-asof" style="font-size:18px">—</div><div class="kpi-label">Last Synced</div><div class="kpi-sub" id="r-asof-sub"></div></div>
             </div>
             <div class="table-card">
                 <div class="table-toolbar" style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:12px">
                     <input type="text" id="rankSearch" placeholder="Filter by country or category..." style="flex:1;min-width:220px">
-                    <select id="rankSubtype" style="padding:10px 14px;border:1px solid var(--border);border-radius:10px;font-size:14px;min-width:160px">
+                    <select id="rankWindow" style="padding:10px 14px;border:1px solid var(--border);border-radius:10px;font-size:14px;min-width:140px">
+                        <option value="7" selected>Last 7 days</option>
+                        <option value="14">Last 14 days</option>
+                        <option value="30">Last 30 days</option>
+                        <option value="90">Last 90 days</option>
+                        <option value="365">All time (1y)</option>
+                    </select>
+                    <select id="rankSubtype" style="padding:10px 14px;border:1px solid var(--border);border-radius:10px;font-size:14px;min-width:140px">
                         <option value="all" selected>All charts</option>
                         <option value="free">Free only</option>
                         <option value="paid">Paid only</option>
                         <option value="grossing">Grossing only</option>
                     </select>
-                    <select id="rankSort" style="padding:10px 14px;border:1px solid var(--border);border-radius:10px;font-size:14px;min-width:200px">
+                    <select id="rankSort" style="padding:10px 14px;border:1px solid var(--border);border-radius:10px;font-size:14px;min-width:180px">
                         <option value="position" selected>Sort: best rank first</option>
                         <option value="worst">Sort: worst rank first</option>
                         <option value="delta_up">Sort: biggest gainers</option>
                         <option value="delta_down">Sort: biggest losers</option>
                         <option value="country">Sort: country (A→Z)</option>
                     </select>
-                    <button onclick="loadRankings(true)" style="padding:10px 16px;background:var(--card);border:1px solid var(--border);border-radius:10px;font-size:13px;cursor:pointer">↻ Refresh</button>
+                    <button onclick="loadRankings(true)" style="padding:10px 16px;background:var(--card);border:1px solid var(--border);border-radius:10px;font-size:13px;cursor:pointer">↻ Sync now</button>
                 </div>
                 <div id="rankingsStatus" style="font-size:12px;color:var(--text-muted);margin-bottom:8px"></div>
                 <div style="overflow-x:auto">
@@ -692,13 +699,36 @@
                             <th>Chart</th>
                             <th>Type</th>
                             <th>Device</th>
-                            <th style="text-align:right">Peak (7d)</th>
+                            <th style="text-align:right" id="rankPeakHeader">Peak</th>
                             <th style="text-align:right">Current</th>
                             <th>Δ</th>
                             <th>As Of</th>
                         </tr></thead>
                         <tbody id="rankingsBody"></tbody>
                     </table>
+                </div>
+            </div>
+
+            <!-- Trajectory chart modal -->
+            <div id="rankTrajectoryOverlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.45);z-index:1000;align-items:center;justify-content:center" onclick="if(event.target===this)closeTrajectory()">
+                <div style="background:white;border-radius:16px;padding:24px;max-width:760px;width:92%;max-height:90vh;overflow:auto;box-shadow:0 20px 60px rgba(0,0,0,0.3)">
+                    <div style="display:flex;justify-content:space-between;align-items:start;margin-bottom:16px">
+                        <div>
+                            <h2 id="trajectoryTitle" style="margin:0 0 4px;font-size:20px">Rank Trajectory</h2>
+                            <div id="trajectorySubtitle" style="font-size:13px;color:var(--text-muted)"></div>
+                        </div>
+                        <button onclick="closeTrajectory()" style="background:none;border:none;font-size:24px;cursor:pointer;color:var(--text-muted)">×</button>
+                    </div>
+                    <div style="display:flex;gap:12px;margin-bottom:16px">
+                        <select id="trajectoryDays" onchange="loadTrajectory()" style="padding:8px 12px;border:1px solid var(--border);border-radius:8px;font-size:13px">
+                            <option value="14">Last 14 days</option>
+                            <option value="30" selected>Last 30 days</option>
+                            <option value="90">Last 90 days</option>
+                            <option value="365">All time</option>
+                        </select>
+                        <div id="trajectoryStats" style="font-size:12px;color:var(--text-muted);align-self:center"></div>
+                    </div>
+                    <div style="position:relative;height:340px"><canvas id="trajectoryChart"></canvas></div>
                 </div>
             </div>
         </div>
@@ -2502,39 +2532,59 @@ function flagFor(code) {
     return String.fromCodePoint(...[...cc].map(c => 0x1F1E6 + c.charCodeAt(0) - 65));
 }
 
-async function loadRankings(forceRefresh = false) {
+async function loadRankings(triggerSync = false) {
     const status = document.getElementById('rankingsStatus');
     const body = document.getElementById('rankingsBody');
-    status.textContent = forceRefresh ? 'Refreshing from AppFigures…' : 'Loading…';
-    body.innerHTML = '<tr><td colspan="7" class="empty">Loading…</td></tr>';
+    const days = parseInt(document.getElementById('rankWindow')?.value || '7', 10);
+    status.textContent = triggerSync ? 'Syncing from AppFigures…' : 'Loading from database…';
+    body.innerHTML = '<tr><td colspan="8" class="empty">Loading…</td></tr>';
+
+    document.getElementById('r-best-label').textContent = `Peak Rank (${days}d)`;
+    document.getElementById('rankPeakHeader').textContent = `Peak (${days}d)`;
+
     try {
-        const url = forceRefresh ? '/admin/app-rankings?refresh=true' : '/admin/app-rankings';
-        const d = await adminFetch(url);
+        const params = new URLSearchParams({ window_days: String(days) });
+        if (triggerSync) params.set('sync', 'true');
+        const d = await adminFetch('/admin/app-rankings?' + params.toString());
         rankingsData = d.rankings || [];
 
         if (d.best_rank) {
             const b = d.best_rank;
             document.getElementById('r-best').textContent = '#' + b.position;
-            document.getElementById('r-best-sub').textContent = `${flagFor(b.country)} ${COUNTRY_NAMES[b.country] || b.country} · ${b.category_name || ''} ${b.subtype || ''}`.trim();
+            const peakDate = b.peak_date ? new Date(b.peak_date).toLocaleDateString(undefined,{month:'short',day:'numeric'}) : '';
+            document.getElementById('r-best-sub').textContent = `${flagFor(b.country)} ${COUNTRY_NAMES[b.country] || b.country} · ${b.category_name || ''} ${b.subtype || ''}`.trim() + (peakDate ? ` · ${peakDate}` : '');
         } else {
             document.getElementById('r-best').textContent = '—';
-            document.getElementById('r-best-sub').textContent = 'Not currently charting anywhere';
+            document.getElementById('r-best-sub').textContent = 'No data in this window';
         }
         document.getElementById('r-countries').textContent = (d.country_count || 0).toLocaleString();
         document.getElementById('r-charts').textContent = (d.rank_count || 0).toLocaleString();
 
-        const fetched = d.fetched_at ? new Date(d.fetched_at) : null;
-        document.getElementById('r-asof').textContent = fetched ? fetched.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '—';
-        const cacheMin = Math.floor((d.cache_age_seconds || 0) / 60);
-        document.getElementById('r-asof-sub').textContent = cacheMin > 0 ? `cached ${cacheMin}m ago` : 'fresh';
+        const synced = d.last_synced_at ? new Date(d.last_synced_at) : null;
+        if (synced) {
+            const ageMin = Math.floor((Date.now() - synced.getTime()) / 60000);
+            document.getElementById('r-asof').textContent = synced.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+            document.getElementById('r-asof-sub').textContent = ageMin < 60 ? `${ageMin}m ago` : `${Math.floor(ageMin/60)}h ago`;
+        } else {
+            document.getElementById('r-asof').textContent = '—';
+            document.getElementById('r-asof-sub').textContent = 'never synced';
+        }
 
-        status.textContent = `${rankingsData.length} chart positions across ${d.country_count} countries · cache TTL 1h`;
+        let statusText = `${rankingsData.length} chart positions across ${d.country_count} countries · serving from DB`;
+        if (d.sync_result) {
+            if (d.sync_result.skipped === 'rate-limited') {
+                statusText += ` · sync rate-limited (last ${d.sync_result.last_sync_seconds_ago}s ago)`;
+            } else {
+                statusText += ` · synced ${d.sync_result.inserted}+${d.sync_result.updated} rows`;
+            }
+        }
+        status.textContent = statusText;
         renderRankingsTable();
     } catch (e) {
         console.error('Rankings load failed', e);
-        const detail = (e && e.message) || 'Check APPFIGURES_PAT env var on backend';
+        const detail = (e && e.message) || 'Unknown error';
         status.textContent = '';
-        body.innerHTML = `<tr><td colspan="7" class="empty" style="color:#dc2626">Failed to load: ${esc(detail)}</td></tr>`;
+        body.innerHTML = `<tr><td colspan="8" class="empty" style="color:#dc2626">Failed to load: ${esc(detail)}</td></tr>`;
         document.getElementById('r-best').textContent = '—';
         document.getElementById('r-best-sub').textContent = '';
         document.getElementById('r-countries').textContent = '—';
@@ -2575,7 +2625,7 @@ function renderRankingsTable() {
         return;
     }
 
-    body.innerHTML = rows.map(r => {
+    body.innerHTML = rows.map((r, idx) => {
         const cname = COUNTRY_NAMES[r.country] || r.country || '?';
         let deltaCell = '<span style="color:var(--text-muted)">—</span>';
         if (r.delta != null && r.delta !== 0) {
@@ -2603,7 +2653,7 @@ function renderRankingsTable() {
             currentCell = '<span style="color:#dc2626;font-size:12px">off chart</span>';
         }
         return `
-            <tr>
+            <tr style="cursor:pointer" onclick="openTrajectory(${idx})" title="Click for rank trajectory chart">
                 <td><span style="font-size:18px;margin-right:6px">${flagFor(r.country)}</span>${esc(cname)} <span style="color:var(--text-muted);font-size:11px">(${esc(r.country)})</span></td>
                 <td>${esc(r.category_name || '—')}</td>
                 <td>${subtypeBadge}</td>
@@ -2615,6 +2665,99 @@ function renderRankingsTable() {
             </tr>
         `;
     }).join('');
+    // Cache the visible-and-sorted rows so click handlers can index into them
+    window._visibleRankings = rows;
+}
+
+// ----- Rank trajectory modal -----
+let _trajectoryChart = null;
+let _trajectoryContext = null;
+
+function openTrajectory(idx) {
+    const r = (window._visibleRankings || [])[idx];
+    if (!r) return;
+    _trajectoryContext = r;
+    const cname = COUNTRY_NAMES[r.country] || r.country;
+    document.getElementById('trajectoryTitle').textContent = `${flagFor(r.country)} ${cname} · ${r.category_name || ''}`.trim();
+    document.getElementById('trajectorySubtitle').textContent = `${(r.subtype || '').toUpperCase()} · ${r.device || 'universal'}`;
+    document.getElementById('rankTrajectoryOverlay').style.display = 'flex';
+    loadTrajectory();
+}
+
+function closeTrajectory() {
+    document.getElementById('rankTrajectoryOverlay').style.display = 'none';
+    if (_trajectoryChart) { _trajectoryChart.destroy(); _trajectoryChart = null; }
+    _trajectoryContext = null;
+}
+
+async function loadTrajectory() {
+    if (!_trajectoryContext) return;
+    const r = _trajectoryContext;
+    const days = parseInt(document.getElementById('trajectoryDays').value, 10);
+    const stats = document.getElementById('trajectoryStats');
+    stats.textContent = 'Loading…';
+    try {
+        const params = new URLSearchParams({
+            country: r.country, category: r.category_name, subtype: r.subtype, days: String(days),
+        });
+        if (r.device) params.set('device', r.device);
+        const d = await adminFetch('/admin/app-rankings/timeseries?' + params.toString());
+        const points = d.points || [];
+        if (!points.length) {
+            stats.textContent = 'No data points in this window';
+            if (_trajectoryChart) { _trajectoryChart.destroy(); _trajectoryChart = null; }
+            return;
+        }
+        const positions = points.map(p => p.position);
+        const peak = Math.min(...positions);
+        const peakIdx = positions.indexOf(peak);
+        const peakDate = new Date(points[peakIdx].date).toLocaleDateString(undefined, {month:'short', day:'numeric'});
+        const current = positions[positions.length - 1];
+        stats.textContent = `${points.length} data points · peak #${peak} on ${peakDate} · current #${current}`;
+
+        const ctx = document.getElementById('trajectoryChart').getContext('2d');
+        if (_trajectoryChart) _trajectoryChart.destroy();
+        _trajectoryChart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: points.map(p => new Date(p.date).toLocaleDateString(undefined, {month:'short', day:'numeric'})),
+                datasets: [{
+                    label: 'Rank',
+                    data: positions,
+                    borderColor: '#0f766e',
+                    backgroundColor: 'rgba(15,118,110,0.12)',
+                    borderWidth: 2,
+                    fill: true,
+                    tension: 0.25,
+                    pointRadius: points.length < 60 ? 3 : 0,
+                    pointHoverRadius: 5,
+                }],
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    y: {
+                        reverse: true,
+                        beginAtZero: false,
+                        title: { display: true, text: 'Rank (lower = better)' },
+                        ticks: { callback: v => '#' + v },
+                    },
+                    x: { ticks: { maxTicksLimit: 12 } },
+                },
+                plugins: {
+                    legend: { display: false },
+                    tooltip: {
+                        callbacks: {
+                            label: ctx => `Rank #${ctx.parsed.y}`,
+                        },
+                    },
+                },
+            },
+        });
+    } catch (e) {
+        stats.textContent = `Error: ${e.message || e}`;
+    }
 }
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -2626,8 +2769,14 @@ document.addEventListener('DOMContentLoaded', () => {
                 el.addEventListener(id === 'rankSearch' ? 'input' : 'change', renderRankingsTable);
             }
         });
+        const winSel = document.getElementById('rankWindow');
+        if (winSel && !winSel._wired) {
+            winSel._wired = true;
+            winSel.addEventListener('change', () => loadRankings(false));
+        }
     };
     wireRankControls();
+    document.addEventListener('keydown', e => { if (e.key === 'Escape') closeTrajectory(); });
 });
 
 // ----- Helpers -----

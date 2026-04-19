@@ -669,3 +669,27 @@ class School(Base):
     city = Column(String, nullable=True)
     region = Column(String, nullable=True)
     country = Column(String, nullable=False, index=True)
+
+
+class AppRank(Base):
+    """Daily snapshot of App Store chart positions, sourced from AppFigures.
+    One row per (date, country, category, subtype, device) tuple.
+    """
+    __tablename__ = "app_ranks"
+    __table_args__ = (
+        UniqueConstraint(
+            "rank_date", "country", "category_name", "subtype", "device",
+            name="uq_app_ranks_slot",
+        ),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    rank_date = Column(DateTime, nullable=False, index=True)  # midnight UTC of the day
+    country = Column(String(2), nullable=False, index=True)
+    category_name = Column(String(120), nullable=False)
+    subtype = Column(String(20), nullable=False)              # free | paid | grossing
+    device = Column(String(20), nullable=True)                # iphone | ipad | universal
+    store = Column(String(40), nullable=True)
+    position = Column(Integer, nullable=False)
+    delta = Column(Integer, nullable=True)
+    fetched_at = Column(DateTime, default=datetime.utcnow, nullable=False)
