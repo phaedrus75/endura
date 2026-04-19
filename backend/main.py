@@ -3530,10 +3530,32 @@ def admin_app_rankings(
     # filled slot per (country, category) pair even if today hasn't published yet.
     today = datetime.utcnow().date()
     start = today - timedelta(days=3)
-    raw = _appfigures_get(
-        f"/ranks/{product_id}/daily/{start.isoformat()}/{today.isoformat()}",
-        params={"countries": _APPFIGURES_COUNTRIES, "filter": 400, "tz": "utc"},
-    )
+
+    # AppFigures rejects the whole request if any country isn't supported for
+    # ranks. Auto-prune offenders by parsing the 400 error and retrying.
+    import re as _re
+    countries = _APPFIGURES_COUNTRIES.split(";")
+    pruned: list[str] = []
+    raw = None
+    for _ in range(20):
+        try:
+            raw = _appfigures_get(
+                f"/ranks/{product_id}/daily/{start.isoformat()}/{today.isoformat()}",
+                params={"countries": ";".join(countries), "filter": 400, "tz": "utc"},
+            )
+            break
+        except HTTPException as e:
+            m = _re.search(r"country (\w+) is not available", str(e.detail))
+            if not m:
+                raise
+            bad = m.group(1).upper()
+            if bad in countries:
+                countries.remove(bad)
+                pruned.append(bad)
+            else:
+                raise
+    if raw is None:
+        raise HTTPException(status_code=502, detail=f"Too many unsupported countries (pruned {pruned})")
 
     dates = raw.get("dates", []) or []
     rows = []
@@ -3583,6 +3605,7 @@ def admin_app_rankings(
         ),
         "fetched_at": datetime.utcnow().isoformat(),
         "data_window": {"start": start.isoformat(), "end": today.isoformat()},
+        "pruned_countries": pruned,
         "cache_age_seconds": 0,
     }
     _appfigures_state["rankings_payload"] = payload
