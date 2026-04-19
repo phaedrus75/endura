@@ -3092,18 +3092,44 @@ def admin_users(
     q = q.order_by(sort_col.desc() if order == "desc" else sort_col.asc())
     total = q.count()
     users = q.offset(offset).limit(limit).all()
+    user_ids = [u.id for u in users]
+
+    # Bulk-aggregate per-user counts to avoid N+1 queries
+    animals_map: dict[int, int] = {}
+    donated_map: dict[int, float] = {}
+    friends_map: dict[int, int] = {}
+    groups_map: dict[int, int] = {}
+    if user_ids:
+        for uid, cnt in db.query(
+            models.UserAnimal.user_id, func.count(models.UserAnimal.id)
+        ).filter(models.UserAnimal.user_id.in_(user_ids)).group_by(models.UserAnimal.user_id).all():
+            animals_map[uid] = cnt
+        for uid, total_donated in db.query(
+            models.Donation.user_id, func.coalesce(func.sum(models.Donation.amount), 0)
+        ).filter(models.Donation.user_id.in_(user_ids)).group_by(models.Donation.user_id).all():
+            donated_map[uid] = float(total_donated or 0)
+        # Friend count: accepted friendships where this user is on either side
+        accepted = models.Friendship.status == "accepted"
+        for uid, cnt in db.query(
+            models.Friendship.user_id, func.count(models.Friendship.id)
+        ).filter(accepted, models.Friendship.user_id.in_(user_ids)).group_by(models.Friendship.user_id).all():
+            friends_map[uid] = friends_map.get(uid, 0) + cnt
+        for uid, cnt in db.query(
+            models.Friendship.friend_id, func.count(models.Friendship.id)
+        ).filter(accepted, models.Friendship.friend_id.in_(user_ids)).group_by(models.Friendship.friend_id).all():
+            friends_map[uid] = friends_map.get(uid, 0) + cnt
+        # Study group count: number of groups the user is a member of
+        for uid, cnt in db.query(
+            models.GroupMember.user_id, func.count(models.GroupMember.id)
+        ).filter(models.GroupMember.user_id.in_(user_ids)).group_by(models.GroupMember.user_id).all():
+            groups_map[uid] = cnt
 
     result = []
     for u in users:
-        animal_count = db.query(func.count(models.UserAnimal.id)).filter(
-            models.UserAnimal.user_id == u.id
-        ).scalar() or 0
-        donated = db.query(func.coalesce(func.sum(models.Donation.amount), 0)).filter(
-            models.Donation.user_id == u.id
-        ).scalar()
         result.append({
             "id": u.id,
             "email": u.email,
+            "email_verified": bool(getattr(u, "email_verified", False)),
             "username": u.username,
             "school": u.school,
             "city": u.city,
@@ -3114,8 +3140,10 @@ def admin_users(
             "longest_streak": u.longest_streak or 0,
             "current_coins": u.current_coins or 0,
             "total_coins": u.total_coins or 0,
-            "animals_hatched": animal_count,
-            "total_donated": float(donated),
+            "animals_hatched": animals_map.get(u.id, 0),
+            "friend_count": friends_map.get(u.id, 0),
+            "group_count": groups_map.get(u.id, 0),
+            "total_donated": donated_map.get(u.id, 0.0),
             "created_at": u.created_at.isoformat() if u.created_at else None,
             "last_study_date": u.last_study_date.isoformat() if u.last_study_date else None,
             "is_archived": getattr(u, "is_archived", False) or False,
