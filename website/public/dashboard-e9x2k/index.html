@@ -411,7 +411,7 @@
             </div>
             <div class="chart-row">
                 <div class="chart-card"><h3>Signups (Apr)</h3><canvas id="chartSignups"></canvas></div>
-                <div class="chart-card"><h3>Daily Active Users (Apr)</h3><canvas id="chartDAU"></canvas></div>
+                <div class="chart-card"><h3>Daily Active Users (Apr)</h3><canvas id="chartDAU"></canvas><div style="font-size:11px;color:var(--text-muted);margin-top:6px;text-align:center"><span style="display:inline-block;width:10px;height:10px;background:rgba(59,130,246,.7);border-radius:2px;margin-right:3px"></span>App Opens (PostHog) <span style="display:inline-block;width:10px;height:10px;background:rgba(74,124,89,.7);border-radius:2px;margin-left:10px;margin-right:3px"></span>Study Users (DB)</div></div>
             </div>
             <div class="chart-row">
                 <div class="chart-card"><h3>Timer Sessions (Apr)</h3><canvas id="chartTimerSessions"></canvas></div>
@@ -1029,10 +1029,31 @@ async function loadOverview() {
         document.getElementById('k-animals-sub').textContent = d.archived_users ? `${d.total_animals_hatched} incl. archived` : '';
 
         renderSignupsChart(d.daily_signups);
-        renderDAUChart(d.daily_active || []);
         renderTimerSessionsChart(d.daily_sessions);
         renderStudyChart(d.daily_sessions);
         if (d.funnel) renderFunnel(d.funnel);
+
+        // DAU chart: DB study users + PostHog app opens
+        const dbDau = d.daily_active || [];
+        let phDauData = null;
+        try {
+            if (PH_KEY) {
+                if (!phProjectId) {
+                    const proj = await phFetch('/api/projects/');
+                    if (proj.results && proj.results.length > 0) phProjectId = proj.results[0].id;
+                }
+                if (phProjectId) {
+                    const phResult = await phQuery(`SELECT toDate(timestamp) as day, count(DISTINCT distinct_id) as users FROM events WHERE timestamp >= '2026-04-01' GROUP BY day ORDER BY day`);
+                    if (phResult.results) {
+                        phDauData = {};
+                        for (const row of phResult.results) {
+                            phDauData[row[0]] = row[1];
+                        }
+                    }
+                }
+            }
+        } catch (e) { console.warn('PostHog DAU fetch failed', e); }
+        renderDAUChart(dbDau, phDauData);
     } catch (e) {
         console.error('Overview load failed', e);
     }
@@ -1097,21 +1118,30 @@ function renderSignupsChart(data) {
     });
 }
 
-function renderDAUChart(data) {
+function renderDAUChart(dbData, phDauMap) {
     const ctx = document.getElementById('chartDAU').getContext('2d');
     if (dauChart) dauChart.destroy();
+    const labels = dbData.map(d => d.date.slice(5));
+    const datasets = [];
+    if (phDauMap) {
+        datasets.push({
+            label: 'App Opens (PostHog)',
+            data: dbData.map(d => phDauMap[d.date] || 0),
+            borderColor: 'rgba(59,130,246,.9)',
+            backgroundColor: 'rgba(59,130,246,.08)',
+            fill: true, tension: .3, pointRadius: 2,
+        });
+    }
+    datasets.push({
+        label: 'Study Users (DB)',
+        data: dbData.map(d => d.count),
+        borderColor: 'rgba(74,124,89,.9)',
+        backgroundColor: 'rgba(74,124,89,.08)',
+        fill: true, tension: .3, pointRadius: 2,
+    });
     dauChart = new Chart(ctx, {
         type: 'line',
-        data: {
-            labels: data.map(d => d.date.slice(5)),
-            datasets: [{
-                label: 'DAU',
-                data: data.map(d => d.count),
-                borderColor: 'rgba(59,130,246,.9)',
-                backgroundColor: 'rgba(59,130,246,.1)',
-                fill: true, tension: .3, pointRadius: 2,
-            }]
-        },
+        data: { labels, datasets },
         options: {
             responsive: true, maintainAspectRatio: false,
             plugins: { legend: { display: false } },
