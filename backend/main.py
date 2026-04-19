@@ -3526,10 +3526,10 @@ def admin_app_rankings(
 
     product_id = _resolve_appfigures_product()
 
-    # Pull the last 3 days at daily granularity so we always have at least one
-    # filled slot per (country, category) pair even if today hasn't published yet.
+    # Pull the last 7 days at daily granularity so we capture peaks even when
+    # the app has dropped off the chart in the most recent slot.
     today = datetime.utcnow().date()
-    start = today - timedelta(days=3)
+    start = today - timedelta(days=7)
 
     # AppFigures rejects the whole request if any country isn't supported for
     # ranks. Auto-prune offenders by parsing the 400 error and retrying.
@@ -3569,18 +3569,30 @@ def admin_app_rankings(
                 latest_delta = deltas[i] if i < len(deltas) else None
                 latest_date = dates[i] if i < len(dates) else None
                 break
-        if latest_pos is None:
+        # Peak position in the window (lowest rank number = best)
+        peak_pos = peak_date = None
+        for i, p in enumerate(positions):
+            if p is None:
+                continue
+            if peak_pos is None or p < peak_pos:
+                peak_pos = p
+                peak_date = dates[i] if i < len(dates) else None
+        if peak_pos is None:
             continue
         cat = series.get("category") or {}
         rows.append({
             "country": series.get("country"),
             "category_name": cat.get("name"),
-            "subtype": cat.get("subtype"),  # free | paid | grossing
-            "device": cat.get("device"),    # iphone | ipad | universal
+            "subtype": cat.get("subtype"),
+            "device": cat.get("device"),
             "store": cat.get("store"),
-            "position": latest_pos,
+            # `position` = peak in window (best moment, what users care about)
+            "position": peak_pos,
+            "peak_date": peak_date,
+            "current_position": latest_pos,
+            "current_date": latest_date,
             "delta": latest_delta,
-            "as_of": latest_date,
+            "as_of": latest_date or peak_date,
         })
 
     rows.sort(key=lambda r: r["position"])

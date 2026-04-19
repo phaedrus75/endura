@@ -657,12 +657,12 @@
             <h1 class="page-title">App Store Rankings</h1>
             <p style="font-size:13px;color:var(--text-muted);margin:0 0 16px">
                 Live App Store chart positions per country, sourced from AppFigures.
-                Cached for 1 hour. Lower number = better rank. Tracks where Endura currently
-                appears across Free / Paid / Grossing charts and category sub-charts.
+                Shows <b>peak rank in the last 7 days</b> alongside current rank.
+                Cached for 1 hour. Lower number = better.
             </p>
             <div class="kpi-grid" style="margin-bottom:20px">
-                <div class="kpi"><div class="kpi-icon">🥇</div><div class="kpi-val" id="r-best">—</div><div class="kpi-label">Best Rank</div><div class="kpi-sub" id="r-best-sub"></div></div>
-                <div class="kpi"><div class="kpi-icon">🌍</div><div class="kpi-val" id="r-countries">—</div><div class="kpi-label">Countries Visible</div></div>
+                <div class="kpi"><div class="kpi-icon">🥇</div><div class="kpi-val" id="r-best">—</div><div class="kpi-label">Peak Rank (7d)</div><div class="kpi-sub" id="r-best-sub"></div></div>
+                <div class="kpi"><div class="kpi-icon">🌍</div><div class="kpi-val" id="r-countries">—</div><div class="kpi-label">Countries Charted (7d)</div></div>
                 <div class="kpi"><div class="kpi-icon">📊</div><div class="kpi-val" id="r-charts">—</div><div class="kpi-label">Chart Positions</div></div>
                 <div class="kpi"><div class="kpi-icon">🕐</div><div class="kpi-val" id="r-asof" style="font-size:18px">—</div><div class="kpi-label">Last Refreshed</div><div class="kpi-sub" id="r-asof-sub"></div></div>
             </div>
@@ -692,7 +692,8 @@
                             <th>Chart</th>
                             <th>Type</th>
                             <th>Device</th>
-                            <th style="text-align:right">Rank</th>
+                            <th style="text-align:right">Peak (7d)</th>
+                            <th style="text-align:right">Current</th>
                             <th>Δ</th>
                             <th>As Of</th>
                         </tr></thead>
@@ -2578,7 +2579,7 @@ function renderRankingsTable() {
         const cname = COUNTRY_NAMES[r.country] || r.country || '?';
         let deltaCell = '<span style="color:var(--text-muted)">—</span>';
         if (r.delta != null && r.delta !== 0) {
-            const up = r.delta < 0; // negative delta = position improved (smaller number = better)
+            const up = r.delta < 0;
             const arrow = up ? '▲' : '▼';
             const color = up ? '#10b981' : '#dc2626';
             deltaCell = `<span style="color:${color};font-weight:600">${arrow} ${Math.abs(r.delta)}</span>`;
@@ -2591,13 +2592,24 @@ function renderRankingsTable() {
             grossing: '<span class="badge" style="background:#dcfce7;color:#166534;text-transform:capitalize">Grossing</span>',
         }[r.subtype] || `<span class="badge">${esc(r.subtype || '—')}</span>`;
         const asOf = r.as_of ? new Date(r.as_of).toLocaleDateString() : '—';
+        const peakDate = r.peak_date ? new Date(r.peak_date).toLocaleDateString(undefined, {month:'short', day:'numeric'}) : '';
+        const peakCell = `<div style="font-weight:700;color:var(--forest-dark)">#${(r.position || '—').toLocaleString()}</div>` +
+                         (peakDate ? `<div style="font-size:11px;color:var(--text-muted)">on ${peakDate}</div>` : '');
+        let currentCell;
+        if (r.current_position != null) {
+            const dropped = r.position != null && r.current_position > r.position;
+            currentCell = `<span style="font-weight:600;color:${dropped ? '#92400e' : 'var(--forest-dark)'}">#${r.current_position.toLocaleString()}</span>`;
+        } else {
+            currentCell = '<span style="color:#dc2626;font-size:12px">off chart</span>';
+        }
         return `
             <tr>
                 <td><span style="font-size:18px;margin-right:6px">${flagFor(r.country)}</span>${esc(cname)} <span style="color:var(--text-muted);font-size:11px">(${esc(r.country)})</span></td>
                 <td>${esc(r.category_name || '—')}</td>
                 <td>${subtypeBadge}</td>
                 <td style="text-transform:capitalize;color:var(--text-muted)">${esc(r.device || 'universal')}</td>
-                <td style="text-align:right;font-weight:700;color:var(--forest-dark)">#${(r.position || '—').toLocaleString()}</td>
+                <td style="text-align:right">${peakCell}</td>
+                <td style="text-align:right">${currentCell}</td>
                 <td>${deltaCell}</td>
                 <td style="color:var(--text-muted);font-size:12px">${asOf}</td>
             </tr>
