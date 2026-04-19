@@ -387,6 +387,8 @@ class TipView(Base):
     viewed_at = Column(DateTime, default=datetime.utcnow)
     liked = Column(Boolean, default=False)
     disliked = Column(Boolean, default=False)
+    saved = Column(Boolean, default=False, nullable=False)
+    saved_at = Column(DateTime, nullable=True)
 
 
 class UserBadge(Base):

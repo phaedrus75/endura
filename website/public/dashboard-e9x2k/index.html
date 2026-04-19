@@ -405,7 +405,7 @@
             <h1 class="page-title">Overview</h1>
             <div class="kpi-grid" id="kpiGrid">
                 <div class="kpi"><div class="kpi-icon">👥</div><div class="kpi-val" id="k-users">—</div><div class="kpi-label">Real Users</div><div class="kpi-sub" id="k-users-sub"></div></div>
-                <div class="kpi"><div class="kpi-icon">🟢</div><div class="kpi-val" id="k-active">—</div><div class="kpi-label">Active (7d)</div></div>
+                <div class="kpi"><div class="kpi-icon">🟢</div><div class="kpi-val" id="k-active">—</div><div class="kpi-label">Active (7d)</div><div class="kpi-sub" id="k-active-sub" style="font-weight:500;color:var(--text-muted)"><span style="display:inline-block;width:8px;height:8px;background:rgba(74,124,89,.9);border-radius:2px;margin-right:4px;vertical-align:middle"></span>Studied (DB)</div></div>
                 <div class="kpi"><div class="kpi-icon">📚</div><div class="kpi-val" id="k-sessions">—</div><div class="kpi-label">Study Sessions</div><div class="kpi-sub" id="k-sessions-sub"></div></div>
                 <div class="kpi"><div class="kpi-icon">⏱️</div><div class="kpi-val" id="k-hours">—</div><div class="kpi-label">Study Hours</div><div class="kpi-sub" id="k-hours-sub"></div></div>
                 <div class="kpi"><div class="kpi-icon">💚</div><div class="kpi-val" id="k-donated">—</div><div class="kpi-label">Total Donated</div><div class="kpi-sub" id="k-donated-sub"></div></div>
@@ -416,6 +416,7 @@
                 <div class="kpi"><div class="kpi-icon">✅</div><div class="kpi-val" id="k-tasks">—</div><div class="kpi-label">Todos Created</div><div class="kpi-sub" id="k-tasks-sub"></div></div>
                 <div class="kpi"><div class="kpi-icon">💡</div><div class="kpi-val" id="k-tipviews">—</div><div class="kpi-label">Tips Viewed</div><div class="kpi-sub" id="k-tipviews-sub"></div></div>
                 <div class="kpi"><div class="kpi-icon">❤️</div><div class="kpi-val" id="k-tiplikes">—</div><div class="kpi-label">Tips Liked</div><div class="kpi-sub" id="k-tiplikes-sub"></div></div>
+                <div class="kpi"><div class="kpi-icon">🔖</div><div class="kpi-val" id="k-tipsaves">—</div><div class="kpi-label">Tips Saved</div><div class="kpi-sub" id="k-tipsaves-sub"></div></div>
             </div>
             <div class="chart-row">
                 <div class="chart-card"><h3>Signups (Apr)</h3><canvas id="chartSignups"></canvas></div>
@@ -430,7 +431,7 @@
                 <div class="chart-card"><h3>Study Setup (Apr)</h3><canvas id="chartStudySetup"></canvas><div style="font-size:11px;color:var(--text-muted);margin-top:6px;text-align:center"><span style="display:inline-block;width:10px;height:10px;background:rgba(245,158,11,.7);border-radius:2px;margin-right:3px"></span>Subjects Added <span style="display:inline-block;width:10px;height:10px;background:rgba(16,185,129,.7);border-radius:2px;margin-left:10px;margin-right:3px"></span>Todos Created</div></div>
             </div>
             <div class="chart-row">
-                <div class="chart-card" style="grid-column:1 / -1"><h3>Tip Engagement (Apr)</h3><canvas id="chartTips"></canvas><div style="font-size:11px;color:var(--text-muted);margin-top:6px;text-align:center"><span style="display:inline-block;width:10px;height:10px;background:rgba(59,130,246,.7);border-radius:2px;margin-right:3px"></span>Viewed (PostHog) <span style="display:inline-block;width:10px;height:10px;background:rgba(16,185,129,.7);border-radius:2px;margin-left:10px;margin-right:3px"></span>Saved (PostHog) <span style="display:inline-block;width:10px;height:10px;background:rgba(239,68,68,.7);border-radius:2px;margin-left:10px;margin-right:3px"></span>Liked (DB)</div></div>
+                <div class="chart-card" style="grid-column:1 / -1"><h3>Tip Engagement (Apr)</h3><canvas id="chartTips"></canvas><div style="font-size:11px;color:var(--text-muted);margin-top:6px;text-align:center"><span style="display:inline-block;width:10px;height:10px;background:rgba(148,163,184,.7);border-radius:2px;margin-right:3px"></span>Viewed (PostHog) <span style="display:inline-block;width:10px;height:10px;background:rgba(59,130,246,.7);border-radius:2px;margin-left:10px;margin-right:3px"></span>Viewed (DB) <span style="display:inline-block;width:10px;height:10px;background:rgba(16,185,129,.7);border-radius:2px;margin-left:10px;margin-right:3px"></span>Saved (DB) <span style="display:inline-block;width:10px;height:10px;background:rgba(239,68,68,.7);border-radius:2px;margin-left:10px;margin-right:3px"></span>Liked (DB)</div></div>
             </div>
 
             <!-- User Funnel -->
@@ -511,15 +512,34 @@
 
             <div class="sub-content" id="subtab-tips">
                 <div class="table-card">
-                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:10px">
                         <h3 style="margin:0">Study Tips <span id="tipCount" style="color:var(--text-muted);font-weight:500"></span></h3>
                         <button onclick="openCreateTip()" style="padding:8px 18px;background:linear-gradient(135deg,var(--forest-light),var(--forest));color:#fff;border:none;border-radius:10px;font-size:13px;font-weight:600;cursor:pointer">+ Add Tip</button>
+                    </div>
+                    <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:14px">
+                        <input type="text" id="tipSearch" placeholder="Filter by content, category, or animal..." style="flex:1;min-width:220px">
+                        <select id="tipSort" style="padding:10px 14px;border:1px solid var(--border);border-radius:10px;font-size:14px;min-width:200px">
+                            <option value="views" selected>Sort: most viewed</option>
+                            <option value="saves">Sort: most saved</option>
+                            <option value="likes">Sort: most liked</option>
+                            <option value="save_rate">Sort: best save rate</option>
+                            <option value="like_rate">Sort: best like rate</option>
+                            <option value="newest">Sort: newest</option>
+                        </select>
+                        <select id="tipFilter" style="padding:10px 14px;border:1px solid var(--border);border-radius:10px;font-size:14px;min-width:180px">
+                            <option value="all" selected>Show all</option>
+                            <option value="low">Low engagement</option>
+                            <option value="zero_views">Never viewed</option>
+                            <option value="zero_saves">Never saved</option>
+                        </select>
                     </div>
                     <div style="overflow-x:auto">
                         <table>
                             <thead><tr>
                                 <th>Tip</th><th>Category</th><th>Animal</th>
-                                <th>Likes</th><th>Author</th><th>Actions</th>
+                                <th>Views</th><th>Saves</th><th>Likes</th>
+                                <th>Save Rate</th><th>Like Rate</th>
+                                <th>Author</th><th>Actions</th>
                             </tr></thead>
                             <tbody id="tipsBody"></tbody>
                         </table>
@@ -1095,6 +1115,8 @@ async function loadOverview() {
         document.getElementById('k-users').textContent = d.real_users;
         document.getElementById('k-users-sub').textContent = `+${d.signups_7d} this week` + (d.archived_users ? ` (${d.archived_users} archived)` : '');
         document.getElementById('k-active').textContent = d.active_users_7d;
+        document.getElementById('k-active-sub').innerHTML =
+            '<span style="display:inline-block;width:8px;height:8px;background:rgba(74,124,89,.9);border-radius:2px;margin-right:4px;vertical-align:middle"></span>Studied (DB)';
         document.getElementById('k-sessions').textContent = (d.real_sessions || 0).toLocaleString();
         document.getElementById('k-sessions-sub').textContent = d.archived_users ? `${d.total_sessions.toLocaleString()} incl. archived` : '';
         const realHrs = Math.round((d.real_study_minutes || 0) / 60);
@@ -1117,6 +1139,8 @@ async function loadOverview() {
         document.getElementById('k-tipviews-sub').textContent = `+${d.tip_views_7d || 0} this week`;
         document.getElementById('k-tiplikes').textContent = (d.total_tip_likes || 0).toLocaleString();
         document.getElementById('k-tiplikes-sub').textContent = `+${d.tip_likes_7d || 0} this week`;
+        document.getElementById('k-tipsaves').textContent = (d.total_tip_saves || 0).toLocaleString();
+        document.getElementById('k-tipsaves-sub').textContent = `+${d.tip_saves_7d || 0} this week`;
 
         renderSignupsChart(d.daily_signups);
         renderTimerSessionsChart(d.daily_sessions);
@@ -1128,7 +1152,7 @@ async function loadOverview() {
         // PostHog enrichment: DAU + tip events
         const dbDau = d.daily_active || [];
         let phDauData = null;
-        let phTipData = { viewed: null, saved: null };
+        let phTipViewed = null;
         try {
             if (PH_KEY) {
                 if (!phProjectId) {
@@ -1137,28 +1161,33 @@ async function loadOverview() {
                 }
                 if (phProjectId && dbDau.length > 0) {
                     const startDate = dbDau[0].date;
-                    const [dauResult, tipViewedResult, tipSavedResult] = await Promise.all([
+                    const [dauResult, tipViewedResult, active7dResult] = await Promise.all([
                         phQuery(`SELECT toDate(timestamp) as day, count(DISTINCT distinct_id) as users FROM events WHERE timestamp >= '${startDate}' GROUP BY day ORDER BY day`),
                         phQuery(`SELECT toDate(timestamp) as day, count() as cnt FROM events WHERE event = 'tip_viewed' AND timestamp >= '${startDate}' GROUP BY day ORDER BY day`),
-                        phQuery(`SELECT toDate(timestamp) as day, count() as cnt FROM events WHERE event = 'tip_saved' AND timestamp >= '${startDate}' GROUP BY day ORDER BY day`),
+                        phQuery(`SELECT count(DISTINCT distinct_id) FROM events WHERE timestamp >= now() - INTERVAL 7 DAY`),
                     ]);
                     if (dauResult.results) {
                         phDauData = {};
                         for (const row of dauResult.results) phDauData[row[0]] = row[1];
                     }
                     if (tipViewedResult.results) {
-                        phTipData.viewed = {};
-                        for (const row of tipViewedResult.results) phTipData.viewed[row[0]] = row[1];
+                        phTipViewed = {};
+                        for (const row of tipViewedResult.results) phTipViewed[row[0]] = row[1];
                     }
-                    if (tipSavedResult.results) {
-                        phTipData.saved = {};
-                        for (const row of tipSavedResult.results) phTipData.saved[row[0]] = row[1];
+                    if (active7dResult.results && active7dResult.results.length > 0) {
+                        const phActive7d = active7dResult.results[0][0] || 0;
+                        document.getElementById('k-active').innerHTML =
+                            `${phActive7d.toLocaleString()} <span style="color:var(--text-muted);font-weight:600">/</span> ${(d.active_users_7d || 0).toLocaleString()}`;
+                        document.getElementById('k-active-sub').innerHTML =
+                            '<span style="display:inline-block;width:8px;height:8px;background:rgba(59,130,246,.9);border-radius:2px;margin-right:4px;vertical-align:middle"></span>App Opens (PH) ' +
+                            '<span style="margin:0 6px;color:var(--text-muted)">·</span>' +
+                            '<span style="display:inline-block;width:8px;height:8px;background:rgba(74,124,89,.9);border-radius:2px;margin-right:4px;vertical-align:middle"></span>Studied (DB)';
                     }
                 }
             }
         } catch (e) { console.warn('PostHog enrichment failed', e); }
         renderDAUChart(dbDau, phDauData);
-        renderTipsChart(d.daily_tip_views, d.daily_tip_likes, phTipData);
+        renderTipsChart(d.daily_tip_views, d.daily_tip_likes, d.daily_tip_saves, phTipViewed);
     } catch (e) {
         console.error('Overview load failed', e);
     }
@@ -1351,15 +1380,14 @@ function renderStudySetupChart(subjects, tasks) {
     ]);
 }
 
-function renderTipsChart(views, likes, phTip) {
+function renderTipsChart(views, likes, saves, phViewed) {
     const labels = (views || []).map(d => d.date.slice(5));
     const datasets = [];
-    if (phTip && phTip.viewed) {
-        datasets.push({ label: 'Viewed (PostHog)', data: (views || []).map(d => phTip.viewed[d.date] || 0), color: 'rgba(59,130,246,.9)' });
+    if (phViewed) {
+        datasets.push({ label: 'Viewed (PostHog)', data: (views || []).map(d => phViewed[d.date] || 0), color: 'rgba(148,163,184,.9)' });
     }
-    if (phTip && phTip.saved) {
-        datasets.push({ label: 'Saved (PostHog)', data: (views || []).map(d => phTip.saved[d.date] || 0), color: 'rgba(16,185,129,.9)' });
-    }
+    datasets.push({ label: 'Viewed (DB)', data: (views || []).map(d => d.count), color: 'rgba(59,130,246,.9)' });
+    datasets.push({ label: 'Saved (DB)', data: (saves || []).map(d => d.count), color: 'rgba(16,185,129,.9)' });
     datasets.push({ label: 'Liked (DB)', data: (likes || []).map(d => d.count), color: 'rgba(239,68,68,.9)' });
     tipsChart = renderMultiLineChart('chartTips', tipsChart, labels, datasets);
 }
@@ -1873,20 +1901,80 @@ async function loadTips() {
 }
 
 function renderTipsTable() {
-    document.getElementById('tipCount').textContent = `(${allTips.length})`;
+    const search = (document.getElementById('tipSearch')?.value || '').trim().toLowerCase();
+    const sort = document.getElementById('tipSort')?.value || 'views';
+    const filter = document.getElementById('tipFilter')?.value || 'all';
+
+    let rows = allTips.slice();
+
+    if (filter === 'low') {
+        rows = rows.filter(t => (t.view_count || 0) >= 20 && (t.like_rate || 0) < 0.05 && (t.save_rate || 0) < 0.05);
+    } else if (filter === 'zero_views') {
+        rows = rows.filter(t => (t.view_count || 0) === 0);
+    } else if (filter === 'zero_saves') {
+        rows = rows.filter(t => (t.save_count || 0) === 0);
+    }
+
+    if (search) {
+        rows = rows.filter(t =>
+            (t.content || '').toLowerCase().includes(search)
+            || (t.category || '').toLowerCase().includes(search)
+            || (t.animal_name || '').toLowerCase().includes(search)
+        );
+    }
+
+    const sortFns = {
+        views:     (a, b) => (b.view_count || 0) - (a.view_count || 0),
+        saves:     (a, b) => (b.save_count || 0) - (a.save_count || 0),
+        likes:     (a, b) => (b.like_count || 0) - (a.like_count || 0),
+        save_rate: (a, b) => (b.save_rate || 0) - (a.save_rate || 0),
+        like_rate: (a, b) => (b.like_rate || 0) - (a.like_rate || 0),
+        newest:    (a, b) => (b.id || 0) - (a.id || 0),
+    };
+    rows.sort(sortFns[sort] || sortFns.views);
+
+    document.getElementById('tipCount').textContent =
+        rows.length === allTips.length ? `(${allTips.length})` : `(${rows.length} of ${allTips.length})`;
     const body = document.getElementById('tipsBody');
-    if (!allTips.length) { body.innerHTML = '<tr><td colspan="6" class="empty">No study tips yet</td></tr>'; return; }
-    body.innerHTML = allTips.map(t => `
+    if (!rows.length) {
+        body.innerHTML = '<tr><td colspan="10" class="empty">No tips match those filters</td></tr>';
+        return;
+    }
+    const fmtPct = v => (v == null) ? '—' : `${(v * 100).toFixed(1)}%`;
+    body.innerHTML = rows.map(t => {
+        const views = t.view_count || 0;
+        const saves = t.save_count || 0;
+        const likes = t.like_count || 0;
+        const lowEng = views >= 20 && (t.like_rate || 0) < 0.05 && (t.save_rate || 0) < 0.05;
+        const flag = lowEng ? ' <span title="Low engagement (≥20 views but <5% save and like rate)" style="color:#dc2626">⚠</span>' : '';
+        return `
         <tr style="cursor:pointer" onclick="openTipDetail(${t.id})">
-            <td class="tip-content" title="${esc(t.content)}">${esc(t.content)}</td>
+            <td class="tip-content" title="${esc(t.content)}">${esc(t.content)}${flag}</td>
             <td><span class="badge badge-blue tip-category">${esc(t.category || 'general')}</span></td>
             <td>${esc(t.animal_name || '—')}</td>
-            <td>👍 ${t.likes_count} / 👎 ${t.dislikes_count}</td>
+            <td>${views.toLocaleString()}</td>
+            <td>${saves.toLocaleString()}</td>
+            <td>👍 ${likes.toLocaleString()}${t.dislikes_count ? ` / 👎 ${t.dislikes_count}` : ''}</td>
+            <td>${views ? fmtPct(t.save_rate) : '—'}</td>
+            <td>${views ? fmtPct(t.like_rate) : '—'}</td>
             <td>${esc(t.author || '—')}</td>
             <td><button class="btn-delete" style="padding:6px 12px;font-size:12px" onclick="event.stopPropagation();deleteTipDirect(${t.id})">Delete</button></td>
         </tr>
-    `).join('');
+    `;
+    }).join('');
 }
+
+document.addEventListener('DOMContentLoaded', () => {
+    const wireTipControls = () => {
+        const s = document.getElementById('tipSearch');
+        const sort = document.getElementById('tipSort');
+        const filter = document.getElementById('tipFilter');
+        if (s && !s._wired) { s._wired = true; s.addEventListener('input', renderTipsTable); }
+        if (sort && !sort._wired) { sort._wired = true; sort.addEventListener('change', renderTipsTable); }
+        if (filter && !filter._wired) { filter._wired = true; filter.addEventListener('change', renderTipsTable); }
+    };
+    wireTipControls();
+});
 
 function openTipDetail(id) {
     const t = allTips.find(x => x.id === id);

@@ -1387,6 +1387,7 @@ def get_tips(
     ).all()
     liked_ids = {v.tip_id for v in tip_views if v.liked}
     disliked_ids = {v.tip_id for v in tip_views if getattr(v, 'disliked', False)}
+    saved_ids = {v.tip_id for v in tip_views if getattr(v, 'saved', False)}
 
     result = []
     for tip in tips:
@@ -1400,9 +1401,143 @@ def get_tips(
             "created_at": tip.created_at,
             "user_liked": tip.id in liked_ids,
             "user_disliked": tip.id in disliked_ids,
+            "user_saved": tip.id in saved_ids,
         }
         result.append(tip_dict)
     return result
+
+
+@app.get("/tips/saved", response_model=List[schemas.StudyTipResponse])
+def get_saved_tips(
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """All tips this user has saved, regardless of whether they're in the current feed batch."""
+    saved_views = db.query(models.TipView).filter(
+        models.TipView.user_id == current_user.id,
+        models.TipView.saved == True,
+    ).order_by(models.TipView.saved_at.desc().nullslast()).all()
+    if not saved_views:
+        return []
+    tip_ids = [v.tip_id for v in saved_views]
+    tips = db.query(models.StudyTip).filter(models.StudyTip.id.in_(tip_ids)).all()
+    by_id = {t.id: t for t in tips}
+    liked_ids = {v.tip_id for v in saved_views if v.liked}
+    disliked_ids = {v.tip_id for v in saved_views if getattr(v, 'disliked', False)}
+    result = []
+    for v in saved_views:
+        tip = by_id.get(v.tip_id)
+        if not tip:
+            continue
+        result.append({
+            "id": tip.id,
+            "content": tip.content,
+            "category": tip.category,
+            "animal_name": getattr(tip, 'animal_name', None),
+            "likes_count": tip.likes_count,
+            "dislikes_count": getattr(tip, 'dislikes_count', 0),
+            "created_at": tip.created_at,
+            "user_liked": tip.id in liked_ids,
+            "user_disliked": tip.id in disliked_ids,
+            "user_saved": True,
+        })
+    return result
+
+
+@app.post("/tips/{tip_id}/save")
+def save_tip(
+    tip_id: int,
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Mark a tip as saved by the current user. Idempotent."""
+    tip = db.query(models.StudyTip).filter(models.StudyTip.id == tip_id).first()
+    if not tip:
+        raise HTTPException(status_code=404, detail="Tip not found")
+    view = db.query(models.TipView).filter(
+        models.TipView.user_id == current_user.id,
+        models.TipView.tip_id == tip_id,
+    ).first()
+    if not view:
+        view = models.TipView(user_id=current_user.id, tip_id=tip_id)
+        db.add(view)
+    if not view.saved:
+        view.saved = True
+        view.saved_at = datetime.utcnow()
+    db.commit()
+    return {"saved": True, "tip_id": tip_id}
+
+
+@app.post("/tips/{tip_id}/unsave")
+def unsave_tip(
+    tip_id: int,
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Unmark a tip as saved by the current user. Idempotent."""
+    view = db.query(models.TipView).filter(
+        models.TipView.user_id == current_user.id,
+        models.TipView.tip_id == tip_id,
+    ).first()
+    if view and view.saved:
+        view.saved = False
+        db.commit()
+    return {"saved": False, "tip_id": tip_id}
+
+
+class TipSyncSavesBody(BaseModel):
+    tip_ids: List[int] = Field(default_factory=list, max_items=2000)
+
+
+@app.post("/tips/sync-saves")
+def sync_tip_saves(
+    body: TipSyncSavesBody,
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Bulk-mark a list of tips as saved by the current user. For one-shot AsyncStorage→DB
+    migration on first launch after the saves-go-server-side update. Idempotent: already-saved
+    rows are left alone; missing TipView rows are created with saved=True.
+    """
+    if not body.tip_ids:
+        return {"created": 0, "updated": 0, "skipped": 0}
+
+    valid_ids = {
+        t.id for t in db.query(models.StudyTip.id).filter(
+            models.StudyTip.id.in_(body.tip_ids)
+        ).all()
+    }
+    requested = [tid for tid in body.tip_ids if tid in valid_ids]
+    if not requested:
+        return {"created": 0, "updated": 0, "skipped": len(body.tip_ids)}
+
+    existing = db.query(models.TipView).filter(
+        models.TipView.user_id == current_user.id,
+        models.TipView.tip_id.in_(requested),
+    ).all()
+    existing_by_tip = {v.tip_id: v for v in existing}
+
+    now = datetime.utcnow()
+    created = updated = skipped = 0
+    for tid in requested:
+        view = existing_by_tip.get(tid)
+        if view is None:
+            db.add(models.TipView(
+                user_id=current_user.id,
+                tip_id=tid,
+                saved=True,
+                saved_at=now,
+            ))
+            created += 1
+        elif not view.saved:
+            view.saved = True
+            view.saved_at = now
+            updated += 1
+        else:
+            skipped += 1
+    skipped += len(body.tip_ids) - len(requested)
+    db.commit()
+    return {"created": created, "updated": updated, "skipped": skipped}
 
 
 @app.post("/tips/{tip_id}/view")
@@ -2632,6 +2767,18 @@ def admin_overview(db: Session = Depends(get_db), _=Depends(verify_admin)):
         models.TipView.user_id,
     ).scalar() or 0
 
+    total_tip_saves = _exclude_archived(
+        db.query(func.count(models.TipView.id)).filter(models.TipView.saved == True),
+        models.TipView.user_id,
+    ).scalar() or 0
+    tip_saves_7d = _exclude_archived(
+        db.query(func.count(models.TipView.id)).filter(
+            models.TipView.saved == True,
+            models.TipView.saved_at >= week_ago,
+        ),
+        models.TipView.user_id,
+    ).scalar() or 0
+
     # Daily charts starting from April 1
     apr1 = datetime(now.year, 4, 1)
     num_days = (now - apr1).days + 1
@@ -2710,6 +2857,10 @@ def admin_overview(db: Session = Depends(get_db), _=Depends(verify_admin)):
         db.query(models.TipView.viewed_at).filter(models.TipView.liked == True),
         models.TipView.viewed_at, models.TipView.user_id,
     )))
+    daily_tip_saves = _series(_bucket(_fetch_dates(
+        db.query(models.TipView.saved_at).filter(models.TipView.saved == True),
+        models.TipView.saved_at, models.TipView.user_id,
+    )))
 
     return {
         "total_users": total_users,
@@ -2743,12 +2894,15 @@ def admin_overview(db: Session = Depends(get_db), _=Depends(verify_admin)):
         "tip_views_7d": tip_views_7d,
         "total_tip_likes": total_tip_likes,
         "tip_likes_7d": tip_likes_7d,
+        "total_tip_saves": total_tip_saves,
+        "tip_saves_7d": tip_saves_7d,
         "daily_friendships": daily_friendships,
         "daily_groups_created": daily_groups_created,
         "daily_user_subjects": daily_user_subjects,
         "daily_tasks_created": daily_tasks_created,
         "daily_tip_views": daily_tip_views,
         "daily_tip_likes": daily_tip_likes,
+        "daily_tip_saves": daily_tip_saves,
         "funnel": {
             "signed_up": real_users,
             "verified_email": verified_users,
@@ -3351,12 +3505,44 @@ def admin_tips(
     tips = db.query(models.StudyTip).order_by(
         models.StudyTip.id.desc()
     ).offset(offset).limit(limit).all()
+    if not tips:
+        return {"total": total, "tips": []}
+
+    tip_ids = [t.id for t in tips]
+    archived_ids = [u.id for u in db.query(models.User.id).filter(models.User.is_archived == True).all()]
+
+    def _engagement_query(filter_clause):
+        q = db.query(
+            models.TipView.tip_id,
+            func.count(models.TipView.id).label("cnt"),
+        ).filter(models.TipView.tip_id.in_(tip_ids))
+        if filter_clause is not None:
+            q = q.filter(filter_clause)
+        if archived_ids:
+            q = q.filter(models.TipView.user_id.notin_(archived_ids))
+        return {row.tip_id: row.cnt for row in q.group_by(models.TipView.tip_id).all()}
+
+    view_counts = _engagement_query(None)
+    like_counts = _engagement_query(models.TipView.liked == True)
+    save_counts = _engagement_query(models.TipView.saved == True)
+
+    user_ids = {t.user_id for t in tips if t.user_id}
+    users_by_id = {}
+    if user_ids:
+        users_by_id = {
+            u.id: u for u in db.query(models.User).filter(models.User.id.in_(user_ids)).all()
+        }
+
     result = []
     for t in tips:
         username = None
         if t.user_id:
-            u = db.query(models.User).filter(models.User.id == t.user_id).first()
-            username = (u.username or u.email) if u else None
+            u = users_by_id.get(t.user_id)
+            if u:
+                username = u.username or u.email
+        views = view_counts.get(t.id, 0)
+        likes = like_counts.get(t.id, 0)
+        saves = save_counts.get(t.id, 0)
         result.append({
             "id": t.id,
             "content": t.content,
@@ -3364,6 +3550,11 @@ def admin_tips(
             "animal_name": t.animal_name,
             "likes_count": t.likes_count or 0,
             "dislikes_count": t.dislikes_count or 0,
+            "view_count": views,
+            "save_count": saves,
+            "like_count": likes,
+            "save_rate": round(saves / views, 4) if views else 0.0,
+            "like_rate": round(likes / views, 4) if views else 0.0,
             "author": username,
             "created_at": t.created_at.isoformat() if t.created_at else None,
         })

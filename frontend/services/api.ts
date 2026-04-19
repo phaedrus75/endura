@@ -98,7 +98,7 @@ export interface StudyTip {
   created_at: string;
   user_liked: boolean;
   user_disliked: boolean;
-  user_liked: boolean;
+  user_saved?: boolean;
 }
 
 export interface Friend {
@@ -481,6 +481,20 @@ export const tipsAPI = {
     apiFetch<{ message: string }>('/tips/send', {
       method: 'POST',
       body: JSON.stringify({ friend_id: friendId, tip_content: tipContent, animal_name: animalName }),
+    }),
+
+  getSavedTips: () => apiFetch<StudyTip[]>('/tips/saved'),
+
+  saveTip: (tipId: number) =>
+    apiFetch<{ saved: boolean; tip_id: number }>(`/tips/${tipId}/save`, { method: 'POST' }),
+
+  unsaveTip: (tipId: number) =>
+    apiFetch<{ saved: boolean; tip_id: number }>(`/tips/${tipId}/unsave`, { method: 'POST' }),
+
+  syncSaves: (tipIds: number[]) =>
+    apiFetch<{ created: number; updated: number; skipped: number }>('/tips/sync-saves', {
+      method: 'POST',
+      body: JSON.stringify({ tip_ids: tipIds }),
     }),
 };
 

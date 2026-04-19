@@ -184,10 +184,12 @@ export default function TipsScreen() {
     const load = async () => {
       try {
         const uid = user?.id || 'anon';
-        const [savedRaw, seenRaw] = await Promise.all([
+        const [savedRaw, seenRaw, migrated] = await Promise.all([
           AsyncStorage.getItem(`savedTipIds_${uid}`),
           AsyncStorage.getItem(`seenTipIds_${uid}`),
+          AsyncStorage.getItem(`tipSavesMigratedAt_${uid}`),
         ]);
+        // Hydrate optimistically from local cache so the UI is instantly consistent.
         if (savedRaw) {
           const arr: number[] = JSON.parse(savedRaw);
           const map: Record<number, boolean> = {};
@@ -195,12 +197,42 @@ export default function TipsScreen() {
           setSavedIds(map);
         }
         if (seenRaw) seenTipIdsRef.current = new Set(JSON.parse(seenRaw));
+
+        // One-shot AsyncStorage→DB migration on first launch after the saves-go-server-side
+        // update. Fires for signed-in users only; anonymous saves cannot be attributed.
+        if (user?.id && !migrated && savedRaw) {
+          try {
+            const arr: number[] = JSON.parse(savedRaw);
+            if (arr.length > 0) {
+              await tipsAPI.syncSaves(arr);
+            }
+            await AsyncStorage.setItem(`tipSavesMigratedAt_${uid}`, new Date().toISOString());
+          } catch (e) {
+            if (__DEV__) console.log('Tip-saves migration failed (will retry next launch):', e);
+          }
+        }
+
+        // Server is the source of truth; reconcile local cache against it.
+        if (user?.id) {
+          try {
+            const serverSaved = await tipsAPI.getSavedTips();
+            const map: Record<number, boolean> = {};
+            serverSaved.forEach((t) => { map[t.id] = true; });
+            setSavedIds(map);
+            await AsyncStorage.setItem(
+              `savedTipIds_${uid}`,
+              JSON.stringify(serverSaved.map((t) => t.id)),
+            );
+          } catch (e) {
+            if (__DEV__) console.log('Failed to fetch server saved tips, using local cache:', e);
+          }
+        }
       } catch {
         if (__DEV__) console.log('Failed to load saved/seen tips');
       }
     };
     load();
-  }, []);
+  }, [user?.id]);
 
   const persistSaved = async (map: Record<number, boolean>) => {
     await AsyncStorage.setItem(`savedTipIds_${user?.id || 'anon'}`, JSON.stringify(Object.keys(map).filter(k => map[Number(k)]).map(Number)));
@@ -272,13 +304,27 @@ export default function TipsScreen() {
   const toggleSave = useCallback((tipId: number) => {
     setSavedIds((prev) => {
       const updated = { ...prev };
-      if (updated[tipId]) {
+      const isUnsaving = !!updated[tipId];
+      if (isUnsaving) {
         delete updated[tipId];
       } else {
         updated[tipId] = true;
         Analytics.tipSaved(tipId);
       }
       persistSaved(updated);
+      // Write through to backend; AsyncStorage already updated optimistically so the UI
+      // stays responsive even if the network call fails.
+      (async () => {
+        try {
+          if (isUnsaving) {
+            await tipsAPI.unsaveTip(tipId);
+          } else {
+            await tipsAPI.saveTip(tipId);
+          }
+        } catch (e) {
+          if (__DEV__) console.log('Tip save sync failed (will reconcile on next load):', e);
+        }
+      })();
       return updated;
     });
   }, []);

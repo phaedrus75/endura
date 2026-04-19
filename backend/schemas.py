@@ -223,6 +223,7 @@ class StudyTipResponse(BaseModel):
     created_at: datetime
     user_liked: bool = False
     user_disliked: bool = False
+    user_saved: bool = False
 
     class Config:
         from_attributes = True
