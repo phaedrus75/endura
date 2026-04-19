@@ -1076,7 +1076,11 @@ function logout() {
 // ----- API -----
 async function adminFetch(path) {
     const res = await fetch(API_URL + path, { headers: { 'X-Admin-Key': API_KEY } });
-    if (!res.ok) throw new Error(res.status);
+    if (!res.ok) {
+        let detail = '';
+        try { const j = await res.json(); detail = j.detail || JSON.stringify(j); } catch (_) {}
+        throw new Error(detail ? `${res.status}: ${detail}` : String(res.status));
+    }
     return res.json();
 }
 
