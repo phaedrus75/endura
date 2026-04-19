@@ -2573,9 +2573,93 @@ def admin_overview(db: Session = Depends(get_db), _=Depends(verify_admin)):
             models.Friendship.status == "accepted"
         ).group_by(models.Friendship.user_id).having(func.count(models.Friendship.id) >= 3).count()
 
+    # ---- Engagement totals (social + study artifacts + tips) ----
+    def _exclude_archived(q, user_col):
+        if archived_ids:
+            return q.filter(user_col.notin_(archived_ids))
+        return q
+
+    total_friendships = _exclude_archived(
+        db.query(func.count(models.Friendship.id)).filter(models.Friendship.status == "accepted"),
+        models.Friendship.user_id,
+    ).scalar() or 0
+    friendships_7d = _exclude_archived(
+        db.query(func.count(models.Friendship.id)).filter(
+            models.Friendship.status == "accepted",
+            models.Friendship.created_at >= week_ago,
+        ),
+        models.Friendship.user_id,
+    ).scalar() or 0
+
+    total_groups_created = _exclude_archived(
+        db.query(func.count(models.StudyGroup.id)),
+        models.StudyGroup.creator_id,
+    ).scalar() or 0
+    groups_created_7d = _exclude_archived(
+        db.query(func.count(models.StudyGroup.id)).filter(models.StudyGroup.created_at >= week_ago),
+        models.StudyGroup.creator_id,
+    ).scalar() or 0
+
+    total_user_subjects = _exclude_archived(
+        db.query(func.count(models.UserSubject.id)),
+        models.UserSubject.user_id,
+    ).scalar() or 0
+    user_subjects_7d = _exclude_archived(
+        db.query(func.count(models.UserSubject.id)).filter(models.UserSubject.added_at >= week_ago),
+        models.UserSubject.user_id,
+    ).scalar() or 0
+
+    total_tasks_created = _exclude_archived(
+        db.query(func.count(models.Task.id)),
+        models.Task.user_id,
+    ).scalar() or 0
+    tasks_created_7d = _exclude_archived(
+        db.query(func.count(models.Task.id)).filter(models.Task.created_at >= week_ago),
+        models.Task.user_id,
+    ).scalar() or 0
+
+    total_tip_views = _exclude_archived(
+        db.query(func.count(models.TipView.id)),
+        models.TipView.user_id,
+    ).scalar() or 0
+    tip_views_7d = _exclude_archived(
+        db.query(func.count(models.TipView.id)).filter(models.TipView.viewed_at >= week_ago),
+        models.TipView.user_id,
+    ).scalar() or 0
+
+    total_tip_likes = _exclude_archived(
+        db.query(func.count(models.TipView.id)).filter(models.TipView.liked == True),
+        models.TipView.user_id,
+    ).scalar() or 0
+    tip_likes_7d = _exclude_archived(
+        db.query(func.count(models.TipView.id)).filter(
+            models.TipView.liked == True,
+            models.TipView.viewed_at >= week_ago,
+        ),
+        models.TipView.user_id,
+    ).scalar() or 0
+
     # Daily charts starting from April 1
     apr1 = datetime(now.year, 4, 1)
     num_days = (now - apr1).days + 1
+    date_keys = [(apr1 + timedelta(days=i)).strftime("%Y-%m-%d") for i in range(num_days)]
+
+    def _bucket(timestamps):
+        counts = {k: 0 for k in date_keys}
+        for ts in timestamps:
+            if ts is None:
+                continue
+            k = ts.strftime("%Y-%m-%d")
+            if k in counts:
+                counts[k] += 1
+        return counts
+
+    def _series(counts):
+        return [{"date": k, "count": counts[k]} for k in date_keys]
+
+    def _fetch_dates(query, ts_col, user_col):
+        q = _exclude_archived(query, user_col).filter(ts_col >= apr1)
+        return [r[0] for r in q.all()]
 
     daily_signups = []
     daily_active = []
@@ -2608,6 +2692,32 @@ def admin_overview(db: Session = Depends(get_db), _=Depends(verify_admin)):
         ).scalar()
         daily_sessions.append({"date": date_str, "sessions": sessions, "minutes": int(mins)})
 
+    # Daily series for new engagement metrics (single batched query each, bucketed in Python)
+    daily_friendships = _series(_bucket(_fetch_dates(
+        db.query(models.Friendship.created_at).filter(models.Friendship.status == "accepted"),
+        models.Friendship.created_at, models.Friendship.user_id,
+    )))
+    daily_groups_created = _series(_bucket(_fetch_dates(
+        db.query(models.StudyGroup.created_at),
+        models.StudyGroup.created_at, models.StudyGroup.creator_id,
+    )))
+    daily_user_subjects = _series(_bucket(_fetch_dates(
+        db.query(models.UserSubject.added_at),
+        models.UserSubject.added_at, models.UserSubject.user_id,
+    )))
+    daily_tasks_created = _series(_bucket(_fetch_dates(
+        db.query(models.Task.created_at),
+        models.Task.created_at, models.Task.user_id,
+    )))
+    daily_tip_views = _series(_bucket(_fetch_dates(
+        db.query(models.TipView.viewed_at),
+        models.TipView.viewed_at, models.TipView.user_id,
+    )))
+    daily_tip_likes = _series(_bucket(_fetch_dates(
+        db.query(models.TipView.viewed_at).filter(models.TipView.liked == True),
+        models.TipView.viewed_at, models.TipView.user_id,
+    )))
+
     return {
         "total_users": total_users,
         "archived_users": archived_users,
@@ -2628,6 +2738,24 @@ def admin_overview(db: Session = Depends(get_db), _=Depends(verify_admin)):
         "daily_signups": daily_signups,
         "daily_active": daily_active,
         "daily_sessions": daily_sessions,
+        "total_friendships": total_friendships,
+        "friendships_7d": friendships_7d,
+        "total_groups_created": total_groups_created,
+        "groups_created_7d": groups_created_7d,
+        "total_user_subjects": total_user_subjects,
+        "user_subjects_7d": user_subjects_7d,
+        "total_tasks_created": total_tasks_created,
+        "tasks_created_7d": tasks_created_7d,
+        "total_tip_views": total_tip_views,
+        "tip_views_7d": tip_views_7d,
+        "total_tip_likes": total_tip_likes,
+        "tip_likes_7d": tip_likes_7d,
+        "daily_friendships": daily_friendships,
+        "daily_groups_created": daily_groups_created,
+        "daily_user_subjects": daily_user_subjects,
+        "daily_tasks_created": daily_tasks_created,
+        "daily_tip_views": daily_tip_views,
+        "daily_tip_likes": daily_tip_likes,
         "funnel": {
             "signed_up": real_users,
             "verified_email": verified_users,
@@ -3501,6 +3629,58 @@ def admin_campaign_cohorts(db: Session = Depends(get_db), _=Depends(verify_admin
     }
 
     return cohorts
+
+
+@app.get("/admin/campaign-metrics")
+def admin_campaign_metrics(db: Session = Depends(get_db), _=Depends(verify_admin)):
+    """Return send/open/click/conversion metrics for each campaign."""
+    metrics = {}
+    for cohort_key, info in CAMPAIGN_COHORTS.items():
+        tkey = info["template_key"]
+        logs = db.query(models.EmailLog).filter(models.EmailLog.template_key == tkey).all()
+        sent = len(logs)
+        delivered = sum(1 for l in logs if l.delivered)
+        opened = sum(1 for l in logs if l.opened)
+        clicked = sum(1 for l in logs if l.clicked)
+
+        converted = 0
+        if sent > 0:
+            sent_user_ids = [l.user_id for l in logs if l.user_id]
+            if sent_user_ids:
+                if cohort_key == "verify_email":
+                    converted = db.query(func.count(models.User.id)).filter(
+                        models.User.id.in_(sent_user_ids),
+                        models.User.email_verified == True,
+                    ).scalar() or 0
+                elif cohort_key == "start_timer":
+                    converted = db.query(func.count(func.distinct(models.StudySession.user_id))).filter(
+                        models.StudySession.user_id.in_(sent_user_ids),
+                    ).scalar() or 0
+                elif cohort_key == "second_timer":
+                    converted = db.query(models.StudySession.user_id).filter(
+                        models.StudySession.user_id.in_(sent_user_ids),
+                    ).group_by(models.StudySession.user_id).having(
+                        func.count(models.StudySession.id) >= 2
+                    ).count()
+                elif cohort_key == "invite_friends":
+                    converted = db.query(func.count(func.distinct(models.Friendship.user_id))).filter(
+                        models.Friendship.user_id.in_(sent_user_ids),
+                        models.Friendship.status == "accepted",
+                    ).scalar() or 0
+
+        metrics[cohort_key] = {
+            "template_key": tkey,
+            "label": info["label"],
+            "sent": sent,
+            "delivered": delivered,
+            "opened": opened,
+            "clicked": clicked,
+            "converted": converted,
+            "open_rate": round(opened / sent * 100, 1) if sent > 0 else 0,
+            "click_rate": round(clicked / sent * 100, 1) if sent > 0 else 0,
+            "conversion_rate": round(converted / sent * 100, 1) if sent > 0 else 0,
+        }
+    return metrics
 
 
 @app.post("/admin/campaign-send/{cohort_key}")

@@ -2343,13 +2343,37 @@ async function loadCampaigns() {
     const container = document.getElementById('campaignCohorts');
     container.innerHTML = '<p style="color:var(--text-muted)">Loading cohorts...</p>';
     try {
-        const cohorts = await adminFetch('/admin/campaign-cohorts');
+        const [cohorts, metrics] = await Promise.all([
+            adminFetch('/admin/campaign-cohorts'),
+            adminFetch('/admin/campaign-metrics'),
+        ]);
         const icons = { verify_email: '✉️', start_timer: '▶️', second_timer: '🔁', invite_friends: '👥' };
         const colors = { verify_email: '#e67e22', start_timer: '#3b82f6', second_timer: '#8b5cf6', invite_friends: '#4A7C59' };
+        const successLabels = { verify_email: 'Verified', start_timer: 'Started Timer', second_timer: '2nd Session', invite_friends: 'Added Friend' };
         container.innerHTML = Object.entries(cohorts).map(([key, c]) => {
+            const m = metrics[key] || {};
             const userRows = (c.users || []).slice(0, 20).map(u =>
                 `<tr><td>${u.id}</td><td>${esc(u.username || '—')}</td><td>${esc(u.email || '—')}</td><td>${u.sessions != null ? u.sessions : '—'}</td></tr>`
             ).join('');
+            const metricsHtml = m.sent > 0 ? `
+                <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:14px">
+                    <div style="flex:1;min-width:100px;background:var(--bg);border-radius:10px;padding:12px 16px;text-align:center">
+                        <div style="font-size:20px;font-weight:700;color:var(--text)">${m.sent}</div>
+                        <div style="font-size:11px;color:var(--text-muted);margin-top:2px">Sent</div>
+                    </div>
+                    <div style="flex:1;min-width:100px;background:var(--bg);border-radius:10px;padding:12px 16px;text-align:center">
+                        <div style="font-size:20px;font-weight:700;color:#3b82f6">${m.opened} <span style="font-size:12px;font-weight:500;color:var(--text-muted)">${m.open_rate}%</span></div>
+                        <div style="font-size:11px;color:var(--text-muted);margin-top:2px">Opened</div>
+                    </div>
+                    <div style="flex:1;min-width:100px;background:var(--bg);border-radius:10px;padding:12px 16px;text-align:center">
+                        <div style="font-size:20px;font-weight:700;color:#8b5cf6">${m.clicked} <span style="font-size:12px;font-weight:500;color:var(--text-muted)">${m.click_rate}%</span></div>
+                        <div style="font-size:11px;color:var(--text-muted);margin-top:2px">Clicked</div>
+                    </div>
+                    <div style="flex:1;min-width:100px;background:var(--bg);border-radius:10px;padding:12px 16px;text-align:center">
+                        <div style="font-size:20px;font-weight:700;color:#10b981">${m.converted} <span style="font-size:12px;font-weight:500;color:var(--text-muted)">${m.conversion_rate}%</span></div>
+                        <div style="font-size:11px;color:var(--text-muted);margin-top:2px">${successLabels[key] || 'Converted'}</div>
+                    </div>
+                </div>` : '';
             return `<div class="table-card">
                 <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:10px">
                     <div>
@@ -2357,10 +2381,11 @@ async function loadCampaigns() {
                         <p style="margin:4px 0 0;font-size:13px;color:var(--text-muted)">Template: <code>${esc(c.template_key)}</code></p>
                     </div>
                     <div style="display:flex;align-items:center;gap:12px">
-                        <span style="font-size:24px;font-weight:700;color:${colors[key] || 'var(--forest)'}">${c.count}</span>
+                        <span style="font-size:24px;font-weight:700;color:${colors[key] || 'var(--forest)'}">${c.count} <span style="font-size:12px;font-weight:500;color:var(--text-muted)">pending</span></span>
                         <button onclick="sendCampaign('${key}','${esc(c.label)}',${c.count})" style="padding:10px 20px;background:${colors[key] || 'var(--forest)'};color:#fff;border:none;border-radius:10px;font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap">Send Campaign</button>
                     </div>
                 </div>
+                ${metricsHtml}
                 ${c.count > 0 ? `<div style="overflow-x:auto;max-height:300px;overflow-y:auto"><table><thead><tr><th>ID</th><th>Username</th><th>Email</th><th>Sessions</th></tr></thead><tbody>${userRows}</tbody></table>${c.count > 20 ? `<p style="color:var(--text-muted);font-size:12px;margin:8px 0 0">...and ${c.count - 20} more</p>` : ''}</div>` : '<p style="color:var(--text-muted);font-size:13px;margin:0">No users in this cohort.</p>'}
             </div>`;
         }).join('');
