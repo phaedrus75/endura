@@ -361,8 +361,12 @@
                 <div class="kpi"><div class="kpi-icon">🐣</div><div class="kpi-val" id="k-animals">—</div><div class="kpi-label">Animals Hatched</div><div class="kpi-sub" id="k-animals-sub"></div></div>
             </div>
             <div class="chart-row">
-                <div class="chart-card"><h3>Signups (30 days)</h3><canvas id="chartSignups"></canvas></div>
-                <div class="chart-card"><h3>Study Minutes (30 days)</h3><canvas id="chartStudy"></canvas></div>
+                <div class="chart-card"><h3>Signups (Apr)</h3><canvas id="chartSignups"></canvas></div>
+                <div class="chart-card"><h3>Daily Active Users (Apr)</h3><canvas id="chartDAU"></canvas></div>
+            </div>
+            <div class="chart-row">
+                <div class="chart-card"><h3>Timer Sessions (Apr)</h3><canvas id="chartTimerSessions"></canvas></div>
+                <div class="chart-card"><h3>Study Minutes (Apr)</h3><canvas id="chartStudy"></canvas></div>
             </div>
         </div>
 
@@ -785,6 +789,8 @@
 let API_URL = '';
 let API_KEY = '';
 let signupsChart = null;
+let dauChart = null;
+let timerSessionsChart = null;
 let studyChart = null;
 
 // ----- Auth -----
@@ -933,6 +939,8 @@ async function loadOverview() {
         document.getElementById('k-animals-sub').textContent = d.archived_users ? `${d.total_animals_hatched} incl. archived` : '';
 
         renderSignupsChart(d.daily_signups);
+        renderDAUChart(d.daily_active || []);
+        renderTimerSessionsChart(d.daily_sessions);
         renderStudyChart(d.daily_sessions);
     } catch (e) {
         console.error('Overview load failed', e);
@@ -958,7 +966,58 @@ function renderSignupsChart(data) {
             plugins: { legend: { display: false } },
             scales: {
                 y: { beginAtZero: true, ticks: { stepSize: 1 } },
-                x: { grid: { display: false }, ticks: { maxTicksLimit: 10, font: { size: 10 } } }
+                x: { grid: { display: false }, ticks: { maxTicksLimit: 15, font: { size: 10 } } }
+            }
+        }
+    });
+}
+
+function renderDAUChart(data) {
+    const ctx = document.getElementById('chartDAU').getContext('2d');
+    if (dauChart) dauChart.destroy();
+    dauChart = new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: data.map(d => d.date.slice(5)),
+            datasets: [{
+                label: 'DAU',
+                data: data.map(d => d.count),
+                borderColor: 'rgba(59,130,246,.9)',
+                backgroundColor: 'rgba(59,130,246,.1)',
+                fill: true, tension: .3, pointRadius: 2,
+            }]
+        },
+        options: {
+            responsive: true, maintainAspectRatio: false,
+            plugins: { legend: { display: false } },
+            scales: {
+                y: { beginAtZero: true, ticks: { stepSize: 1 } },
+                x: { grid: { display: false }, ticks: { maxTicksLimit: 15, font: { size: 10 } } }
+            }
+        }
+    });
+}
+
+function renderTimerSessionsChart(data) {
+    const ctx = document.getElementById('chartTimerSessions').getContext('2d');
+    if (timerSessionsChart) timerSessionsChart.destroy();
+    timerSessionsChart = new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels: data.map(d => d.date.slice(5)),
+            datasets: [{
+                label: 'Sessions',
+                data: data.map(d => d.sessions),
+                backgroundColor: 'rgba(139,92,246,.6)',
+                borderRadius: 4,
+            }]
+        },
+        options: {
+            responsive: true, maintainAspectRatio: false,
+            plugins: { legend: { display: false } },
+            scales: {
+                y: { beginAtZero: true, ticks: { stepSize: 1 } },
+                x: { grid: { display: false }, ticks: { maxTicksLimit: 15, font: { size: 10 } } }
             }
         }
     });
@@ -984,7 +1043,7 @@ function renderStudyChart(data) {
             plugins: { legend: { display: false } },
             scales: {
                 y: { beginAtZero: true },
-                x: { grid: { display: false }, ticks: { maxTicksLimit: 10, font: { size: 10 } } }
+                x: { grid: { display: false }, ticks: { maxTicksLimit: 15, font: { size: 10 } } }
             }
         }
     });

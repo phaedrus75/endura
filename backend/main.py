@@ -2573,23 +2573,32 @@ def admin_overview(db: Session = Depends(get_db), _=Depends(verify_admin)):
             models.Friendship.status == "accepted"
         ).group_by(models.Friendship.user_id).having(func.count(models.Friendship.id) >= 3).count()
 
+    # Daily charts starting from April 1
+    apr1 = datetime(now.year, 4, 1)
+    num_days = (now - apr1).days + 1
+
     daily_signups = []
-    for i in range(30):
-        day = now - timedelta(days=29 - i)
+    daily_active = []
+    daily_sessions = []
+    for i in range(num_days):
+        day = apr1 + timedelta(days=i)
         start = day.replace(hour=0, minute=0, second=0, microsecond=0)
         end = start + timedelta(days=1)
-        count = db.query(func.count(models.User.id)).filter(
+        date_str = start.strftime("%Y-%m-%d")
+
+        signups = db.query(func.count(models.User.id)).filter(
             models.User.created_at >= start,
             models.User.created_at < end,
         ).scalar() or 0
-        daily_signups.append({"date": start.strftime("%Y-%m-%d"), "count": count})
+        daily_signups.append({"date": date_str, "count": signups})
 
-    daily_sessions = []
-    for i in range(30):
-        day = now - timedelta(days=29 - i)
-        start = day.replace(hour=0, minute=0, second=0, microsecond=0)
-        end = start + timedelta(days=1)
-        count = db.query(func.count(models.StudySession.id)).filter(
+        dau = db.query(func.count(func.distinct(models.StudySession.user_id))).filter(
+            models.StudySession.started_at >= start,
+            models.StudySession.started_at < end,
+        ).scalar() or 0
+        daily_active.append({"date": date_str, "count": dau})
+
+        sessions = db.query(func.count(models.StudySession.id)).filter(
             models.StudySession.started_at >= start,
             models.StudySession.started_at < end,
         ).scalar() or 0
@@ -2597,7 +2606,7 @@ def admin_overview(db: Session = Depends(get_db), _=Depends(verify_admin)):
             models.StudySession.started_at >= start,
             models.StudySession.started_at < end,
         ).scalar()
-        daily_sessions.append({"date": start.strftime("%Y-%m-%d"), "sessions": count, "minutes": int(mins)})
+        daily_sessions.append({"date": date_str, "sessions": sessions, "minutes": int(mins)})
 
     return {
         "total_users": total_users,
@@ -2617,6 +2626,7 @@ def admin_overview(db: Session = Depends(get_db), _=Depends(verify_admin)):
         "real_donated": real_donated,
         "real_donation_count": real_donation_count,
         "daily_signups": daily_signups,
+        "daily_active": daily_active,
         "daily_sessions": daily_sessions,
         "funnel": {
             "signed_up": real_users,
