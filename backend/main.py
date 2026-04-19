@@ -3396,24 +3396,59 @@ def _appfigures_get(path: str, params: Optional[dict] = None):
 
 
 def _resolve_appfigures_product():
-    """Find the iOS product in the AppFigures account. Cached for the process lifetime."""
+    """Find the iOS product in the AppFigures account. Cached for the process lifetime.
+    Honors APPFIGURES_PRODUCT_ID env var as an override so we can skip the
+    /products/mine call (which needs account:read scope vs the public:read
+    that /ranks needs).
+    """
     if _appfigures_state["product_id"]:
         return _appfigures_state["product_id"]
-    data = _appfigures_get("/products/mine")
+
+    override = os.environ.get("APPFIGURES_PRODUCT_ID", "").strip()
+    if override:
+        try:
+            _appfigures_state["product_id"] = int(override)
+        except ValueError:
+            _appfigures_state["product_id"] = override
+        _appfigures_state["product_name"] = "(set via APPFIGURES_PRODUCT_ID)"
+        return _appfigures_state["product_id"]
+
+    try:
+        data = _appfigures_get("/products/mine")
+    except HTTPException as e:
+        # Most likely a scope issue — re-raise with a more actionable message.
+        raise HTTPException(
+            status_code=502,
+            detail=(
+                f"Could not list AppFigures products ({e.detail}). "
+                "Either grant the PAT 'account:read' scope, OR set "
+                "APPFIGURES_PRODUCT_ID env var to the iOS product id directly."
+            ),
+        )
     # /products/mine returns either a list or a dict keyed by id, depending on account.
     items = data.values() if isinstance(data, dict) else data
+    candidates = []
     for p in items:
         if not isinstance(p, dict):
             continue
         store = (p.get("store") or "").lower()
-        store_id = (p.get("store_id") or "")
-        # iOS products on AppFigures: store == "apple" or "apple_ios"
-        if "apple" in store and "mac" not in store:
-            _appfigures_state["product_id"] = p.get("id")
-            _appfigures_state["product_name"] = p.get("name")
-            _appfigures_state["product_icon"] = p.get("icon")
-            return _appfigures_state["product_id"]
-    raise HTTPException(status_code=404, detail="No iOS product found in AppFigures account")
+        store_id = (p.get("store_id") or "").lower()
+        # iOS products on AppFigures use store names like "apple", "apple_ios", "ios", "ios_universal"
+        if (("apple" in store and "mac" not in store) or "ios" in store
+                or "apple" in store_id or "ios" in store_id):
+            candidates.append(p)
+    if not candidates:
+        # Fall back to first product so we at least see something
+        all_products = [p for p in items if isinstance(p, dict)]
+        if all_products:
+            candidates = [all_products[0]]
+    if not candidates:
+        raise HTTPException(status_code=404, detail="No products found in AppFigures account")
+    p = candidates[0]
+    _appfigures_state["product_id"] = p.get("id")
+    _appfigures_state["product_name"] = p.get("name")
+    _appfigures_state["product_icon"] = p.get("icon")
+    return _appfigures_state["product_id"]
 
 
 @app.get("/admin/app-rankings")
