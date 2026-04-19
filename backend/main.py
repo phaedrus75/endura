@@ -3397,9 +3397,11 @@ def _appfigures_get(path: str, params: Optional[dict] = None):
 
 def _resolve_appfigures_product():
     """Find the iOS product in the AppFigures account. Cached for the process lifetime.
-    Honors APPFIGURES_PRODUCT_ID env var as an override so we can skip the
-    /products/mine call (which needs account:read scope vs the public:read
-    that /ranks needs).
+    Resolution order:
+      1. APPFIGURES_PRODUCT_ID env var (skip all lookups)
+      2. APPFIGURES_APPSTORE_ID env var → resolve via /v2/products/apple/<id>
+         (only needs public:read scope)
+      3. /products/mine (needs account:read scope)
     """
     if _appfigures_state["product_id"]:
         return _appfigures_state["product_id"]
@@ -3412,6 +3414,24 @@ def _resolve_appfigures_product():
             _appfigures_state["product_id"] = override
         _appfigures_state["product_name"] = "(set via APPFIGURES_PRODUCT_ID)"
         return _appfigures_state["product_id"]
+
+    appstore_id = os.environ.get("APPFIGURES_APPSTORE_ID", "").strip()
+    if appstore_id:
+        try:
+            p = _appfigures_get(f"/products/apple/{appstore_id}")
+            if isinstance(p, dict) and p.get("id"):
+                _appfigures_state["product_id"] = p["id"]
+                _appfigures_state["product_name"] = p.get("name")
+                _appfigures_state["product_icon"] = p.get("icon")
+                return _appfigures_state["product_id"]
+        except HTTPException as e:
+            raise HTTPException(
+                status_code=502,
+                detail=(
+                    f"Could not resolve App Store ID {appstore_id} via AppFigures "
+                    f"({e.detail}). Verify the ID matches the iOS app in AppFigures."
+                ),
+            )
 
     try:
         data = _appfigures_get("/products/mine")
