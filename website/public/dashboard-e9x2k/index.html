@@ -379,6 +379,7 @@
             <a data-page="donations"><span class="icon">💚</span> Donations</a>
             <a data-page="content"><span class="icon">🦁</span> Content</a>
             <a data-page="subjects"><span class="icon">📖</span> Subjects</a>
+            <a data-page="rankings"><span class="icon">🏆</span> App Rankings</a>
             <a data-page="geography"><span class="icon">🌍</span> Geography</a>
             <a data-page="activity"><span class="icon">⚡</span> Activity</a>
             <a data-page="analytics"><span class="icon">📈</span> Analytics</a>
@@ -648,6 +649,56 @@
             <h1 class="page-title">Activity Feed</h1>
             <div class="table-card">
                 <div id="feedList"></div>
+            </div>
+        </div>
+
+        <!-- App Store Rankings (AppFigures) -->
+        <div class="page" id="page-rankings">
+            <h1 class="page-title">App Store Rankings</h1>
+            <p style="font-size:13px;color:var(--text-muted);margin:0 0 16px">
+                Live App Store chart positions per country, sourced from AppFigures.
+                Cached for 1 hour. Lower number = better rank. Tracks where Endura currently
+                appears across Free / Paid / Grossing charts and category sub-charts.
+            </p>
+            <div class="kpi-grid" style="margin-bottom:20px">
+                <div class="kpi"><div class="kpi-icon">🥇</div><div class="kpi-val" id="r-best">—</div><div class="kpi-label">Best Rank</div><div class="kpi-sub" id="r-best-sub"></div></div>
+                <div class="kpi"><div class="kpi-icon">🌍</div><div class="kpi-val" id="r-countries">—</div><div class="kpi-label">Countries Visible</div></div>
+                <div class="kpi"><div class="kpi-icon">📊</div><div class="kpi-val" id="r-charts">—</div><div class="kpi-label">Chart Positions</div></div>
+                <div class="kpi"><div class="kpi-icon">🕐</div><div class="kpi-val" id="r-asof" style="font-size:18px">—</div><div class="kpi-label">Last Refreshed</div><div class="kpi-sub" id="r-asof-sub"></div></div>
+            </div>
+            <div class="table-card">
+                <div class="table-toolbar" style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:12px">
+                    <input type="text" id="rankSearch" placeholder="Filter by country or category..." style="flex:1;min-width:220px">
+                    <select id="rankSubtype" style="padding:10px 14px;border:1px solid var(--border);border-radius:10px;font-size:14px;min-width:160px">
+                        <option value="all" selected>All charts</option>
+                        <option value="free">Free only</option>
+                        <option value="paid">Paid only</option>
+                        <option value="grossing">Grossing only</option>
+                    </select>
+                    <select id="rankSort" style="padding:10px 14px;border:1px solid var(--border);border-radius:10px;font-size:14px;min-width:200px">
+                        <option value="position" selected>Sort: best rank first</option>
+                        <option value="worst">Sort: worst rank first</option>
+                        <option value="delta_up">Sort: biggest gainers</option>
+                        <option value="delta_down">Sort: biggest losers</option>
+                        <option value="country">Sort: country (A→Z)</option>
+                    </select>
+                    <button onclick="loadRankings(true)" style="padding:10px 16px;background:var(--card);border:1px solid var(--border);border-radius:10px;font-size:13px;cursor:pointer">↻ Refresh</button>
+                </div>
+                <div id="rankingsStatus" style="font-size:12px;color:var(--text-muted);margin-bottom:8px"></div>
+                <div style="overflow-x:auto">
+                    <table>
+                        <thead><tr>
+                            <th>Country</th>
+                            <th>Chart</th>
+                            <th>Type</th>
+                            <th>Device</th>
+                            <th style="text-align:right">Rank</th>
+                            <th>Δ</th>
+                            <th>As Of</th>
+                        </tr></thead>
+                        <tbody id="rankingsBody"></tbody>
+                    </table>
+                </div>
             </div>
         </div>
 
@@ -1097,6 +1148,7 @@ document.querySelectorAll('.sidebar nav a').forEach(link => {
         else if (link.dataset.page === 'donations') loadDonations();
         else if (link.dataset.page === 'content') loadContent();
         else if (link.dataset.page === 'subjects') loadSubjects();
+        else if (link.dataset.page === 'rankings') loadRankings();
         else if (link.dataset.page === 'geography') loadGeography();
         else if (link.dataset.page === 'activity') loadActivity();
         else if (link.dataset.page === 'analytics') initAnalytics();
@@ -2417,6 +2469,150 @@ async function loadActivity() {
         }).join('');
     } catch (e) { console.error('Activity load failed', e); }
 }
+
+// ----- App Store Rankings (AppFigures) -----
+let rankingsData = [];
+
+const COUNTRY_NAMES = {
+    US:'United States',GB:'United Kingdom',CA:'Canada',AU:'Australia',NZ:'New Zealand',IE:'Ireland',
+    IN:'India',LK:'Sri Lanka',BD:'Bangladesh',PK:'Pakistan',NP:'Nepal',BT:'Bhutan',MV:'Maldives',
+    PH:'Philippines',SG:'Singapore',MY:'Malaysia',ID:'Indonesia',TH:'Thailand',VN:'Vietnam',
+    HK:'Hong Kong',TW:'Taiwan',JP:'Japan',KR:'South Korea',MO:'Macau',
+    DE:'Germany',FR:'France',ES:'Spain',IT:'Italy',NL:'Netherlands',BE:'Belgium',CH:'Switzerland',
+    AT:'Austria',SE:'Sweden',NO:'Norway',DK:'Denmark',FI:'Finland',PL:'Poland',PT:'Portugal',
+    GR:'Greece',TR:'Türkiye',RU:'Russia',UA:'Ukraine',CZ:'Czechia',HU:'Hungary',RO:'Romania',
+    ZA:'South Africa',NG:'Nigeria',KE:'Kenya',EG:'Egypt',MA:'Morocco',GH:'Ghana',TZ:'Tanzania',
+    UG:'Uganda',RW:'Rwanda',ET:'Ethiopia',
+    BR:'Brazil',MX:'Mexico',AR:'Argentina',CL:'Chile',CO:'Colombia',PE:'Peru',UY:'Uruguay',
+    EC:'Ecuador',VE:'Venezuela',GT:'Guatemala',CR:'Costa Rica',PA:'Panama',DO:'Dominican Republic',
+    AE:'UAE',SA:'Saudi Arabia',IL:'Israel',QA:'Qatar',KW:'Kuwait',BH:'Bahrain',OM:'Oman',
+    JO:'Jordan',LB:'Lebanon',
+    MN:'Mongolia',KZ:'Kazakhstan',UZ:'Uzbekistan',KG:'Kyrgyzstan',TJ:'Tajikistan',AZ:'Azerbaijan',
+    GE:'Georgia',AM:'Armenia',
+};
+
+function flagFor(code) {
+    if (!code || code.length !== 2) return '';
+    const cc = code.toUpperCase();
+    return String.fromCodePoint(...[...cc].map(c => 0x1F1E6 + c.charCodeAt(0) - 65));
+}
+
+async function loadRankings(forceRefresh = false) {
+    const status = document.getElementById('rankingsStatus');
+    const body = document.getElementById('rankingsBody');
+    status.textContent = forceRefresh ? 'Refreshing from AppFigures…' : 'Loading…';
+    body.innerHTML = '<tr><td colspan="7" class="empty">Loading…</td></tr>';
+    try {
+        const url = forceRefresh ? '/admin/app-rankings?refresh=true' : '/admin/app-rankings';
+        const d = await adminFetch(url);
+        rankingsData = d.rankings || [];
+
+        if (d.best_rank) {
+            const b = d.best_rank;
+            document.getElementById('r-best').textContent = '#' + b.position;
+            document.getElementById('r-best-sub').textContent = `${flagFor(b.country)} ${COUNTRY_NAMES[b.country] || b.country} · ${b.category_name || ''} ${b.subtype || ''}`.trim();
+        } else {
+            document.getElementById('r-best').textContent = '—';
+            document.getElementById('r-best-sub').textContent = 'Not currently charting anywhere';
+        }
+        document.getElementById('r-countries').textContent = (d.country_count || 0).toLocaleString();
+        document.getElementById('r-charts').textContent = (d.rank_count || 0).toLocaleString();
+
+        const fetched = d.fetched_at ? new Date(d.fetched_at) : null;
+        document.getElementById('r-asof').textContent = fetched ? fetched.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '—';
+        const cacheMin = Math.floor((d.cache_age_seconds || 0) / 60);
+        document.getElementById('r-asof-sub').textContent = cacheMin > 0 ? `cached ${cacheMin}m ago` : 'fresh';
+
+        status.textContent = `${rankingsData.length} chart positions across ${d.country_count} countries · cache TTL 1h`;
+        renderRankingsTable();
+    } catch (e) {
+        console.error('Rankings load failed', e);
+        const detail = (e && e.message) || 'Check APPFIGURES_PAT env var on backend';
+        status.textContent = '';
+        body.innerHTML = `<tr><td colspan="7" class="empty" style="color:#dc2626">Failed to load: ${esc(detail)}</td></tr>`;
+        document.getElementById('r-best').textContent = '—';
+        document.getElementById('r-best-sub').textContent = '';
+        document.getElementById('r-countries').textContent = '—';
+        document.getElementById('r-charts').textContent = '—';
+        document.getElementById('r-asof').textContent = '—';
+        document.getElementById('r-asof-sub').textContent = '';
+    }
+}
+
+function renderRankingsTable() {
+    const search = (document.getElementById('rankSearch')?.value || '').toLowerCase().trim();
+    const subtype = document.getElementById('rankSubtype')?.value || 'all';
+    const sort = document.getElementById('rankSort')?.value || 'position';
+
+    let rows = rankingsData.slice();
+    if (subtype !== 'all') rows = rows.filter(r => (r.subtype || '').toLowerCase() === subtype);
+    if (search) {
+        rows = rows.filter(r => {
+            const cname = (COUNTRY_NAMES[r.country] || '').toLowerCase();
+            return (r.country || '').toLowerCase().includes(search)
+                || cname.includes(search)
+                || (r.category_name || '').toLowerCase().includes(search);
+        });
+    }
+
+    const sortFns = {
+        position: (a, b) => (a.position || 9999) - (b.position || 9999),
+        worst:    (a, b) => (b.position || 0) - (a.position || 0),
+        delta_up:   (a, b) => (a.delta || 0) - (b.delta || 0),
+        delta_down: (a, b) => (b.delta || 0) - (a.delta || 0),
+        country:  (a, b) => (COUNTRY_NAMES[a.country] || a.country || '').localeCompare(COUNTRY_NAMES[b.country] || b.country || ''),
+    };
+    rows.sort(sortFns[sort] || sortFns.position);
+
+    const body = document.getElementById('rankingsBody');
+    if (!rows.length) {
+        body.innerHTML = '<tr><td colspan="7" class="empty">No chart positions for these filters</td></tr>';
+        return;
+    }
+
+    body.innerHTML = rows.map(r => {
+        const cname = COUNTRY_NAMES[r.country] || r.country || '?';
+        let deltaCell = '<span style="color:var(--text-muted)">—</span>';
+        if (r.delta != null && r.delta !== 0) {
+            const up = r.delta < 0; // negative delta = position improved (smaller number = better)
+            const arrow = up ? '▲' : '▼';
+            const color = up ? '#10b981' : '#dc2626';
+            deltaCell = `<span style="color:${color};font-weight:600">${arrow} ${Math.abs(r.delta)}</span>`;
+        } else if (r.delta === 0) {
+            deltaCell = '<span style="color:var(--text-muted)">·</span>';
+        }
+        const subtypeBadge = {
+            free: '<span class="badge badge-blue" style="text-transform:capitalize">Free</span>',
+            paid: '<span class="badge" style="background:#fef3c7;color:#92400e;text-transform:capitalize">Paid</span>',
+            grossing: '<span class="badge" style="background:#dcfce7;color:#166534;text-transform:capitalize">Grossing</span>',
+        }[r.subtype] || `<span class="badge">${esc(r.subtype || '—')}</span>`;
+        const asOf = r.as_of ? new Date(r.as_of).toLocaleDateString() : '—';
+        return `
+            <tr>
+                <td><span style="font-size:18px;margin-right:6px">${flagFor(r.country)}</span>${esc(cname)} <span style="color:var(--text-muted);font-size:11px">(${esc(r.country)})</span></td>
+                <td>${esc(r.category_name || '—')}</td>
+                <td>${subtypeBadge}</td>
+                <td style="text-transform:capitalize;color:var(--text-muted)">${esc(r.device || 'universal')}</td>
+                <td style="text-align:right;font-weight:700;color:var(--forest-dark)">#${(r.position || '—').toLocaleString()}</td>
+                <td>${deltaCell}</td>
+                <td style="color:var(--text-muted);font-size:12px">${asOf}</td>
+            </tr>
+        `;
+    }).join('');
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+    const wireRankControls = () => {
+        ['rankSearch', 'rankSubtype', 'rankSort'].forEach(id => {
+            const el = document.getElementById(id);
+            if (el && !el._wired) {
+                el._wired = true;
+                el.addEventListener(id === 'rankSearch' ? 'input' : 'change', renderRankingsTable);
+            }
+        });
+    };
+    wireRankControls();
+});
 
 // ----- Helpers -----
 function esc(s) { if (!s) return ''; const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }

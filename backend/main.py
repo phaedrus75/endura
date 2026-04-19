@@ -22,6 +22,7 @@ import os
 import html
 import json as _json
 import logging
+import httpx
 from content_filter import contains_profanity
 
 logger = logging.getLogger(__name__)
@@ -3340,6 +3341,160 @@ def admin_sessions(
         })
 
     return {"total": total, "sessions": result}
+
+
+# ============ Admin App Store Rankings (via AppFigures) ============
+
+_APPFIGURES_BASE = "https://api.appfigures.com/v2"
+_appfigures_state: dict = {
+    "product_id": None,
+    "product_name": None,
+    "product_icon": None,
+    "rankings_payload": None,
+    "rankings_fetched_at": None,
+}
+_APPFIGURES_CACHE_TTL_SECONDS = 3600  # 1h — AppFigures rankings update daily
+
+# Largest set of countries that's still polite to query in one shot.
+# Semicolon-separated per AppFigures spec.
+_APPFIGURES_COUNTRIES = ";".join([
+    "US", "GB", "CA", "AU", "NZ", "IE",
+    "IN", "LK", "BD", "PK", "NP", "BT", "MV",
+    "PH", "SG", "MY", "ID", "TH", "VN", "HK", "TW", "JP", "KR", "MO",
+    "DE", "FR", "ES", "IT", "NL", "BE", "CH", "AT", "SE", "NO", "DK",
+    "FI", "PL", "PT", "GR", "TR", "RU", "UA", "CZ", "HU", "RO",
+    "ZA", "NG", "KE", "EG", "MA", "GH", "TZ", "UG", "RW", "ET",
+    "BR", "MX", "AR", "CL", "CO", "PE", "UY", "EC", "VE", "GT", "CR", "PA", "DO",
+    "AE", "SA", "IL", "QA", "KW", "BH", "OM", "JO", "LB",
+    "MN", "KZ", "UZ", "KG", "TJ", "AZ", "GE", "AM",
+])
+
+
+def _appfigures_headers() -> dict:
+    pat = os.environ.get("APPFIGURES_PAT", "").strip()
+    if not pat:
+        raise HTTPException(
+            status_code=503,
+            detail="APPFIGURES_PAT env var not configured on backend",
+        )
+    return {"Authorization": f"Bearer {pat}", "Accept": "application/json"}
+
+
+def _appfigures_get(path: str, params: Optional[dict] = None):
+    headers = _appfigures_headers()
+    url = f"{_APPFIGURES_BASE}{path}"
+    try:
+        with httpx.Client(timeout=30.0) as client:
+            r = client.get(url, headers=headers, params=params or {})
+    except httpx.HTTPError as e:
+        raise HTTPException(status_code=502, detail=f"AppFigures network error: {e}")
+    if r.status_code == 401 or r.status_code == 403:
+        raise HTTPException(status_code=502, detail="AppFigures auth failed; check APPFIGURES_PAT")
+    if r.status_code >= 400:
+        raise HTTPException(status_code=502, detail=f"AppFigures {r.status_code}: {r.text[:200]}")
+    return r.json()
+
+
+def _resolve_appfigures_product():
+    """Find the iOS product in the AppFigures account. Cached for the process lifetime."""
+    if _appfigures_state["product_id"]:
+        return _appfigures_state["product_id"]
+    data = _appfigures_get("/products/mine")
+    # /products/mine returns either a list or a dict keyed by id, depending on account.
+    items = data.values() if isinstance(data, dict) else data
+    for p in items:
+        if not isinstance(p, dict):
+            continue
+        store = (p.get("store") or "").lower()
+        store_id = (p.get("store_id") or "")
+        # iOS products on AppFigures: store == "apple" or "apple_ios"
+        if "apple" in store and "mac" not in store:
+            _appfigures_state["product_id"] = p.get("id")
+            _appfigures_state["product_name"] = p.get("name")
+            _appfigures_state["product_icon"] = p.get("icon")
+            return _appfigures_state["product_id"]
+    raise HTTPException(status_code=404, detail="No iOS product found in AppFigures account")
+
+
+@app.get("/admin/app-rankings")
+def admin_app_rankings(
+    refresh: bool = Query(default=False, description="Bypass the 1h cache"),
+    _=Depends(verify_admin),
+):
+    """Current App Store chart positions per country, sourced from AppFigures.
+    Cached in-process for 1h to stay polite with AppFigures rate limits.
+    """
+    cached = _appfigures_state["rankings_payload"]
+    fetched_at = _appfigures_state["rankings_fetched_at"]
+    if not refresh and cached and fetched_at:
+        age = (datetime.utcnow() - fetched_at).total_seconds()
+        if age < _APPFIGURES_CACHE_TTL_SECONDS:
+            return {**cached, "cache_age_seconds": int(age)}
+
+    product_id = _resolve_appfigures_product()
+
+    # Pull the last 3 days at daily granularity so we always have at least one
+    # filled slot per (country, category) pair even if today hasn't published yet.
+    today = datetime.utcnow().date()
+    start = today - timedelta(days=3)
+    raw = _appfigures_get(
+        f"/ranks/{product_id}/daily/{start.isoformat()}/{today.isoformat()}",
+        params={"countries": _APPFIGURES_COUNTRIES, "filter": 400, "tz": "utc"},
+    )
+
+    dates = raw.get("dates", []) or []
+    rows = []
+    for series in raw.get("data", []) or []:
+        positions = series.get("positions") or []
+        deltas = series.get("deltas") or []
+        latest_pos = latest_delta = latest_date = None
+        for i in range(len(positions) - 1, -1, -1):
+            if positions[i] is not None:
+                latest_pos = positions[i]
+                latest_delta = deltas[i] if i < len(deltas) else None
+                latest_date = dates[i] if i < len(dates) else None
+                break
+        if latest_pos is None:
+            continue
+        cat = series.get("category") or {}
+        rows.append({
+            "country": series.get("country"),
+            "category_name": cat.get("name"),
+            "subtype": cat.get("subtype"),  # free | paid | grossing
+            "device": cat.get("device"),    # iphone | ipad | universal
+            "store": cat.get("store"),
+            "position": latest_pos,
+            "delta": latest_delta,
+            "as_of": latest_date,
+        })
+
+    rows.sort(key=lambda r: r["position"])
+
+    countries_visible = sorted({r["country"] for r in rows if r.get("country")})
+    best = rows[0] if rows else None
+
+    payload = {
+        "product_id": product_id,
+        "product_name": _appfigures_state.get("product_name"),
+        "product_icon": _appfigures_state.get("product_icon"),
+        "rankings": rows,
+        "country_count": len(countries_visible),
+        "rank_count": len(rows),
+        "best_rank": (
+            {
+                "country": best["country"],
+                "category_name": best["category_name"],
+                "subtype": best["subtype"],
+                "position": best["position"],
+            } if best else None
+        ),
+        "fetched_at": datetime.utcnow().isoformat(),
+        "data_window": {"start": start.isoformat(), "end": today.isoformat()},
+        "cache_age_seconds": 0,
+    }
+    _appfigures_state["rankings_payload"] = payload
+    _appfigures_state["rankings_fetched_at"] = datetime.utcnow()
+    return payload
 
 
 @app.get("/admin/activity")
