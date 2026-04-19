@@ -3540,7 +3540,9 @@ def _appfigures_fetch_ranks(start_date: date, end_date: date) -> tuple[dict, lis
         try:
             raw = _appfigures_get(
                 f"/ranks/{product_id}/daily/{start_date.isoformat()}/{end_date.isoformat()}",
-                params={"countries": ";".join(countries), "filter": 400, "tz": "utc"},
+                # filter=1000 captures the full chart (AppFigures max). Without
+                # this we'd silently drop ranks #401-1000.
+                params={"countries": ";".join(countries), "filter": 1000, "tz": "utc"},
             )
             break
         except HTTPException as e:
