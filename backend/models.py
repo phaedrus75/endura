@@ -693,3 +693,47 @@ class AppRank(Base):
     position = Column(Integer, nullable=False)
     delta = Column(Integer, nullable=True)
     fetched_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+
+class UserFeedback(Base):
+    """User-submitted feedback: bugs, feature requests, questions, praise.
+    Anonymous submissions allowed (user_id nullable). Auto-attached metadata
+    helps with triage. Status workflow tracked for response-time KPIs.
+    """
+    __tablename__ = "user_feedback"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)
+    email = Column(String, nullable=True, index=True)
+    feedback_type = Column(String(20), nullable=False, index=True)  # bug | feature | question | praise
+    title = Column(String(200), nullable=True)
+    message = Column(Text, nullable=False)
+    # Auto-attached metadata
+    app_version = Column(String(20), nullable=True)
+    os = Column(String(40), nullable=True)
+    device_model = Column(String(80), nullable=True)
+    screen_context = Column(String(120), nullable=True)             # Where the user was when submitting
+    screenshot_url = Column(String(500), nullable=True)
+    # Triage fields
+    status = Column(String(20), default="new", nullable=False, index=True)  # new|triaged|in_progress|done|wontfix|duplicate
+    priority = Column(String(20), default="medium", nullable=False)         # low|medium|high|critical
+    admin_notes = Column(Text, nullable=True)
+    internal_link = Column(String(300), nullable=True)              # Linear/GitHub issue url
+    upvotes = Column(Integer, default=0, nullable=False)            # for feature requests
+    # Timestamps
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    resolved_at = Column(DateTime, nullable=True)
+
+
+class FeedbackUpvote(Base):
+    """Per-user upvotes on feature requests. Prevents duplicate voting."""
+    __tablename__ = "feedback_upvotes"
+    __table_args__ = (
+        UniqueConstraint("feedback_id", "user_id", name="uq_feedback_upvote"),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    feedback_id = Column(Integer, ForeignKey("user_feedback.id"), nullable=False, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)

@@ -380,6 +380,7 @@
             <a data-page="content"><span class="icon">🦁</span> Content</a>
             <a data-page="subjects"><span class="icon">📖</span> Subjects</a>
             <a data-page="rankings"><span class="icon">🏆</span> App Rankings</a>
+            <a data-page="feedback"><span class="icon">💬</span> Feedback</a>
             <a data-page="geography"><span class="icon">🌍</span> Geography</a>
             <a data-page="activity"><span class="icon">⚡</span> Activity</a>
             <a data-page="analytics"><span class="icon">📈</span> Analytics</a>
@@ -709,6 +710,8 @@
                 </div>
             </div>
 
+            <!-- (App Rankings continues below) -->
+
             <!-- Trajectory chart modal -->
             <div id="rankTrajectoryOverlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.45);z-index:1000;align-items:center;justify-content:center" onclick="if(event.target===this)closeTrajectory()">
                 <div style="background:white;border-radius:16px;padding:24px;max-width:760px;width:92%;max-height:90vh;overflow:auto;box-shadow:0 20px 60px rgba(0,0,0,0.3)">
@@ -729,6 +732,108 @@
                         <div id="trajectoryStats" style="font-size:12px;color:var(--text-muted);align-self:center"></div>
                     </div>
                     <div style="position:relative;height:340px"><canvas id="trajectoryChart"></canvas></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- User Feedback -->
+        <div class="page" id="page-feedback">
+            <h1 class="page-title">User Feedback</h1>
+            <p style="font-size:13px;color:var(--text-muted);margin:0 0 16px">
+                Bugs, feature requests, questions, and praise from users. Click any row to triage.
+            </p>
+            <div class="kpi-grid" style="margin-bottom:20px">
+                <div class="kpi"><div class="kpi-icon">📥</div><div class="kpi-val" id="fb-new7d">—</div><div class="kpi-label">New (7d)</div></div>
+                <div class="kpi"><div class="kpi-icon">🔥</div><div class="kpi-val" id="fb-open">—</div><div class="kpi-label">Open</div><div class="kpi-sub" id="fb-open-sub"></div></div>
+                <div class="kpi"><div class="kpi-icon">🐛</div><div class="kpi-val" id="fb-bugs">—</div><div class="kpi-label">Bugs</div></div>
+                <div class="kpi"><div class="kpi-icon">💡</div><div class="kpi-val" id="fb-features">—</div><div class="kpi-label">Feature Requests</div></div>
+            </div>
+            <div class="table-card">
+                <div class="table-toolbar" style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:12px">
+                    <input type="text" id="fbSearch" placeholder="Search title/message/email..." style="flex:1;min-width:220px">
+                    <select id="fbStatus" style="padding:10px 14px;border:1px solid var(--border);border-radius:10px;font-size:14px;min-width:160px">
+                        <option value="">All statuses</option>
+                        <option value="new" selected>🆕 New</option>
+                        <option value="triaged">👀 Triaged</option>
+                        <option value="in_progress">🔨 In Progress</option>
+                        <option value="done">✅ Done</option>
+                        <option value="wontfix">🚫 Won't Fix</option>
+                        <option value="duplicate">📑 Duplicate</option>
+                    </select>
+                    <select id="fbType" style="padding:10px 14px;border:1px solid var(--border);border-radius:10px;font-size:14px;min-width:160px">
+                        <option value="">All types</option>
+                        <option value="bug">🐛 Bug</option>
+                        <option value="feature">💡 Feature</option>
+                        <option value="question">❓ Question</option>
+                        <option value="praise">💚 Praise</option>
+                    </select>
+                    <button onclick="loadFeedback()" style="padding:10px 16px;background:var(--card);border:1px solid var(--border);border-radius:10px;font-size:13px;cursor:pointer">↻ Refresh</button>
+                </div>
+                <div id="feedbackStatus" style="font-size:12px;color:var(--text-muted);margin-bottom:8px"></div>
+                <div style="overflow-x:auto">
+                    <table>
+                        <thead><tr>
+                            <th style="width:80px">Type</th>
+                            <th>Title / Message</th>
+                            <th style="width:140px">User</th>
+                            <th style="width:110px">Status</th>
+                            <th style="width:60px">▲</th>
+                            <th style="width:130px">When</th>
+                        </tr></thead>
+                        <tbody id="feedbackBody"></tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Feedback detail modal -->
+            <div id="feedbackOverlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.45);z-index:1000;align-items:center;justify-content:center" onclick="if(event.target===this)closeFeedback()">
+                <div style="background:white;border-radius:16px;padding:24px;max-width:680px;width:92%;max-height:90vh;overflow:auto;box-shadow:0 20px 60px rgba(0,0,0,0.3)">
+                    <div style="display:flex;justify-content:space-between;align-items:start;margin-bottom:16px">
+                        <div style="flex:1">
+                            <div id="fbDetailType" style="font-size:12px;text-transform:uppercase;letter-spacing:0.5px;color:var(--text-muted);margin-bottom:4px"></div>
+                            <h2 id="fbDetailTitle" style="margin:0 0 4px;font-size:20px"></h2>
+                            <div id="fbDetailMeta" style="font-size:12px;color:var(--text-muted)"></div>
+                        </div>
+                        <button onclick="closeFeedback()" style="background:none;border:none;font-size:24px;cursor:pointer;color:var(--text-muted);margin-left:12px">×</button>
+                    </div>
+                    <div style="background:var(--bg);padding:14px;border-radius:10px;margin-bottom:16px;white-space:pre-wrap;font-size:14px;line-height:1.5" id="fbDetailMessage"></div>
+                    <div id="fbDetailScreenshot" style="margin-bottom:16px"></div>
+                    <div id="fbDetailContext" style="font-size:12px;color:var(--text-muted);margin-bottom:16px;padding:10px;background:var(--bg);border-radius:8px;font-family:monospace"></div>
+
+                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px">
+                        <div>
+                            <label style="font-size:12px;color:var(--text-muted);display:block;margin-bottom:4px">Status</label>
+                            <select id="fbDetailStatus" style="width:100%;padding:8px 12px;border:1px solid var(--border);border-radius:8px">
+                                <option value="new">🆕 New</option>
+                                <option value="triaged">👀 Triaged</option>
+                                <option value="in_progress">🔨 In Progress</option>
+                                <option value="done">✅ Done</option>
+                                <option value="wontfix">🚫 Won't Fix</option>
+                                <option value="duplicate">📑 Duplicate</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label style="font-size:12px;color:var(--text-muted);display:block;margin-bottom:4px">Priority</label>
+                            <select id="fbDetailPriority" style="width:100%;padding:8px 12px;border:1px solid var(--border);border-radius:8px">
+                                <option value="low">Low</option>
+                                <option value="medium">Medium</option>
+                                <option value="high">High</option>
+                                <option value="critical">Critical</option>
+                            </select>
+                        </div>
+                    </div>
+                    <label style="font-size:12px;color:var(--text-muted);display:block;margin-bottom:4px">Internal link (Linear/GitHub URL)</label>
+                    <input type="text" id="fbDetailLink" placeholder="https://..." style="width:100%;padding:8px 12px;border:1px solid var(--border);border-radius:8px;margin-bottom:12px">
+                    <label style="font-size:12px;color:var(--text-muted);display:block;margin-bottom:4px">Admin notes</label>
+                    <textarea id="fbDetailNotes" rows="4" placeholder="Internal triage notes…" style="width:100%;padding:10px;border:1px solid var(--border);border-radius:8px;font-family:inherit;font-size:14px;resize:vertical;margin-bottom:16px"></textarea>
+
+                    <div style="display:flex;justify-content:space-between;align-items:center;gap:10px">
+                        <button onclick="deleteFeedback()" style="padding:10px 16px;background:transparent;border:1px solid #fee2e2;color:#dc2626;border-radius:8px;cursor:pointer;font-size:13px">Delete</button>
+                        <div style="display:flex;gap:10px">
+                            <button onclick="closeFeedback()" style="padding:10px 18px;background:var(--card);border:1px solid var(--border);border-radius:8px;cursor:pointer;font-size:13px">Cancel</button>
+                            <button onclick="saveFeedback()" style="padding:10px 18px;background:var(--forest);color:white;border:none;border-radius:8px;cursor:pointer;font-size:13px;font-weight:600">Save</button>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
@@ -1184,6 +1289,7 @@ document.querySelectorAll('.sidebar nav a').forEach(link => {
         else if (link.dataset.page === 'content') loadContent();
         else if (link.dataset.page === 'subjects') loadSubjects();
         else if (link.dataset.page === 'rankings') loadRankings();
+        else if (link.dataset.page === 'feedback') loadFeedback();
         else if (link.dataset.page === 'geography') loadGeography();
         else if (link.dataset.page === 'activity') loadActivity();
         else if (link.dataset.page === 'analytics') initAnalytics();
@@ -2774,10 +2880,172 @@ document.addEventListener('DOMContentLoaded', () => {
             winSel._wired = true;
             winSel.addEventListener('change', () => loadRankings(false));
         }
+        ['fbSearch', 'fbStatus', 'fbType'].forEach(id => {
+            const el = document.getElementById(id);
+            if (el && !el._wired) {
+                el._wired = true;
+                let timer = null;
+                el.addEventListener(id === 'fbSearch' ? 'input' : 'change', () => {
+                    clearTimeout(timer);
+                    timer = setTimeout(loadFeedback, id === 'fbSearch' ? 300 : 0);
+                });
+            }
+        });
     };
     wireRankControls();
-    document.addEventListener('keydown', e => { if (e.key === 'Escape') closeTrajectory(); });
+    document.addEventListener('keydown', e => { if (e.key === 'Escape') { closeTrajectory(); closeFeedback(); } });
 });
+
+// ----- User Feedback -----
+let _feedbackData = [];
+let _feedbackEditing = null;
+
+const FB_TYPE_META = {
+    bug:      { icon: '🐛', label: 'Bug',     color: '#fee2e2', text: '#991b1b' },
+    feature:  { icon: '💡', label: 'Feature', color: '#fef3c7', text: '#92400e' },
+    question: { icon: '❓', label: 'Question',color: '#dbeafe', text: '#1e40af' },
+    praise:   { icon: '💚', label: 'Praise',  color: '#dcfce7', text: '#166534' },
+};
+const FB_STATUS_META = {
+    new:         { label: 'New',         icon: '🆕', color: '#dbeafe', text: '#1e40af' },
+    triaged:     { label: 'Triaged',     icon: '👀', color: '#fef3c7', text: '#92400e' },
+    in_progress: { label: 'In Progress', icon: '🔨', color: '#e0e7ff', text: '#4338ca' },
+    done:        { label: 'Done',        icon: '✅', color: '#dcfce7', text: '#166534' },
+    wontfix:     { label: "Won't Fix",   icon: '🚫', color: '#f3f4f6', text: '#6b7280' },
+    duplicate:   { label: 'Duplicate',   icon: '📑', color: '#f3f4f6', text: '#6b7280' },
+};
+
+async function loadFeedback() {
+    const status = document.getElementById('fbStatus').value;
+    const type = document.getElementById('fbType').value;
+    const q = (document.getElementById('fbSearch').value || '').trim();
+    const body = document.getElementById('feedbackBody');
+    const statusEl = document.getElementById('feedbackStatus');
+    body.innerHTML = '<tr><td colspan="6" class="empty">Loading…</td></tr>';
+    statusEl.textContent = '';
+    try {
+        const params = new URLSearchParams({ limit: '500' });
+        if (status) params.set('status', status);
+        if (type) params.set('feedback_type', type);
+        if (q) params.set('q', q);
+        const d = await adminFetch('/admin/feedback?' + params.toString());
+        _feedbackData = d.items || [];
+
+        document.getElementById('fb-new7d').textContent = (d.counts.new_7d || 0).toLocaleString();
+        document.getElementById('fb-open').textContent = (d.counts.open || 0).toLocaleString();
+        document.getElementById('fb-open-sub').textContent = `of ${d.counts.total || 0} total`;
+        document.getElementById('fb-bugs').textContent = (d.counts.by_type?.bug || 0).toLocaleString();
+        document.getElementById('fb-features').textContent = (d.counts.by_type?.feature || 0).toLocaleString();
+
+        if (!_feedbackData.length) {
+            body.innerHTML = '<tr><td colspan="6" class="empty">No feedback yet for these filters</td></tr>';
+            statusEl.textContent = '';
+            return;
+        }
+        statusEl.textContent = `${_feedbackData.length} item${_feedbackData.length === 1 ? '' : 's'}`;
+        body.innerHTML = _feedbackData.map((fb, idx) => {
+            const tm = FB_TYPE_META[fb.feedback_type] || { icon: '•', label: fb.feedback_type, color: '#f3f4f6', text: '#6b7280' };
+            const sm = FB_STATUS_META[fb.status] || { label: fb.status, icon: '·', color: '#f3f4f6', text: '#6b7280' };
+            const title = fb.title || (fb.message.length > 80 ? fb.message.slice(0, 80) + '…' : fb.message);
+            const userCell = fb.username ? `<a href="#" onclick="return false">${esc(fb.username)}</a>`
+                            : (fb.email ? `<span style="font-size:12px">${esc(fb.email)}</span>`
+                                        : '<span style="color:var(--text-muted);font-size:12px">anonymous</span>');
+            const upvoteCell = fb.feedback_type === 'feature'
+                ? `<span style="font-weight:600">${fb.upvotes}</span>`
+                : '<span style="color:var(--text-muted)">—</span>';
+            return `
+                <tr style="cursor:pointer" onclick="openFeedback(${idx})">
+                    <td><span class="badge" style="background:${tm.color};color:${tm.text}">${tm.icon} ${tm.label}</span></td>
+                    <td>
+                        <div style="font-weight:600;margin-bottom:2px">${esc(title)}</div>
+                        ${fb.title ? `<div style="font-size:12px;color:var(--text-muted)">${esc(fb.message.slice(0, 100))}${fb.message.length > 100 ? '…' : ''}</div>` : ''}
+                    </td>
+                    <td>${userCell}</td>
+                    <td><span class="badge" style="background:${sm.color};color:${sm.text}">${sm.icon} ${sm.label}</span></td>
+                    <td style="text-align:center">${upvoteCell}</td>
+                    <td style="color:var(--text-muted);font-size:12px">${timeAgo(fb.created_at)}</td>
+                </tr>
+            `;
+        }).join('');
+    } catch (e) {
+        console.error('Feedback load failed', e);
+        body.innerHTML = `<tr><td colspan="6" class="empty" style="color:#dc2626">Failed to load: ${esc(e.message || 'unknown')}</td></tr>`;
+    }
+}
+
+function openFeedback(idx) {
+    const fb = _feedbackData[idx];
+    if (!fb) return;
+    _feedbackEditing = fb;
+    const tm = FB_TYPE_META[fb.feedback_type] || { icon: '•', label: fb.feedback_type };
+    document.getElementById('fbDetailType').textContent = `${tm.icon} ${tm.label} · #${fb.id}`;
+    document.getElementById('fbDetailTitle').textContent = fb.title || '(no title)';
+    const userPart = fb.username ? `@${fb.username}` : (fb.email || 'anonymous');
+    document.getElementById('fbDetailMeta').textContent = `${userPart} · ${new Date(fb.created_at).toLocaleString()}`;
+    document.getElementById('fbDetailMessage').textContent = fb.message;
+    document.getElementById('fbDetailScreenshot').innerHTML = fb.screenshot_url
+        ? `<a href="${esc(fb.screenshot_url)}" target="_blank"><img src="${esc(fb.screenshot_url)}" style="max-width:100%;border-radius:8px;border:1px solid var(--border)"></a>`
+        : '';
+    const ctxBits = [
+        fb.app_version && `app v${fb.app_version}`,
+        fb.os && `OS ${fb.os}`,
+        fb.device_model,
+        fb.screen_context && `screen: ${fb.screen_context}`,
+    ].filter(Boolean);
+    document.getElementById('fbDetailContext').textContent = ctxBits.length ? ctxBits.join(' · ') : '(no metadata captured)';
+    document.getElementById('fbDetailStatus').value = fb.status;
+    document.getElementById('fbDetailPriority').value = fb.priority;
+    document.getElementById('fbDetailLink').value = fb.internal_link || '';
+    document.getElementById('fbDetailNotes').value = fb.admin_notes || '';
+    document.getElementById('feedbackOverlay').style.display = 'flex';
+}
+
+function closeFeedback() {
+    document.getElementById('feedbackOverlay').style.display = 'none';
+    _feedbackEditing = null;
+}
+
+async function saveFeedback() {
+    if (!_feedbackEditing) return;
+    const id = _feedbackEditing.id;
+    const payload = {
+        status: document.getElementById('fbDetailStatus').value,
+        priority: document.getElementById('fbDetailPriority').value,
+        internal_link: document.getElementById('fbDetailLink').value || null,
+        admin_notes: document.getElementById('fbDetailNotes').value || null,
+    };
+    try {
+        const res = await fetch(API_URL + '/admin/feedback/' + id, {
+            method: 'PATCH',
+            headers: { 'X-Admin-Key': API_KEY, 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+        });
+        if (!res.ok) {
+            const err = await res.json().catch(() => ({}));
+            throw new Error(err.detail || res.status);
+        }
+        closeFeedback();
+        loadFeedback();
+    } catch (e) {
+        alert('Save failed: ' + (e.message || e));
+    }
+}
+
+async function deleteFeedback() {
+    if (!_feedbackEditing) return;
+    if (!confirm(`Delete feedback #${_feedbackEditing.id}? This cannot be undone.`)) return;
+    try {
+        const res = await fetch(API_URL + '/admin/feedback/' + _feedbackEditing.id, {
+            method: 'DELETE',
+            headers: { 'X-Admin-Key': API_KEY },
+        });
+        if (!res.ok) throw new Error(res.status);
+        closeFeedback();
+        loadFeedback();
+    } catch (e) {
+        alert('Delete failed: ' + (e.message || e));
+    }
+}
 
 // ----- Helpers -----
 function esc(s) { if (!s) return ''; const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }

@@ -110,6 +110,49 @@ Open questions:
 - [ ] Show recap on Sunday evening or Monday morning? (Wrapped does Monday energy)
 - [ ] What happens for users with <30 min that week — show recap with "small week, big future" framing, or skip?
 
+### Track D — User Feedback System (bugs + feature requests)
+
+End-to-end loop so users can report bugs, request features, ask questions, and we can triage in admin and ship the right things.
+
+**Phase 0 — Backend + admin (✅ shipping with this commit):**
+- [x] DB: `user_feedback` table (anonymous-friendly, captures type/title/message + auto metadata: app_version, OS, device, screen_context, screenshot_url) and `feedback_upvotes` table
+- [x] `POST /feedback` — public endpoint, auth optional (anonymous submissions allowed)
+- [x] `GET /feedback/feature-requests` — public list of feature requests, sortable by upvotes/newest, returns whether current user upvoted
+- [x] `POST /feedback/{id}/upvote` and `DELETE /feedback/{id}/upvote` — auth required, one vote per user
+- [x] Admin: `GET /admin/feedback` (filters: status/type/search, KPIs counts), `PATCH /admin/feedback/{id}` (status/priority/notes/internal_link), `DELETE /admin/feedback/{id}`
+- [x] Admin dashboard: new "💬 Feedback" tab with KPIs (New 7d / Open / Bugs / Feature Requests), filterable table, click-to-triage modal with status workflow (new → triaged → in_progress → done/wontfix/duplicate), priority, internal Linear/GitHub link, admin notes
+
+**Phase 1 — Mobile in-app form (Build 16):**
+- [ ] `FeedbackScreen.tsx` — type picker (Bug / Feature / Question / Praise), title (optional for bugs), message, optional email for anonymous users
+- [ ] Auto-attach metadata client-side: `expo-application` for app version, `Platform.OS`/`Platform.Version`, `expo-device` for model, current route name as `screen_context`
+- [ ] Entry points: Profile/Settings → "Send feedback" link; long-press anywhere on About screen → "Report a problem" shortcut
+- [ ] Success toast: "Thanks! We've received your feedback." with feedback id for reference
+
+**Phase 2 — Screenshot attachments (Build 16):**
+- [ ] `expo-media-library` + `expo-image-picker` to attach screenshot when filing a bug
+- [ ] Upload to Supabase Storage (or S3 via existing infra) → store URL on feedback row
+
+**Phase 3 — Email loop (Build 16, optional):**
+- [ ] On submit: send acknowledgment email if email provided ("we got it, here's your reference number")
+- [ ] On status change to `done`: send "this is shipped in build XX" email
+- [ ] Use Postmark or Resend; add `EMAIL_PROVIDER_KEY` env var
+
+**Phase 5 — Public feature voting (Build 16):**
+- [ ] `/roadmap` public web page reads from `GET /feedback/feature-requests` — shows top-voted features, status, ability to upvote (auth required to vote, viewable to all)
+- [ ] In-app "💡 Roadmap" link from Profile → opens same view in WebView, deep-link to upvote
+- [ ] Admin can mark a feature `in_progress` → it shows up as "🔨 We're building this!" on the public roadmap, building anticipation
+
+Open questions:
+- [ ] Where does the "Send feedback" entry point live? Profile only, or also a floating button on key screens (Timer, Tips)?
+- [ ] How aggressive to be on email collection for anonymous submissions — required to follow up, or strictly optional?
+- [ ] Do we want PostHog `feedback_submitted` event with type for funnel tracking?
+
+### Track E — AppFigures Reviews integration (deferred, post Build 16)
+
+- [ ] Pull App Store reviews via AppFigures Reviews API daily, store in DB
+- [ ] Surface in admin: filter by rating (1★ first), country, date; auto-flag 1–2★ reviews for response
+- [ ] Optional: cross-reference 1★ reviews with feedback table by date/country to find systemic bugs
+
 ---
 
 ## Build 17 — proposed scope

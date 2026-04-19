@@ -16,7 +16,7 @@ import crud
 from database import engine, get_db, Base, SQLALCHEMY_DATABASE_URL
 from auth import (
     get_password_hash, verify_password, create_access_token,
-    get_current_user, ACCESS_TOKEN_EXPIRE_MINUTES
+    get_current_user, get_optional_user, ACCESS_TOKEN_EXPIRE_MINUTES
 )
 import os
 import html
@@ -3824,6 +3824,258 @@ def admin_app_rankings_timeseries(
             for p in points
         ],
     }
+
+
+# ============ User Feedback ============
+
+@app.post("/feedback")
+def submit_feedback(
+    payload: schemas.FeedbackCreate,
+    current_user: Optional[models.User] = Depends(get_optional_user),
+    db: Session = Depends(get_db),
+):
+    """Submit user feedback. Auth optional — anonymous submissions allowed.
+    Returns the created feedback id and a friendly message."""
+    fb = models.UserFeedback(
+        user_id=current_user.id if current_user else None,
+        email=payload.email or (current_user.email if current_user else None),
+        feedback_type=payload.feedback_type,
+        title=payload.title.strip() if payload.title else None,
+        message=payload.message.strip(),
+        app_version=payload.app_version,
+        os=payload.os,
+        device_model=payload.device_model,
+        screen_context=payload.screen_context,
+        screenshot_url=payload.screenshot_url,
+        status="new",
+        priority="medium",
+    )
+    db.add(fb)
+    db.commit()
+    db.refresh(fb)
+    logger.info(
+        f"Feedback received id={fb.id} type={fb.feedback_type} "
+        f"user_id={fb.user_id} email={fb.email or '(anon)'}"
+    )
+    return {
+        "id": fb.id,
+        "message": "Thanks! We've received your feedback and will take a look.",
+    }
+
+
+@app.get("/feedback/feature-requests")
+def list_public_feature_requests(
+    sort: str = Query(default="upvotes", pattern="^(upvotes|newest)$"),
+    status: Optional[str] = Query(default=None),
+    limit: int = Query(default=100, ge=1, le=500),
+    current_user: Optional[models.User] = Depends(get_optional_user),
+    db: Session = Depends(get_db),
+):
+    """Public list of feature requests (for the in-app + web roadmap page).
+    Returns whether the current user has upvoted each one."""
+    q = db.query(models.UserFeedback).filter(
+        models.UserFeedback.feedback_type == "feature",
+        models.UserFeedback.status.notin_(["wontfix", "duplicate"]),
+    )
+    if status:
+        q = q.filter(models.UserFeedback.status == status)
+    if sort == "upvotes":
+        q = q.order_by(models.UserFeedback.upvotes.desc(), models.UserFeedback.created_at.desc())
+    else:
+        q = q.order_by(models.UserFeedback.created_at.desc())
+    items = q.limit(limit).all()
+
+    user_upvoted_ids: set[int] = set()
+    if current_user:
+        upvotes = db.query(models.FeedbackUpvote.feedback_id).filter(
+            models.FeedbackUpvote.user_id == current_user.id,
+            models.FeedbackUpvote.feedback_id.in_([i.id for i in items]) if items else False,
+        ).all()
+        user_upvoted_ids = {u.feedback_id for u in upvotes}
+
+    return [
+        {
+            "id": fb.id,
+            "title": fb.title or (fb.message[:80] + "…" if len(fb.message) > 80 else fb.message),
+            "message": fb.message,
+            "status": fb.status,
+            "upvotes": fb.upvotes,
+            "user_upvoted": fb.id in user_upvoted_ids,
+            "created_at": fb.created_at.isoformat(),
+        }
+        for fb in items
+    ]
+
+
+@app.post("/feedback/{feedback_id}/upvote")
+def upvote_feature_request(
+    feedback_id: int,
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Upvote a feature request. Auth required (one vote per user)."""
+    fb = db.query(models.UserFeedback).filter(models.UserFeedback.id == feedback_id).first()
+    if not fb:
+        raise HTTPException(status_code=404, detail="Feedback not found")
+    if fb.feedback_type != "feature":
+        raise HTTPException(status_code=400, detail="Can only upvote feature requests")
+    existing = db.query(models.FeedbackUpvote).filter(
+        models.FeedbackUpvote.feedback_id == feedback_id,
+        models.FeedbackUpvote.user_id == current_user.id,
+    ).first()
+    if existing:
+        return {"upvoted": True, "upvotes": fb.upvotes, "already_voted": True}
+    db.add(models.FeedbackUpvote(feedback_id=feedback_id, user_id=current_user.id))
+    fb.upvotes = (fb.upvotes or 0) + 1
+    db.commit()
+    return {"upvoted": True, "upvotes": fb.upvotes, "already_voted": False}
+
+
+@app.delete("/feedback/{feedback_id}/upvote")
+def remove_upvote(
+    feedback_id: int,
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    fb = db.query(models.UserFeedback).filter(models.UserFeedback.id == feedback_id).first()
+    if not fb:
+        raise HTTPException(status_code=404, detail="Feedback not found")
+    existing = db.query(models.FeedbackUpvote).filter(
+        models.FeedbackUpvote.feedback_id == feedback_id,
+        models.FeedbackUpvote.user_id == current_user.id,
+    ).first()
+    if not existing:
+        return {"upvoted": False, "upvotes": fb.upvotes}
+    db.delete(existing)
+    fb.upvotes = max(0, (fb.upvotes or 0) - 1)
+    db.commit()
+    return {"upvoted": False, "upvotes": fb.upvotes}
+
+
+# ----- Admin feedback endpoints -----
+
+@app.get("/admin/feedback")
+def admin_list_feedback(
+    status: Optional[str] = Query(default=None),
+    feedback_type: Optional[str] = Query(default=None),
+    q: Optional[str] = Query(default=None, description="Search title/message/email"),
+    limit: int = Query(default=200, ge=1, le=1000),
+    db: Session = Depends(get_db),
+    _=Depends(verify_admin),
+):
+    """List feedback with filters for the admin dashboard."""
+    query = db.query(models.UserFeedback)
+    if status:
+        query = query.filter(models.UserFeedback.status == status)
+    if feedback_type:
+        query = query.filter(models.UserFeedback.feedback_type == feedback_type)
+    if q:
+        like = f"%{q.lower()}%"
+        query = query.filter(
+            (func.lower(models.UserFeedback.title).like(like))
+            | (func.lower(models.UserFeedback.message).like(like))
+            | (func.lower(models.UserFeedback.email).like(like))
+        )
+
+    items = query.order_by(models.UserFeedback.created_at.desc()).limit(limit).all()
+
+    user_ids = {fb.user_id for fb in items if fb.user_id}
+    users_map = {}
+    if user_ids:
+        users = db.query(models.User).filter(models.User.id.in_(user_ids)).all()
+        users_map = {u.id: u for u in users}
+
+    # Aggregate counts for KPIs
+    week_ago = datetime.utcnow() - timedelta(days=7)
+    counts = {
+        "total": db.query(func.count(models.UserFeedback.id)).scalar() or 0,
+        "open": db.query(func.count(models.UserFeedback.id)).filter(
+            models.UserFeedback.status.in_(["new", "triaged", "in_progress"])
+        ).scalar() or 0,
+        "new_7d": db.query(func.count(models.UserFeedback.id)).filter(
+            models.UserFeedback.created_at >= week_ago
+        ).scalar() or 0,
+        "by_type": {
+            row[0]: row[1]
+            for row in db.query(models.UserFeedback.feedback_type, func.count(models.UserFeedback.id))
+                          .group_by(models.UserFeedback.feedback_type).all()
+        },
+        "by_status": {
+            row[0]: row[1]
+            for row in db.query(models.UserFeedback.status, func.count(models.UserFeedback.id))
+                          .group_by(models.UserFeedback.status).all()
+        },
+    }
+
+    return {
+        "counts": counts,
+        "items": [
+            {
+                "id": fb.id,
+                "feedback_type": fb.feedback_type,
+                "title": fb.title,
+                "message": fb.message,
+                "status": fb.status,
+                "priority": fb.priority,
+                "upvotes": fb.upvotes,
+                "email": fb.email,
+                "user_id": fb.user_id,
+                "username": users_map.get(fb.user_id).username if fb.user_id and users_map.get(fb.user_id) else None,
+                "app_version": fb.app_version,
+                "os": fb.os,
+                "device_model": fb.device_model,
+                "screen_context": fb.screen_context,
+                "screenshot_url": fb.screenshot_url,
+                "admin_notes": fb.admin_notes,
+                "internal_link": fb.internal_link,
+                "created_at": fb.created_at.isoformat(),
+                "updated_at": fb.updated_at.isoformat(),
+                "resolved_at": fb.resolved_at.isoformat() if fb.resolved_at else None,
+            }
+            for fb in items
+        ],
+    }
+
+
+@app.patch("/admin/feedback/{feedback_id}")
+def admin_update_feedback(
+    feedback_id: int,
+    payload: schemas.AdminFeedbackUpdate,
+    db: Session = Depends(get_db),
+    _=Depends(verify_admin),
+):
+    fb = db.query(models.UserFeedback).filter(models.UserFeedback.id == feedback_id).first()
+    if not fb:
+        raise HTTPException(status_code=404, detail="Feedback not found")
+    if payload.status is not None:
+        fb.status = payload.status
+        if payload.status in ("done", "wontfix", "duplicate") and not fb.resolved_at:
+            fb.resolved_at = datetime.utcnow()
+        elif payload.status not in ("done", "wontfix", "duplicate"):
+            fb.resolved_at = None
+    if payload.priority is not None:
+        fb.priority = payload.priority
+    if payload.admin_notes is not None:
+        fb.admin_notes = payload.admin_notes
+    if payload.internal_link is not None:
+        fb.internal_link = payload.internal_link
+    db.commit()
+    db.refresh(fb)
+    return {"ok": True, "id": fb.id, "status": fb.status, "priority": fb.priority}
+
+
+@app.delete("/admin/feedback/{feedback_id}")
+def admin_delete_feedback(
+    feedback_id: int,
+    db: Session = Depends(get_db),
+    _=Depends(verify_admin),
+):
+    fb = db.query(models.UserFeedback).filter(models.UserFeedback.id == feedback_id).first()
+    if not fb:
+        raise HTTPException(status_code=404, detail="Feedback not found")
+    db.delete(fb)
+    db.commit()
+    return {"ok": True}
 
 
 @app.post("/admin/app-rankings/sync")

@@ -353,3 +353,38 @@ class UserStats(BaseModel):
     weekly_study_minutes: list
     monthly_study_minutes: list
     study_minutes_by_subject: dict  # {subject: minutes}
+
+
+# ============ Feedback Schemas ============
+
+class FeedbackCreate(BaseModel):
+    feedback_type: str = Field(..., pattern="^(bug|feature|question|praise)$")
+    title: Optional[str] = Field(None, max_length=200)
+    message: str = Field(..., min_length=1, max_length=5000)
+    email: Optional[EmailStr] = None
+    app_version: Optional[str] = Field(None, max_length=20)
+    os: Optional[str] = Field(None, max_length=40)
+    device_model: Optional[str] = Field(None, max_length=80)
+    screen_context: Optional[str] = Field(None, max_length=120)
+    screenshot_url: Optional[str] = Field(None, max_length=500)
+
+
+class FeedbackResponse(BaseModel):
+    id: int
+    feedback_type: str
+    title: Optional[str]
+    message: str
+    status: str
+    upvotes: int
+    user_upvoted: bool = False
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class AdminFeedbackUpdate(BaseModel):
+    status: Optional[str] = Field(None, pattern="^(new|triaged|in_progress|done|wontfix|duplicate)$")
+    priority: Optional[str] = Field(None, pattern="^(low|medium|high|critical)$")
+    admin_notes: Optional[str] = Field(None, max_length=5000)
+    internal_link: Optional[str] = Field(None, max_length=300)
