@@ -378,6 +378,7 @@
             <a data-page="users"><span class="icon">👥</span> Users</a>
             <a data-page="donations"><span class="icon">💚</span> Donations</a>
             <a data-page="content"><span class="icon">🦁</span> Content</a>
+            <a data-page="subjects"><span class="icon">📖</span> Subjects</a>
             <a data-page="geography"><span class="icon">🌍</span> Geography</a>
             <a data-page="activity"><span class="icon">⚡</span> Activity</a>
             <a data-page="analytics"><span class="icon">📈</span> Analytics</a>
@@ -578,6 +579,52 @@
         </div>
 
         <!-- Activity Page -->
+        <!-- Subjects Audit Page -->
+        <div class="page" id="page-subjects">
+            <h1 class="page-title">Subjects Audit</h1>
+            <p style="font-size:13px;color:var(--text-muted);margin:0 0 16px">
+                Phase 1: read-only visibility. Spot duplicates and typos in user-created subjects.
+                Custom subjects with a suggested default match are likely duplicates.
+            </p>
+            <div class="kpi-grid" style="margin-bottom:20px">
+                <div class="kpi"><div class="kpi-icon">📚</div><div class="kpi-val" id="s-total">—</div><div class="kpi-label">Total Subjects</div></div>
+                <div class="kpi"><div class="kpi-icon">⭐</div><div class="kpi-val" id="s-default">—</div><div class="kpi-label">Default (Seeded)</div></div>
+                <div class="kpi"><div class="kpi-icon">✍️</div><div class="kpi-val" id="s-custom">—</div><div class="kpi-label">User-Created</div></div>
+                <div class="kpi"><div class="kpi-icon">⚠️</div><div class="kpi-val" id="s-dupes">—</div><div class="kpi-label">Likely Duplicates</div></div>
+            </div>
+            <div class="table-card">
+                <div class="table-toolbar" style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:12px">
+                    <input type="text" id="subjectSearch" placeholder="Filter by name..." style="flex:1;min-width:200px">
+                    <select id="subjectFilter" style="padding:10px 14px;border:1px solid var(--border);border-radius:10px;font-size:14px;min-width:200px">
+                        <option value="all">Show all</option>
+                        <option value="custom" selected>Custom only</option>
+                        <option value="suggestions">Custom with suggestions</option>
+                        <option value="default">Default only</option>
+                    </select>
+                    <select id="subjectSort" style="padding:10px 14px;border:1px solid var(--border);border-radius:10px;font-size:14px;min-width:180px">
+                        <option value="users">Sort: most users</option>
+                        <option value="sessions">Sort: most sessions</option>
+                        <option value="created">Sort: newest</option>
+                        <option value="name">Sort: name (A→Z)</option>
+                    </select>
+                </div>
+                <div style="overflow-x:auto">
+                    <table>
+                        <thead><tr>
+                            <th>Subject</th>
+                            <th>Type</th>
+                            <th>Users</th>
+                            <th>Sessions</th>
+                            <th>Groups</th>
+                            <th>Suggested Merge Into</th>
+                            <th>Created</th>
+                        </tr></thead>
+                        <tbody id="subjectsBody"></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
         <div class="page" id="page-activity">
             <h1 class="page-title">Activity Feed</h1>
             <div class="table-card">
@@ -1030,6 +1077,7 @@ document.querySelectorAll('.sidebar nav a').forEach(link => {
         else if (link.dataset.page === 'users') loadUsers();
         else if (link.dataset.page === 'donations') loadDonations();
         else if (link.dataset.page === 'content') loadContent();
+        else if (link.dataset.page === 'subjects') loadSubjects();
         else if (link.dataset.page === 'geography') loadGeography();
         else if (link.dataset.page === 'activity') loadActivity();
         else if (link.dataset.page === 'analytics') initAnalytics();
@@ -2171,6 +2219,78 @@ const EVENT_META = {
     streak_milestone: { icon: '🔥', cls: 'streak' },
     badge_earned: { icon: '🏅', cls: 'badge' },
 };
+
+// ----- Subjects Audit -----
+let subjectsData = [];
+
+async function loadSubjects() {
+    try {
+        const d = await adminFetch('/admin/subjects/audit');
+        subjectsData = d.subjects || [];
+        document.getElementById('s-total').textContent = (d.total_subjects || 0).toLocaleString();
+        document.getElementById('s-default').textContent = (d.default_count || 0).toLocaleString();
+        document.getElementById('s-custom').textContent = (d.custom_count || 0).toLocaleString();
+        document.getElementById('s-dupes').textContent = (d.custom_with_suggestion || 0).toLocaleString();
+        renderSubjects();
+    } catch (e) {
+        console.error('Subjects audit failed', e);
+    }
+}
+
+function renderSubjects() {
+    const search = (document.getElementById('subjectSearch').value || '').toLowerCase().trim();
+    const filter = document.getElementById('subjectFilter').value;
+    const sort = document.getElementById('subjectSort').value;
+    let rows = subjectsData.slice();
+
+    if (filter === 'custom') rows = rows.filter(r => !r.is_default);
+    else if (filter === 'default') rows = rows.filter(r => r.is_default);
+    else if (filter === 'suggestions') rows = rows.filter(r => !r.is_default && r.suggested_merge_into);
+
+    if (search) {
+        rows = rows.filter(r =>
+            (r.display_name || '').toLowerCase().includes(search) ||
+            (r.name || '').toLowerCase().includes(search)
+        );
+    }
+
+    if (sort === 'users') rows.sort((a, b) => b.users_count - a.users_count);
+    else if (sort === 'sessions') rows.sort((a, b) => b.sessions_count - a.sessions_count);
+    else if (sort === 'created') rows.sort((a, b) => (b.created_at || '').localeCompare(a.created_at || ''));
+    else if (sort === 'name') rows.sort((a, b) => (a.display_name || '').localeCompare(b.display_name || ''));
+
+    const body = document.getElementById('subjectsBody');
+    if (!rows.length) { body.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--text-muted);padding:24px">No subjects match.</td></tr>'; return; }
+
+    body.innerHTML = rows.map(r => {
+        const typeBadge = r.is_default
+            ? '<span style="font-size:11px;padding:2px 8px;background:#dcfce7;color:#166534;border-radius:6px;font-weight:600">DEFAULT</span>'
+            : '<span style="font-size:11px;padding:2px 8px;background:#fef3c7;color:#92400e;border-radius:6px;font-weight:600">CUSTOM</span>';
+        const sug = r.suggested_merge_into;
+        const sugHtml = sug
+            ? `<span style="font-size:12px;color:var(--text-muted)">${esc(sug.display_name)} <span style="opacity:.6">(id ${sug.id})</span></span>`
+            : (r.is_default ? '<span style="font-size:11px;color:var(--text-muted);opacity:.5">—</span>' : '<span style="font-size:11px;color:var(--text-muted);opacity:.5">no close match</span>');
+        const created = r.created_at ? timeAgo(r.created_at) : '—';
+        return `<tr>
+            <td><strong>${esc(r.display_name)}</strong><br><span style="font-size:11px;color:var(--text-muted);font-family:monospace">${esc(r.name)} (id ${r.id})</span></td>
+            <td>${typeBadge}</td>
+            <td>${r.users_count.toLocaleString()}</td>
+            <td>${r.sessions_count.toLocaleString()}</td>
+            <td>${r.groups_count.toLocaleString()}</td>
+            <td>${sugHtml}</td>
+            <td style="font-size:12px;color:var(--text-muted)">${created}</td>
+        </tr>`;
+    }).join('');
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+    const s = document.getElementById('subjectSearch');
+    const f = document.getElementById('subjectFilter');
+    const o = document.getElementById('subjectSort');
+    if (s) s.addEventListener('input', renderSubjects);
+    if (f) f.addEventListener('change', renderSubjects);
+    if (o) o.addEventListener('change', renderSubjects);
+});
 
 async function loadActivity() {
     try {

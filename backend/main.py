@@ -2836,6 +2836,74 @@ def admin_geography(db: Session = Depends(get_db), _=Depends(verify_admin)):
     }
 
 
+@app.get("/admin/subjects/audit")
+def admin_subjects_audit(db: Session = Depends(get_db), _=Depends(verify_admin)):
+    """List every Subject row with usage counts and a closest-default suggestion.
+
+    Phase 1 of subject harmonisation: visibility only — no data is mutated.
+    Use this to spot duplicates ("Math" vs "Maths", "Bio" vs "Biology", typos).
+    """
+    import difflib
+
+    subjects = db.query(models.Subject).all()
+
+    # Per-subject usage counts (one query each, fine at current scale)
+    user_counts = dict(
+        db.query(models.UserSubject.subject_id, func.count(models.UserSubject.id))
+        .group_by(models.UserSubject.subject_id)
+        .all()
+    )
+    session_counts = dict(
+        db.query(models.StudySession.subject_id, func.count(models.StudySession.id))
+        .filter(models.StudySession.subject_id.isnot(None))
+        .group_by(models.StudySession.subject_id)
+        .all()
+    )
+    group_counts = dict(
+        db.query(models.StudyGroup.subject_id, func.count(models.StudyGroup.id))
+        .filter(models.StudyGroup.subject_id.isnot(None))
+        .group_by(models.StudyGroup.subject_id)
+        .all()
+    )
+
+    defaults = [s for s in subjects if s.is_default]
+    default_by_name = {s.name: s for s in defaults}
+    default_names = list(default_by_name.keys())
+
+    rows = []
+    for s in subjects:
+        # Suggest closest default match for non-default subjects
+        suggestion = None
+        if not s.is_default and default_names:
+            # Compare on normalised name (already lowercased in DB)
+            matches = difflib.get_close_matches(s.name, default_names, n=1, cutoff=0.7)
+            if matches:
+                d = default_by_name[matches[0]]
+                suggestion = {"id": d.id, "name": d.name, "display_name": d.display_name}
+
+        rows.append({
+            "id": s.id,
+            "name": s.name,
+            "display_name": s.display_name,
+            "is_default": bool(s.is_default),
+            "created_by_user_id": s.created_by_user_id,
+            "created_at": s.created_at.isoformat() if s.created_at else None,
+            "users_count": user_counts.get(s.id, 0),
+            "sessions_count": session_counts.get(s.id, 0),
+            "groups_count": group_counts.get(s.id, 0),
+            "suggested_merge_into": suggestion,
+        })
+
+    customs = [r for r in rows if not r["is_default"]]
+    return {
+        "total_subjects": len(rows),
+        "default_count": sum(1 for r in rows if r["is_default"]),
+        "custom_count": len(customs),
+        "custom_with_suggestion": sum(1 for r in customs if r["suggested_merge_into"]),
+        "subjects": rows,
+    }
+
+
 @app.get("/admin/users")
 def admin_users(
     search: Optional[str] = None,
