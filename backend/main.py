@@ -4195,6 +4195,123 @@ async def admin_posthog_query(
         return r.json()
 
 
+@app.post("/admin/tips/backfill-views")
+async def admin_backfill_tip_views(_=Depends(verify_admin), db: Session = Depends(get_db)):
+    """One-click: hydrate TipView rows from PostHog `tip_viewed` events.
+    Same logic as scripts/backfill_tip_views.py but callable from the admin dashboard.
+    Idempotent — never double-inserts.
+    """
+    key = _posthog_key()
+    if not key:
+        raise HTTPException(status_code=503, detail="POSTHOG_PERSONAL_API_KEY not set in Railway")
+
+    state = await _posthog_ensure_project()
+    hogql = """
+    SELECT
+        distinct_id,
+        toInt64OrNull(properties.tip_id) AS tip_id,
+        min(timestamp) AS first_viewed
+    FROM events
+    WHERE event = 'tip_viewed'
+      AND properties.tip_id IS NOT NULL
+    GROUP BY distinct_id, tip_id
+    HAVING tip_id IS NOT NULL
+    ORDER BY first_viewed ASC
+    """
+
+    async with httpx.AsyncClient(timeout=180.0) as client:
+        r = await client.post(
+            f"{_POSTHOG_HOST}/api/projects/{state['project_id']}/query/",
+            headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
+            json={"query": {"kind": "HogQLQuery", "query": hogql}},
+        )
+        if r.status_code >= 400:
+            raise HTTPException(status_code=502, detail=f"PostHog query {r.status_code}: {r.text[:300]}")
+        rows = r.json().get("results") or []
+
+    valid_user_ids = {u.id for u in db.query(models.User.id).all()}
+    valid_tip_ids = {t.id for t in db.query(models.StudyTip.id).all()}
+
+    skipped_anon = skipped_unknown_user = skipped_unknown_tip = 0
+    normalised: dict[tuple[int, int], datetime] = {}
+    for row in rows:
+        distinct_id, tip_id_raw, ts_raw = row[0], row[1], row[2]
+        if distinct_id in (None, "anon", "anonymous"):
+            skipped_anon += 1
+            continue
+        try:
+            user_id = int(distinct_id)
+        except (TypeError, ValueError):
+            skipped_anon += 1
+            continue
+        if user_id not in valid_user_ids:
+            skipped_unknown_user += 1
+            continue
+        try:
+            tip_id = int(tip_id_raw)
+        except (TypeError, ValueError):
+            skipped_unknown_tip += 1
+            continue
+        if tip_id not in valid_tip_ids:
+            skipped_unknown_tip += 1
+            continue
+        # Parse timestamp
+        if isinstance(ts_raw, datetime):
+            ts = ts_raw.replace(tzinfo=None) if ts_raw.tzinfo else ts_raw
+        else:
+            s = str(ts_raw)
+            if s.endswith("Z"):
+                s = s[:-1]
+            if "+" in s:
+                s = s.split("+", 1)[0]
+            try:
+                ts = datetime.fromisoformat(s)
+            except ValueError:
+                ts = datetime.fromisoformat(s.split(".")[0])
+        existing_ts = normalised.get((user_id, tip_id))
+        if existing_ts is None or ts < existing_ts:
+            normalised[(user_id, tip_id)] = ts
+
+    if not normalised:
+        return {
+            "ok": True,
+            "posthog_rows": len(rows),
+            "created": 0,
+            "skipped_existing": 0,
+            "skipped_anon": skipped_anon,
+            "skipped_unknown_user": skipped_unknown_user,
+            "skipped_unknown_tip": skipped_unknown_tip,
+        }
+
+    affected_user_ids = {u for u, _ in normalised.keys()}
+    existing_views = db.query(models.TipView).filter(
+        models.TipView.user_id.in_(affected_user_ids)
+    ).all()
+    existing_pairs = {(v.user_id, v.tip_id) for v in existing_views}
+
+    created = skipped_existing = 0
+    for (user_id, tip_id), ts in normalised.items():
+        if (user_id, tip_id) in existing_pairs:
+            skipped_existing += 1
+            continue
+        db.add(models.TipView(
+            user_id=user_id, tip_id=tip_id, viewed_at=ts,
+            liked=False, disliked=False, saved=False,
+        ))
+        created += 1
+    db.commit()
+
+    return {
+        "ok": True,
+        "posthog_rows": len(rows),
+        "created": created,
+        "skipped_existing": skipped_existing,
+        "skipped_anon": skipped_anon,
+        "skipped_unknown_user": skipped_unknown_user,
+        "skipped_unknown_tip": skipped_unknown_tip,
+    }
+
+
 @app.get("/admin/posthog/projects")
 async def admin_posthog_projects(_=Depends(verify_admin)):
     """List projects the key has access to (for debugging)."""
@@ -5105,64 +5222,83 @@ COUNTRY_CLEANUP_MAP = {
 
 COUNTRY_JUNK_VALUES = {"Haha", "blublublu", "cute"}
 
-# PostHog GeoIP backfill: DB user_id → country (for users with blank country)
-POSTHOG_GEOIP_BACKFILL = {
-    1: "United Kingdom", 2: "United Kingdom", 3: "United Kingdom",
-    4: "United Kingdom", 5: "United Kingdom", 6: "United Kingdom",
-    7: "United Kingdom", 8: "United States", 9: "United Kingdom",
-    14: "United Kingdom", 15: "United Kingdom", 16: "United Kingdom",
-    17: "United Kingdom", 18: "United Kingdom", 19: "United Kingdom",
-    20: "United Kingdom", 22: "United Kingdom", 23: "Norway",
-    24: "Botswana", 25: "Uganda", 26: "Norway", 27: "Uganda",
-    28: "Uganda", 29: "United Kingdom", 31: "Mongolia",
-    32: "Netherlands", 33: "United Kingdom", 34: "United Kingdom",
-    35: "United Kingdom", 37: "United Kingdom", 38: "United Kingdom",
-    40: "United Kingdom", 41: "United Kingdom", 42: "United Kingdom",
-    43: "United Kingdom", 44: "United Kingdom", 45: "United Kingdom",
-    47: "United Kingdom", 48: "United Kingdom", 49: "United Kingdom",
-    50: "United Kingdom", 51: "Ireland", 52: "Ireland",
-    53: "Belgium", 54: "United Kingdom", 55: "United Kingdom",
-    56: "United Kingdom", 58: "Netherlands", 59: "United Kingdom",
-    60: "United Kingdom", 62: "United Kingdom", 64: "United Kingdom",
-    65: "United Kingdom", 66: "United Kingdom", 67: "Turkey",
-    68: "Azerbaijan", 69: "United Kingdom", 70: "Mongolia",
-    71: "United Kingdom", 72: "United Kingdom", 73: "Ecuador",
-    74: "United Arab Emirates", 75: "Italy", 77: "Mongolia",
-    78: "Turkey", 80: "United Kingdom", 81: "Iraq", 82: "Turkey",
-    83: "Algeria", 84: "Sri Lanka", 85: "Colombia", 86: "Germany",
-    88: "India", 89: "Mongolia", 90: "India", 91: "India",
-    92: "India", 93: "France", 94: "Jordan", 95: "Kazakhstan",
-    96: "United Kingdom", 98: "United Kingdom", 99: "Algeria",
-    100: "Pakistan", 101: "South Korea", 102: "Algeria",
-    103: "Algeria", 104: "Sri Lanka", 105: "Oman",
-    106: "Israel", 107: "Egypt", 109: "Argentina",
-    110: "Argentina", 111: "Mexico", 112: "Nepal",
-    115: "Indonesia", 116: "Honduras", 118: "India", 119: "India",
-    120: "Kazakhstan", 121: "Sri Lanka", 122: "Philippines",
-    123: "United Kingdom", 124: "India", 125: "Indonesia",
-    126: "Greece", 127: "India", 128: "Sri Lanka",
-    130: "United Kingdom", 132: "Iraq", 134: "Kazakhstan",
-    136: "Turkey", 137: "Philippines", 138: "Algeria",
-    139: "United Kingdom", 140: "Spain", 141: "Chile",
-    142: "Kyrgyzstan", 143: "Mongolia", 144: "Sri Lanka",
-    145: "Vietnam", 146: "Vietnam", 147: "Sri Lanka",
-    148: "Armenia", 151: "Azerbaijan", 153: "Mongolia",
-    154: "Nepal", 155: "Cambodia", 157: "Malaysia",
-    158: "Germany", 159: "Sri Lanka", 162: "India",
-    163: "India", 164: "Spain", 165: "Spain", 166: "Greece",
-    167: "Spain", 168: "India", 169: "Sri Lanka",
-    173: "Spain", 174: "Argentina", 175: "Panama",
-    177: "Philippines", 178: "Chile", 179: "Nepal",
-    180: "India", 181: "Sri Lanka", 182: "Vietnam",
-    183: "Pakistan", 184: "Vietnam", 185: "Vietnam",
-    186: "Vietnam", 187: "Indonesia", 188: "India", 189: "Armenia",
-}
+# (Previous static POSTHOG_GEOIP_BACKFILL dict was retired Apr 2026 in favour of
+# _posthog_geoip_lookup(), which queries PostHog live.)
+
+
+def _posthog_geoip_lookup(lookback_days: int = 180) -> tuple[dict[int, str], str]:
+    """Query PostHog live for the most-recent $geoip_country_name per distinct_id.
+    Returns (user_id -> country, status_message). Never raises — returns empty dict on failure.
+    """
+    key = _posthog_key()
+    if not key:
+        return {}, "POSTHOG_PERSONAL_API_KEY not set — skipping live geo lookup"
+
+    # HogQL: latest non-null country per distinct_id within the window
+    hogql = f"""
+    SELECT
+        distinct_id,
+        argMax(properties.$geoip_country_name, timestamp) AS country
+    FROM events
+    WHERE timestamp > now() - INTERVAL {int(lookback_days)} DAY
+      AND properties.$geoip_country_name IS NOT NULL
+      AND properties.$geoip_country_name != ''
+    GROUP BY distinct_id
+    HAVING country IS NOT NULL
+    """
+
+    try:
+        # Resolve project id synchronously (cached via module state)
+        project_id = _posthog_state.get("project_id")
+        if not project_id:
+            with httpx.Client(timeout=15.0) as client:
+                r = client.get(f"{_POSTHOG_HOST}/api/projects/", headers={"Authorization": f"Bearer {key}"})
+                if r.status_code >= 400:
+                    return {}, f"PostHog /projects/ {r.status_code}: {r.text[:150]}"
+                results = r.json().get("results") or []
+                if not results:
+                    return {}, "PostHog returned no projects"
+                project_id = results[0]["id"]
+                _posthog_state["project_id"] = project_id
+                _posthog_state["project_name"] = results[0].get("name")
+
+        with httpx.Client(timeout=60.0) as client:
+            r = client.post(
+                f"{_POSTHOG_HOST}/api/projects/{project_id}/query/",
+                headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
+                json={"query": {"kind": "HogQLQuery", "query": hogql}},
+            )
+            if r.status_code >= 400:
+                return {}, f"PostHog query {r.status_code}: {r.text[:200]}"
+            rows = r.json().get("results") or []
+    except Exception as e:
+        return {}, f"PostHog lookup error: {e}"
+
+    mapping: dict[int, str] = {}
+    for row in rows:
+        distinct_id, country = row[0], row[1]
+        if not country:
+            continue
+        try:
+            uid = int(distinct_id)
+        except (TypeError, ValueError):
+            continue
+        mapping[uid] = COUNTRY_CLEANUP_MAP.get(country, country)
+
+    return mapping, f"PostHog returned {len(mapping)} user→country mappings (window: {lookback_days}d)"
 
 
 @app.post("/admin/cleanup-countries")
-def admin_cleanup_countries(db: Session = Depends(get_db), _=Depends(verify_admin)):
-    """Normalize messy country values and backfill blanks from PostHog GeoIP. Safe to run repeatedly."""
-    updated = {}
+def admin_cleanup_countries(
+    lookback_days: int = 180,
+    db: Session = Depends(get_db),
+    _=Depends(verify_admin),
+):
+    """Normalize messy country values and backfill blanks from a LIVE PostHog query.
+    Replaces the previous static dict lookup so new users auto-get countries going forward.
+    Safe to run repeatedly.
+    """
+    updated: dict[str, int] = {}
 
     for old_val, new_val in COUNTRY_CLEANUP_MAP.items():
         count = db.query(models.User).filter(models.User.country == old_val).update(
@@ -5178,17 +5314,24 @@ def admin_cleanup_countries(db: Session = Depends(get_db), _=Depends(verify_admi
         if count:
             updated[f"{junk} → NULL"] = count
 
-    # Backfill blank countries from PostHog GeoIP data (matched by DB user_id)
-    backfilled = 0
+    # ── Live PostHog GeoIP backfill ──────────────────────────────
+    geo_map, geo_status = _posthog_geoip_lookup(lookback_days=lookback_days)
     blank_users = db.query(models.User).filter(
         (models.User.country.is_(None)) | (models.User.country == "")
     ).all()
+
+    backfilled = 0
+    unmatched: list[str] = []
+    backfill_samples: list[str] = []
     for user in blank_users:
-        geo_country = POSTHOG_GEOIP_BACKFILL.get(user.id)
-        if geo_country:
-            user.country = geo_country
+        country = geo_map.get(user.id)
+        if country:
+            user.country = country
             backfilled += 1
-            updated[f"backfill: {user.username or user.id} → {geo_country}"] = 1
+            if len(backfill_samples) < 20:
+                backfill_samples.append(f"{user.username or f'#{user.id}'} → {country}")
+        else:
+            unmatched.append(user.username or f"#{user.id}")
 
     db.commit()
 
@@ -5202,8 +5345,13 @@ def admin_cleanup_countries(db: Session = Depends(get_db), _=Depends(verify_admi
 
     return {
         "changes": updated,
-        "total_users_updated": sum(v for k, v in updated.items() if not k.startswith("backfill")),
-        "total_backfilled": backfilled,
+        "total_users_updated": sum(updated.values()),
+        "posthog_status": geo_status,
+        "blank_users_before": len(blank_users),
+        "backfilled": backfilled,
+        "backfill_samples": backfill_samples,
+        "still_blank": len(unmatched),
+        "still_blank_users": unmatched[:30],  # avoid bloating the response for big lists
         "current_countries": [{"country": r[0], "users": r[1]} for r in country_rows],
     }
 
