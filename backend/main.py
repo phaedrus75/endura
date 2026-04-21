@@ -4106,6 +4106,111 @@ def admin_delete_feedback(
     return {"ok": True}
 
 
+# ============ PostHog Proxy ============
+# Personal API Key lives in env var POSTHOG_PERSONAL_API_KEY (Railway).
+# Frontend never sees the key — it calls /admin/posthog/* which proxies to PostHog.
+
+_POSTHOG_HOST = os.environ.get("POSTHOG_HOST", "https://us.posthog.com")
+_posthog_state: dict = {"project_id": None, "project_name": None, "checked_at": None}
+
+
+def _posthog_key() -> Optional[str]:
+    return os.environ.get("POSTHOG_PERSONAL_API_KEY") or os.environ.get("POSTHOG_API_KEY")
+
+
+async def _posthog_ensure_project() -> dict:
+    """Lazily resolve + cache the first PostHog project id. Raises HTTPException on failure."""
+    key = _posthog_key()
+    if not key:
+        raise HTTPException(
+            status_code=503,
+            detail="POSTHOG_PERSONAL_API_KEY not set in Railway. Add it in the backend service env vars and restart.",
+        )
+    if _posthog_state.get("project_id"):
+        return _posthog_state
+    async with httpx.AsyncClient(timeout=15.0) as client:
+        r = await client.get(
+            f"{_POSTHOG_HOST}/api/projects/",
+            headers={"Authorization": f"Bearer {key}"},
+        )
+        if r.status_code == 401:
+            raise HTTPException(status_code=401, detail="PostHog auth failed — key invalid or revoked")
+        if r.status_code == 403:
+            raise HTTPException(
+                status_code=403,
+                detail="PostHog 403: key missing required scopes (need project:read, query:read, insight:read, person:read)",
+            )
+        if r.status_code >= 400:
+            raise HTTPException(status_code=502, detail=f"PostHog /projects/ {r.status_code}: {r.text[:200]}")
+        data = r.json()
+        results = data.get("results") or []
+        if not results:
+            raise HTTPException(status_code=502, detail="PostHog returned no projects for this key")
+        _posthog_state["project_id"] = results[0]["id"]
+        _posthog_state["project_name"] = results[0].get("name")
+        _posthog_state["checked_at"] = datetime.utcnow().isoformat()
+    return _posthog_state
+
+
+@app.get("/admin/posthog/status")
+async def admin_posthog_status(_=Depends(verify_admin)):
+    """Report whether the backend has a working PostHog key configured."""
+    key = _posthog_key()
+    if not key:
+        return {"connected": False, "reason": "POSTHOG_PERSONAL_API_KEY not set in Railway env vars"}
+    try:
+        state = await _posthog_ensure_project()
+        return {
+            "connected": True,
+            "project_id": state["project_id"],
+            "project_name": state["project_name"],
+            "host": _POSTHOG_HOST,
+        }
+    except HTTPException as e:
+        return {"connected": False, "reason": e.detail}
+    except Exception as e:
+        return {"connected": False, "reason": f"Unexpected error: {e}"}
+
+
+class PostHogQueryBody(BaseModel):
+    query: str = Field(..., min_length=1, max_length=20000)
+
+
+@app.post("/admin/posthog/query")
+async def admin_posthog_query(
+    body: PostHogQueryBody,
+    _=Depends(verify_admin),
+):
+    """Proxy a HogQL query to PostHog. Key stays on the server."""
+    state = await _posthog_ensure_project()
+    key = _posthog_key()
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        r = await client.post(
+            f"{_POSTHOG_HOST}/api/projects/{state['project_id']}/query/",
+            headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
+            json={"query": {"kind": "HogQLQuery", "query": body.query}},
+        )
+        if r.status_code >= 400:
+            raise HTTPException(status_code=502, detail=f"PostHog query {r.status_code}: {r.text[:400]}")
+        return r.json()
+
+
+@app.get("/admin/posthog/projects")
+async def admin_posthog_projects(_=Depends(verify_admin)):
+    """List projects the key has access to (for debugging)."""
+    key = _posthog_key()
+    if not key:
+        raise HTTPException(status_code=503, detail="POSTHOG_PERSONAL_API_KEY not set")
+    async with httpx.AsyncClient(timeout=15.0) as client:
+        r = await client.get(
+            f"{_POSTHOG_HOST}/api/projects/",
+            headers={"Authorization": f"Bearer {key}"},
+        )
+        if r.status_code >= 400:
+            raise HTTPException(status_code=502, detail=f"PostHog {r.status_code}: {r.text[:200]}")
+        return r.json()
+
+
 @app.post("/admin/app-rankings/sync")
 def admin_app_rankings_sync(
     days: int = Query(default=2, ge=1, le=90, description="How many days back to sync"),

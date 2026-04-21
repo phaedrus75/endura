@@ -852,21 +852,17 @@
         <div class="page" id="page-analytics">
             <h1 class="page-title">Product Analytics</h1>
 
-            <div id="phSetup" class="table-card" style="margin-bottom:20px">
+            <div id="phSetup" class="table-card" style="margin-bottom:20px;display:none">
                 <h3>PostHog Connection</h3>
-                <p style="font-size:13px;color:var(--text-muted);margin:8px 0 14px">
-                    Enter your <strong>Personal API Key</strong> from
-                    <a href="https://us.posthog.com/settings/user-api-keys" target="_blank" style="color:var(--forest)">PostHog Settings → Personal API Keys</a>.
-                    Create one with <em>project:read</em>, <em>query:read</em>, <em>insight:read</em>, and <em>person:read</em> scopes.
-                </p>
-                <div style="display:flex;gap:10px;align-items:flex-end">
-                    <div style="flex:1">
-                        <label style="font-size:11px;font-weight:600;color:var(--text-muted);text-transform:uppercase;display:block;margin-bottom:4px">Personal API Key</label>
-                        <input type="password" id="phApiKey" placeholder="phx_..." style="width:100%;padding:10px 12px;border:1px solid var(--border);border-radius:10px;font-size:13px;font-family:monospace">
-                    </div>
-                    <button onclick="connectPostHog()" style="padding:10px 20px;background:var(--forest);color:#fff;border:none;border-radius:10px;font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap">Connect</button>
+                <div id="phStatus" style="margin-top:4px;font-size:13px"></div>
+                <div id="phSetupHelp" style="display:none;margin-top:12px;padding:14px;background:#fef3c7;border:1px solid #fcd34d;border-radius:10px;font-size:13px;color:#78350f;line-height:1.5">
+                    <strong>To connect PostHog:</strong>
+                    <ol style="margin:8px 0 0 18px;padding:0">
+                        <li>Create a key at <a href="https://us.posthog.com/settings/user-api-keys" target="_blank" style="color:#78350f;text-decoration:underline">PostHog → Personal API Keys</a> with scopes: <code>project:read</code>, <code>query:read</code>, <code>insight:read</code>, <code>person:read</code></li>
+                        <li>Add Railway env var <code>POSTHOG_PERSONAL_API_KEY</code> on the backend service</li>
+                        <li>Wait for Railway to redeploy (~1 min), then reload this page</li>
+                    </ol>
                 </div>
-                <div id="phStatus" style="margin-top:10px;font-size:13px;display:none"></div>
             </div>
 
             <div id="phDashboard" style="display:none">
@@ -1206,14 +1202,14 @@ function enterDashboard() {
     document.getElementById('shell').classList.add('active');
     document.getElementById('statusDot').className = 'status-dot ok';
     document.getElementById('statusText').textContent = 'Connected';
-    const savedPhKey = localStorage.getItem('phPersonalKey') || sessionStorage.getItem('phPersonalKey');
-    if (savedPhKey) PH_KEY = savedPhKey;
-    loadOverview();
+    // Kick off silent PostHog status check; Overview uses phAvailable to decide whether to fetch PH overlays
+    checkPostHogStatus().finally(() => loadOverview());
 }
 
 function logout() {
     sessionStorage.removeItem('adminApiUrl');
     sessionStorage.removeItem('adminApiKey');
+    // Clean up legacy localStorage-stored key (key now lives in Railway env)
     sessionStorage.removeItem('phPersonalKey');
     localStorage.removeItem('phPersonalKey');
     location.reload();
@@ -1360,12 +1356,8 @@ async function loadOverview() {
         let phDauData = null;
         let phTipViewed = null;
         try {
-            if (PH_KEY) {
-                if (!phProjectId) {
-                    const proj = await phFetch('/api/projects/');
-                    if (proj.results && proj.results.length > 0) phProjectId = proj.results[0].id;
-                }
-                if (phProjectId && dbDau.length > 0) {
+            if (phAvailable) {
+                if (dbDau.length > 0) {
                     const startDate = dbDau[0].date;
                     const [dauResult, tipViewedResult, active7dResult] = await Promise.all([
                         phQuery(`SELECT toDate(timestamp) as day, count(DISTINCT distinct_id) as users FROM events WHERE timestamp >= '${startDate}' GROUP BY day ORDER BY day`),
@@ -3132,68 +3124,71 @@ function timeAgo(iso) {
 }
 
 // ----- PostHog Analytics -----
-const PH_HOST = 'https://us.posthog.com';
-let PH_KEY = '';
-let phProjectId = null;
+// PostHog now lives in a Railway env var (POSTHOG_PERSONAL_API_KEY).
+// The browser never sees the key — all calls go via /admin/posthog/* on the backend.
+let phAvailable = false;
+let phProjectName = null;
 let phDauChart = null;
 
-function initAnalytics() {
-    const saved = localStorage.getItem('phPersonalKey') || sessionStorage.getItem('phPersonalKey');
-    if (saved) {
-        PH_KEY = saved;
-        document.getElementById('phApiKey').value = '••••••••';
-        loadPostHogData();
-    }
-}
-
-async function phFetch(path) {
-    const res = await fetch(PH_HOST + path, {
-        headers: { 'Authorization': 'Bearer ' + PH_KEY }
-    });
-    if (!res.ok) throw new Error(res.status);
-    return res.json();
-}
-
-async function connectPostHog() {
-    const input = document.getElementById('phApiKey').value.trim();
-    if (!input || input === '••••••••') {
-        if (PH_KEY) { loadPostHogData(); return; }
-        showPhStatus('Please enter a Personal API Key', 'red');
-        return;
-    }
-    PH_KEY = input;
-    showPhStatus('Connecting...', 'var(--text-muted)');
+async function checkPostHogStatus() {
     try {
-        const data = await phFetch('/api/projects/');
-        if (data.results && data.results.length > 0) {
-            phProjectId = data.results[0].id;
-            localStorage.setItem('phPersonalKey', PH_KEY);
-            showPhStatus('Connected to project: ' + esc(data.results[0].name), 'var(--accent)');
+        const s = await adminFetch('/admin/posthog/status');
+        phAvailable = !!s.connected;
+        phProjectName = s.project_name || null;
+        return s;
+    } catch (e) {
+        phAvailable = false;
+        return { connected: false, reason: e.message || 'status check failed' };
+    }
+}
+
+function initAnalytics() {
+    // Always re-check on tab entry in case Railway env var was just set
+    checkPostHogStatus().then(s => {
+        const setup = document.getElementById('phSetup');
+        const help = document.getElementById('phSetupHelp');
+        setup.style.display = 'block';
+        if (s.connected) {
+            showPhStatus(`Connected to ${esc(s.project_name || 'PostHog')} (project #${s.project_id}) · key from Railway env`, 'var(--accent)');
+            help.style.display = 'none';
             loadPostHogData();
         } else {
-            showPhStatus('No projects found', 'var(--red)');
+            showPhStatus('Not connected: ' + esc(s.reason || 'unknown'), 'var(--red)');
+            help.style.display = 'block';
+            document.getElementById('phDashboard').style.display = 'none';
         }
-    } catch (e) {
-        showPhStatus('Failed to connect: ' + e.message + '. Check your key has correct scopes.', 'var(--red)');
+    });
+}
+
+async function phQuery(sql) {
+    const res = await fetch(API_URL + '/admin/posthog/query', {
+        method: 'POST',
+        headers: { 'X-Admin-Key': API_KEY, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query: sql }),
+    });
+    if (!res.ok) {
+        let detail = '';
+        try { const j = await res.json(); detail = j.detail || JSON.stringify(j); } catch (_) {}
+        throw new Error(detail ? `${res.status}: ${detail}` : 'PostHog query failed: ' + res.status);
     }
+    return res.json();
 }
 
 function showPhStatus(msg, color) {
     const el = document.getElementById('phStatus');
-    el.textContent = msg;
+    if (!el) return;
+    el.innerHTML = msg;
     el.style.color = color;
     el.style.display = 'block';
 }
 
 async function loadPostHogData() {
     try {
-        if (!phProjectId) {
-            const data = await phFetch('/api/projects/');
-            if (data.results && data.results.length > 0) phProjectId = data.results[0].id;
-            else return;
+        if (!phAvailable) {
+            await checkPostHogStatus();
+            if (!phAvailable) return;
         }
         document.getElementById('phDashboard').style.display = 'block';
-        showPhStatus('Connected', 'var(--accent)');
 
         const now = new Date();
         const day1 = new Date(now); day1.setDate(day1.getDate() - 1);
@@ -3227,16 +3222,6 @@ async function loadPostHogData() {
         console.error('PostHog load failed', e);
         showPhStatus('Error loading data: ' + e.message, 'var(--red)');
     }
-}
-
-async function phQuery(sql) {
-    const res = await fetch(PH_HOST + '/api/projects/' + phProjectId + '/query/', {
-        method: 'POST',
-        headers: { 'Authorization': 'Bearer ' + PH_KEY, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ query: { kind: 'HogQLQuery', query: sql } }),
-    });
-    if (!res.ok) throw new Error('Query failed: ' + res.status);
-    return res.json();
 }
 
 function extractCount(result) {
