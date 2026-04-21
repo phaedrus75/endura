@@ -4210,7 +4210,7 @@ async def admin_backfill_tip_views(_=Depends(verify_admin), db: Session = Depend
     SELECT
         distinct_id,
         toInt64OrNull(properties.tip_id) AS tip_id,
-        min(timestamp) AS first_viewed
+        minOrNull(timestamp) AS first_viewed
     FROM events
     WHERE event = 'tip_viewed'
       AND properties.tip_id IS NOT NULL
