@@ -455,6 +455,8 @@
                         <option value="">All Schools</option>
                     </select>
                     <button id="cleanupCountriesBtn" onclick="runCountryCleanup()" style="padding:10px 18px;background:var(--forest);color:#fff;border:none;border-radius:10px;font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap;transition:all .15s" onmouseover="this.style.opacity='0.9'" onmouseout="this.style.opacity='1'">🧹 Cleanup Countries</button>
+                    <button id="auditSchoolsBtn" onclick="auditSchools()" style="padding:10px 18px;background:#64748b;color:#fff;border:none;border-radius:10px;font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap;transition:all .15s" onmouseover="this.style.opacity='0.9'" onmouseout="this.style.opacity='1'">🔍 Audit Schools</button>
+                    <button id="cleanupSchoolsBtn" onclick="runSchoolCleanup()" style="padding:10px 18px;background:var(--forest);color:#fff;border:none;border-radius:10px;font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap;transition:all .15s" onmouseover="this.style.opacity='0.9'" onmouseout="this.style.opacity='1'">🏫 Cleanup Schools</button>
                 </div>
                 <div style="overflow-x:auto">
                     <table id="usersTable">
@@ -1807,6 +1809,104 @@ async function runCountryCleanup() {
     } finally {
         btn.disabled = false;
         btn.textContent = '🧹 Cleanup Countries';
+    }
+}
+
+async function auditSchools() {
+    const btn = document.getElementById('auditSchoolsBtn');
+    btn.disabled = true;
+    btn.textContent = '⏳ Auditing...';
+    try {
+        const res = await fetch(API_URL + '/admin/schools/audit', {
+            headers: { 'X-Admin-Key': API_KEY },
+        });
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        const data = await res.json();
+        console.log('Schools audit:', data);
+
+        let msg = `School audit\n\n`;
+        msg += `Total schools: ${data.total_schools}\n\n`;
+        msg += `Duplicates (same name + country):\n`;
+        msg += `  • ${data.duplicate_groups} duplicate groups\n`;
+        msg += `  • ${data.duplicate_rows_removable} rows removable\n\n`;
+        msg += `Cross-country duplicates (same name, different country):\n`;
+        msg += `  • ${data.cross_country_groups} groups\n\n`;
+        msg += `Country issues:\n`;
+        msg += `  • ${data.junk_country_values} junk country values\n`;
+        if ((data.junk_countries || []).length) {
+            msg += `  • Junk: ${data.junk_countries.slice(0, 10).map(j => `'${j.country || 'NULL'}' (${j.schools})`).join(', ')}\n`;
+        }
+        msg += `\nTop duplicates:\n`;
+        (data.top_duplicates || []).slice(0, 5).forEach(g => {
+            msg += `  • ${g.normalized_name} (${g.count}x) — ${g.variants.map(v => `"${v.name}"`).slice(0, 3).join(', ')}${g.variants.length > 3 ? '...' : ''}\n`;
+        });
+        msg += `\n(Full details in console)`;
+        alert(msg);
+    } catch (e) {
+        alert('Audit failed: ' + e.message);
+    } finally {
+        btn.disabled = false;
+        btn.textContent = '🔍 Audit Schools';
+    }
+}
+
+async function runSchoolCleanup() {
+    const btn = document.getElementById('cleanupSchoolsBtn');
+    if (!confirm('Cleanup schools?\n\nThis will:\n• Normalize school countries (same logic as user countries)\n• Merge exact-duplicate school rows (same name+country)\n• Rename users.school references to the canonical name\n\nA dry-run will run first; you\'ll see the preview and confirm again before committing.')) return;
+
+    btn.disabled = true;
+    btn.textContent = '⏳ Dry-running...';
+    try {
+        // Step 1: dry run
+        const dryRes = await fetch(API_URL + '/admin/schools/cleanup?dry_run=true', {
+            method: 'POST',
+            headers: { 'X-Admin-Key': API_KEY },
+        });
+        if (!dryRes.ok) throw new Error('Dry run HTTP ' + dryRes.status);
+        const dryData = await dryRes.json();
+        console.log('Schools cleanup dry-run:', dryData);
+
+        let preview = `DRY RUN preview:\n\n`;
+        preview += `Country normalisations: ${dryData.country_changes_total}\n`;
+        if (dryData.country_changes_total) {
+            for (const [k, v] of Object.entries(dryData.country_changes || {})) {
+                preview += `  • ${k}: ${v}\n`;
+            }
+        }
+        preview += `\nDuplicate groups to merge: ${dryData.merged_groups}\n`;
+        preview += `Rows to delete: ${dryData.merged_rows_removed}\n`;
+        preview += `User.school references to rename: ${dryData.user_schools_renamed}\n`;
+        preview += `\nSchools after cleanup: ${dryData.total_schools_after}\n`;
+        preview += `\n(Full details in console)\n\nProceed with real cleanup?`;
+
+        if (!confirm(preview)) {
+            return;
+        }
+
+        // Step 2: real run
+        btn.textContent = '⏳ Committing...';
+        const res = await fetch(API_URL + '/admin/schools/cleanup?dry_run=false', {
+            method: 'POST',
+            headers: { 'X-Admin-Key': API_KEY },
+        });
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        const data = await res.json();
+        console.log('Schools cleanup committed:', data);
+
+        alert(
+            `Schools cleanup complete.\n\n` +
+            `• ${data.country_changes_total} country values normalised\n` +
+            `• ${data.merged_groups} duplicate groups merged\n` +
+            `• ${data.merged_rows_removed} rows deleted\n` +
+            `• ${data.user_schools_renamed} users.school refs updated\n` +
+            `• ${data.total_schools_after} schools remaining`
+        );
+        loadUsers();
+    } catch (e) {
+        alert('Schools cleanup failed: ' + e.message);
+    } finally {
+        btn.disabled = false;
+        btn.textContent = '🏫 Cleanup Schools';
     }
 }
 

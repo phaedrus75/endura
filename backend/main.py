@@ -19,6 +19,7 @@ from auth import (
     get_current_user, get_optional_user, ACCESS_TOKEN_EXPIRE_MINUTES
 )
 import os
+import re
 import html
 import json as _json
 import logging
@@ -5502,6 +5503,228 @@ def admin_cleanup_countries(
         "still_junk": len(still_junk_users),
         "still_junk_users": still_junk_users[:30],
         "current_countries": [{"country": r[0], "users": r[1]} for r in country_rows],
+    }
+
+
+# ── Schools audit & cleanup ──────────────────────────────────────
+
+def _normalize_school_name(name: str | None) -> str:
+    """Canonicalise school name for duplicate detection.
+    Trim, lowercase, collapse whitespace, strip trivial punctuation."""
+    if not name:
+        return ""
+    s = name.strip().lower()
+    # Collapse whitespace
+    s = re.sub(r"\s+", " ", s)
+    # Strip trailing/leading punctuation that doesn't change identity
+    s = s.strip(" .,-_\t")
+    # Common expansions so "u of t" and "university of toronto" can group
+    s = s.replace(" & ", " and ")
+    # Normalize unicode quotes/dashes
+    s = s.replace("–", "-").replace("—", "-").replace("'", "'")
+    return s
+
+
+@app.get("/admin/schools/audit")
+def admin_schools_audit(
+    db: Session = Depends(get_db),
+    _=Depends(verify_admin),
+):
+    """Read-only: surface duplicate school names and messy country values."""
+    schools = db.query(models.School).all()
+    total = len(schools)
+
+    # Group by normalized (name, country) to find duplicates
+    groups: dict[tuple[str, str], list[models.School]] = {}
+    for s in schools:
+        key = (_normalize_school_name(s.name), (s.country or "").strip().lower())
+        groups.setdefault(key, []).append(s)
+
+    duplicate_groups: list[dict] = []
+    for (norm_name, norm_country), rows in groups.items():
+        if len(rows) < 2:
+            continue
+        duplicate_groups.append({
+            "normalized_name": norm_name,
+            "normalized_country": norm_country,
+            "count": len(rows),
+            "variants": [
+                {
+                    "id": r.id,
+                    "name": r.name,
+                    "city": r.city,
+                    "region": r.region,
+                    "country": r.country,
+                }
+                for r in rows
+            ],
+        })
+    duplicate_groups.sort(key=lambda g: g["count"], reverse=True)
+
+    # Also detect "near-duplicates" across different country values (likely same
+    # school with different country spellings, e.g. "UK" vs "United Kingdom")
+    by_name_only: dict[str, list[models.School]] = {}
+    for s in schools:
+        by_name_only.setdefault(_normalize_school_name(s.name), []).append(s)
+    cross_country_dupes: list[dict] = []
+    for norm_name, rows in by_name_only.items():
+        distinct_countries = {(r.country or "").strip() for r in rows}
+        if len(distinct_countries) > 1 and len(rows) >= 2:
+            cross_country_dupes.append({
+                "normalized_name": norm_name,
+                "count": len(rows),
+                "countries": sorted(distinct_countries),
+                "variants": [
+                    {"id": r.id, "name": r.name, "country": r.country, "city": r.city}
+                    for r in rows
+                ],
+            })
+    cross_country_dupes.sort(key=lambda g: g["count"], reverse=True)
+
+    # Country distribution + junk
+    country_rows = (
+        db.query(models.School.country, func.count(models.School.id))
+        .group_by(models.School.country)
+        .order_by(func.count(models.School.id).desc())
+        .all()
+    )
+    known_countries = VALID_COUNTRY_NAMES | set(COUNTRY_CLEANUP_MAP.values())
+    junk_countries = []
+    for c, n in country_rows:
+        if not c or c not in known_countries:
+            junk_countries.append({"country": c, "schools": n})
+
+    total_dupe_rows = sum(g["count"] - 1 for g in duplicate_groups)
+
+    return {
+        "total_schools": total,
+        "duplicate_groups": len(duplicate_groups),
+        "duplicate_rows_removable": total_dupe_rows,
+        "cross_country_groups": len(cross_country_dupes),
+        "junk_country_values": len(junk_countries),
+        "country_distribution": [{"country": r[0], "schools": r[1]} for r in country_rows],
+        "junk_countries": junk_countries,
+        "top_duplicates": duplicate_groups[:50],
+        "cross_country_duplicates": cross_country_dupes[:30],
+    }
+
+
+@app.post("/admin/schools/cleanup")
+def admin_schools_cleanup(
+    dry_run: bool = False,
+    merge_duplicates: bool = True,
+    update_user_schools: bool = True,
+    db: Session = Depends(get_db),
+    _=Depends(verify_admin),
+):
+    """Normalize school countries and merge exact-duplicate school rows.
+
+    Steps:
+      1. Apply `COUNTRY_CLEANUP_MAP` to `schools.country`.
+      2. Null out `COUNTRY_JUNK_VALUES` in `schools.country`.
+      3. If `merge_duplicates`: group by (normalized_name, normalized_country),
+         keep the row with the most complete metadata (city/region), rename
+         `users.school` from any alias to the canonical name, delete others.
+      4. If `update_user_schools`: for any user.school string that matches a
+         known alias in `COUNTRY_CLEANUP_MAP.keys()` (treating it as a
+         free-text misspell), normalize it too.
+    Pass `dry_run=true` to preview changes without committing.
+    """
+    country_updates: dict[str, int] = {}
+
+    for old_val, new_val in COUNTRY_CLEANUP_MAP.items():
+        rows = db.query(models.School).filter(models.School.country == old_val).all()
+        if rows:
+            for s in rows:
+                s.country = new_val
+            country_updates[f"{old_val} → {new_val}"] = len(rows)
+
+    for junk in COUNTRY_JUNK_VALUES:
+        rows = db.query(models.School).filter(models.School.country == junk).all()
+        if rows:
+            for s in rows:
+                s.country = None
+            country_updates[f"{junk} → NULL"] = len(rows)
+
+    merged_groups: list[dict] = []
+    user_schools_renamed = 0
+    user_rename_samples: list[str] = []
+
+    if merge_duplicates:
+        # Refresh in-session
+        db.flush()
+        schools = db.query(models.School).all()
+        groups: dict[tuple[str, str], list[models.School]] = {}
+        for s in schools:
+            key = (_normalize_school_name(s.name), (s.country or "").strip().lower())
+            if not key[0]:
+                continue
+            groups.setdefault(key, []).append(s)
+
+        for key, rows in groups.items():
+            if len(rows) < 2:
+                continue
+
+            # Pick canonical: most complete (city+region non-null), then lowest id
+            def completeness(r: models.School) -> tuple[int, int]:
+                score = (1 if r.city else 0) + (1 if r.region else 0)
+                return (-score, r.id)  # minimise → highest score, earliest id wins
+
+            rows_sorted = sorted(rows, key=completeness)
+            canonical = rows_sorted[0]
+            losers = rows_sorted[1:]
+
+            # Rename users.school values that matched any loser/canonical variant
+            variant_names = {r.name for r in rows}
+            if update_user_schools and variant_names:
+                users_to_update = db.query(models.User).filter(
+                    models.User.school.in_(variant_names),
+                    models.User.school != canonical.name,
+                ).all()
+                for u in users_to_update:
+                    if len(user_rename_samples) < 20:
+                        user_rename_samples.append(
+                            f"{u.username or f'#{u.id}'}: '{u.school}' → '{canonical.name}'"
+                        )
+                    u.school = canonical.name
+                    user_schools_renamed += 1
+
+            merged_groups.append({
+                "canonical": {"id": canonical.id, "name": canonical.name, "country": canonical.country},
+                "merged_count": len(losers),
+                "merged_ids": [r.id for r in losers],
+                "merged_names": sorted({r.name for r in losers}),
+            })
+
+            for r in losers:
+                db.delete(r)
+
+    if dry_run:
+        db.rollback()
+    else:
+        db.commit()
+
+    # Post-cleanup country distribution
+    country_rows = (
+        db.query(models.School.country, func.count(models.School.id))
+        .group_by(models.School.country)
+        .order_by(func.count(models.School.id).desc())
+        .all()
+    )
+
+    return {
+        "dry_run": dry_run,
+        "country_changes": country_updates,
+        "country_changes_total": sum(country_updates.values()),
+        "merged_groups": len(merged_groups),
+        "merged_rows_removed": sum(g["merged_count"] for g in merged_groups),
+        "merge_details": merged_groups[:50],
+        "user_schools_renamed": user_schools_renamed,
+        "user_rename_samples": user_rename_samples,
+        "current_country_distribution": [
+            {"country": r[0], "schools": r[1]} for r in country_rows
+        ],
+        "total_schools_after": sum(r[1] for r in country_rows),
     }
 
 
