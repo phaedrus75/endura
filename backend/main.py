@@ -5417,6 +5417,8 @@ def _posthog_geoip_lookup(lookback_days: int = 180) -> tuple[dict[int, str], str
     if not key:
         return {}, "POSTHOG_PERSONAL_API_KEY not set — skipping live geo lookup"
 
+    # Note: HogQL doesn't support toInt64OrNull / toIntOrNull — use regex match
+    # to keep only distinct_ids that look like numeric user.ids (post-login).
     hogql = """
     SELECT
         pdi.distinct_id AS did,
@@ -5425,7 +5427,7 @@ def _posthog_geoip_lookup(lookback_days: int = 180) -> tuple[dict[int, str], str
     INNER JOIN person_distinct_ids AS pdi ON pdi.person_id = persons.id
     WHERE persons.properties.$geoip_country_name IS NOT NULL
       AND persons.properties.$geoip_country_name != ''
-      AND toInt64OrNull(pdi.distinct_id) IS NOT NULL
+      AND match(pdi.distinct_id, '^[0-9]+$')
     LIMIT 200000
     """
 
