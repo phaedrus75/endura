@@ -36,13 +36,23 @@
     "extra": {
       "eas": {
         "projectId": "5fd638be-4053-4859-b3f4-b4b333d42c66"
-      }
+      },
+      "sentryDsn": "https://c4e763aceb5ded8115e4496763f50e67@o4511264215597056.ingest.de.sentry.io/4511264250200144"
     },
     "plugins": [
       "@react-native-community/datetimepicker",
       "expo-web-browser",
       "expo-localization",
-      "expo-font"
+      "expo-font",
+      [
+        "@sentry/react-native/expo",
+        {
+          "organization": "endura-m2",
+          "project": "endura-mobile",
+          "url": "https://sentry.io/"
+        }
+      ],
+      "@sentry/react-native"
     ]
   }
 }

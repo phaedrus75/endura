@@ -15,6 +15,9 @@ import { NotificationProvider } from './contexts/NotificationContext';
 import { colors, shadows, spacing } from './theme/colors';
 import { PostHogProvider } from 'posthog-react-native';
 import { posthogClient, identifyUser, resetUser, Analytics } from './services/analytics';
+import { initMonitoring, identifySentryUser, clearSentryUser, Sentry } from './services/monitoring';
+
+initMonitoring();
 
 
 // Screens
@@ -178,9 +181,11 @@ function AppNavigator() {
         total_study_minutes: user.total_study_minutes,
         current_streak: user.current_streak,
       });
+      identifySentryUser(user.id, user.username);
       Analytics.appOpened();
     } else {
       resetUser();
+      clearSentryUser();
     }
   }, [user?.id]);
   
@@ -209,7 +214,7 @@ function AppNavigator() {
   );
 }
 
-export default function App() {
+function App() {
   const [fontsLoaded] = useFonts({
     DMSans_300Light,
     DMSans_400Regular,
@@ -244,6 +249,8 @@ export default function App() {
     </GestureHandlerRootView>
   );
 }
+
+export default Sentry.wrap(App);
 
 const styles = StyleSheet.create({
   loadingContainer: {

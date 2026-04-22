@@ -29,6 +29,36 @@ from content_filter import contains_profanity
 logger = logging.getLogger(__name__)
 limiter = Limiter(key_func=get_remote_address)
 
+
+# ── Sentry error tracking ────────────────────────────────────────
+# Initialised here (before `app = FastAPI(...)`) so the Starlette/FastAPI
+# integration can auto-instrument every route. Set SENTRY_DSN in Railway
+# env vars to enable. No-op if the env var is missing (safe for local dev).
+_SENTRY_DSN = os.getenv("SENTRY_DSN", "").strip()
+if _SENTRY_DSN:
+    try:
+        import sentry_sdk
+        from sentry_sdk.integrations.logging import LoggingIntegration
+        sentry_sdk.init(
+            dsn=_SENTRY_DSN,
+            environment=os.getenv("RAILWAY_ENVIRONMENT") or "local",
+            release=os.getenv("RAILWAY_GIT_COMMIT_SHA") or os.getenv("SENTRY_RELEASE") or None,
+            send_default_pii=False,  # do NOT ship email/IP to Sentry by default
+            traces_sample_rate=float(os.getenv("SENTRY_TRACES_SAMPLE_RATE", "0.05")),
+            profiles_sample_rate=0.0,
+            integrations=[
+                LoggingIntegration(level=logging.INFO, event_level=logging.ERROR),
+            ],
+            ignore_errors=[
+                "RateLimitExceeded",
+            ],
+        )
+        print(f"✅ Sentry initialised (env={os.getenv('RAILWAY_ENVIRONMENT') or 'local'})")
+    except Exception as e:
+        print(f"⚠️ Sentry init failed (continuing without): {e}")
+else:
+    print("ℹ️ SENTRY_DSN not set — error tracking disabled")
+
 # Schema migrations are handled by Alembic (run `alembic upgrade head` before starting).
 # For local dev without Alembic, create_all bootstraps a fresh SQLite DB from models.
 if SQLALCHEMY_DATABASE_URL.startswith("sqlite"):
@@ -213,17 +243,56 @@ app.add_middleware(
     allow_headers=["Authorization", "Content-Type", "X-Admin-Key"],
 )
 
+API_VERSION = "1.0.52"
+_STARTUP_TS = datetime.utcnow()
+
+
 @app.get("/")
 def health_check():
     return {
         "status": "healthy",
         "app": "Endura API",
-        "version": "1.0.52",
+        "version": API_VERSION,
     }
 
+
 @app.get("/health")
-def health():
-    return {"status": "ok"}
+def health(db: Session = Depends(get_db)):
+    """
+    Deep health check used by uptime monitors (BetterStack / UptimeRobot).
+
+    Returns 200 only if the process is up AND the DB is reachable.
+    Uptime monitors should alert when this endpoint is non-200 for 2+
+    consecutive checks. Shape is intentionally small (<1KB) to keep the
+    monitor's bandwidth cost low.
+    """
+    db_ok = False
+    db_latency_ms: Optional[int] = None
+    db_error: Optional[str] = None
+    try:
+        t0 = datetime.utcnow()
+        db.execute(text("SELECT 1"))
+        db_latency_ms = int((datetime.utcnow() - t0).total_seconds() * 1000)
+        db_ok = True
+    except Exception as e:
+        db_error = str(e)[:200]
+
+    uptime_seconds = int((datetime.utcnow() - _STARTUP_TS).total_seconds())
+    status_ok = db_ok
+    payload = {
+        "status": "ok" if status_ok else "degraded",
+        "version": API_VERSION,
+        "uptime_seconds": uptime_seconds,
+        "db": {
+            "ok": db_ok,
+            "latency_ms": db_latency_ms,
+            "error": db_error,
+        },
+        "env": os.getenv("RAILWAY_ENVIRONMENT") or "local",
+    }
+    if not status_ok:
+        return JSONResponse(status_code=503, content=payload)
+    return payload
 
 
 # ── Resend Webhook (open/click tracking) ─────────────────────────

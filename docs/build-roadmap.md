@@ -229,6 +229,16 @@ Not committed. Things to revisit once Build 16 + 17 ship and we have data.
 - [ ] Badge difficulty rebalance — 87% of active users earn 3+ badges (too easy?)
 - [ ] App Store rating prompt (Day 28 trigger if 7+ sessions and 3+ day streak)
 
+### Infrastructure — revisit at 1,000 users
+
+- [x] **Layer 1: Railway Pro backups** — enabled (daily PITR, 7-day retention)
+- [ ] **Layer 2 + 3: offsite encrypted backups** — deferred. Full plan in `docs/backup-strategy.md`. Triggers: 1,000+ users, paid subscriptions launch, or any data-loss scare. Work already scoped (~7 hrs build + quarterly restore drills).
+
+### Monitoring & alerting
+
+- [x] **Phase 1** (22/04/26): deep `/health` with DB check, Sentry SDK in backend (FastAPI auto-instrument, tagged with env + git SHA), Sentry SDK in Expo app (crash + JS errors, user identification, `Sentry.wrap`). Awaits Sentry DSNs + BetterStack uptime monitor sign-up (~15 min one-time setup).
+- [ ] **Phase 2** — PostHog funnel alerts, Monday-morning weekly digest, durable log aggregation. Deferred until 1,000 users or a P2 incident slips through for 24h+. Full plan in `docs/monitoring-strategy.md`.
+
 ---
 
 ## Decision needed
