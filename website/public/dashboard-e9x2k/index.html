@@ -1767,7 +1767,7 @@ function applyUserFilters() { usersPage = 1; renderUsersTable(); }
 
 async function runCountryCleanup() {
     const btn = document.getElementById('cleanupCountriesBtn');
-    if (!confirm('Run country cleanup? This will normalize misspelled/duplicate country names in the database.')) return;
+    if (!confirm('Run country cleanup?\n\nThis will:\n• Normalize typos & short codes (KSA → Saudi Arabia, UK → United Kingdom)\n• Overwrite junk values (HH, random text) with live PostHog geoip data\n• Clear unverifiable junk to NULL when PostHog has no device data\n• Backfill blanks from PostHog')) return;
     btn.disabled = true;
     btn.textContent = '⏳ Running...';
     try {
@@ -1777,18 +1777,29 @@ async function runCountryCleanup() {
         });
         if (!res.ok) throw new Error('HTTP ' + res.status);
         const data = await res.json();
-        const count = data.total_users_updated || 0;
-        const changes = data.changes || {};
-        let msg = `Done! ${count} user(s) updated.\n`;
-        if (count > 0) {
-            msg += '\nChanges:\n';
-            for (const [change, n] of Object.entries(changes)) {
-                msg += `  ${change}: ${n} user(s)\n`;
-            }
-            msg += `\nCurrent countries: ${(data.current_countries || []).length}`;
-        } else {
-            msg += 'All countries are already clean.';
-        }
+        console.log('Country cleanup:', data);
+
+        const mapChanges = data.map_changes_total || 0;
+        const backfilled = data.backfilled_blanks || 0;
+        const overwritten = data.overwritten_junk || 0;
+        const cleared = data.cleared_unverifiable || 0;
+        const stillBlank = data.still_blank || 0;
+        const stillJunk = data.still_junk || 0;
+        const totalChanged = mapChanges + backfilled + overwritten + cleared;
+
+        let msg = `Country cleanup complete.\n\n`;
+        msg += `PostHog: ${data.posthog_status || 'n/a'}\n`;
+        msg += `  • ${data.posthog_user_map_size || 0} users with device geoip\n\n`;
+        msg += `Changes (${totalChanged} total):\n`;
+        msg += `  • ${mapChanges} normalized via cleanup map\n`;
+        msg += `  • ${backfilled} blanks backfilled from PostHog\n`;
+        msg += `  • ${overwritten} junk values overwritten from PostHog\n`;
+        msg += `  • ${cleared} unverifiable values cleared to NULL\n\n`;
+        msg += `Remaining:\n`;
+        msg += `  • ${stillBlank} users still blank (no PostHog data)\n`;
+        msg += `  • ${stillJunk} users still junk\n\n`;
+        msg += `Canonical countries in DB: ${(data.current_countries || []).length}\n\n`;
+        msg += `(See console for full sample lists)`;
         alert(msg);
         loadUsers();
     } catch (e) {

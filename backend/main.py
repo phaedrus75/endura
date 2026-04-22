@@ -5186,18 +5186,68 @@ def get_shop_items(db: Session = Depends(get_db)):
 # ── Country Data Cleanup ─────────────────────────────────────────
 
 COUNTRY_CLEANUP_MAP = {
+    # Short codes / abbreviations → full name
     "uk": "United Kingdom",
     "UK": "United Kingdom",
+    "Uk": "United Kingdom",
+    "us": "United States",
+    "US": "United States",
+    "Us": "United States",
+    "USA": "United States",
+    "usa": "United States",
+    "Usa": "United States",
+    "U.S.A.": "United States",
+    "U.S.": "United States",
+    "UAE": "United Arab Emirates",
+    "uae": "United Arab Emirates",
+    "KSA": "Saudi Arabia",
+    "ksa": "Saudi Arabia",
+    "Ksa": "Saudi Arabia",
+    "KZ": "Kazakhstan",
+    "Kz": "Kazakhstan",
+    "kz": "Kazakhstan",
+    "PH": "Philippines",
+    "ph": "Philippines",
+    "Ph": "Philippines",
+    "PK": "Pakistan",
+    "pk": "Pakistan",
+    "Pk": "Pakistan",
+    "DE": "Germany",
+    "de": "Germany",
+    "FR": "France",
+    "fr": "France",
+    "BR": "Brazil",
+    "br": "Brazil",
+    "IN": "India",
+    "in": "India",
+    "CN": "China",
+    "cn": "China",
+    "JP": "Japan",
+    "jp": "Japan",
+    "KR": "South Korea",
+    "kr": "South Korea",
+    "RU": "Russia",
+    "ru": "Russia",
+    "TR": "Turkey",
+    "tr": "Turkey",
+    "VN": "Vietnam",
+    "vn": "Vietnam",
+    "ID": "Indonesia",
+    "id": "Indonesia",
+    # Typos + local-language spellings
     "india": "India",
     "egypt": "Egypt",
     "argentina": "Argentina",
     "armenia": "Armenia",
     "norway": "Norway",
     "italia": "Italy",
+    "Italia": "Italy",
     "Srilanka": "Sri Lanka",
     "Sri lanka": "Sri Lanka",
     "sri Lanka": "Sri Lanka",
     "Phillipines": "Philippines",
+    "Philipines": "Philippines",
+    "Filipinas": "Philippines",
     "Algria": "Algeria",
     "Aljeria": "Algeria",
     "españa": "Spain",
@@ -5208,19 +5258,69 @@ COUNTRY_CLEANUP_MAP = {
     "Türkiye": "Turkey",
     "türkiye": "Turkey",
     "Казак": "Kazakhstan",
-    "UAE": "United Arab Emirates",
-    "Kz": "Kazakhstan",
+    "Казахстан": "Kazakhstan",
+    "Россия": "Russia",
+    "Україна": "Ukraine",
+    "Deutschland": "Germany",
+    "Nederland": "Netherlands",
+    "Polska": "Poland",
+    "Magyar": "Hungary",
+    "Magyarország": "Hungary",
+    "中国": "China",
+    "日本": "Japan",
+    "한국": "South Korea",
+    "대한민국": "South Korea",
     "Baku": "Azerbaijan",
     "Guayaquil": "Ecuador",
     "Kurdistan": "Iraq",
     "Kalimantan utara": "Indonesia",
     "ub": "Mongolia",
+    "UB": "Mongolia",
     "Korea, Republic of": "South Korea",
     "Korea": "South Korea",
     "\U0001f1ee\U0001f1f6": "Iraq",
 }
 
-COUNTRY_JUNK_VALUES = {"Haha", "blublublu", "cute"}
+# Values that are obviously not countries — set to NULL on cleanup
+COUNTRY_JUNK_VALUES = {"Haha", "blublublu", "cute", "test", "Test", "TEST", "asdf", "none", "None", "N/A", "n/a", "-", ".", "?"}
+
+# Canonical country names we trust as valid. Anything not in this set and not
+# covered by COUNTRY_CLEANUP_MAP is considered junk and will be replaced from
+# PostHog geoip data (or nulled out if PostHog has no data for that user).
+VALID_COUNTRY_NAMES = {
+    "Afghanistan", "Albania", "Algeria", "Andorra", "Angola", "Antigua and Barbuda",
+    "Argentina", "Armenia", "Australia", "Austria", "Azerbaijan", "Bahamas", "Bahrain",
+    "Bangladesh", "Barbados", "Belarus", "Belgium", "Belize", "Benin", "Bhutan",
+    "Bolivia", "Bosnia and Herzegovina", "Botswana", "Brazil", "Brunei", "Bulgaria",
+    "Burkina Faso", "Burundi", "Cambodia", "Cameroon", "Canada", "Cape Verde",
+    "Central African Republic", "Chad", "Chile", "China", "Colombia", "Comoros",
+    "Congo", "Costa Rica", "Croatia", "Cuba", "Cyprus", "Czech Republic", "Czechia",
+    "Denmark", "Djibouti", "Dominica", "Dominican Republic", "East Timor", "Ecuador",
+    "Egypt", "El Salvador", "Equatorial Guinea", "Eritrea", "Estonia", "Eswatini",
+    "Ethiopia", "Fiji", "Finland", "France", "Gabon", "Gambia", "Georgia", "Germany",
+    "Ghana", "Greece", "Grenada", "Guatemala", "Guinea", "Guinea-Bissau", "Guyana",
+    "Haiti", "Honduras", "Hong Kong", "Hungary", "Iceland", "India", "Indonesia",
+    "Iran", "Iraq", "Ireland", "Israel", "Italy", "Ivory Coast", "Jamaica", "Japan",
+    "Jordan", "Kazakhstan", "Kenya", "Kiribati", "Kosovo", "Kuwait", "Kyrgyzstan",
+    "Laos", "Latvia", "Lebanon", "Lesotho", "Liberia", "Libya", "Liechtenstein",
+    "Lithuania", "Luxembourg", "Macao", "Madagascar", "Malawi", "Malaysia",
+    "Maldives", "Mali", "Malta", "Marshall Islands", "Mauritania", "Mauritius",
+    "Mexico", "Micronesia", "Moldova", "Monaco", "Mongolia", "Montenegro", "Morocco",
+    "Mozambique", "Myanmar", "Namibia", "Nauru", "Nepal", "Netherlands",
+    "New Zealand", "Nicaragua", "Niger", "Nigeria", "North Korea", "North Macedonia",
+    "Norway", "Oman", "Pakistan", "Palau", "Palestine", "Panama", "Papua New Guinea",
+    "Paraguay", "Peru", "Philippines", "Poland", "Portugal", "Puerto Rico", "Qatar",
+    "Romania", "Russia", "Rwanda", "Saint Kitts and Nevis", "Saint Lucia",
+    "Saint Vincent and the Grenadines", "Samoa", "San Marino",
+    "Sao Tome and Principe", "Saudi Arabia", "Senegal", "Serbia", "Seychelles",
+    "Sierra Leone", "Singapore", "Slovakia", "Slovenia", "Solomon Islands",
+    "Somalia", "South Africa", "South Korea", "South Sudan", "Spain", "Sri Lanka",
+    "Sudan", "Suriname", "Sweden", "Switzerland", "Syria", "Taiwan", "Tajikistan",
+    "Tanzania", "Thailand", "Togo", "Tonga", "Trinidad and Tobago", "Tunisia",
+    "Turkey", "Turkmenistan", "Tuvalu", "Uganda", "Ukraine", "United Arab Emirates",
+    "United Kingdom", "United States", "Uruguay", "Uzbekistan", "Vanuatu",
+    "Venezuela", "Vietnam", "Yemen", "Zambia", "Zimbabwe",
+}
 
 # (Previous static POSTHOG_GEOIP_BACKFILL dict was retired Apr 2026 in favour of
 # _posthog_geoip_lookup(), which queries PostHog live.)
@@ -5290,12 +5390,24 @@ def _posthog_geoip_lookup(lookback_days: int = 180) -> tuple[dict[int, str], str
 
 @app.post("/admin/cleanup-countries")
 def admin_cleanup_countries(
-    lookback_days: int = 180,
+    lookback_days: int = 365,
+    overwrite_with_posthog: bool = True,
+    clear_unverifiable_junk: bool = True,
     db: Session = Depends(get_db),
     _=Depends(verify_admin),
 ):
-    """Normalize messy country values and backfill blanks from a LIVE PostHog query.
-    Replaces the previous static dict lookup so new users auto-get countries going forward.
+    """Authoritative country cleanup driven by PostHog `$geoip_country_name`.
+
+    Pipeline:
+      1. Apply COUNTRY_CLEANUP_MAP (typos, short codes, local spellings → canonical)
+      2. Null-out COUNTRY_JUNK_VALUES (obvious garbage)
+      3. Pull live geoip per user from PostHog (last `lookback_days`)
+      4. For every user:
+           - If user.country is blank → backfill from PostHog
+           - If user.country is a VALID canonical name → leave it
+           - Else (still junk after step 1, e.g. "HH", "Hamburg", random text)
+               - If PostHog has data for that user → overwrite with PostHog value
+               - Else if `clear_unverifiable_junk` → set to NULL
     Safe to run repeatedly.
     """
     updated: dict[str, int] = {}
@@ -5314,24 +5426,55 @@ def admin_cleanup_countries(
         if count:
             updated[f"{junk} → NULL"] = count
 
-    # ── Live PostHog GeoIP backfill ──────────────────────────────
+    # Live PostHog geoip (never raises — returns empty dict + status on error)
     geo_map, geo_status = _posthog_geoip_lookup(lookback_days=lookback_days)
-    blank_users = db.query(models.User).filter(
-        (models.User.country.is_(None)) | (models.User.country == "")
-    ).all()
+
+    # Any country name PostHog emits is canonical (it comes from MaxMind)
+    known_countries = VALID_COUNTRY_NAMES | set(geo_map.values()) | set(COUNTRY_CLEANUP_MAP.values())
+
+    users = db.query(models.User).all()
 
     backfilled = 0
-    unmatched: list[str] = []
+    overwritten = 0
+    cleared = 0
     backfill_samples: list[str] = []
-    for user in blank_users:
-        country = geo_map.get(user.id)
-        if country:
-            user.country = country
-            backfilled += 1
-            if len(backfill_samples) < 20:
-                backfill_samples.append(f"{user.username or f'#{user.id}'} → {country}")
+    overwrite_samples: list[str] = []
+    cleared_samples: list[str] = []
+    still_blank_users: list[str] = []
+    still_junk_users: list[str] = []
+
+    for user in users:
+        current_raw = user.country
+        current = (current_raw or "").strip()
+        posthog_country = geo_map.get(user.id)
+
+        if not current:
+            # Blank → backfill from PostHog if we have it
+            if posthog_country:
+                user.country = posthog_country
+                backfilled += 1
+                if len(backfill_samples) < 25:
+                    backfill_samples.append(f"{user.username or f'#{user.id}'} → {posthog_country}")
+            else:
+                still_blank_users.append(user.username or f"#{user.id}")
+            continue
+
+        if current in known_countries:
+            continue  # already canonical
+
+        # Value is suspect (short code, typo, random text, emoji, etc.)
+        if posthog_country and overwrite_with_posthog:
+            if len(overwrite_samples) < 25:
+                overwrite_samples.append(f"{user.username or f'#{user.id}'}: '{current}' → {posthog_country}")
+            user.country = posthog_country
+            overwritten += 1
+        elif clear_unverifiable_junk:
+            if len(cleared_samples) < 25:
+                cleared_samples.append(f"{user.username or f'#{user.id}'}: '{current}' → NULL")
+            user.country = None
+            cleared += 1
         else:
-            unmatched.append(user.username or f"#{user.id}")
+            still_junk_users.append(f"{user.username or f'#{user.id}'}: '{current}'")
 
     db.commit()
 
@@ -5344,14 +5487,20 @@ def admin_cleanup_countries(
     )
 
     return {
-        "changes": updated,
-        "total_users_updated": sum(updated.values()),
         "posthog_status": geo_status,
-        "blank_users_before": len(blank_users),
-        "backfilled": backfilled,
+        "posthog_user_map_size": len(geo_map),
+        "map_changes": updated,
+        "map_changes_total": sum(updated.values()),
+        "backfilled_blanks": backfilled,
         "backfill_samples": backfill_samples,
-        "still_blank": len(unmatched),
-        "still_blank_users": unmatched[:30],  # avoid bloating the response for big lists
+        "overwritten_junk": overwritten,
+        "overwrite_samples": overwrite_samples,
+        "cleared_unverifiable": cleared,
+        "cleared_samples": cleared_samples,
+        "still_blank": len(still_blank_users),
+        "still_blank_users": still_blank_users[:30],
+        "still_junk": len(still_junk_users),
+        "still_junk_users": still_junk_users[:30],
         "current_countries": [{"country": r[0], "users": r[1]} for r in country_rows],
     }
 
