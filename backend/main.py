@@ -5397,13 +5397,19 @@ VALID_COUNTRY_NAMES = {
 
 
 def _posthog_geoip_lookup(lookback_days: int = 180) -> tuple[dict[int, str], str]:
-    """Query PostHog live for the most-recent $geoip_country_name per user.
+    """Query PostHog for the resolved $geoip_country_name per user.
 
-    Groups by PostHog `person_id` (merged identity), so events captured BEFORE
-    the user logged in (anonymous distinct_id) still count as long as they were
-    later identified. For each person we pull every distinct_id we've ever seen
-    and pick the first one that parses as an int — that's the numeric user.id
-    the mobile app passes to posthog.identify().
+    Uses the `persons` table (one row per merged identity) rather than scanning
+    `events`. PostHog stores the latest geoip on the person itself, so this
+    query is O(persons) not O(events) and finishes in <1s even with millions
+    of events.
+
+    We JOIN `person_distinct_ids` to find the numeric distinct_id for each
+    person — that's the value the mobile app passes to posthog.identify() and
+    is how we map back to user.id.
+
+    `lookback_days` is kept for API compat but ignored (person properties
+    reflect latest state, not a time window).
 
     Returns (user_id -> country, status_message). Never raises.
     """
@@ -5411,22 +5417,19 @@ def _posthog_geoip_lookup(lookback_days: int = 180) -> tuple[dict[int, str], str
     if not key:
         return {}, "POSTHOG_PERSONAL_API_KEY not set — skipping live geo lookup"
 
-    hogql = f"""
+    hogql = """
     SELECT
-        person_id,
-        argMax(properties.$geoip_country_name, timestamp) AS country,
-        groupUniqArray(distinct_id) AS distinct_ids
-    FROM events
-    WHERE timestamp > now() - INTERVAL {int(lookback_days)} DAY
-      AND properties.$geoip_country_name IS NOT NULL
-      AND properties.$geoip_country_name != ''
-    GROUP BY person_id
-    HAVING country IS NOT NULL
-    LIMIT 100000
+        pdi.distinct_id AS did,
+        persons.properties.$geoip_country_name AS country
+    FROM persons
+    INNER JOIN person_distinct_ids AS pdi ON pdi.person_id = persons.id
+    WHERE persons.properties.$geoip_country_name IS NOT NULL
+      AND persons.properties.$geoip_country_name != ''
+      AND toInt64OrNull(pdi.distinct_id) IS NOT NULL
+    LIMIT 200000
     """
 
     try:
-        # Resolve project id synchronously (cached via module state)
         project_id = _posthog_state.get("project_id")
         if not project_id:
             with httpx.Client(timeout=15.0) as client:
@@ -5453,35 +5456,22 @@ def _posthog_geoip_lookup(lookback_days: int = 180) -> tuple[dict[int, str], str
         return {}, f"PostHog lookup error: {e}"
 
     mapping: dict[int, str] = {}
-    persons_without_numeric_id = 0
     for row in rows:
-        # row: [person_id, country, [distinct_id, distinct_id, ...]]
-        country = row[1]
-        distinct_ids = row[2] or []
+        did, country = row[0], row[1]
         if not country:
             continue
-        uid: int | None = None
-        for did in distinct_ids:
-            try:
-                candidate = int(str(did).strip())
-                if 0 < candidate < 10_000_000:
-                    uid = candidate
-                    break
-            except (TypeError, ValueError):
-                continue
-        if uid is None:
-            persons_without_numeric_id += 1
+        try:
+            uid = int(str(did).strip())
+        except (TypeError, ValueError):
+            continue
+        if not (0 < uid < 10_000_000):
             continue
         canonical = COUNTRY_CLEANUP_MAP.get(country, country)
-        existing = mapping.get(uid)
-        if existing and existing != canonical:
-            continue
         mapping[uid] = canonical
 
     status = (
-        f"PostHog: {len(mapping)} users mapped, "
-        f"{persons_without_numeric_id} persons skipped (no numeric distinct_id — never logged in), "
-        f"window: {lookback_days}d"
+        f"PostHog persons table: {len(mapping)} users mapped "
+        f"(source: persons.properties.$geoip_country_name)"
     )
     return mapping, status
 
