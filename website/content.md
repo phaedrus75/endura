@@ -6,8 +6,8 @@
 
 ## META (layout.tsx)
 
-- **Page Title:** Endura — Study Smarter. Save Species.
-- **Meta Description:** A gamified study app that turns your focus time into real conservation impact. Hatch endangered animals, build sanctuaries, and protect wildlife — one study session at a time.
+- **Page Title:** Endura — You get the grades. The animals get to live.
+- **Meta Description:** Endura turns every focused study session into an endangered animal you hatch, collect, and protect. Finally, a reason to sit down and do the work.
 - **Keywords:** study app, conservation, endangered species, gamified learning, focus timer, wildlife, WWF
 
 ---
@@ -23,9 +23,9 @@
 ## HERO
 
 - **Badge:** 🌍 Youth-led conservation through education
-- **Headline:** Study smarter. / Save species.
-- **Subheadline:** A gamified study app that turns your focus time into real conservation impact. Hatch endangered animals, build sanctuaries, and protect wildlife — one session at a time.
-- **Primary CTA:** Join the Waitlist
+- **Headline:** You get the grades. / The animals get to live.
+- **Subheadline:** Endura turns every focused study session into an endangered animal you hatch, collect, and protect. Finally, a reason to sit down and do the work.
+- **Primary CTA:** Download on the App Store
 - **Secondary CTA:** See How It Works
 - **Trust Indicators:**
   - ● Free to use

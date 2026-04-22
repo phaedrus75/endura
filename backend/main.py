@@ -5397,24 +5397,32 @@ VALID_COUNTRY_NAMES = {
 
 
 def _posthog_geoip_lookup(lookback_days: int = 180) -> tuple[dict[int, str], str]:
-    """Query PostHog live for the most-recent $geoip_country_name per distinct_id.
-    Returns (user_id -> country, status_message). Never raises — returns empty dict on failure.
+    """Query PostHog live for the most-recent $geoip_country_name per user.
+
+    Groups by PostHog `person_id` (merged identity), so events captured BEFORE
+    the user logged in (anonymous distinct_id) still count as long as they were
+    later identified. For each person we pull every distinct_id we've ever seen
+    and pick the first one that parses as an int — that's the numeric user.id
+    the mobile app passes to posthog.identify().
+
+    Returns (user_id -> country, status_message). Never raises.
     """
     key = _posthog_key()
     if not key:
         return {}, "POSTHOG_PERSONAL_API_KEY not set — skipping live geo lookup"
 
-    # HogQL: latest non-null country per distinct_id within the window
     hogql = f"""
     SELECT
-        distinct_id,
-        argMax(properties.$geoip_country_name, timestamp) AS country
+        person_id,
+        argMax(properties.$geoip_country_name, timestamp) AS country,
+        groupUniqArray(distinct_id) AS distinct_ids
     FROM events
     WHERE timestamp > now() - INTERVAL {int(lookback_days)} DAY
       AND properties.$geoip_country_name IS NOT NULL
       AND properties.$geoip_country_name != ''
-    GROUP BY distinct_id
+    GROUP BY person_id
     HAVING country IS NOT NULL
+    LIMIT 100000
     """
 
     try:
@@ -5445,17 +5453,37 @@ def _posthog_geoip_lookup(lookback_days: int = 180) -> tuple[dict[int, str], str
         return {}, f"PostHog lookup error: {e}"
 
     mapping: dict[int, str] = {}
+    persons_without_numeric_id = 0
     for row in rows:
-        distinct_id, country = row[0], row[1]
+        # row: [person_id, country, [distinct_id, distinct_id, ...]]
+        country = row[1]
+        distinct_ids = row[2] or []
         if not country:
             continue
-        try:
-            uid = int(distinct_id)
-        except (TypeError, ValueError):
+        uid: int | None = None
+        for did in distinct_ids:
+            try:
+                candidate = int(str(did).strip())
+                if 0 < candidate < 10_000_000:
+                    uid = candidate
+                    break
+            except (TypeError, ValueError):
+                continue
+        if uid is None:
+            persons_without_numeric_id += 1
             continue
-        mapping[uid] = COUNTRY_CLEANUP_MAP.get(country, country)
+        canonical = COUNTRY_CLEANUP_MAP.get(country, country)
+        existing = mapping.get(uid)
+        if existing and existing != canonical:
+            continue
+        mapping[uid] = canonical
 
-    return mapping, f"PostHog returned {len(mapping)} user→country mappings (window: {lookback_days}d)"
+    status = (
+        f"PostHog: {len(mapping)} users mapped, "
+        f"{persons_without_numeric_id} persons skipped (no numeric distinct_id — never logged in), "
+        f"window: {lookback_days}d"
+    )
+    return mapping, status
 
 
 @app.post("/admin/cleanup-countries")
