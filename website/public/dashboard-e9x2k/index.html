@@ -388,6 +388,7 @@
             <a data-page="campaigns"><span class="icon">📣</span> Campaigns</a>
             <a data-page="email-templates"><span class="icon">📧</span> Email Templates</a>
             <a data-page="founding"><span class="icon">⭐</span> Founding Members</a>
+            <a data-page="system"><span class="icon">🩺</span> System Health</a>
         </nav>
         <div class="api-cfg">
             <label>API Connection</label>
@@ -972,6 +973,87 @@
                 </div>
             </div>
         </div>
+
+        <!-- System Health Page -->
+        <div class="page" id="page-system">
+            <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:18px">
+                <h1 class="page-title" style="margin:0">System Health</h1>
+                <div style="display:flex;gap:8px;align-items:center">
+                    <span id="sysLastCheck" style="font-size:12px;color:var(--text-muted)">—</span>
+                    <button onclick="loadSystemHealth()" style="padding:7px 14px;background:var(--forest);color:#fff;border:none;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer">Refresh</button>
+                </div>
+            </div>
+            <p style="color:var(--text-muted);margin-bottom:24px;font-size:14px;max-width:720px">
+                Live pulse of the backend. Auto-refreshes every 30 seconds while this page is open.
+                For detailed errors, traces, and mobile crashes, click through to Sentry.
+                For minute-by-minute uptime history, click through to BetterStack.
+            </p>
+
+            <!-- Health summary card -->
+            <div class="table-card" style="margin-bottom:20px">
+                <div style="display:flex;align-items:center;gap:14px;margin-bottom:16px">
+                    <span id="sysStatusDot" style="display:inline-block;width:14px;height:14px;border-radius:50%;background:#94a3b8"></span>
+                    <h3 id="sysStatusLabel" style="margin:0;font-size:18px">Checking…</h3>
+                </div>
+                <div class="kpi-grid" style="margin-bottom:0">
+                    <div class="kpi"><div class="kpi-icon">🗄️</div><div class="kpi-val" id="sysDbLatency">—</div><div class="kpi-label">DB Latency</div><div class="kpi-sub" id="sysDbStatus"></div></div>
+                    <div class="kpi"><div class="kpi-icon">⏱️</div><div class="kpi-val" id="sysUptime">—</div><div class="kpi-label">Uptime</div><div class="kpi-sub" id="sysUptimeSub"></div></div>
+                    <div class="kpi"><div class="kpi-icon">🏷️</div><div class="kpi-val" id="sysVersion">—</div><div class="kpi-label">API Version</div><div class="kpi-sub" id="sysEnv"></div></div>
+                    <div class="kpi"><div class="kpi-icon">📡</div><div class="kpi-val" id="sysEndpoint" style="font-size:15px;font-weight:500;word-break:break-all">—</div><div class="kpi-label">Endpoint</div><div class="kpi-sub">/health</div></div>
+                </div>
+            </div>
+
+            <!-- Raw /health response (for debugging) -->
+            <div class="table-card" style="margin-bottom:20px">
+                <h3 style="margin-top:0">Raw /health response</h3>
+                <pre id="sysRaw" style="background:#0f172a;color:#cbd5e1;padding:16px;border-radius:8px;font-size:12px;overflow-x:auto;margin:0;max-height:240px;overflow-y:auto">Loading…</pre>
+            </div>
+
+            <!-- External monitoring tools -->
+            <div class="table-card" style="margin-bottom:20px">
+                <h3 style="margin-top:0">External tools</h3>
+                <p style="color:var(--text-muted);font-size:13px;margin-bottom:16px">Detailed data lives in the tools below. They open in a new tab — your session here stays put.</p>
+                <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px">
+                    <a href="https://endura-m2.sentry.io/issues/?project=&environment=production" target="_blank" rel="noopener" class="sys-tool-link" style="display:block;padding:16px;border:1px solid var(--border);border-radius:10px;text-decoration:none;color:inherit;background:#fff;transition:all .15s">
+                        <div style="font-size:20px;margin-bottom:4px">🪲</div>
+                        <div style="font-weight:600;margin-bottom:2px">Sentry — Backend</div>
+                        <div style="font-size:12px;color:var(--text-muted)">FastAPI exceptions, stack traces, release grouping</div>
+                    </a>
+                    <a href="https://endura-m2.sentry.io/issues/?project=&environment=production&query=is%3Aunresolved+platform%3Areact-native" target="_blank" rel="noopener" class="sys-tool-link" style="display:block;padding:16px;border:1px solid var(--border);border-radius:10px;text-decoration:none;color:inherit;background:#fff;transition:all .15s">
+                        <div style="font-size:20px;margin-bottom:4px">📱</div>
+                        <div style="font-weight:600;margin-bottom:2px">Sentry — Mobile</div>
+                        <div style="font-size:12px;color:var(--text-muted)">React Native crashes, JS errors on real devices</div>
+                    </a>
+                    <a href="https://uptime.betterstack.com/" target="_blank" rel="noopener" class="sys-tool-link" style="display:block;padding:16px;border:1px solid var(--border);border-radius:10px;text-decoration:none;color:inherit;background:#fff;transition:all .15s">
+                        <div style="font-size:20px;margin-bottom:4px">🟢</div>
+                        <div style="font-weight:600;margin-bottom:2px">BetterStack — Uptime</div>
+                        <div style="font-size:12px;color:var(--text-muted)">/health status history, incident timeline</div>
+                    </a>
+                    <a href="https://railway.com/project/ce6dc594-5f01-4daa-a886-90907cd2a58c" target="_blank" rel="noopener" class="sys-tool-link" style="display:block;padding:16px;border:1px solid var(--border);border-radius:10px;text-decoration:none;color:inherit;background:#fff;transition:all .15s">
+                        <div style="font-size:20px;margin-bottom:4px">🚂</div>
+                        <div style="font-weight:600;margin-bottom:2px">Railway — Deploys & Logs</div>
+                        <div style="font-size:12px;color:var(--text-muted)">Live deploy status, stdout logs (last 7 days)</div>
+                    </a>
+                    <a href="https://us.posthog.com/project/endura" target="_blank" rel="noopener" class="sys-tool-link" style="display:block;padding:16px;border:1px solid var(--border);border-radius:10px;text-decoration:none;color:inherit;background:#fff;transition:all .15s">
+                        <div style="font-size:20px;margin-bottom:4px">📊</div>
+                        <div style="font-weight:600;margin-bottom:2px">PostHog — Product Events</div>
+                        <div style="font-size:12px;color:var(--text-muted)">App opens, funnel breakdowns, user sessions</div>
+                    </a>
+                </div>
+            </div>
+
+            <!-- Monitoring runbook shortcut -->
+            <div class="table-card">
+                <h3 style="margin-top:0">What to do when something breaks</h3>
+                <ol style="font-size:13px;line-height:1.8;color:var(--text-main);padding-left:20px;margin:0">
+                    <li><strong>Status dot red above or BetterStack alert:</strong> check the raw /health response for the error. If DB is unreachable, check Railway → Postgres service status. If the whole API is down, check Railway → web service deploys.</li>
+                    <li><strong>Sentry error spike:</strong> open Sentry → sort by "most users affected" → read the top issue. Each event is tagged with the git SHA of the release that caused it.</li>
+                    <li><strong>Mobile crash on new build:</strong> Sentry → mobile → filter by latest <code>release</code>. If stack traces look minified (e.g. <code>index.bundle:1:24875</code>), source-map upload failed on EAS build — check the build log.</li>
+                    <li><strong>Funnel dip (signups drop) without an error spike:</strong> not a code issue. Check PostHog → break down by country / OS / app version (the 4/20 pattern).</li>
+                </ol>
+                <p style="color:var(--text-muted);font-size:12px;margin-top:14px;margin-bottom:0">Full plan: <code>docs/monitoring-strategy.md</code> in the repo.</p>
+            </div>
+        </div>
     </div>
 </div>
 
@@ -1297,6 +1379,11 @@ document.querySelectorAll('.sidebar nav a').forEach(link => {
         const page = document.getElementById('page-' + link.dataset.page);
         page.classList.add('active');
 
+        if (link.dataset.page !== 'system' && typeof sysHealthTimer !== 'undefined' && sysHealthTimer) {
+            clearInterval(sysHealthTimer);
+            sysHealthTimer = null;
+        }
+
         if (link.dataset.page === 'overview') loadOverview();
         else if (link.dataset.page === 'users') loadUsers();
         else if (link.dataset.page === 'donations') loadDonations();
@@ -1311,8 +1398,92 @@ document.querySelectorAll('.sidebar nav a').forEach(link => {
         else if (link.dataset.page === 'campaigns') loadCampaigns();
         else if (link.dataset.page === 'email-templates') loadEmailTemplates();
         else if (link.dataset.page === 'founding') loadFoundingMembers();
+        else if (link.dataset.page === 'system') loadSystemHealth();
     });
 });
+
+// ----- System Health -----
+let sysHealthTimer = null;
+
+async function loadSystemHealth() {
+    const endpoint = (API_URL || '').replace(/\/$/, '') + '/health';
+    document.getElementById('sysEndpoint').textContent = endpoint;
+
+    const dotEl = document.getElementById('sysStatusDot');
+    const labelEl = document.getElementById('sysStatusLabel');
+    const rawEl = document.getElementById('sysRaw');
+    const lastCheckEl = document.getElementById('sysLastCheck');
+
+    dotEl.style.background = '#f59e0b';
+    labelEl.textContent = 'Checking…';
+
+    const t0 = performance.now();
+    let data = null;
+    let httpStatus = 0;
+    let err = null;
+    try {
+        const res = await fetch(endpoint, { cache: 'no-store' });
+        httpStatus = res.status;
+        data = await res.json().catch(() => ({}));
+    } catch (e) {
+        err = e;
+    }
+    const clientLatencyMs = Math.round(performance.now() - t0);
+
+    const ok = httpStatus === 200 && data && data.status === 'ok';
+    dotEl.style.background = ok ? '#10b981' : '#ef4444';
+    labelEl.textContent = ok
+        ? `Healthy (HTTP ${httpStatus})`
+        : err
+            ? `Unreachable — ${err.message || 'network error'}`
+            : `Degraded (HTTP ${httpStatus || '?'})`;
+    labelEl.style.color = ok ? '#10b981' : '#ef4444';
+
+    if (data) {
+        const db = data.db || {};
+        document.getElementById('sysDbLatency').textContent =
+            db.latency_ms != null ? `${db.latency_ms} ms` : '—';
+        document.getElementById('sysDbStatus').textContent = db.ok
+            ? 'Reachable'
+            : (db.error ? db.error.slice(0, 80) : 'Unreachable');
+
+        const up = data.uptime_seconds || 0;
+        document.getElementById('sysUptime').textContent = formatUptime(up);
+        document.getElementById('sysUptimeSub').textContent = up < 300 ? 'Recently restarted' : '';
+
+        document.getElementById('sysVersion').textContent = data.version || '—';
+        document.getElementById('sysEnv').textContent = data.env || '—';
+    } else {
+        document.getElementById('sysDbLatency').textContent = '—';
+        document.getElementById('sysDbStatus').textContent = '';
+        document.getElementById('sysUptime').textContent = '—';
+        document.getElementById('sysUptimeSub').textContent = '';
+        document.getElementById('sysVersion').textContent = '—';
+        document.getElementById('sysEnv').textContent = '';
+    }
+
+    rawEl.textContent = data
+        ? JSON.stringify({ http_status: httpStatus, client_latency_ms: clientLatencyMs, ...data }, null, 2)
+        : `HTTP ${httpStatus || 'no-response'}  (${clientLatencyMs} ms)\n${err ? String(err) : ''}`;
+    rawEl.style.color = ok ? '#cbd5e1' : '#fca5a5';
+
+    lastCheckEl.textContent = `Last checked ${new Date().toLocaleTimeString()}`;
+
+    if (sysHealthTimer) clearInterval(sysHealthTimer);
+    const onSystemPage = document.getElementById('page-system').classList.contains('active');
+    if (onSystemPage) sysHealthTimer = setInterval(loadSystemHealth, 30000);
+}
+
+function formatUptime(seconds) {
+    if (!seconds) return '0s';
+    const d = Math.floor(seconds / 86400);
+    const h = Math.floor((seconds % 86400) / 3600);
+    const m = Math.floor((seconds % 3600) / 60);
+    if (d > 0) return `${d}d ${h}h`;
+    if (h > 0) return `${h}h ${m}m`;
+    if (m > 0) return `${m}m`;
+    return `${seconds}s`;
+}
 
 // ----- Overview -----
 let overviewCache = null;          // { data, phDauData, phTipViewed }
