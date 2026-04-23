@@ -21,7 +21,10 @@ if not SECRET_KEY:
     logger.warning("Using insecure dev SECRET_KEY — set SECRET_KEY env var for production")
 
 ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24 * 30  # 30 days
+# Effectively never-expire on mobile. Revocation is handled via `token_version`
+# (bumped on logout / password reset / admin archive), so there's no security
+# benefit from forcing users to re-login on a calendar timer.
+ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24 * 365 * 10  # 10 years
 
 security = HTTPBearer()
 

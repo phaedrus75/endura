@@ -59,7 +59,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
     } catch (error) {
       if (__DEV__) console.log('Auth check failed:', error);
-      await SecureStore.deleteItemAsync('authToken');
+      // Preserve the token on transient errors (no network, 500s, timeouts).
+      // apiFetch already deletes it on a real 401, so if we got here and the
+      // token is still in SecureStore, it means the failure was NOT auth-related
+      // and the user should be able to retry without re-logging in.
       setUser(null);
       setProfilePicState(null);
     } finally {
