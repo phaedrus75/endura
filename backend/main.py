@@ -818,7 +818,19 @@ def login(request: Request, user: schemas.UserLogin, db: Session = Depends(get_d
 
 
 @app.get("/auth/me", response_model=schemas.UserResponse)
-def get_me(current_user: models.User = Depends(get_current_user)):
+def get_me(
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    # Run badge check on every app open so newly-eligible badges (notably
+    # Founding Member, which uses a ≥2 completed sessions rule) land without
+    # waiting for the user to open the Badges screen or complete another
+    # session. Idempotent — returns early for badges already granted.
+    try:
+        crud.check_badges(db, current_user.id)
+        db.refresh(current_user)
+    except Exception as e:
+        print(f"⚠️ check_badges in /auth/me failed for user {current_user.id}: {e}")
     return current_user
 
 

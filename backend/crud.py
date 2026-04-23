@@ -1294,19 +1294,29 @@ def check_badges(db: Session, user_id: int, session_hour: int = None, session_mi
                 capped_award("team_player")
                 break
 
-    # Founding Member — first 100 verified users (bypasses cap, one-time bonus)
-    if "founding_member" not in already and user.email_verified:
+    # Founding Member — first 100 users who complete at least 2 study sessions.
+    # (Previous rule was "first 100 verified by created_at" but many users who
+    # qualified never got the badge because check_badges wasn't triggered on
+    # verify. New rule is engagement-based: you earn it by actually using the
+    # app. Existing founders are grandfathered — the `not in already` guard
+    # means we never revoke.)
+    if "founding_member" not in already:
         FOUNDING_MEMBER_LIMIT = 100
-        founding_ids = [r[0] for r in db.query(models.User.id).filter(
-            models.User.email_verified == True
-        ).order_by(models.User.created_at).limit(FOUNDING_MEMBER_LIMIT).all()]
-        if user.id in founding_ids:
-            awarded = _award(db, user_id, "founding_member", already)
-            if awarded:
-                new_badges.append(awarded)
-                user.current_coins = (user.current_coins or 0) + 500
-                user.total_coins = (user.total_coins or 0) + 500
-                user.eco_credits_multiplier = 1.25
+        current_count = db.query(func.count(models.UserBadge.id)).filter(
+            models.UserBadge.badge_id == "founding_member"
+        ).scalar() or 0
+        if current_count < FOUNDING_MEMBER_LIMIT:
+            sessions_completed = db.query(func.count(models.StudySession.id)).filter(
+                models.StudySession.user_id == user_id,
+                models.StudySession.completed_at.isnot(None),
+            ).scalar() or 0
+            if sessions_completed >= 2:
+                awarded = _award(db, user_id, "founding_member", already)
+                if awarded:
+                    new_badges.append(awarded)
+                    user.current_coins = (user.current_coins or 0) + 500
+                    user.total_coins = (user.total_coins or 0) + 500
+                    user.eco_credits_multiplier = 1.25
 
     if new_badges:
         db.commit()
