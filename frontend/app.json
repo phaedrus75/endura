@@ -14,7 +14,7 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.endura.study",
-      "buildNumber": "17",
+      "buildNumber": "18",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
         "NSCameraUsageDescription": "Endura uses your camera to let you take a profile photo that is visible to your friends and study group members.",
@@ -27,7 +27,7 @@
         "backgroundColor": "#B5CFB7"
       },
       "package": "com.endura.study",
-      "versionCode": 5
+      "versionCode": 6
     },
     "web": {
       "favicon": "./assets/favicon.png"

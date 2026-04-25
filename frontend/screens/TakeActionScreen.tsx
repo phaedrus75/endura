@@ -164,7 +164,25 @@ export default function TakeActionScreen() {
 
   const handleDonate = async () => {
     const donationId = user?.id ? `endura-u${user.id}-${Date.now()}` : `endura-${Date.now()}`;
-    const donateUrl = `${EVERY_ORG_WWF_BASE}?amount=${selectedAmount}&frequency=ONCE&method=pay&webhook_token=${EVERY_ORG_WEBHOOK_TOKEN}&partner_donation_id=${donationId}#donate`;
+
+    // Pre-fill donor info on the Every.org checkout so the user doesn't
+    // have to retype their name + email. Best-effort split of username on
+    // first space; if there's no space we just pass the whole thing as
+    // first_name and leave last_name blank.
+    const params = new URLSearchParams({
+      amount: String(selectedAmount),
+      frequency: 'ONCE',
+      method: 'pay',
+      webhook_token: EVERY_ORG_WEBHOOK_TOKEN,
+      partner_donation_id: donationId,
+    });
+    if (user?.email) params.set('email', user.email);
+    if (user?.username) {
+      const [first, ...rest] = user.username.trim().split(/\s+/);
+      if (first) params.set('first_name', first);
+      if (rest.length > 0) params.set('last_name', rest.join(' '));
+    }
+    const donateUrl = `${EVERY_ORG_WWF_BASE}?${params.toString()}#donate`;
     Analytics.donationStarted(selectedAmount);
     try {
       await WebBrowser.openBrowserAsync(donateUrl, {
