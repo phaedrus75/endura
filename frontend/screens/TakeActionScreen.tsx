@@ -21,8 +21,15 @@ import { colors, shadows, spacing, borderRadius } from '../theme/colors';
 import { useAuth } from '../contexts/AuthContext';
 import { getAnimalImage } from '../assets/animals';
 import { API_URL, donationsAPI } from '../services/api';
+import { Analytics } from '../services/analytics';
 
-const EVERY_ORG_WWF_BASE = 'https://www.every.org/wwf';
+// Routes through Rhea's Endura fundraiser so donations are credited to the
+// fundraiser tally on Every.org (not just WWF general fund).
+const EVERY_ORG_WWF_BASE = 'https://www.every.org/wwf/f/endura';
+// Token for the partner webhook pointing at our Railway backend. Without this
+// query param Every.org will NOT POST to our /webhook/every-org endpoint, so
+// donations would silently never reach our DB. See docs/donation-flow.md.
+const EVERY_ORG_WEBHOOK_TOKEN = '2a55acd11d15';
 
 interface CommunityStats {
   total_raised: number;
@@ -157,7 +164,8 @@ export default function TakeActionScreen() {
 
   const handleDonate = async () => {
     const donationId = user?.id ? `endura-u${user.id}-${Date.now()}` : `endura-${Date.now()}`;
-    const donateUrl = `${EVERY_ORG_WWF_BASE}?amount=${selectedAmount}&frequency=ONCE&method=pay&partner_donation_id=${donationId}#donate`;
+    const donateUrl = `${EVERY_ORG_WWF_BASE}?amount=${selectedAmount}&frequency=ONCE&method=pay&webhook_token=${EVERY_ORG_WEBHOOK_TOKEN}&partner_donation_id=${donationId}#donate`;
+    Analytics.donationStarted(selectedAmount);
     try {
       await WebBrowser.openBrowserAsync(donateUrl, {
         presentationStyle: WebBrowser.WebBrowserPresentationStyle.FORM_SHEET,
@@ -181,6 +189,7 @@ export default function TakeActionScreen() {
       fetchPersonalStats();
 
       if (confirmed) {
+        Analytics.donationCompleted(selectedAmount);
         setShowConfetti(true);
         setShowThankYou(true);
         thankYouScale.setValue(0);
