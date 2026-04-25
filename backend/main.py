@@ -916,33 +916,97 @@ def delete_account(
     current_user: models.User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
+    """Hard-delete the user and every row that depends on them.
+
+    Policy by table:
+      - SET NULL: rows with value beyond the user (community catalog,
+        moderation history, email audit log, sharing relationships).
+      - HARD DELETE: anything user-owned or two-party content that
+        can't survive without the user (their sessions, badges, blocks,
+        co-hatched eggs, pacts, etc).
+
+    Wrapped in try/except so any future missing FK surfaces as a clean
+    500 with detail rather than a raw psycopg2 error in Sentry.
+    """
     user_id = current_user.id
+    try:
+        # ── 1. SET NULL — preserve the row, drop the back-reference ──
+        db.query(models.Subject).filter(
+            models.Subject.created_by_user_id == user_id
+        ).update({models.Subject.created_by_user_id: None}, synchronize_session=False)
+        db.query(models.UserAnimal).filter(
+            models.UserAnimal.shared_with_user_id == user_id
+        ).update({models.UserAnimal.shared_with_user_id: None}, synchronize_session=False)
+        db.query(models.ContentReport).filter(
+            models.ContentReport.reporter_id == user_id
+        ).update({models.ContentReport.reporter_id: None}, synchronize_session=False)
+        db.query(models.ContentReport).filter(
+            models.ContentReport.reported_user_id == user_id
+        ).update({models.ContentReport.reported_user_id: None}, synchronize_session=False)
+        db.query(models.EmailLog).filter(
+            models.EmailLog.user_id == user_id
+        ).update({models.EmailLog.user_id: None}, synchronize_session=False)
 
-    db.query(models.FeedReaction).filter(models.FeedReaction.user_id == user_id).delete()
-    db.query(models.ActivityEvent).filter(models.ActivityEvent.user_id == user_id).delete()
+        # ── 2. Two-party content (delete entirely; FKs in both directions) ──
+        db.query(models.SharedEgg).filter(
+            (models.SharedEgg.creator_id == user_id) | (models.SharedEgg.partner_id == user_id)
+        ).delete(synchronize_session=False)
+        db.query(models.UserBlock).filter(
+            (models.UserBlock.blocker_id == user_id) | (models.UserBlock.blocked_id == user_id)
+        ).delete(synchronize_session=False)
+        db.query(models.Friendship).filter(
+            (models.Friendship.user_id == user_id) | (models.Friendship.friend_id == user_id)
+        ).delete(synchronize_session=False)
 
-    owned_groups = db.query(models.StudyGroup).filter(models.StudyGroup.creator_id == user_id).all()
-    for group in owned_groups:
-        db.query(models.GroupMessage).filter(models.GroupMessage.group_id == group.id).delete()
-        db.query(models.GroupMember).filter(models.GroupMember.group_id == group.id).delete()
-        db.delete(group)
+        # ── 3. Orphan tables with no Python model (legacy pacts feature) ──
+        db.execute(
+            text("DELETE FROM pact_days WHERE user_id = :uid OR pact_id IN "
+                 "(SELECT id FROM study_pacts WHERE creator_id = :uid OR buddy_id = :uid)"),
+            {"uid": user_id},
+        )
+        db.execute(
+            text("DELETE FROM study_pacts WHERE creator_id = :uid OR buddy_id = :uid"),
+            {"uid": user_id},
+        )
 
-    db.query(models.GroupMessage).filter(models.GroupMessage.user_id == user_id).delete()
-    db.query(models.GroupMember).filter(models.GroupMember.user_id == user_id).delete()
-    db.query(models.Donation).filter(models.Donation.user_id == user_id).delete()
-    db.query(models.TipView).filter(models.TipView.user_id == user_id).delete()
-    db.query(models.UserBadge).filter(models.UserBadge.user_id == user_id).delete()
-    db.query(models.UserAnimal).filter(models.UserAnimal.user_id == user_id).delete()
-    db.query(models.StudySession).filter(models.StudySession.user_id == user_id).delete()
-    db.query(models.Task).filter(models.Task.user_id == user_id).delete()
-    db.query(models.Friendship).filter(
-        (models.Friendship.user_id == user_id) | (models.Friendship.friend_id == user_id)
-    ).delete(synchronize_session=False)
-    db.query(models.Egg).filter(models.Egg.user_id == user_id).delete()
-    db.query(models.StudyTip).filter(models.StudyTip.user_id == user_id).delete()
-    db.query(models.User).filter(models.User.id == user_id).delete()
-    db.commit()
-    return {"message": "Account deleted successfully"}
+        # ── 4. Owned groups (cascade their messages + members first) ──
+        owned_groups = db.query(models.StudyGroup).filter(
+            models.StudyGroup.creator_id == user_id
+        ).all()
+        for group in owned_groups:
+            db.query(models.GroupMessage).filter(models.GroupMessage.group_id == group.id).delete(synchronize_session=False)
+            db.query(models.GroupMember).filter(models.GroupMember.group_id == group.id).delete(synchronize_session=False)
+            db.delete(group)
+
+        # ── 5. Hard-delete user-owned data ──
+        db.query(models.GroupMessage).filter(models.GroupMessage.user_id == user_id).delete(synchronize_session=False)
+        db.query(models.GroupMember).filter(models.GroupMember.user_id == user_id).delete(synchronize_session=False)
+        db.query(models.FeedReaction).filter(models.FeedReaction.user_id == user_id).delete(synchronize_session=False)
+        db.query(models.ActivityEvent).filter(models.ActivityEvent.user_id == user_id).delete(synchronize_session=False)
+        db.query(models.Donation).filter(models.Donation.user_id == user_id).delete(synchronize_session=False)
+        db.query(models.TipView).filter(models.TipView.user_id == user_id).delete(synchronize_session=False)
+        db.query(models.UserBadge).filter(models.UserBadge.user_id == user_id).delete(synchronize_session=False)
+        db.query(models.UserAnimal).filter(models.UserAnimal.user_id == user_id).delete(synchronize_session=False)
+        db.query(models.StudySession).filter(models.StudySession.user_id == user_id).delete(synchronize_session=False)
+        db.query(models.Task).filter(models.Task.user_id == user_id).delete(synchronize_session=False)
+        db.query(models.Egg).filter(models.Egg.user_id == user_id).delete(synchronize_session=False)
+        db.query(models.StudyTip).filter(models.StudyTip.user_id == user_id).delete(synchronize_session=False)
+        db.query(models.UserSubject).filter(models.UserSubject.user_id == user_id).delete(synchronize_session=False)
+        db.query(models.UserPurchase).filter(models.UserPurchase.user_id == user_id).delete(synchronize_session=False)
+        db.query(models.UserItemAssignment).filter(models.UserItemAssignment.user_id == user_id).delete(synchronize_session=False)
+        # feedback_upvotes auto-cascades; user_feedback auto-SET-NULLs (DB-level)
+
+        # ── 6. The user themselves ──
+        db.query(models.User).filter(models.User.id == user_id).delete(synchronize_session=False)
+        db.commit()
+        return {"message": "Account deleted successfully"}
+    except Exception as e:
+        db.rollback()
+        print(f"❌ delete_account failed for user {user_id}: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Account deletion failed: {type(e).__name__}. Support has been notified.",
+        )
 
 
 # ============ Forgot / Reset Password ============
