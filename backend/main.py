@@ -208,10 +208,10 @@ def _cron_run_onboarding_emails():
             logger.warning("Cron: RESEND_API_KEY not set, skipping onboarding emails")
             return
 
-        # Hard cap: stop before we hit Resend's daily quota.
-        # Override via DAILY_EMAIL_CAP env var (default 90 — leaves headroom for
-        # transactional sends like verification / password-reset).
-        daily_cap = int(os.getenv("DAILY_EMAIL_CAP", "90"))
+        # Safety ceiling — prevents a bug from burning through your monthly quota
+        # in one runaway cron. On paid plans set DAILY_EMAIL_CAP to a high value
+        # or leave unset (defaults to 10 000, well above any realistic daily send).
+        daily_cap = int(os.getenv("DAILY_EMAIL_CAP", "10000"))
 
         # Throttle: Resend allows 5 req/s. We send at ~3/s (0.35s gap) to stay
         # well clear of the per-second limit even under jitter.
@@ -5589,7 +5589,7 @@ def run_onboarding_emails(db: Session = Depends(get_db), _=Depends(verify_admin)
     if not resend_key:
         return {"error": "RESEND_API_KEY not set"}
 
-    daily_cap = int(os.getenv("DAILY_EMAIL_CAP", "90"))
+    daily_cap = int(os.getenv("DAILY_EMAIL_CAP", "10000"))
     now = datetime.utcnow()
     sent = {"day3": 0, "day7": 0, "day14": 0, "day30": 0, "reengagement": 0}
     total_sent = 0
