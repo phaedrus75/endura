@@ -109,6 +109,7 @@ The database is where we remember everything. It's called **PostgreSQL** and it'
 
 **Communications + ops**
 - `email_templates` + `email_logs` — the onboarding email sequence
+- `push_templates` + `push_logs` — the onboarding push-notification sequence + delivery log (Expo Push API)
 - `android_beta_signups` — waitlist from the website
 - `uploads` — profile pictures etc.
 - `schools` — autocomplete list of universities/colleges
@@ -250,8 +251,9 @@ The backend runs an in-process scheduler that wakes up daily:
 |---|---|---|
 | 04:00 | `_cron_sync_app_ranks` | Pulls yesterday + today's App Store chart position from AppFigures, upserts into `app_ranks` |
 | 08:00 | `_cron_run_onboarding_emails` | Loops over users at key milestones (email verified, day 1 inactive, etc.) and sends the right template via Resend |
+| 10:00 | `_cron_lifecycle_pushes` | Sends the day-1/2/3/7/14 onboarding pushes + 3-day and 7-day re-engagement pushes via Expo. Dedup'd through `push_logs.template_key` so each template only fires once per user |
 
-Both run in the same process as the API (via `BackgroundScheduler`), which is fine at our scale. If we grew, we'd move to a separate worker service.
+All three run in the same process as the API (via `BackgroundScheduler`), which is fine at our scale. If we grew, we'd move to a separate worker service.
 
 ### Database migrations
 
@@ -451,6 +453,19 @@ This pattern (encoding user identity in an external partner's reference field) l
 - Every send writes to `email_logs` (delivered / opened / clicked, tracked via Resend's `POST /webhooks/resend` endpoint we expose)
 - Onboarding sequence: welcome, day 1 (if no session), day 3 "friends matter", day 5 "streak!"
 
+### Expo Push (mobile push notifications)
+
+- No API key — Expo's push service is keyed off the Expo project ID baked into the app at build time
+- iOS APNs auth key (`.p8`) uploaded once via `eas credentials` and stored Expo-side; Android handled automatically through Expo + FCM
+- Frontend service: `services/pushNotifications.ts` (permission flow, token fetch, deep-link routing on tap)
+- Backend sender: `services/push.py` (`send_to_user`, `send_template_to_user`, `broadcast_to_users`)
+- Templates stored in DB (`push_templates`) — admin can edit copy without redeploying
+- Every send writes to `push_logs` (status, error code, Expo ticket id) — also used for cron dedup
+- Lifecycle sequence: day 1/2/3/7/14 onboarding pushes + 3-day and 7-day re-engagement
+- Event-driven sends: badge earned, friend request, friend accepted, donation thank-you
+- Categories + per-user opt-outs: `notif_badges_enabled`, `notif_friends_enabled`, `notif_reminders_enabled`, `notif_marketing_enabled` (master switch is `notification_enabled`)
+- Full reference: `docs/push-notifications.md`
+
 ### AppFigures (App Store rankings)
 
 - Personal Access Token: `APPFIGURES_PAT`
@@ -502,17 +517,19 @@ This pattern (encoding user identity in an external partner's reference field) l
 - `content_reports`, `user_blocks` — moderation layer
 - `android_beta_signups` — website waitlist
 - `email_templates`, `email_logs` — DB-backed email sequence
+- `push_templates`, `push_logs` — DB-backed push-notification sequence + delivery log
 - `schools` — seeded school list for autocomplete
 - `app_ranks` — daily App Store chart snapshots
 - `user_feedback`, `feedback_upvotes` — bug reports + feature requests + public upvoting
 
 ### New capabilities
 - **Alembic migrations** (replacing inline checks)
-- **APScheduler cron jobs** (onboarding emails, app_ranks sync)
+- **APScheduler cron jobs** (onboarding emails, app_ranks sync, lifecycle pushes)
 - **Resend integration** (transactional email + open/click tracking webhook)
+- **Expo Push integration** (lifecycle + event-driven push notifications, batched send, dead-token cleanup, admin broadcast tools)
 - **AppFigures integration** (daily App Store rankings)
 - **PostHog backend proxy** (personal API key never touches the browser)
-- **Admin dashboard** (single-file HTML, 9 pages, ~5,000 lines of JS)
+- **Admin dashboard** (single-file HTML, 10 pages, ~5,000 lines of JS — with the new Push tab)
 - **Content filter** for user-generated content
 - **Country + school data cleanup** using PostHog GeoIP as source of truth
 - **Feedback system** (user submissions + admin triage + public voting for features)
@@ -537,6 +554,7 @@ This pattern (encoding user identity in an external partner's reference field) l
 - `docs/build-roadmap.md` — what's being built next
 - `docs/onboarding-friction-analysis.md` — why Build 16 exists
 - `docs/onboarding-lifecycle.md` — the email + push sequence
+- `docs/push-notifications.md` — full reference for the push subsystem (build 19)
 - `BADGE_SYSTEM.md` — the 50+ badges and their rules
 - `CHARITY_SETUP.md` — how the Every.org integration was set up
 

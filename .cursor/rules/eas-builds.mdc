@@ -1,0 +1,38 @@
+---
+description: EAS build invocation policy — always interactive, user runs them
+alwaysApply: true
+---
+
+# EAS Builds
+
+The user runs all `eas build` and `eas submit` commands themselves, in
+interactive mode, in their own terminal.
+
+## What I do
+
+- Make code changes, commit them
+- Tell the user the exact command to run
+- Wait for them to report success / failure / the build URL
+- Diagnose failures by fetching logs after the fact (`eas-cli build:list --json`,
+  fetching the signed log URLs from the JSON)
+
+## What I do NOT do
+
+- Run `npx eas-cli build ...` or `npx eas-cli submit ...` myself, even with
+  `--no-wait`. The user wants full control over what gets queued.
+- Pass `--non-interactive`. Interactive mode lets EAS auto-fix credentials
+  (provisioning profile regeneration, APNs key setup, etc.) inline.
+- Auto-submit to TestFlight / App Store / Play Store. The user submits when
+  they decide it's ready.
+
+## Standard build commands the user runs
+
+```bash
+cd /Users/munshi/Downloads/endura-v-2/frontend
+
+# iOS production build
+npx eas-cli build --platform ios --profile production
+
+# Submit to TestFlight (only when explicitly asked)
+npx eas-cli submit --platform ios --latest
+```

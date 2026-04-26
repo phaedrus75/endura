@@ -1,17 +1,18 @@
 # Endura — Build Roadmap
 
-> **Editable working doc.** Tick, cut, reorder, add notes. We build from this once you've signed off on Build 16's scope.
-> Last updated: 19 April 2026 (after build 15 shipped to TestFlight)
+> **Editable working doc.** Tick, cut, reorder, add notes.
+> Last updated: 26 April 2026 (build 19 in progress — push notifications)
 
 ---
 
 ## Where we are now
 
-- **Latest TestFlight:** v1.0.2 build 15 (shipped 18 April)
-- **Latest on `main`:** identical to build 15 for the frontend (no unshipped frontend commits)
-- **Headline metric to move:** the activation cliff — 56% drop from email-verified → first timer started
+- **App Store:** v1.0.2 build 15
+- **TestFlight:** v1.0.2 build 17 (build 18 queued; build 19 about to land with push)
+- **Active build:** **19 — full push notifications** (in progress, see below)
 - **Strategic doc:** `docs/onboarding-friction-analysis.md`
 - **Lifecycle reference:** `docs/onboarding-lifecycle.md`
+- **Push reference:** `docs/push-notifications.md`
 
 ### What build 15 delivered
 
@@ -20,6 +21,74 @@
 - [x] Server-side onboarding timestamps (`username_set_at`, `onboarding_completed_at`) for funnel measurement
 
 Build 15 was **measurement, not friction reduction.** Build 16 is where we actually move the cliff.
+
+---
+
+## Build 19 — Full push notifications (in progress, target ship 26 Apr 2026)
+
+**Theme:** "Get users back into a study session at the right moment, without spamming them."
+
+This is the largest stand-alone build since launch — it touches frontend, backend, admin, and the data model. Full reference doc: `docs/push-notifications.md`.
+
+### Frontend
+
+- [x] Install `expo-notifications` + `expo-device`, add the plugin to `app.json`
+- [x] iOS `UIBackgroundModes: ["remote-notification"]`, Android `useNextNotificationsApi: true`, default notification icon/colour
+- [x] `services/pushNotifications.ts` — permission, Expo token fetch, register with backend
+- [x] Wire registration into `App.tsx` — fires *after* auth + username set, not on first launch (better grant rate)
+- [x] Foreground handler + tapped handler with deep-link routing via `navigationRef`
+- [x] `AuthContext.logout()` clears the push token server-side (best-effort, non-blocking)
+
+### Backend
+
+- [x] `services/push.py` — single `send_to_user`, batched `broadcast_to_users` (Expo's 100-message cap), template-based `send_template_to_user`
+- [x] Auto-clear dead tokens on `DeviceNotRegistered`
+- [x] `models.py`: extra columns on `users` (`push_token_updated_at`, `push_platform`, four per-category prefs); new `PushTemplate` and `PushLog` tables
+- [x] Alembic migration `m7i8j9k01l12_add_push_notifications.py`
+- [x] `push_seeds.py` — default templates for the Tier-1a onboarding sequence + event-driven pushes
+- [x] Endpoints: `PUT/DELETE /users/me/push-token`, `GET/PUT /users/me/notification-prefs`
+- [x] Event hooks fire pushes:
+  - Badge earned (after `/sessions` POST)
+  - Friend request received (after `/friends/request`)
+  - Friend request accepted (after `/friends/accept/{id}`)
+  - Donation received (after `/webhook/every-org` resolves to a user)
+- [x] Daily lifecycle cron `_cron_lifecycle_pushes` at 10:00 UTC, dedup'd via `push_logs.template_key`
+
+### Admin dashboard
+
+- [x] New **🔔 Push** tab at `/dashboard-e9x2k/`
+- [x] Opt-in funnel KPIs (token coverage, master-on, iOS/Android split)
+- [x] 30-day metrics by category (sent / failed / dropped)
+- [x] Recent send log
+- [x] Send-test-to-user form (bypasses prefs)
+- [x] Broadcast-to-cohort form (reuses email cohorts + push-only ones)
+- [x] Manual lifecycle-run button
+- [x] Inline editor for every `PushTemplate` (admin can change copy without deploy)
+
+### Tier-1a onboarding lifecycle pushes (seeded as templates)
+
+- [x] Day 1 — `push_day1_welcome` → Timer
+- [x] Day 2 — `push_day2_first_timer` → Timer
+- [x] Day 3 — `push_day3_streak` → Timer
+- [x] Day 7 — `push_day7_friends` → Friends
+- [x] Day 14 — `push_day14_donate` → TakeAction
+- [x] Re-engage 3-day quiet — `push_reengage_3d`
+- [x] Re-engage 7-day quiet — `push_reengage_7d`
+- [x] Event-driven: `push_badge_earned`, `push_friend_request`, `push_friend_accepted`, `push_donation_thank_you`
+
+### Outstanding (before tagging build 19)
+
+- [ ] Run `eas credentials` once to upload the APNs key (instructions in `docs/push-notifications.md` § iOS APNs setup)
+- [ ] Bump `ios.buildNumber` → 19 / `android.versionCode` → 7 (already done in `app.json`); commit + `eas build` for both platforms
+- [ ] After first internal install: send a self-test from the **🔔 Push** admin tab, confirm `push_logs.status='sent'` and that the tap deep-links into Timer
+
+### Deferred (explicit non-goals for this build)
+
+- [ ] PostHog open-tracking (`Analytics.pushOpened()` in `setupNotificationListeners`) — needs ~30 min, do next build
+- [ ] Per-user time-zone-aware scheduling — model field exists (`study_reminder_hour/minute`); cron currently fires at 10:00 UTC for everyone
+- [ ] Receipt verification cron (`/push/getReceipts`) — only useful if we start optimising delivery rate
+- [ ] In-app settings UI for the four category toggles — wire it next time `ProfileScreen` is touched
+- [ ] Quiet-hours logic (no sends 22:00–08:00 local) — depends on a stored timezone
 
 ---
 
@@ -163,22 +232,31 @@ Open questions:
 
 **Estimated effort:** ~1 day if both ship together
 
-### Track A — Push notification infrastructure
+### Track A — Push notification infrastructure ✅ **shipped in build 19 (26/04/26)**
 
-- [ ] Server-side push sender using Expo Push API (`User.push_token` already stored)
-- [ ] APScheduler job runner (already in use — extend it)
-- [ ] Per-user time-zone-aware scheduling (use `User.study_reminder_hour/minute` if set, else default 8 PM local)
-- [ ] Respect `User.notification_enabled`
-- [ ] Track sent / opened via PostHog
+- [x] Server-side push sender using Expo Push API (`backend/services/push.py`)
+- [x] APScheduler job runner — `_cron_lifecycle_pushes` runs daily at 10:00 UTC
+- [x] Respect `User.notification_enabled` (master) + 4 per-category prefs (badges/friends/reminders/marketing)
+- [x] Token registration endpoint `PUT /users/me/push-token` + auto-clear on `DeviceNotRegistered`
+- [x] `PushLog` table for delivery tracking, dedup, admin visibility
+- [x] `PushTemplate` table for editable lifecycle/event copy (admin can change without deploy)
+- [x] Frontend service `services/pushNotifications.ts` — permission flow, token fetch, deep-link routing on tap
+- [x] Admin "Push" tab — opt-in funnel, send-test, broadcast to cohorts, recent log, edit templates
+- [ ] Per-user time-zone-aware scheduling — **deferred** (use `User.study_reminder_hour/minute` later; right now lifecycle cron uses 10:00 UTC for everyone, which lands well across UTC-3 to UTC+9)
+- [ ] Track opens via PostHog — **deferred** (Expo's notification responses fire client-side; wire `Analytics.pushOpened()` from `setupNotificationListeners` in a follow-up)
 
-### Track B — Tier 1a onboarding lifecycle pushes
+### Track B — Tier 1a onboarding lifecycle pushes ✅ **seeded as templates in build 19**
 
-From `docs/onboarding-lifecycle.md` Phase 1:
+Default `PushTemplate` entries (admin can edit copy):
 
-- [ ] Day 1 evening — "Your egg is waiting! 🥚"
-- [ ] Day 2 — "You're one session away from hatching your first animal!" (skip if studied)
-- [ ] Day 3 — "Study is better with friends!"
-- [ ] Day 5 — "[X]-day streak! Don't break it 🔥"
+- [x] Day 1 — `push_day1_welcome` "Welcome to Endura, {name}! 🌿" → Timer
+- [x] Day 2 — `push_day2_first_timer` "Your egg is waiting 🥚" → Timer
+- [x] Day 3 — `push_day3_streak` "Day 3 — keep the streak alive 🔥" → Timer
+- [x] Day 7 — `push_day7_friends` "Study buddies = streaks 👯" → Friends
+- [x] Day 14 — `push_day14_donate` "You've studied {total_minutes} mins — convert it 💚" → TakeAction
+- [x] Re-engage 3d quiet — `push_reengage_3d` (only if streak alive)
+- [x] Re-engage 7d quiet — `push_reengage_7d` "Your animals miss you 🐼"
+- [x] Event-driven: `push_badge_earned`, `push_friend_request`, `push_friend_accepted`, `push_donation_thank_you`
 
 ### Track C — Recap Phase 2 (push delivery)
 
