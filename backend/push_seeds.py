@@ -105,6 +105,14 @@ DEFAULT_PUSH_TEMPLATES = [
         "deep_link": "Friends",
     },
     {
+        "template_key": "push_friend_reacted",
+        "name": "Friend reacted to activity",
+        "title": "{from_name} reacted {emoji}",
+        "body": "{from_name} {message} \"{event_description}\"",
+        "category": "friend",
+        "deep_link": "Social",
+    },
+    {
         "template_key": "push_donation_thank_you",
         "name": "Donation thank-you",
         "title": "Thanks for donating! 💚",

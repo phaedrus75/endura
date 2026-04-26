@@ -30,7 +30,10 @@ interface IncomingReaction {
   created_at: string;
 }
 
-const POLL_INTERVAL = 10_000;
+// Reactions are now delivered via push notification (`push_friend_reacted`),
+// so this poll exists only as a safety net for users who have push disabled
+// or haven't yet granted permission. 5 minutes is plenty for that fallback.
+const POLL_INTERVAL = 5 * 60 * 1000;
 
 export default function ReactionOverlay() {
   const { isAuthenticated } = useAuth();

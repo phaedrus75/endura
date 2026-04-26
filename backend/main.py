@@ -2598,8 +2598,22 @@ def get_new_reactions(
     db: Session = Depends(get_db)
 ):
     try:
+        # Hot endpoint: every authed app polls this on a timer. Optimised to
+        # short-circuit aggressively so the 99% no-op case is one cheap query.
+        # 1) No friends → nobody can react → bail out.
+        has_friend = db.query(models.Friendship.id).filter(
+            models.Friendship.status == "accepted",
+            (models.Friendship.user_id == current_user.id)
+            | (models.Friendship.friend_id == current_user.id),
+        ).first()
+        if not has_friend:
+            return []
+        # 2) Only consider events from the last 30 days. Reactions on older
+        # activity are not surfaced as "new" overlays anyway.
+        cutoff = datetime.utcnow() - timedelta(days=30)
         my_events = db.query(models.ActivityEvent).filter(
-            models.ActivityEvent.user_id == current_user.id
+            models.ActivityEvent.user_id == current_user.id,
+            models.ActivityEvent.created_at >= cutoff,
         ).all()
         event_ids = [e.id for e in my_events]
         if not event_ids:
@@ -2650,6 +2664,44 @@ def react_to_event(
 ):
     if not crud.add_reaction(db, current_user.id, event_id, data.reaction):
         raise HTTPException(status_code=404, detail="Event not found")
+
+    # Push the event owner so they don't have to poll. Best-effort, never blocks.
+    # Throttle: at most one push per (event, sender) every 30 min so swapping the
+    # emoji several times doesn't spam the recipient.
+    try:
+        event = db.query(models.ActivityEvent).filter(
+            models.ActivityEvent.id == event_id
+        ).first()
+        if event and event.user_id != current_user.id:
+            owner = db.query(models.User).filter(models.User.id == event.user_id).first()
+            if owner and owner.push_token:
+                cutoff = datetime.utcnow() - timedelta(minutes=30)
+                recent = db.query(models.PushLog.id).filter(
+                    models.PushLog.user_id == owner.id,
+                    models.PushLog.template_key == "push_friend_reacted",
+                    models.PushLog.created_at >= cutoff,
+                    # Same sender + same event encoded into the body.
+                    models.PushLog.body.like(f"%{current_user.username or ''}%"),
+                    models.PushLog.body.like(f"%{(event.description or '')[:40]}%"),
+                ).first()
+                if not recent:
+                    emoji_map = {"nice": "👏", "fire": "🔥", "heart": "❤️"}
+                    msg_map = {
+                        "nice": "thinks you did great on",
+                        "fire": "thinks you're on fire on",
+                        "heart": "loved your",
+                    }
+                    _safe_send_push(
+                        "push_friend_reacted", owner, db,
+                        extra_vars={
+                            "from_name": current_user.username or "A friend",
+                            "emoji": emoji_map.get(data.reaction, "💫"),
+                            "message": msg_map.get(data.reaction, "reacted to"),
+                            "event_description": (event.description or "your activity")[:60],
+                        },
+                    )
+    except Exception as _e:
+        logger.error(f"Reaction push hook failed: {_e}")
     return {"message": "Reaction added"}
 
 
