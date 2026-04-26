@@ -70,7 +70,8 @@ else:
     from sqlalchemy import inspect as sa_inspect
     try:
         _insp = sa_inspect(engine)
-        for _tbl in ["android_beta_signups", "email_templates", "email_logs"]:
+        for _tbl in ["android_beta_signups", "email_templates", "email_logs",
+                     "push_templates", "push_logs"]:
             if not _insp.has_table(_tbl):
                 Base.metadata.tables[_tbl].create(bind=engine)
                 print(f"Created missing table: {_tbl}")
@@ -85,6 +86,22 @@ else:
                 _conn.execute(text("ALTER TABLE users ADD COLUMN is_archived BOOLEAN DEFAULT FALSE"))
                 _conn.commit()
             print("Added is_archived column to users")
+        # Push notification metadata + per-category prefs (Alembic also handles
+        # this; this block is a safety net for envs that haven't run migrations).
+        _push_cols = {
+            "push_token_updated_at": "TIMESTAMP NULL",
+            "push_platform": "VARCHAR(10) NULL",
+            "notif_badges_enabled": "BOOLEAN NOT NULL DEFAULT TRUE",
+            "notif_friends_enabled": "BOOLEAN NOT NULL DEFAULT TRUE",
+            "notif_reminders_enabled": "BOOLEAN NOT NULL DEFAULT TRUE",
+            "notif_marketing_enabled": "BOOLEAN NOT NULL DEFAULT TRUE",
+        }
+        for _col, _ddl in _push_cols.items():
+            if _col not in _user_cols:
+                with engine.connect() as _conn:
+                    _conn.execute(text(f"ALTER TABLE users ADD COLUMN IF NOT EXISTS {_col} {_ddl}"))
+                    _conn.commit()
+                print(f"Added {_col} column to users")
     except Exception as e:
         print(f"Warning: Could not check/create tables: {e}")
 
@@ -105,13 +122,23 @@ try:
         ).first()
         if not existing:
             _seed_db.add(models.EmailTemplate(**_tmpl))
+        elif "endura.eco/animals" not in (existing.body_html or ""):
+            existing.body_html = _tmpl["body_html"]
+            existing.subject = _tmpl["subject"]
     _seed_db.commit()
-    _old_cta = 'href="https://endura.eco"'
-    _new_cta = 'href="https://apps.apple.com/app/endura-study-timer/id6759482612"'
-    for _et in _seed_db.query(models.EmailTemplate).all():
-        if _old_cta in (_et.body_html or ""):
-            _et.body_html = _et.body_html.replace(_old_cta, _new_cta)
-    _seed_db.commit()
+    # Push notification templates — only insert missing keys so admin edits
+    # made via the dashboard are never overwritten on restart.
+    try:
+        from push_seeds import DEFAULT_PUSH_TEMPLATES
+        for _ptmpl in DEFAULT_PUSH_TEMPLATES:
+            existing = _seed_db.query(models.PushTemplate).filter(
+                models.PushTemplate.template_key == _ptmpl["template_key"]
+            ).first()
+            if not existing:
+                _seed_db.add(models.PushTemplate(**_ptmpl))
+        _seed_db.commit()
+    except Exception as _e:
+        print(f"Warning: Could not seed push templates: {_e}")
     _seed_db.close()
 except Exception as e:
     print(f"Warning: Could not seed startup data: {e}")

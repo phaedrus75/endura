@@ -1,5 +1,12 @@
 """Default email template content, seeded on first run."""
 
+_IMG_BASE = "https://www.endura.eco/animals"
+
+def _animal_img(name):
+    slug = name.replace(" ", "%20")
+    return f'<div style="text-align:center;margin-bottom:20px"><img src="{_IMG_BASE}/{slug}.png" alt="{name}" style="width:140px;height:140px;border-radius:50%;object-fit:cover;border:4px solid #fff;box-shadow:0 4px 16px rgba(0,0,0,.1)" /></div>'
+
+
 DEFAULT_EMAIL_TEMPLATES = [
     {
         "template_key": "welcome",
@@ -7,9 +14,10 @@ DEFAULT_EMAIL_TEMPLATES = [
         "subject": "Welcome to Endura! 🌿🥚",
         "trigger_day": None,
         "inactive_days": None,
-        "body_html": """<div style="font-family:'Segoe UI',sans-serif;max-width:520px;margin:0 auto;padding:40px 32px;background:#E7EFEA;border-radius:20px">
+        "body_html": f"""<div style="font-family:'Segoe UI',sans-serif;max-width:520px;margin:0 auto;padding:40px 32px;background:#E7EFEA;border-radius:20px">
     <h1 style="color:#4A7C59;margin:0 0 4px;font-size:28px">Welcome to Endura!</h1>
-    <p style="color:#6B9B7A;margin:0 0 24px;font-size:15px">Hey {name}, you're officially part of the flock.</p>
+    <p style="color:#6B9B7A;margin:0 0 24px;font-size:15px">Hey {{name}}, you're officially part of the flock.</p>
+    {_animal_img("panda")}
     <div style="background:#fff;border-radius:16px;padding:28px;margin-bottom:20px">
         <p style="color:#333;font-size:15px;line-height:1.7;margin:0 0 16px">
             Every minute you study hatches a real endangered animal — from Snow Leopards to Giant Pandas.
@@ -57,12 +65,13 @@ DEFAULT_EMAIL_TEMPLATES = [
         "subject": "Your First 3 Days on Endura 🐾",
         "trigger_day": 3,
         "inactive_days": None,
-        "body_html": """<div style="font-family:'Segoe UI',sans-serif;max-width:520px;margin:0 auto;padding:40px 32px;background:#E7EFEA;border-radius:20px">
+        "body_html": f"""<div style="font-family:'Segoe UI',sans-serif;max-width:520px;margin:0 auto;padding:40px 32px;background:#E7EFEA;border-radius:20px">
     <h1 style="color:#4A7C59;margin:0 0 4px;font-size:24px">3 Days In!</h1>
-    <p style="color:#6B9B7A;margin:0 0 24px;font-size:15px">Hey {name}, here's your progress so far.</p>
+    <p style="color:#6B9B7A;margin:0 0 24px;font-size:15px">Hey {{name}}, here's your progress so far.</p>
+    {_animal_img("red panda")}
     <div style="background:#fff;border-radius:16px;padding:24px;margin-bottom:20px">
-        <p style="color:#333;font-size:15px;line-height:1.7;margin:0 0 12px">You've studied for <strong>{total_minutes} minutes</strong> and hatched <strong>{animals_count} animals</strong>.</p>
-        <p style="color:#333;font-size:15px;line-height:1.7;margin:0 0 12px">🔥 Current streak: <strong>{streak} days</strong></p>
+        <p style="color:#333;font-size:15px;line-height:1.7;margin:0 0 12px">You've studied for <strong>{{total_minutes}} minutes</strong> and hatched <strong>{{animals_count}} animals</strong>.</p>
+        <p style="color:#333;font-size:15px;line-height:1.7;margin:0 0 12px">🔥 Current streak: <strong>{{streak}} days</strong></p>
         <p style="color:#333;font-size:14px;line-height:1.7;margin:0"><strong>Tip:</strong> Add friends to compete on the leaderboard and stay motivated!</p>
     </div>
     <div style="text-align:center"><a href="https://apps.apple.com/app/endura-study-timer/id6759482612" style="display:inline-block;background:#4A7C59;color:#fff;text-decoration:none;padding:12px 28px;border-radius:12px;font-size:14px;font-weight:600">Open Endura</a></div>
@@ -75,15 +84,16 @@ DEFAULT_EMAIL_TEMPLATES = [
         "subject": "Your Week 1 Recap 🌿",
         "trigger_day": 7,
         "inactive_days": None,
-        "body_html": """<div style="font-family:'Segoe UI',sans-serif;max-width:520px;margin:0 auto;padding:40px 32px;background:#E7EFEA;border-radius:20px">
+        "body_html": f"""<div style="font-family:'Segoe UI',sans-serif;max-width:520px;margin:0 auto;padding:40px 32px;background:#E7EFEA;border-radius:20px">
     <h1 style="color:#4A7C59;margin:0 0 4px;font-size:24px">Week 1 Complete!</h1>
-    <p style="color:#6B9B7A;margin:0 0 24px;font-size:15px">Hey {name}, what a first week.</p>
+    <p style="color:#6B9B7A;margin:0 0 24px;font-size:15px">Hey {{name}}, what a first week.</p>
+    {_animal_img("koala")}
     <div style="background:#fff;border-radius:16px;padding:24px;margin-bottom:20px">
         <table style="width:100%;border-collapse:collapse">
-            <tr><td style="padding:8px 0;color:#333;font-size:15px">📚 Total study time</td><td style="padding:8px 0;color:#4A7C59;font-size:15px;font-weight:700;text-align:right">{total_minutes} min</td></tr>
-            <tr><td style="padding:8px 0;color:#333;font-size:15px">🐾 Animals hatched</td><td style="padding:8px 0;color:#4A7C59;font-size:15px;font-weight:700;text-align:right">{animals_count}</td></tr>
-            <tr><td style="padding:8px 0;color:#333;font-size:15px">🔥 Longest streak</td><td style="padding:8px 0;color:#4A7C59;font-size:15px;font-weight:700;text-align:right">{longest_streak} days</td></tr>
-            <tr><td style="padding:8px 0;color:#333;font-size:15px">📝 Total sessions</td><td style="padding:8px 0;color:#4A7C59;font-size:15px;font-weight:700;text-align:right">{sessions}</td></tr>
+            <tr><td style="padding:8px 0;color:#333;font-size:15px">📚 Total study time</td><td style="padding:8px 0;color:#4A7C59;font-size:15px;font-weight:700;text-align:right">{{total_minutes}} min</td></tr>
+            <tr><td style="padding:8px 0;color:#333;font-size:15px">🐾 Animals hatched</td><td style="padding:8px 0;color:#4A7C59;font-size:15px;font-weight:700;text-align:right">{{animals_count}}</td></tr>
+            <tr><td style="padding:8px 0;color:#333;font-size:15px">🔥 Longest streak</td><td style="padding:8px 0;color:#4A7C59;font-size:15px;font-weight:700;text-align:right">{{longest_streak}} days</td></tr>
+            <tr><td style="padding:8px 0;color:#333;font-size:15px">📝 Total sessions</td><td style="padding:8px 0;color:#4A7C59;font-size:15px;font-weight:700;text-align:right">{{sessions}}</td></tr>
         </table>
     </div>
     <p style="color:#555;font-size:14px;text-align:center;margin:0 0 16px">Every session helps protect endangered wildlife. Keep it going!</p>
@@ -97,11 +107,12 @@ DEFAULT_EMAIL_TEMPLATES = [
         "subject": "2 Weeks of Endura! 🎉",
         "trigger_day": 14,
         "inactive_days": None,
-        "body_html": """<div style="font-family:'Segoe UI',sans-serif;max-width:520px;margin:0 auto;padding:40px 32px;background:#E7EFEA;border-radius:20px">
+        "body_html": f"""<div style="font-family:'Segoe UI',sans-serif;max-width:520px;margin:0 auto;padding:40px 32px;background:#E7EFEA;border-radius:20px">
     <h1 style="color:#4A7C59;margin:0 0 4px;font-size:24px">2 Weeks Strong!</h1>
-    <p style="color:#6B9B7A;margin:0 0 24px;font-size:15px">Hey {name}, you're building a real habit.</p>
+    <p style="color:#6B9B7A;margin:0 0 24px;font-size:15px">Hey {{name}}, you're building a real habit.</p>
+    {_animal_img("grizzly bear")}
     <div style="background:#fff;border-radius:16px;padding:24px;margin-bottom:20px">
-        <p style="color:#333;font-size:15px;line-height:1.7;margin:0 0 12px">In 14 days, you've studied for <strong>{total_minutes} minutes</strong>, hatched <strong>{animals_count} animals</strong>, and built a streak of <strong>{longest_streak} days</strong>.</p>
+        <p style="color:#333;font-size:15px;line-height:1.7;margin:0 0 12px">In 14 days, you've studied for <strong>{{total_minutes}} minutes</strong>, hatched <strong>{{animals_count}} animals</strong>, and built a streak of <strong>{{longest_streak}} days</strong>.</p>
         <p style="color:#333;font-size:14px;line-height:1.7;margin:0">Know someone who'd love Endura? Share the app with a friend — studying together makes it even better!</p>
     </div>
     <div style="text-align:center"><a href="https://apps.apple.com/app/endura-study-timer/id6759482612" style="display:inline-block;background:#4A7C59;color:#fff;text-decoration:none;padding:12px 28px;border-radius:12px;font-size:14px;font-weight:600">Share Endura</a></div>
@@ -114,16 +125,17 @@ DEFAULT_EMAIL_TEMPLATES = [
         "subject": "Your First Month with Endura 🌟",
         "trigger_day": 30,
         "inactive_days": None,
-        "body_html": """<div style="font-family:'Segoe UI',sans-serif;max-width:520px;margin:0 auto;padding:40px 32px;background:#E7EFEA;border-radius:20px">
+        "body_html": f"""<div style="font-family:'Segoe UI',sans-serif;max-width:520px;margin:0 auto;padding:40px 32px;background:#E7EFEA;border-radius:20px">
     <h1 style="color:#4A7C59;margin:0 0 4px;font-size:24px">1 Month!</h1>
-    <p style="color:#6B9B7A;margin:0 0 24px;font-size:15px">Hey {name}, you're officially an Endura regular.</p>
+    <p style="color:#6B9B7A;margin:0 0 24px;font-size:15px">Hey {{name}}, you're officially an Endura regular.</p>
+    {_animal_img("mountain gorilla")}
     <div style="background:#fff;border-radius:16px;padding:24px;margin-bottom:20px">
         <table style="width:100%;border-collapse:collapse">
-            <tr><td style="padding:8px 0;color:#333;font-size:15px">📚 Total study time</td><td style="padding:8px 0;color:#4A7C59;font-size:15px;font-weight:700;text-align:right">{total_minutes} min</td></tr>
-            <tr><td style="padding:8px 0;color:#333;font-size:15px">🐾 Animals hatched</td><td style="padding:8px 0;color:#4A7C59;font-size:15px;font-weight:700;text-align:right">{animals_count}</td></tr>
-            <tr><td style="padding:8px 0;color:#333;font-size:15px">🏆 Badges earned</td><td style="padding:8px 0;color:#4A7C59;font-size:15px;font-weight:700;text-align:right">{badges}</td></tr>
-            <tr><td style="padding:8px 0;color:#333;font-size:15px">🔥 Best streak</td><td style="padding:8px 0;color:#4A7C59;font-size:15px;font-weight:700;text-align:right">{longest_streak} days</td></tr>
-            <tr><td style="padding:8px 0;color:#333;font-size:15px">📝 Total sessions</td><td style="padding:8px 0;color:#4A7C59;font-size:15px;font-weight:700;text-align:right">{sessions}</td></tr>
+            <tr><td style="padding:8px 0;color:#333;font-size:15px">📚 Total study time</td><td style="padding:8px 0;color:#4A7C59;font-size:15px;font-weight:700;text-align:right">{{total_minutes}} min</td></tr>
+            <tr><td style="padding:8px 0;color:#333;font-size:15px">🐾 Animals hatched</td><td style="padding:8px 0;color:#4A7C59;font-size:15px;font-weight:700;text-align:right">{{animals_count}}</td></tr>
+            <tr><td style="padding:8px 0;color:#333;font-size:15px">🏆 Badges earned</td><td style="padding:8px 0;color:#4A7C59;font-size:15px;font-weight:700;text-align:right">{{badges}}</td></tr>
+            <tr><td style="padding:8px 0;color:#333;font-size:15px">🔥 Best streak</td><td style="padding:8px 0;color:#4A7C59;font-size:15px;font-weight:700;text-align:right">{{longest_streak}} days</td></tr>
+            <tr><td style="padding:8px 0;color:#333;font-size:15px">📝 Total sessions</td><td style="padding:8px 0;color:#4A7C59;font-size:15px;font-weight:700;text-align:right">{{sessions}}</td></tr>
         </table>
     </div>
     <p style="color:#555;font-size:14px;text-align:center;margin:0 0 16px">Enjoying Endura? A quick review on the App Store helps other students find us ⭐</p>
@@ -137,12 +149,13 @@ DEFAULT_EMAIL_TEMPLATES = [
         "subject": "Your animals miss you, {name}! 🐾",
         "trigger_day": None,
         "inactive_days": 5,
-        "body_html": """<div style="font-family:'Segoe UI',sans-serif;max-width:520px;margin:0 auto;padding:40px 32px;background:#E7EFEA;border-radius:20px">
+        "body_html": f"""<div style="font-family:'Segoe UI',sans-serif;max-width:520px;margin:0 auto;padding:40px 32px;background:#E7EFEA;border-radius:20px">
     <h1 style="color:#4A7C59;margin:0 0 4px;font-size:24px">We miss you!</h1>
     <p style="color:#6B9B7A;margin:0 0 24px;font-size:15px">It's been a few days since your last session.</p>
+    {_animal_img("polar bear")}
     <div style="background:#fff;border-radius:16px;padding:24px;margin-bottom:20px">
         <p style="color:#333;font-size:15px;line-height:1.7;margin:0 0 12px">Your sanctuary is waiting and there are still more species left to discover.</p>
-        <p style="color:#333;font-size:14px;line-height:1.7;margin:0">Even a quick 15-minute session earns eco-credits and keeps your progress going. Your {streak}-day streak is at risk!</p>
+        <p style="color:#333;font-size:14px;line-height:1.7;margin:0">Even a quick 15-minute session earns eco-credits and keeps your progress going. Your {{streak}}-day streak is at risk!</p>
     </div>
     <div style="text-align:center"><a href="https://apps.apple.com/app/endura-study-timer/id6759482612" style="display:inline-block;background:#4A7C59;color:#fff;text-decoration:none;padding:12px 28px;border-radius:12px;font-size:14px;font-weight:600">Start a Quick Session</a></div>
     <p style="color:#999;font-size:11px;text-align:center;margin:16px 0 0">Study smarter. Save wildlife. 🌍</p>
@@ -154,9 +167,10 @@ DEFAULT_EMAIL_TEMPLATES = [
         "subject": "One step left to start saving wildlife! ✉️",
         "trigger_day": None,
         "inactive_days": None,
-        "body_html": """<div style="font-family:'Segoe UI',sans-serif;max-width:520px;margin:0 auto;padding:40px 32px;background:#E7EFEA;border-radius:20px">
+        "body_html": f"""<div style="font-family:'Segoe UI',sans-serif;max-width:520px;margin:0 auto;padding:40px 32px;background:#E7EFEA;border-radius:20px">
     <h1 style="color:#4A7C59;margin:0 0 4px;font-size:24px">You're almost there!</h1>
-    <p style="color:#6B9B7A;margin:0 0 24px;font-size:15px">Hey {name}, you signed up for Endura but haven't verified your email yet.</p>
+    <p style="color:#6B9B7A;margin:0 0 24px;font-size:15px">Hey {{name}}, you signed up for Endura but haven't verified your email yet.</p>
+    {_animal_img("axolotl")}
     <div style="background:#fff;border-radius:16px;padding:24px;margin-bottom:20px">
         <p style="color:#333;font-size:15px;line-height:1.7;margin:0 0 12px">
             Verifying takes 10 seconds — just open the app, check for the code in your inbox, and enter it.
@@ -180,9 +194,10 @@ DEFAULT_EMAIL_TEMPLATES = [
         "subject": "Your first egg is ready to hatch! 🥚",
         "trigger_day": None,
         "inactive_days": None,
-        "body_html": """<div style="font-family:'Segoe UI',sans-serif;max-width:520px;margin:0 auto;padding:40px 32px;background:#E7EFEA;border-radius:20px">
+        "body_html": f"""<div style="font-family:'Segoe UI',sans-serif;max-width:520px;margin:0 auto;padding:40px 32px;background:#E7EFEA;border-radius:20px">
     <h1 style="color:#4A7C59;margin:0 0 4px;font-size:24px">Set up your first timer!</h1>
-    <p style="color:#6B9B7A;margin:0 0 24px;font-size:15px">Hey {name}, you're all set — just one study session away from hatching your first animal.</p>
+    <p style="color:#6B9B7A;margin:0 0 24px;font-size:15px">Hey {{name}}, you're all set — just one study session away from hatching your first animal.</p>
+    {_animal_img("otter")}
     <div style="background:#fff;border-radius:16px;padding:24px;margin-bottom:20px">
         <p style="color:#333;font-size:15px;line-height:1.7;margin:0 0 16px">Here's how easy it is:</p>
         <table style="width:100%;border-collapse:collapse">
@@ -221,12 +236,13 @@ DEFAULT_EMAIL_TEMPLATES = [
         "subject": "Your animal is growing — keep it going! 🐾",
         "trigger_day": None,
         "inactive_days": None,
-        "body_html": """<div style="font-family:'Segoe UI',sans-serif;max-width:520px;margin:0 auto;padding:40px 32px;background:#E7EFEA;border-radius:20px">
+        "body_html": f"""<div style="font-family:'Segoe UI',sans-serif;max-width:520px;margin:0 auto;padding:40px 32px;background:#E7EFEA;border-radius:20px">
     <h1 style="color:#4A7C59;margin:0 0 4px;font-size:24px">Great first session!</h1>
-    <p style="color:#6B9B7A;margin:0 0 24px;font-size:15px">Hey {name}, you've made a real start — now let's build the habit.</p>
+    <p style="color:#6B9B7A;margin:0 0 24px;font-size:15px">Hey {{name}}, you've made a real start — now let's build the habit.</p>
+    {_animal_img("chinchilla")}
     <div style="background:#fff;border-radius:16px;padding:24px;margin-bottom:20px">
         <p style="color:#333;font-size:15px;line-height:1.7;margin:0 0 12px">
-            You've studied for <strong>{total_minutes} minutes</strong> so far. Students who complete a second session within 48 hours are <strong>3x more likely</strong> to build a lasting study habit.
+            You've studied for <strong>{{total_minutes}} minutes</strong> so far. Students who complete a second session within 48 hours are <strong>3x more likely</strong> to build a lasting study habit.
         </p>
         <p style="color:#333;font-size:15px;line-height:1.7;margin:0">
             Your sanctuary has room for more animals — start another timer and see what hatches next! 🥚
@@ -247,9 +263,10 @@ DEFAULT_EMAIL_TEMPLATES = [
         "subject": "Study together, save more wildlife! 👥🌍",
         "trigger_day": None,
         "inactive_days": None,
-        "body_html": """<div style="font-family:'Segoe UI',sans-serif;max-width:520px;margin:0 auto;padding:40px 32px;background:#E7EFEA;border-radius:20px">
+        "body_html": f"""<div style="font-family:'Segoe UI',sans-serif;max-width:520px;margin:0 auto;padding:40px 32px;background:#E7EFEA;border-radius:20px">
     <h1 style="color:#4A7C59;margin:0 0 4px;font-size:24px">You're on a roll!</h1>
-    <p style="color:#6B9B7A;margin:0 0 24px;font-size:15px">Hey {name}, you've completed {sessions} study sessions — that's amazing.</p>
+    <p style="color:#6B9B7A;margin:0 0 24px;font-size:15px">Hey {{name}}, you've completed {{sessions}} study sessions — that's amazing.</p>
+    {_animal_img("langur monkey")}
     <div style="background:#fff;border-radius:16px;padding:24px;margin-bottom:20px">
         <p style="color:#333;font-size:15px;line-height:1.7;margin:0 0 12px">
             Studies show students who study with friends are <strong>more focused and consistent</strong>.
@@ -285,9 +302,10 @@ DEFAULT_EMAIL_TEMPLATES = [
         "subject": "You're in! Endura is ready on Android 🎉",
         "trigger_day": None,
         "inactive_days": None,
-        "body_html": """<div style="font-family:'Segoe UI',sans-serif;max-width:520px;margin:0 auto;padding:40px 32px;background:#E7EFEA;border-radius:20px">
+        "body_html": f"""<div style="font-family:'Segoe UI',sans-serif;max-width:520px;margin:0 auto;padding:40px 32px;background:#E7EFEA;border-radius:20px">
     <h1 style="color:#4A7C59;margin:0 0 4px;font-size:28px">You're in!</h1>
     <p style="color:#6B9B7A;margin:0 0 24px;font-size:15px">Endura is now available for you on Android.</p>
+    {_animal_img("sunda island tiger")}
     <div style="background:#fff;border-radius:16px;padding:28px;margin-bottom:20px">
         <p style="color:#333;font-size:15px;line-height:1.7;margin:0 0 16px">
             Thanks for signing up for the Android beta! You can now download Endura and start
