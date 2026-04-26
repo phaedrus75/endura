@@ -392,6 +392,7 @@
             <a data-page="push"><span class="icon">🔔</span> Push</a>
             <a data-page="founding"><span class="icon">⭐</span> Founding Members</a>
             <a data-page="system"><span class="icon">🩺</span> System Health</a>
+            <a data-page="tests"><span class="icon">🧪</span> Tests</a>
         </nav>
         <div class="api-cfg">
             <label>API Connection</label>
@@ -471,6 +472,7 @@
                 <div style="overflow-x:auto">
                     <table id="usersTable">
                         <thead><tr id="usersHead">
+                            <th data-sort="id" style="text-align:right">ID</th>
                             <th data-sort="username">User</th>
                             <th data-sort="email">Email</th>
                             <th data-sort="email_verified" style="text-align:center">Verified</th>
@@ -1099,10 +1101,72 @@
             </div>
         </div>
 
+        <!-- Tests Page -->
+        <div class="page" id="page-tests">
+            <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:18px">
+                <h1 class="page-title" style="margin:0">🧪 Regression Tests</h1>
+                <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+                    <select id="testSuiteSelect" style="padding:7px 12px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:#fff;cursor:pointer">
+                        <option value="all">All suites (~90 sec)</option>
+                        <option value="unit">Unit tests only (~20 sec)</option>
+                        <option value="api">API tests only (~40 sec)</option>
+                        <option value="flows">Flow tests only (~30 sec)</option>
+                    </select>
+                    <button onclick="runTests()" id="runTestsBtn" style="padding:8px 18px;background:var(--forest);color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer">
+                        ▶ Run Tests
+                    </button>
+                </div>
+            </div>
+            <p style="color:var(--text-muted);margin-bottom:24px;font-size:14px;max-width:720px">
+                Runs the backend regression suite against an isolated SQLite test database. Safe to run any time — no production data is touched. Results arrive in ~60–90 seconds.
+            </p>
+
+            <!-- KPI row (hidden until first run) -->
+            <div class="kpi-grid" id="testKpiGrid" style="margin-bottom:24px;display:none">
+                <div class="kpi"><div class="kpi-icon" id="testStatusIcon">⏳</div><div class="kpi-val" id="testStatusLabel">—</div><div class="kpi-label">Result</div></div>
+                <div class="kpi"><div class="kpi-icon">✅</div><div class="kpi-val" id="testPassedCount" style="color:var(--accent)">—</div><div class="kpi-label">Passed</div></div>
+                <div class="kpi"><div class="kpi-icon">❌</div><div class="kpi-val" id="testFailedCount" style="color:var(--red)">—</div><div class="kpi-label">Failed</div></div>
+                <div class="kpi"><div class="kpi-icon">⏱️</div><div class="kpi-val" id="testDuration">—</div><div class="kpi-label">Duration</div></div>
+            </div>
+
+            <!-- Failed tests detail -->
+            <div id="testFailedSection" style="display:none;margin-bottom:20px">
+                <div class="table-card">
+                    <h3 style="margin-top:0;color:var(--red)">❌ Failed Tests</h3>
+                    <div id="testFailedList"></div>
+                </div>
+            </div>
+
+            <!-- Passed tests collapsible -->
+            <div id="testPassedSection" style="display:none;margin-bottom:20px">
+                <div class="table-card">
+                    <details>
+                        <summary style="cursor:pointer;font-weight:600;font-size:14px;list-style:none;display:flex;align-items:center;gap:8px">
+                            <span>▶</span> <span id="testPassedSummaryLabel">Passed tests</span>
+                        </summary>
+                        <div id="testPassedList" style="margin-top:12px"></div>
+                    </details>
+                </div>
+            </div>
+
+            <!-- Raw output fallback -->
+            <div id="testRawSection" style="display:none;margin-bottom:20px">
+                <div class="table-card">
+                    <h3 style="margin-top:0">Output</h3>
+                    <pre id="testRawPre" style="background:#0f172a;color:#cbd5e1;padding:16px;border-radius:8px;font-size:12px;overflow-x:auto;margin:0;max-height:480px;overflow-y:auto;white-space:pre-wrap;word-break:break-all"></pre>
+                </div>
+            </div>
+
+            <!-- Idle state -->
+            <div id="testIdleMsg" class="table-card" style="text-align:center;padding:48px 24px;color:var(--text-muted)">
+                <div style="font-size:48px;margin-bottom:12px">🧪</div>
+                <div style="font-size:16px;font-weight:600;margin-bottom:8px">No tests run yet</div>
+                <div style="font-size:13px">Select a suite and click Run Tests to start. Takes 60–90 seconds.</div>
+            </div>
+        </div>
+
         <!-- System Health Page -->
         <div class="page" id="page-system">
-            <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:18px">
-                <h1 class="page-title" style="margin:0">System Health</h1>
                 <div style="display:flex;gap:8px;align-items:center">
                     <span id="sysLastCheck" style="font-size:12px;color:var(--text-muted)">—</span>
                     <button onclick="loadSystemHealth()" style="padding:7px 14px;background:var(--forest);color:#fff;border:none;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer">Refresh</button>
@@ -1543,6 +1607,7 @@ document.querySelectorAll('.sidebar nav a').forEach(link => {
         else if (link.dataset.page === 'push') loadPush();
         else if (link.dataset.page === 'founding') loadFoundingMembers();
         else if (link.dataset.page === 'system') loadSystemHealth();
+        else if (link.dataset.page === 'tests') initTestsPage();
     });
 });
 
@@ -2085,12 +2150,13 @@ function renderUsersTable() {
     updateUsersSortIndicators();
 
     if (!total) {
-        body.innerHTML = '<tr><td colspan="13" class="empty">No users found</td></tr>';
+        body.innerHTML = '<tr><td colspan="14" class="empty">No users found</td></tr>';
         document.getElementById('usersPagination').innerHTML = '';
         return;
     }
     body.innerHTML = pageUsers.map(u => `
         <tr style="cursor:pointer" onclick="showUserDetail(${u.id})">
+            <td style="text-align:right;color:var(--text-muted);font-variant-numeric:tabular-nums" onclick="event.stopPropagation();navigator.clipboard.writeText('${u.id}');this.style.color='var(--forest)';setTimeout(()=>this.style.color='var(--text-muted)',800)" title="Click to copy">${u.id}</td>
             <td><strong>${esc(u.username || '—')}</strong>${u.is_archived ? ' <span style="background:#e74c3c;color:#fff;font-size:10px;padding:2px 6px;border-radius:4px;font-weight:600">ARCHIVED</span>' : ''}</td>
             <td>${esc(u.email)}</td>
             <td style="text-align:center" title="${u.email_verified ? 'Email verified' : 'Email NOT verified'}">${u.email_verified ? '<span style="color:#16a34a;font-weight:700">✓</span>' : '<span style="color:#dc2626">✗</span>'}</td>
@@ -3887,11 +3953,14 @@ async function loadCampaigns() {
                         <div style="font-size:11px;color:var(--text-muted);margin-top:2px">${successLabels[key] || 'Converted'}</div>
                     </div>
                 </div>` : '';
+            const dropLine = (c.drops && c.drops.length)
+                ? `Drip templates (${c.drops.length}): ` + c.drops.map(d => '<code>' + esc(d.template_key) + '</code>').join(' → ')
+                : (c.template_key ? 'Template: <code>' + esc(c.template_key) + '</code>' : '');
             return `<div class="table-card">
                 <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:10px">
                     <div>
                         <h3 style="margin:0">${icons[key] || '📧'} ${esc(c.label)}</h3>
-                        <p style="margin:4px 0 0;font-size:13px;color:var(--text-muted)">Template: <code>${esc(c.template_key)}</code></p>
+                        <p style="margin:4px 0 0;font-size:13px;color:var(--text-muted);line-height:1.5">${dropLine}</p>
                     </div>
                     <div style="display:flex;align-items:center;gap:12px">
                         <span style="font-size:24px;font-weight:700;color:${colors[key] || 'var(--forest)'}">${c.count} <span style="font-size:12px;font-weight:500;color:var(--text-muted)">pending</span></span>
@@ -3908,7 +3977,7 @@ async function loadCampaigns() {
 }
 
 async function sendCampaign(cohortKey, label, count) {
-    if (!confirm(`Send "${label}" campaign to ${count} user(s)?\n\nUsers who already received this email will be skipped.`)) return;
+    if (!confirm(`Send "${label}" campaign to ${count} user(s)?\n\nEach user gets at most one email: the next drip they are eligible for (in order, with day gaps). Others are skipped until a later run.`)) return;
     try {
         const res = await fetch(API_URL + '/admin/campaign-send/' + cohortKey, {
             method: 'POST',
@@ -3916,7 +3985,11 @@ async function sendCampaign(cohortKey, label, count) {
         });
         if (!res.ok) throw new Error('HTTP ' + res.status);
         const d = await res.json();
-        alert(`Campaign "${label}" complete!\n\nSent: ${d.sent}\nSkipped (already sent): ${d.skipped_already_sent}\nFailed: ${d.failed}`);
+        const skipKey = d.skipped_no_eligible_drop != null ? d.skipped_no_eligible_drop : d.skipped_already_sent;
+        const byTpl = d.sent_by_template && Object.keys(d.sent_by_template).length
+            ? '\nBy template: ' + Object.entries(d.sent_by_template).map(([k, v]) => k + ': ' + v).join(', ')
+            : '';
+        alert(`Campaign "${label}" complete!\n\nSent: ${d.sent}\nSkipped (not eligible / finished drips): ${skipKey != null ? skipKey : '—'}\nFailed: ${d.failed}${byTpl}`);
         loadCampaigns();
     } catch (e) {
         alert('Campaign send failed: ' + e.message);
@@ -4282,6 +4355,115 @@ async function grantFoundingMember() {
         document.getElementById('fmGrantId').value = '';
         loadFoundingMembers();
     } catch(e) { alert('Failed to grant founding member status'); }
+}
+
+// ─── Tests Page ──────────────────────────────────────────────────────────────
+
+function initTestsPage() {
+    // Nothing to auto-load — user triggers run manually
+}
+
+async function runTests() {
+    const suite = document.getElementById('testSuiteSelect').value;
+    const btn = document.getElementById('runTestsBtn');
+    btn.disabled = true;
+    btn.textContent = '⏳ Running…';
+
+    // Hide idle message, reset sections
+    document.getElementById('testIdleMsg').style.display = 'none';
+    document.getElementById('testKpiGrid').style.display = 'none';
+    document.getElementById('testFailedSection').style.display = 'none';
+    document.getElementById('testPassedSection').style.display = 'none';
+    document.getElementById('testRawSection').style.display = 'none';
+
+    // Show a running indicator
+    document.getElementById('testKpiGrid').style.display = '';
+    document.getElementById('testStatusIcon').textContent = '⏳';
+    document.getElementById('testStatusLabel').textContent = 'Running…';
+    document.getElementById('testPassedCount').textContent = '—';
+    document.getElementById('testFailedCount').textContent = '—';
+    document.getElementById('testDuration').textContent = '—';
+
+    try {
+        const url = `${API_URL}/admin/run-tests?suite=${encodeURIComponent(suite)}`;
+        const resp = await fetch(url, {
+            method: 'POST',
+            headers: { 'x-admin-key': ADMIN_KEY, 'Content-Type': 'application/json' },
+        });
+
+        if (!resp.ok) {
+            const err = await resp.json().catch(() => ({ error: resp.statusText }));
+            throw new Error(err.error || `HTTP ${resp.status}`);
+        }
+
+        const data = await resp.json();
+        renderTestResults(data);
+    } catch (e) {
+        document.getElementById('testStatusIcon').textContent = '🔴';
+        document.getElementById('testStatusLabel').textContent = 'Error';
+        document.getElementById('testRawSection').style.display = '';
+        document.getElementById('testRawPre').textContent = String(e);
+    } finally {
+        btn.disabled = false;
+        btn.textContent = '▶ Run Tests';
+    }
+}
+
+function renderTestResults(data) {
+    const passed = data.passed || 0;
+    const failed = data.failed || 0;
+    const total = data.total || (passed + failed);
+    const ok = data.status === 'passed' || failed === 0;
+    const duration = data.duration_seconds ? `${data.duration_seconds.toFixed(1)}s` : '—';
+
+    // KPI row
+    document.getElementById('testKpiGrid').style.display = '';
+    document.getElementById('testStatusIcon').textContent = ok ? '✅' : '❌';
+    document.getElementById('testStatusLabel').textContent = ok ? 'PASSED' : 'FAILED';
+    document.getElementById('testStatusLabel').style.color = ok ? 'var(--accent)' : 'var(--red)';
+    document.getElementById('testPassedCount').textContent = passed;
+    document.getElementById('testFailedCount').textContent = failed;
+    document.getElementById('testDuration').textContent = duration;
+
+    // If structured test list available
+    if (data.tests && data.tests.length) {
+        const failedTests = data.tests.filter(t => t.outcome !== 'passed');
+        const passedTests = data.tests.filter(t => t.outcome === 'passed');
+
+        if (failedTests.length) {
+            document.getElementById('testFailedSection').style.display = '';
+            document.getElementById('testFailedList').innerHTML = failedTests.map(t => `
+                <div style="margin-bottom:16px;padding:12px 16px;background:#fff5f5;border:1px solid #fecaca;border-radius:8px">
+                    <div style="font-weight:600;font-size:13px;color:var(--red);margin-bottom:4px">${escHtml(t.id)}</div>
+                    ${t.call_message ? `<pre style="margin:0;font-size:11px;color:#7f1d1d;white-space:pre-wrap;word-break:break-all;max-height:200px;overflow-y:auto">${escHtml(t.call_message)}</pre>` : ''}
+                </div>
+            `).join('');
+        }
+
+        if (passedTests.length) {
+            document.getElementById('testPassedSection').style.display = '';
+            document.getElementById('testPassedSummaryLabel').textContent = `${passedTests.length} passed tests`;
+            document.getElementById('testPassedList').innerHTML = passedTests.map(t => `
+                <div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--border);font-size:12px">
+                    <span style="color:var(--accent);flex-shrink:0">✓</span>
+                    <span style="color:var(--text-muted);font-family:monospace">${escHtml(t.id)}</span>
+                    <span style="margin-left:auto;color:var(--text-muted)">${t.duration}s</span>
+                </div>
+            `).join('');
+        }
+    } else if (data.raw_output) {
+        // Fallback to raw output
+        document.getElementById('testRawSection').style.display = '';
+        document.getElementById('testRawPre').textContent = data.raw_output;
+    }
+}
+
+function escHtml(str) {
+    return String(str || '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
 }
 </script>
 </body>
