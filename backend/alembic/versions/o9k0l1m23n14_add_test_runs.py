@@ -14,23 +14,31 @@ depends_on = None
 
 
 def upgrade():
-    op.create_table(
-        'test_runs',
-        sa.Column('id', sa.Integer(), primary_key=True, index=True),
-        sa.Column('suite', sa.String(20), nullable=False, index=True),
-        sa.Column('status', sa.String(20), nullable=False, index=True),
-        sa.Column('exit_code', sa.Integer(), nullable=True),
-        sa.Column('passed', sa.Integer(), nullable=True, server_default='0'),
-        sa.Column('failed', sa.Integer(), nullable=True, server_default='0'),
-        sa.Column('errors', sa.Integer(), nullable=True, server_default='0'),
-        sa.Column('total', sa.Integer(), nullable=True, server_default='0'),
-        sa.Column('duration_seconds', sa.Float(), nullable=True),
-        sa.Column('started_at', sa.DateTime(), nullable=True, index=True),
-        sa.Column('finished_at', sa.DateTime(), nullable=True),
-        sa.Column('triggered_by', sa.String(), nullable=True),
-        sa.Column('failed_tests', sa.Text(), nullable=True),
-        sa.Column('raw_summary', sa.Text(), nullable=True),
-    )
+    # Table may already exist (created by create_all before this migration was added).
+    # Use raw SQL with IF NOT EXISTS so the migration is idempotent.
+    op.execute("""
+        CREATE TABLE IF NOT EXISTS test_runs (
+            id SERIAL PRIMARY KEY,
+            suite VARCHAR(20) NOT NULL,
+            status VARCHAR(20) NOT NULL,
+            exit_code INTEGER,
+            passed INTEGER DEFAULT 0,
+            failed INTEGER DEFAULT 0,
+            errors INTEGER DEFAULT 0,
+            total INTEGER DEFAULT 0,
+            duration_seconds FLOAT,
+            started_at TIMESTAMP WITHOUT TIME ZONE,
+            finished_at TIMESTAMP WITHOUT TIME ZONE,
+            triggered_by VARCHAR,
+            failed_tests TEXT,
+            raw_summary TEXT
+        )
+    """)
+    # Ensure indexes exist (also idempotent via IF NOT EXISTS).
+    op.execute("CREATE INDEX IF NOT EXISTS ix_test_runs_id ON test_runs (id)")
+    op.execute("CREATE INDEX IF NOT EXISTS ix_test_runs_suite ON test_runs (suite)")
+    op.execute("CREATE INDEX IF NOT EXISTS ix_test_runs_status ON test_runs (status)")
+    op.execute("CREATE INDEX IF NOT EXISTS ix_test_runs_started_at ON test_runs (started_at)")
 
 
 def downgrade():
