@@ -3176,6 +3176,11 @@ def admin_overview(db: Session = Depends(get_db), _=Depends(verify_admin)):
         models.StudyGroup.creator_id,
     ).scalar() or 0
 
+    total_feed_reactions = db.query(func.count(models.FeedReaction.id)).scalar() or 0
+    feed_reactions_7d = db.query(func.count(models.FeedReaction.id)).filter(
+        models.FeedReaction.created_at >= week_ago
+    ).scalar() or 0
+
     total_user_subjects = _exclude_archived(
         db.query(func.count(models.UserSubject.id)),
         models.UserSubject.user_id,
@@ -3334,6 +3339,8 @@ def admin_overview(db: Session = Depends(get_db), _=Depends(verify_admin)):
         "friendships_7d": friendships_7d,
         "total_groups_created": total_groups_created,
         "groups_created_7d": groups_created_7d,
+        "total_feed_reactions": total_feed_reactions,
+        "feed_reactions_7d": feed_reactions_7d,
         "total_user_subjects": total_user_subjects,
         "user_subjects_7d": user_subjects_7d,
         "total_tasks_created": total_tasks_created,

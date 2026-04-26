@@ -432,6 +432,7 @@
                 <div class="kpi"><div class="kpi-icon">🐣</div><div class="kpi-val" id="k-animals">—</div><div class="kpi-label">Animals Hatched</div><div class="kpi-sub" id="k-animals-sub"></div></div>
                 <div class="kpi"><div class="kpi-icon">🤝</div><div class="kpi-val" id="k-friends">—</div><div class="kpi-label">Friendships</div><div class="kpi-sub" id="k-friends-sub"></div></div>
                 <div class="kpi"><div class="kpi-icon">👨‍👩‍👧</div><div class="kpi-val" id="k-groups">—</div><div class="kpi-label">Study Groups</div><div class="kpi-sub" id="k-groups-sub"></div></div>
+                <div class="kpi"><div class="kpi-icon">🎉</div><div class="kpi-val" id="k-reactions">—</div><div class="kpi-label">Feed Reactions</div><div class="kpi-sub" id="k-reactions-sub"></div></div>
                 <div class="kpi"><div class="kpi-icon">📖</div><div class="kpi-val" id="k-subjects">—</div><div class="kpi-label">Subjects Added</div><div class="kpi-sub" id="k-subjects-sub"></div></div>
                 <div class="kpi"><div class="kpi-icon">✅</div><div class="kpi-val" id="k-tasks">—</div><div class="kpi-label">Todos Created</div><div class="kpi-sub" id="k-tasks-sub"></div></div>
                 <div class="kpi"><div class="kpi-icon">💡</div><div class="kpi-val" id="k-tipviews">—</div><div class="kpi-label">Tips Viewed</div><div class="kpi-sub" id="k-tipviews-sub"></div></div>
@@ -1888,6 +1889,8 @@ async function loadOverview() {
         document.getElementById('k-friends-sub').textContent = `+${d.friendships_7d || 0} this week`;
         document.getElementById('k-groups').textContent = (d.total_groups_created || 0).toLocaleString();
         document.getElementById('k-groups-sub').textContent = `+${d.groups_created_7d || 0} this week`;
+        document.getElementById('k-reactions').textContent = (d.total_feed_reactions || 0).toLocaleString();
+        document.getElementById('k-reactions-sub').textContent = `+${d.feed_reactions_7d || 0} this week`;
         document.getElementById('k-subjects').textContent = (d.total_user_subjects || 0).toLocaleString();
         document.getElementById('k-subjects-sub').textContent = `+${d.user_subjects_7d || 0} this week`;
         document.getElementById('k-tasks').textContent = (d.total_tasks_created || 0).toLocaleString();
