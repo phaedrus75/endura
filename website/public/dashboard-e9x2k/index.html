@@ -435,8 +435,7 @@
                 <div class="kpi"><div class="kpi-icon">🎉</div><div class="kpi-val" id="k-reactions">—</div><div class="kpi-label">Feed Reactions</div><div class="kpi-sub" id="k-reactions-sub"></div></div>
                 <div class="kpi"><div class="kpi-icon">📖</div><div class="kpi-val" id="k-subjects">—</div><div class="kpi-label">Subjects Added</div><div class="kpi-sub" id="k-subjects-sub"></div></div>
                 <div class="kpi"><div class="kpi-icon">✅</div><div class="kpi-val" id="k-tasks">—</div><div class="kpi-label">Todos Created</div><div class="kpi-sub" id="k-tasks-sub"></div></div>
-                <div class="kpi"><div class="kpi-icon">💡</div><div class="kpi-val" id="k-tipviews">—</div><div class="kpi-label">Tips Viewed</div><div class="kpi-sub" id="k-tipviews-sub"></div></div>
-                <div class="kpi"><div class="kpi-icon">❤️</div><div class="kpi-val" id="k-tipengagement">—</div><div class="kpi-label">Tips Liked / Saved</div><div class="kpi-sub" id="k-tipengagement-sub"></div></div>
+                <div class="kpi"><div class="kpi-icon">💡</div><div class="kpi-val" id="k-tips">—</div><div class="kpi-label">Tips Viewed / Liked / Saved</div><div class="kpi-sub" id="k-tips-sub"></div></div>
             </div>
             <div class="chart-row">
                 <div class="chart-card"><h3><span data-chart-title="signups">Signups</span> <span class="chart-gran-label" style="color:var(--text-muted);font-weight:500">(Daily)</span></h3><canvas id="chartSignups"></canvas></div>
@@ -1895,16 +1894,14 @@ async function loadOverview() {
         document.getElementById('k-subjects-sub').textContent = `+${d.user_subjects_7d || 0} this week`;
         document.getElementById('k-tasks').textContent = (d.total_tasks_created || 0).toLocaleString();
         document.getElementById('k-tasks-sub').textContent = `+${d.tasks_created_7d || 0} this week`;
-        document.getElementById('k-tipviews').textContent = (d.total_tip_views || 0).toLocaleString();
-        document.getElementById('k-tipviews-sub').textContent = `+${d.tip_views_7d || 0} this week`;
-        const tipLikes = d.total_tip_likes || 0;
-        const tipSaves = d.total_tip_saves || 0;
-        document.getElementById('k-tipengagement').innerHTML =
-            `${tipLikes.toLocaleString()} <span style="color:var(--text-muted);font-weight:600">/</span> ${tipSaves.toLocaleString()}`;
-        document.getElementById('k-tipengagement-sub').innerHTML =
-            `<span style="display:inline-block;width:8px;height:8px;background:rgba(239,68,68,.9);border-radius:2px;margin-right:4px;vertical-align:middle"></span>+${d.tip_likes_7d || 0} liked` +
-            `<span style="margin:0 6px;color:var(--text-muted)">·</span>` +
-            `<span style="display:inline-block;width:8px;height:8px;background:rgba(16,185,129,.9);border-radius:2px;margin-right:4px;vertical-align:middle"></span>+${d.tip_saves_7d || 0} saved`;
+        document.getElementById('k-tips').innerHTML =
+            `${(d.total_tip_views || 0).toLocaleString()} <span style="color:var(--text-muted);font-weight:600">/</span> ${(d.total_tip_likes || 0).toLocaleString()} <span style="color:var(--text-muted);font-weight:600">/</span> ${(d.total_tip_saves || 0).toLocaleString()}`;
+        document.getElementById('k-tips-sub').innerHTML =
+            `+${d.tip_views_7d || 0} viewed` +
+            `<span style="margin:0 5px;color:var(--text-muted)">·</span>` +
+            `+${d.tip_likes_7d || 0} liked` +
+            `<span style="margin:0 5px;color:var(--text-muted)">·</span>` +
+            `+${d.tip_saves_7d || 0} saved`;
 
         if (d.funnel) renderFunnel(d.funnel);
 
