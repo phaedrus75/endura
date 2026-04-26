@@ -18,6 +18,7 @@ from auth import (
     get_password_hash, verify_password, create_access_token,
     get_current_user, get_optional_user, ACCESS_TOKEN_EXPIRE_MINUTES
 )
+from services import push as push_service
 import os
 import re
 import html
@@ -197,15 +198,28 @@ def _match_reengagement(templates, user, last_active_days, sent_keys):
 
 def _cron_run_onboarding_emails():
     """Background job: send onboarding lifecycle emails daily."""
+    import time
     from database import SessionLocal
+    import resend.exceptions as _resend_exc
     _db = SessionLocal()
     try:
         resend_key = os.getenv("RESEND_API_KEY")
         if not resend_key:
             logger.warning("Cron: RESEND_API_KEY not set, skipping onboarding emails")
             return
+
+        # Hard cap: stop before we hit Resend's daily quota.
+        # Override via DAILY_EMAIL_CAP env var (default 90 — leaves headroom for
+        # transactional sends like verification / password-reset).
+        daily_cap = int(os.getenv("DAILY_EMAIL_CAP", "90"))
+
+        # Throttle: Resend allows 5 req/s. We send at ~3/s (0.35s gap) to stay
+        # well clear of the per-second limit even under jitter.
+        send_interval = float(os.getenv("EMAIL_SEND_INTERVAL", "0.35"))
+
         now = datetime.utcnow()
         sent = {"day3": 0, "day7": 0, "day14": 0, "day30": 0, "reengagement": 0}
+        total_sent = 0
 
         milestone_templates = _db.query(models.EmailTemplate).filter(
             models.EmailTemplate.is_active == True,
@@ -228,6 +242,13 @@ def _cron_run_onboarding_emails():
             or_(models.User.is_archived == False, models.User.is_archived == None),
         ).all()
         for user in users:
+            if total_sent >= daily_cap:
+                logger.warning(
+                    f"Cron: daily email cap ({daily_cap}) reached after {total_sent} sends "
+                    f"— stopping early ({len(users) - users.index(user)} users skipped)."
+                )
+                break
+
             if not user.created_at or not user.email:
                 continue
             days_since_signup = (now - user.created_at).days
@@ -251,16 +272,28 @@ def _cron_run_onboarding_emails():
                             label = f"day{trigger_day}"
                             if label in sent:
                                 sent[label] += 1
+                            total_sent += 1
                             sent_keys.add(tkey)
+                            time.sleep(send_interval)
                             break
                 if (reengagement_templates and last_active_days is not None and days_since_signup > 3):
                     matched = _match_reengagement(reengagement_templates, user, last_active_days, sent_keys)
                     if matched:
                         if _send_template_email(matched.template_key, user.email, variables, _db):
                             sent["reengagement"] += 1
+                            total_sent += 1
+                            time.sleep(send_interval)
+            except _resend_exc.RateLimitError:
+                # Resend daily quota exhausted — stop the whole batch immediately.
+                # Log as warning (not error) so Sentry isn't spammed.
+                logger.warning(
+                    f"Cron: Resend RateLimitError after {total_sent} sends today. "
+                    "Stopping batch. Consider raising DAILY_EMAIL_CAP or upgrading Resend plan."
+                )
+                break
             except Exception as e:
                 logger.error(f"Cron: Failed to send onboarding email to {user.email}: {e}")
-        logger.info(f"Cron: Onboarding emails sent: {sent}, users checked: {len(users)}")
+        logger.info(f"Cron: Onboarding emails sent: {sent} (total={total_sent}), users checked: {len(users)}")
     except Exception as e:
         logger.error(f"Cron: Error running onboarding emails: {e}", exc_info=True)
     finally:
@@ -400,30 +433,79 @@ def health(db: Session = Depends(get_db)):
 # ── Resend Webhook (open/click tracking) ─────────────────────────
 
 @app.post("/webhooks/resend")
-def resend_webhook(data: dict, db: Session = Depends(get_db)):
-    """Receive Resend webhook events for email delivery, open, and click tracking."""
+async def resend_webhook(request: Request, db: Session = Depends(get_db)):
+    """Receive Resend webhook events for email delivery, open, click, bounce, and complaint tracking.
+
+    Resend signs every webhook payload using Svix. When RESEND_WEBHOOK_SECRET is
+    set, the signature is verified and any tampered/replayed payload returns 400.
+    In development (no secret set) verification is skipped so local testing works.
+    """
+    webhook_secret = os.getenv("RESEND_WEBHOOK_SECRET", "")
+    body = await request.body()
+
+    if webhook_secret:
+        try:
+            from svix.webhooks import Webhook, WebhookVerificationError
+            wh = Webhook(webhook_secret)
+            wh.verify(body, dict(request.headers))
+        except Exception as exc:
+            logger.warning(f"Resend webhook signature verification failed: {exc}")
+            raise HTTPException(status_code=400, detail="Invalid webhook signature")
+
+    try:
+        data = _json.loads(body)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid JSON body")
+
     event_type = data.get("type", "")
     event_data = data.get("data", {})
     email_id = event_data.get("email_id")
+
+    logger.info(f"Resend webhook: type={event_type} email_id={email_id}")
+
     if not email_id:
         return {"ok": True}
 
     log = db.query(models.EmailLog).filter(models.EmailLog.resend_message_id == email_id).first()
-    if not log:
-        return {"ok": True}
 
     now = datetime.utcnow()
+
     if event_type == "email.delivered":
-        log.delivered = True
+        if log:
+            log.delivered = True
     elif event_type == "email.opened":
-        log.opened = True
-        if not log.opened_at:
-            log.opened_at = now
+        if log:
+            log.opened = True
+            if not log.opened_at:
+                log.opened_at = now
     elif event_type == "email.clicked":
-        log.clicked = True
-        if not log.clicked_at:
-            log.clicked_at = now
-    db.commit()
+        if log:
+            log.clicked = True
+            if not log.clicked_at:
+                log.clicked_at = now
+    elif event_type in ("email.bounced", "email.complained"):
+        # Mark the log row and suppress future sends to this address.
+        if log:
+            if event_type == "email.bounced":
+                log.bounced = True
+            else:
+                log.complained = True
+        # Suppress: clear the email from all users with this address so the
+        # cron never tries to send to them again.
+        to_addrs = event_data.get("to", [])
+        if isinstance(to_addrs, str):
+            to_addrs = [to_addrs]
+        for addr in to_addrs:
+            addr = addr.strip().lower()
+            if addr:
+                logger.warning(f"Resend {event_type}: suppressing {addr}")
+                (db.query(models.User)
+                   .filter(func.lower(models.User.email) == addr)
+                   .update({"is_archived": True}, synchronize_session=False))
+
+    if log:
+        db.commit()
+
     return {"ok": True}
 
 
@@ -712,11 +794,8 @@ def register(request: Request, user: schemas.UserCreate, db: Session = Depends(g
         db_user.verification_code_expires = datetime.utcnow() + timedelta(minutes=15)
         db_user.hashed_password = get_password_hash(user.password)
         db.commit()
-        sent = _send_verification_email(db_user.email, code)
-        resp: dict = {"message": "Verification code sent", "needs_verification": True}
-        if not sent:
-            logger.warning(f"Failed to send verification email to {db_user.email}")
-        return resp
+        _send_email_bg(_send_verification_email, db_user.email, code)
+        return {"message": "Verification code sent", "needs_verification": True}
 
     hashed_password = get_password_hash(user.password)
     new_user = crud.create_user(db, user.email, hashed_password)
@@ -727,11 +806,8 @@ def register(request: Request, user: schemas.UserCreate, db: Session = Depends(g
     new_user.email_verified = False
     db.commit()
 
-    sent = _send_verification_email(new_user.email, code)
-    resp: dict = {"message": "Verification code sent", "needs_verification": True}
-    if not sent:
-        logger.warning(f"Failed to send verification email to {new_user.email}")
-    return resp
+    _send_email_bg(_send_verification_email, new_user.email, code)
+    return {"message": "Verification code sent", "needs_verification": True}
 
 
 class VerifyEmailRequest(BaseModel):
@@ -793,11 +869,21 @@ def resend_verification(request: Request, body: ResendVerificationRequest, db: S
     user.verification_attempts = 0
     db.commit()
 
-    sent = _send_verification_email(user.email, code)
-    resp: dict = {"message": "Verification code sent"}
-    if not sent:
-        logger.warning(f"Failed to send verification email to {user.email}")
-    return resp
+    _send_email_bg(_send_verification_email, user.email, code)
+    return {"message": "Verification code sent"}
+
+
+def _send_email_bg(fn, *args, **kwargs) -> None:
+    """Fire an email-sending function in a daemon thread.
+
+    The user record is always committed before this is called, so the
+    background send has no DB writes and is safe to run after the response
+    is returned. If it fails, the error is logged and the user can request
+    a resend — the endpoint is not held waiting on Resend's API.
+    """
+    import threading
+    t = threading.Thread(target=fn, args=args, kwargs=kwargs, daemon=True)
+    t.start()
 
 
 def _send_verification_email(email: str, code: str) -> bool:
@@ -808,7 +894,9 @@ def _send_verification_email(email: str, code: str) -> bool:
     if resend_key:
         try:
             import resend
+            from resend.http_client_requests import RequestsClient
             resend.api_key = resend_key
+            resend.default_http_client = RequestsClient(timeout=8)
             result = resend.Emails.send({
                 "from": resend_from,
                 "to": [email],
@@ -847,6 +935,8 @@ def _render_template(template, variables: dict) -> tuple[str, str]:
 
 def _send_template_email(template_key: str, to_email: str, variables: dict, db: Session) -> bool:
     """Send an email using a DB-stored template. Returns False if template is inactive or missing."""
+    import time
+    import resend.exceptions as _resend_exc
     resend_key = os.getenv("RESEND_API_KEY")
     resend_from = os.getenv("RESEND_FROM", "Endura <onboarding@resend.dev>")
     if not resend_key:
@@ -860,9 +950,22 @@ def _send_template_email(template_key: str, to_email: str, variables: dict, db: 
     try:
         import resend
         resend.api_key = resend_key
-        result = resend.Emails.send({
-            "from": resend_from, "to": [to_email], "subject": subject, "html": body,
-        })
+        # Retry up to 3 times on per-second rate limit with exponential backoff.
+        for attempt in range(3):
+            try:
+                result = resend.Emails.send({
+                    "from": resend_from, "to": [to_email], "subject": subject, "html": body,
+                })
+                break
+            except _resend_exc.RateLimitError as rle:
+                if attempt == 2:
+                    raise  # exhausted retries — propagate so cron can abort
+                wait = 1.0 * (attempt + 1)
+                logger.warning(
+                    f"Resend per-second rate limit hit for '{template_key}' → {to_email}. "
+                    f"Retrying in {wait}s (attempt {attempt + 1}/3)"
+                )
+                time.sleep(wait)
         resend_id = result.get("id") if isinstance(result, dict) else getattr(result, "id", None)
         user = db.query(models.User).filter(models.User.email == to_email).first()
         log = models.EmailLog(
@@ -876,6 +979,9 @@ def _send_template_email(template_key: str, to_email: str, variables: dict, db: 
         db.commit()
         logger.info(f"Template '{template_key}' email sent to {to_email} (resend_id={resend_id})")
         return True
+    except _resend_exc.RateLimitError:
+        # Re-raise so callers (the cron) can abort the whole batch cleanly.
+        raise
     except Exception as e:
         logger.error(f"Failed to send '{template_key}' email to {to_email}: {e}")
         return False
@@ -1136,38 +1242,43 @@ def forgot_password(request: Request, body: ForgotPasswordRequest, db: Session =
     user.reset_attempts = 0
     db.commit()
 
+    _send_email_bg(_send_reset_email, body.email, code)
+    return {"message": "If that email exists, a reset code has been sent."}
+
+
+def _send_reset_email(email: str, code: str) -> bool:
     resend_key = os.getenv("RESEND_API_KEY")
     resend_from = os.getenv("RESEND_FROM", "Endura <onboarding@resend.dev>")
     logger.info(f"RESEND_API_KEY present: {bool(resend_key)}, length: {len(resend_key) if resend_key else 0}")
-
-    if resend_key:
-        try:
-            import resend
-            resend.api_key = resend_key
-
-            resend.Emails.send({
-                "from": resend_from,
-                "to": [body.email],
-                "subject": "Endura — Password Reset Code",
-                "html": f"""
-                <div style="font-family:sans-serif;max-width:400px;margin:0 auto;padding:32px;background:#f0f2f0;border-radius:16px">
-                    <h2 style="color:#4A7C59;margin:0 0 8px">Endura</h2>
-                    <p style="color:#555;margin:0 0 24px">Password Reset</p>
-                    <div style="background:#fff;border-radius:12px;padding:24px;text-align:center;margin-bottom:20px">
-                        <p style="color:#888;margin:0 0 8px;font-size:14px">Your reset code is</p>
-                        <p style="font-size:36px;font-weight:700;letter-spacing:8px;color:#4A7C59;margin:0">{code}</p>
-                    </div>
-                    <p style="color:#999;font-size:12px;margin:0;text-align:center">This code expires in 15 minutes.</p>
-                </div>
-                """,
-            })
-            logger.info(f"Reset code sent to {body.email} via Resend")
-        except Exception as e:
-            logger.error(f"Failed to send reset email via Resend: {e}")
-    else:
+    if not resend_key:
         logger.warning("RESEND_API_KEY not set — reset email could not be sent")
-
-    return {"message": "If that email exists, a reset code has been sent."}
+        return False
+    try:
+        import resend
+        from resend.http_client_requests import RequestsClient
+        resend.api_key = resend_key
+        resend.default_http_client = RequestsClient(timeout=8)
+        resend.Emails.send({
+            "from": resend_from,
+            "to": [email],
+            "subject": "Endura — Password Reset Code",
+            "html": f"""
+            <div style="font-family:sans-serif;max-width:400px;margin:0 auto;padding:32px;background:#f0f2f0;border-radius:16px">
+                <h2 style="color:#4A7C59;margin:0 0 8px">Endura</h2>
+                <p style="color:#555;margin:0 0 24px">Password Reset</p>
+                <div style="background:#fff;border-radius:12px;padding:24px;text-align:center;margin-bottom:20px">
+                    <p style="color:#888;margin:0 0 8px;font-size:14px">Your reset code is</p>
+                    <p style="font-size:36px;font-weight:700;letter-spacing:8px;color:#4A7C59;margin:0">{code}</p>
+                </div>
+                <p style="color:#999;font-size:12px;margin:0;text-align:center">This code expires in 15 minutes.</p>
+            </div>
+            """,
+        })
+        logger.info(f"Reset code sent to {email} via Resend")
+        return True
+    except Exception as e:
+        logger.error(f"Failed to send reset email via Resend: {e}")
+        return False
 
 
 @app.post("/auth/reset-password")
@@ -2498,10 +2609,21 @@ def get_new_reactions(
             models.FeedReaction.user_id != current_user.id,
             (models.FeedReaction.seen == False) | (models.FeedReaction.seen == None)
         ).all()
+        if not unseen:
+            return []
+
+        # Batch-fetch all reaction senders in one query (eliminates N+1).
+        sender_ids = list({r.user_id for r in unseen})
+        senders_by_id = {
+            u.id: u
+            for u in db.query(models.User).filter(models.User.id.in_(sender_ids)).all()
+        }
+        events_by_id = {e.id: e for e in my_events}
+
         results = []
         for r in unseen:
-            sender = db.query(models.User).filter(models.User.id == r.user_id).first()
-            event = next((e for e in my_events if e.id == r.event_id), None)
+            sender = senders_by_id.get(r.user_id)
+            event = events_by_id.get(r.event_id)
             results.append({
                 "id": r.id,
                 "sender_username": sender.username if sender else "Someone",
@@ -5462,12 +5584,16 @@ def _send_android_invite_email(email: str, db: Session | None = None) -> bool:
 @app.post("/admin/onboarding-emails")
 def run_onboarding_emails(db: Session = Depends(get_db), _=Depends(verify_admin)):
     """Trigger onboarding emails for users at key milestones. Run daily via cron."""
+    import resend.exceptions as _resend_exc
     resend_key = os.getenv("RESEND_API_KEY")
     if not resend_key:
         return {"error": "RESEND_API_KEY not set"}
 
+    daily_cap = int(os.getenv("DAILY_EMAIL_CAP", "90"))
     now = datetime.utcnow()
     sent = {"day3": 0, "day7": 0, "day14": 0, "day30": 0, "reengagement": 0}
+    total_sent = 0
+    stopped_early: str | None = None
 
     milestone_templates = db.query(models.EmailTemplate).filter(
         models.EmailTemplate.is_active == True,
@@ -5492,6 +5618,10 @@ def run_onboarding_emails(db: Session = Depends(get_db), _=Depends(verify_admin)
     ).all()
 
     for user in users:
+        if total_sent >= daily_cap:
+            stopped_early = f"daily_cap ({daily_cap}) reached"
+            break
+
         if not user.created_at or not user.email:
             continue
         days_since_signup = (now - user.created_at).days
@@ -5525,6 +5655,7 @@ def run_onboarding_emails(db: Session = Depends(get_db), _=Depends(verify_admin)
                         label = f"day{trigger_day}"
                         if label in sent:
                             sent[label] += 1
+                        total_sent += 1
                         sent_keys.add(tkey)
                         break
 
@@ -5533,11 +5664,19 @@ def run_onboarding_emails(db: Session = Depends(get_db), _=Depends(verify_admin)
                 if matched:
                     if _send_template_email(matched.template_key, user.email, variables, db):
                         sent["reengagement"] += 1
+                        total_sent += 1
 
+        except _resend_exc.RateLimitError:
+            stopped_early = "Resend RateLimitError — daily quota exhausted"
+            logger.warning(f"admin/onboarding-emails: {stopped_early} after {total_sent} sends")
+            break
         except Exception as e:
             logger.error(f"Failed to send onboarding email to {user.email}: {e}")
 
-    return {"sent": sent, "total_users_checked": len(users)}
+    result: dict = {"sent": sent, "total_sent": total_sent, "total_users_checked": len(users)}
+    if stopped_early:
+        result["stopped_early"] = stopped_early
+    return result
 
 
 # ╔═════════════════════════════════════════════════════════════════╗
@@ -5549,7 +5688,6 @@ def run_onboarding_emails(db: Session = Depends(get_db), _=Depends(verify_admin)
 # ║ Event hooks fire from main.py inline (badge, friend, donation).  ║
 # ╚═════════════════════════════════════════════════════════════════╝
 
-from services import push as push_service  # noqa: E402
 
 
 def _push_variables_for_user(db: Session, user: models.User, extra: dict | None = None) -> dict:

@@ -18,3 +18,4 @@ sentry-sdk[fastapi]==2.58.0
 pytest-json-report==1.5.0
 pytest-timeout==2.4.0
 freezegun==1.5.5
+svix==1.92.2

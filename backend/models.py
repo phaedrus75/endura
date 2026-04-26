@@ -669,6 +669,8 @@ class EmailLog(Base):
     opened_at = Column(DateTime, nullable=True)
     clicked = Column(Boolean, default=False)
     clicked_at = Column(DateTime, nullable=True)
+    bounced = Column(Boolean, default=False)
+    complained = Column(Boolean, default=False)
 
 
 class PushTemplate(Base):

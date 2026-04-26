@@ -349,25 +349,30 @@ def create_study_tip(db: Session, user_id: int, content: str, category: str = "g
 # ============ Social CRUD ============
 
 def send_friend_request(db: Session, user_id: int, friend_username: str) -> tuple[bool, str]:
+    from sqlalchemy.exc import IntegrityError
     friend = db.query(models.User).filter(models.User.username == friend_username).first()
     if not friend or getattr(friend, "is_archived", False):
         return False, "User not found"
-    
+
     if friend.id == user_id:
         return False, "Cannot add yourself as friend"
-    
+
     # Check if already friends or pending
     existing = db.query(models.Friendship).filter(
         ((models.Friendship.user_id == user_id) & (models.Friendship.friend_id == friend.id)) |
         ((models.Friendship.user_id == friend.id) & (models.Friendship.friend_id == user_id))
     ).first()
-    
+
     if existing:
         return False, "Friend request already exists"
     
     friendship = models.Friendship(user_id=user_id, friend_id=friend.id)
     db.add(friendship)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        return False, "Friend request already exists"
     return True, "Friend request sent"
 
 
@@ -737,6 +742,7 @@ def create_group(db: Session, creator_id: int, name: str, goal_minutes: int, goa
 
 
 def join_group(db: Session, user_id: int, group_id: int) -> tuple:
+    from sqlalchemy.exc import IntegrityError
     group = db.query(models.StudyGroup).filter(models.StudyGroup.id == group_id).with_for_update().first()
     if not group:
         return None, "Group not found"
@@ -750,7 +756,11 @@ def join_group(db: Session, user_id: int, group_id: int) -> tuple:
     if member_count >= 10:
         return None, "Group is full (max 10)"
     db.add(models.GroupMember(group_id=group_id, user_id=user_id))
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        return None, "Already a member"
     return group, None
 
 
@@ -894,16 +904,32 @@ def get_friend_feed(db: Session, user_id: int, limit: int = 30) -> List[dict]:
         models.ActivityEvent.user_id.in_(visible_ids)
     ).order_by(models.ActivityEvent.created_at.desc()).limit(limit).all()
 
+    if not events:
+        return []
+
+    # Batch-fetch all users and reactions in two queries (eliminates N+1).
+    event_user_ids = list({e.user_id for e in events})
+    event_ids = [e.id for e in events]
+
+    users_by_id = {
+        u.id: u
+        for u in db.query(models.User).filter(models.User.id.in_(event_user_ids)).all()
+    }
+    reactions_by_event: dict[int, list] = {e.id: [] for e in events}
+    for r in db.query(models.FeedReaction).filter(
+        models.FeedReaction.event_id.in_(event_ids)
+    ).all():
+        reactions_by_event[r.event_id].append({"user_id": r.user_id, "reaction": r.reaction})
+
     results = []
     for e in events:
-        u = db.query(models.User).filter(models.User.id == e.user_id).first()
-        reactions = db.query(models.FeedReaction).filter(models.FeedReaction.event_id == e.id).all()
-        reaction_list = [{"user_id": r.user_id, "reaction": r.reaction} for r in reactions]
+        u = users_by_id.get(e.user_id)
         results.append({
             "id": e.id, "user_id": e.user_id,
             "username": u.username if u else None,
             "event_type": e.event_type, "description": e.description,
-            "created_at": e.created_at, "reactions": reaction_list
+            "created_at": e.created_at,
+            "reactions": reactions_by_event[e.id],
         })
     return results
 
@@ -1350,6 +1376,7 @@ def get_user_subjects(db: Session, user_id: int) -> List[models.Subject]:
 
 
 def add_user_subject(db: Session, user_id: int, subject_id: int) -> bool:
+    from sqlalchemy.exc import IntegrityError
     existing = db.query(models.UserSubject).filter(
         models.UserSubject.user_id == user_id,
         models.UserSubject.subject_id == subject_id,
@@ -1363,7 +1390,10 @@ def add_user_subject(db: Session, user_id: int, subject_id: int) -> bool:
     if not sub:
         return False
     db.add(models.UserSubject(user_id=user_id, subject_id=subject_id))
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()  # concurrent add for same (user, subject) — idempotent, treat as success
     return True
 
 
@@ -1380,6 +1410,7 @@ def remove_user_subject(db: Session, user_id: int, subject_id: int) -> bool:
 
 
 def create_custom_subject(db: Session, user_id: int, display_name: str) -> Optional[models.Subject]:
+    from sqlalchemy.exc import IntegrityError
     name = display_name.strip().lower()
     if not name:
         return None
@@ -1392,8 +1423,17 @@ def create_custom_subject(db: Session, user_id: int, display_name: str) -> Optio
         is_default=False, created_by_user_id=user_id,
     )
     db.add(sub)
-    db.commit()
-    db.refresh(sub)
+    try:
+        db.commit()
+    except IntegrityError:
+        # Two concurrent requests raced to create the same subject.
+        # Roll back and re-fetch the row the winning request just inserted.
+        db.rollback()
+        sub = db.query(models.Subject).filter(models.Subject.name == name).first()
+        if not sub:
+            return None  # should not happen, but guard anyway
+    else:
+        db.refresh(sub)
     add_user_subject(db, user_id, sub.id)
     return sub
 

@@ -2,7 +2,7 @@
 builder = "NIXPACKS"
 
 [deploy]
-startCommand = "alembic upgrade head && uvicorn main:app --host 0.0.0.0 --port $PORT"
+startCommand = "PYTHONPATH=/app:$PYTHONPATH alembic upgrade head && PYTHONPATH=/app:$PYTHONPATH uvicorn main:app --host 0.0.0.0 --port $PORT"
 healthcheckPath = "/"
 healthcheckTimeout = 300
 restartPolicyType = "ON_FAILURE"
