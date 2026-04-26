@@ -226,6 +226,18 @@
         .sub-content { display: none; }
         .sub-content.active { display: block; }
 
+        /* ---- Users page sub-tabs (scoped, won't collide with .sub-tab) ---- */
+        .user-tabs { display: flex; gap: 4px; margin-bottom: 20px; background: var(--bg); border-radius: 10px; padding: 4px; }
+        .user-tab {
+            flex: 1; padding: 10px 16px; border-radius: 8px; border: none;
+            background: transparent; font-size: 13px; font-weight: 600;
+            cursor: pointer; color: var(--text-muted); transition: all .15s; text-align: center;
+        }
+        .user-tab.active { background: var(--card); color: var(--text); box-shadow: 0 1px 3px rgba(0,0,0,.06); }
+        .user-tab:hover:not(.active) { color: var(--text); }
+        .user-content { display: none; }
+        .user-content.active { display: block; }
+
         /* ---- Tips table ---- */
         .tip-content { max-width: 400px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
         .tip-category { display: inline-block; }
@@ -384,13 +396,8 @@
             <a data-page="rankings"><span class="icon">🏆</span> App Rankings</a>
             <a data-page="feedback"><span class="icon">💬</span> Feedback</a>
             <a data-page="geography"><span class="icon">🌍</span> Geography</a>
-            <a data-page="activity"><span class="icon">⚡</span> Activity</a>
             <a data-page="analytics"><span class="icon">📈</span> Analytics</a>
-            <a data-page="android-beta"><span class="icon">🤖</span> Android Beta</a>
-            <a data-page="campaigns"><span class="icon">📣</span> Campaigns</a>
-            <a data-page="email-templates"><span class="icon">📧</span> Email Templates</a>
-            <a data-page="push"><span class="icon">🔔</span> Push</a>
-            <a data-page="founding"><span class="icon">⭐</span> Founding Members</a>
+            <a data-page="comms"><span class="icon">📢</span> Comms</a>
             <a data-page="system"><span class="icon">🩺</span> System Health</a>
             <a data-page="tests"><span class="icon">🧪</span> Tests</a>
         </nav>
@@ -456,41 +463,107 @@
         <!-- Users Page -->
         <div class="page" id="page-users">
             <h1 class="page-title">Users</h1>
-            <div class="table-card">
-                <div class="table-toolbar" style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
-                    <input type="text" id="userSearch" placeholder="Search by username or email..." style="flex:1;min-width:200px">
-                    <select id="countryFilter" onchange="applyUserFilters()" style="padding:10px 14px;border:1px solid var(--border);border-radius:10px;font-size:14px;min-width:140px">
-                        <option value="">All Countries</option>
-                    </select>
-                    <select id="schoolFilter" onchange="applyUserFilters()" style="padding:10px 14px;border:1px solid var(--border);border-radius:10px;font-size:14px;min-width:160px">
-                        <option value="">All Schools</option>
-                    </select>
-                    <button id="cleanupCountriesBtn" onclick="runCountryCleanup()" style="padding:10px 18px;background:var(--forest);color:#fff;border:none;border-radius:10px;font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap;transition:all .15s" onmouseover="this.style.opacity='0.9'" onmouseout="this.style.opacity='1'">🧹 Cleanup Countries</button>
-                    <button id="auditSchoolsBtn" onclick="auditSchools()" style="padding:10px 18px;background:#64748b;color:#fff;border:none;border-radius:10px;font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap;transition:all .15s" onmouseover="this.style.opacity='0.9'" onmouseout="this.style.opacity='1'">🔍 Audit Schools</button>
-                    <button id="cleanupSchoolsBtn" onclick="runSchoolCleanup()" style="padding:10px 18px;background:var(--forest);color:#fff;border:none;border-radius:10px;font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap;transition:all .15s" onmouseover="this.style.opacity='0.9'" onmouseout="this.style.opacity='1'">🏫 Cleanup Schools</button>
+
+            <div class="user-tabs">
+                <button class="user-tab active" data-usertab="main" onclick="switchUserSubTab('main')">👥 Main</button>
+                <button class="user-tab" data-usertab="founding" onclick="switchUserSubTab('founding')">⭐ Founding Members</button>
+                <button class="user-tab" data-usertab="android" onclick="switchUserSubTab('android')">🤖 Android Beta</button>
+                <button class="user-tab" data-usertab="activity" onclick="switchUserSubTab('activity')">⚡ Activity</button>
+            </div>
+
+            <!-- Main: full user table -->
+            <div class="user-content active" id="user-tab-main">
+                <div class="table-card">
+                    <div class="table-toolbar" style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+                        <input type="text" id="userSearch" placeholder="Search by username or email..." style="flex:1;min-width:200px">
+                        <select id="countryFilter" onchange="applyUserFilters()" style="padding:10px 14px;border:1px solid var(--border);border-radius:10px;font-size:14px;min-width:140px">
+                            <option value="">All Countries</option>
+                        </select>
+                        <select id="schoolFilter" onchange="applyUserFilters()" style="padding:10px 14px;border:1px solid var(--border);border-radius:10px;font-size:14px;min-width:160px">
+                            <option value="">All Schools</option>
+                        </select>
+                        <button id="cleanupCountriesBtn" onclick="runCountryCleanup()" style="padding:10px 18px;background:var(--forest);color:#fff;border:none;border-radius:10px;font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap;transition:all .15s" onmouseover="this.style.opacity='0.9'" onmouseout="this.style.opacity='1'">🧹 Cleanup Countries</button>
+                        <button id="auditSchoolsBtn" onclick="auditSchools()" style="padding:10px 18px;background:#64748b;color:#fff;border:none;border-radius:10px;font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap;transition:all .15s" onmouseover="this.style.opacity='0.9'" onmouseout="this.style.opacity='1'">🔍 Audit Schools</button>
+                        <button id="cleanupSchoolsBtn" onclick="runSchoolCleanup()" style="padding:10px 18px;background:var(--forest);color:#fff;border:none;border-radius:10px;font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap;transition:all .15s" onmouseover="this.style.opacity='0.9'" onmouseout="this.style.opacity='1'">🏫 Cleanup Schools</button>
+                    </div>
+                    <div style="overflow-x:auto">
+                        <table id="usersTable">
+                            <thead><tr id="usersHead">
+                                <th data-sort="id" style="text-align:right">ID</th>
+                                <th data-sort="username">User</th>
+                                <th data-sort="email">Email</th>
+                                <th data-sort="email_verified" style="text-align:center">Verified</th>
+                                <th data-sort="school">School</th>
+                                <th data-sort="country">Country</th>
+                                <th data-sort="total_study_minutes" style="text-align:right">Study Mins</th>
+                                <th data-sort="current_streak" style="text-align:right">Streak</th>
+                                <th data-sort="current_coins" style="text-align:right">Coins</th>
+                                <th data-sort="animals_hatched" style="text-align:right">Animals</th>
+                                <th data-sort="friend_count" style="text-align:right">Friends</th>
+                                <th data-sort="group_count" style="text-align:right">Groups</th>
+                                <th data-sort="total_donated" style="text-align:right">Donated</th>
+                                <th data-sort="created_at">Joined</th>
+                            </tr></thead>
+                            <tbody id="usersBody"></tbody>
+                        </table>
+                    </div>
+                    <div class="pagination" id="usersPagination"></div>
                 </div>
-                <div style="overflow-x:auto">
-                    <table id="usersTable">
-                        <thead><tr id="usersHead">
-                            <th data-sort="id" style="text-align:right">ID</th>
-                            <th data-sort="username">User</th>
-                            <th data-sort="email">Email</th>
-                            <th data-sort="email_verified" style="text-align:center">Verified</th>
-                            <th data-sort="school">School</th>
-                            <th data-sort="country">Country</th>
-                            <th data-sort="total_study_minutes" style="text-align:right">Study Mins</th>
-                            <th data-sort="current_streak" style="text-align:right">Streak</th>
-                            <th data-sort="current_coins" style="text-align:right">Coins</th>
-                            <th data-sort="animals_hatched" style="text-align:right">Animals</th>
-                            <th data-sort="friend_count" style="text-align:right">Friends</th>
-                            <th data-sort="group_count" style="text-align:right">Groups</th>
-                            <th data-sort="total_donated" style="text-align:right">Donated</th>
-                            <th data-sort="created_at">Joined</th>
-                        </tr></thead>
-                        <tbody id="usersBody"></tbody>
-                    </table>
+            </div>
+
+            <!-- Founding Members -->
+            <div class="user-content" id="user-tab-founding">
+                <p style="color:var(--text-muted);margin:0 0 20px;font-size:14px">
+                    First 100 verified users earn a diamond badge, 500 bonus eco-credits, and a permanent 1.25x multiplier.
+                </p>
+                <div class="kpi-grid" style="margin-bottom:20px">
+                    <div class="kpi"><div class="kpi-value" id="fm-count">—</div><div class="kpi-label">Founding Members</div></div>
+                    <div class="kpi"><div class="kpi-value" id="fm-total">—</div><div class="kpi-label">Total Verified Users</div></div>
+                    <div class="kpi"><div class="kpi-value" id="fm-remaining">—</div><div class="kpi-label">Spots Remaining</div></div>
                 </div>
-                <div class="pagination" id="usersPagination"></div>
+                <div class="table-card">
+                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+                        <h3>Members</h3>
+                        <div style="display:flex;gap:8px;align-items:center">
+                            <input type="number" id="fmGrantId" placeholder="User ID" min="1" style="padding:8px 12px;border:1px solid var(--border);border-radius:8px;font-size:13px;width:100px">
+                            <button onclick="grantFoundingMember()" style="padding:8px 16px;background:var(--forest);color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer">Grant Manually</button>
+                        </div>
+                    </div>
+                    <div style="overflow-x:auto">
+                        <table>
+                            <thead><tr><th>#</th><th>User</th><th>Email</th><th>Multiplier</th><th>Earned</th></tr></thead>
+                            <tbody id="fmBody"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Android Beta -->
+            <div class="user-content" id="user-tab-android">
+                <div class="kpi-grid" style="margin-bottom:20px">
+                    <div class="kpi"><div class="kpi-value" id="ab-total">—</div><div class="kpi-label">Total Signups</div></div>
+                    <div class="kpi"><div class="kpi-value" id="ab-invited">—</div><div class="kpi-label">Invited</div></div>
+                    <div class="kpi"><div class="kpi-value" id="ab-pending">—</div><div class="kpi-label">Pending</div></div>
+                </div>
+                <div class="table-card">
+                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+                        <h3>Signups</h3>
+                        <button onclick="exportBetaEmails()" style="padding:8px 16px;background:var(--forest);color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer">Export Emails</button>
+                    </div>
+                    <div style="overflow-x:auto">
+                        <table>
+                            <thead><tr><th>Email</th><th>Signed Up</th><th>Status</th><th>Action</th></tr></thead>
+                            <tbody id="abSignups"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Activity Feed -->
+            <div class="user-content" id="user-tab-activity">
+                <div class="table-card">
+                    <div id="feedList"></div>
+                </div>
             </div>
         </div>
 
@@ -667,13 +740,6 @@
                         <tbody id="subjectsBody"></tbody>
                     </table>
                 </div>
-            </div>
-        </div>
-
-        <div class="page" id="page-activity">
-            <h1 class="page-title">Activity Feed</h1>
-            <div class="table-card">
-                <div id="feedList"></div>
             </div>
         </div>
 
@@ -914,50 +980,21 @@
             </div>
         </div>
 
-        <div class="page" id="page-android-beta">
-            <h1 class="page-title">Android Beta Signups</h1>
-            <div class="kpi-grid" style="margin-bottom:20px">
-                <div class="kpi"><div class="kpi-value" id="ab-total">—</div><div class="kpi-label">Total Signups</div></div>
-                <div class="kpi"><div class="kpi-value" id="ab-invited">—</div><div class="kpi-label">Invited</div></div>
-                <div class="kpi"><div class="kpi-value" id="ab-pending">—</div><div class="kpi-label">Pending</div></div>
-            </div>
-            <div class="table-card">
-                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
-                    <h3>Signups</h3>
-                    <button onclick="exportBetaEmails()" style="padding:8px 16px;background:var(--forest);color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer">Export Emails</button>
-                </div>
-                <div style="overflow-x:auto">
-                    <table>
-                        <thead><tr><th>Email</th><th>Signed Up</th><th>Status</th><th>Action</th></tr></thead>
-                        <tbody id="abSignups"></tbody>
-                    </table>
-                </div>
-            </div>
-        </div>
-
-        <div class="page" id="page-campaigns">
-            <h1 class="page-title">Email Campaigns</h1>
-            <p style="color:var(--text-muted);margin-bottom:20px;font-size:14px">
-                Targeted emails based on user behaviour. Each cohort gets a specific nudge. Emails are de-duped — users who already received a campaign won't get it again.
-            </p>
-            <div id="campaignCohorts" style="display:grid;gap:16px"></div>
-        </div>
-
-        <div class="page" id="page-email-templates">
-            <h1 class="page-title">Email Templates</h1>
-            <p style="color:var(--text-muted);margin-bottom:20px;font-size:14px">
-                Edit email content, subjects, and trigger criteria. Changes take effect immediately — no deploy needed.<br>
-                <strong>Available variables:</strong> <code>{name}</code> <code>{total_minutes}</code> <code>{animals_count}</code> <code>{streak}</code> <code>{longest_streak}</code> <code>{sessions}</code> <code>{badges}</code>
-            </p>
-            <div id="emailTemplatesList" style="display:grid;gap:16px"></div>
-        </div>
-
-        <!-- Push Notifications Page -->
-        <div class="page" id="page-push">
+        <!-- Comms Page (Push + Email Templates + Campaigns) -->
+        <div class="page" id="page-comms">
             <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:18px">
-                <h1 class="page-title" style="margin:0">Push Notifications</h1>
-                <button onclick="loadPush()" style="padding:7px 14px;background:var(--forest);color:#fff;border:none;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer">Refresh</button>
+                <h1 class="page-title" style="margin:0">Comms</h1>
+                <button onclick="refreshComms()" style="padding:7px 14px;background:var(--forest);color:#fff;border:none;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer">Refresh</button>
             </div>
+
+            <div class="user-tabs">
+                <button class="user-tab active" data-commstab="push" onclick="switchCommsSubTab('push')">🔔 Push</button>
+                <button class="user-tab" data-commstab="email" onclick="switchCommsSubTab('email')">📧 Email Templates</button>
+                <button class="user-tab" data-commstab="campaigns" onclick="switchCommsSubTab('campaigns')">📣 Campaigns</button>
+            </div>
+
+            <!-- Push -->
+            <div class="user-content active" id="comms-tab-push">
             <p style="color:var(--text-muted);margin-bottom:20px;font-size:14px;max-width:760px">
                 Lifecycle, event, and broadcast pushes sent via Expo. The <strong>opt-in funnel</strong> shows how many users have given push permission. Every push is tracked in the <code>push_logs</code> table — opens are reported by the device, drops are users who opted out of the category.
             </p>
@@ -1072,32 +1109,23 @@
                     </table>
                 </div>
             </div>
-        </div>
+            </div><!-- /comms-tab-push -->
 
-        <div class="page" id="page-founding">
-            <h1 class="page-title">Founding Members</h1>
-            <p style="color:var(--text-muted);margin-bottom:20px;font-size:14px">
-                First 100 verified users earn a diamond badge, 500 bonus eco-credits, and a permanent 1.25x multiplier.
-            </p>
-            <div class="kpi-grid" style="margin-bottom:20px">
-                <div class="kpi"><div class="kpi-value" id="fm-count">—</div><div class="kpi-label">Founding Members</div></div>
-                <div class="kpi"><div class="kpi-value" id="fm-total">—</div><div class="kpi-label">Total Verified Users</div></div>
-                <div class="kpi"><div class="kpi-value" id="fm-remaining">—</div><div class="kpi-label">Spots Remaining</div></div>
+            <!-- Email Templates -->
+            <div class="user-content" id="comms-tab-email">
+                <p style="color:var(--text-muted);margin-bottom:20px;font-size:14px">
+                    Edit email content, subjects, and trigger criteria. Changes take effect immediately — no deploy needed.<br>
+                    <strong>Available variables:</strong> <code>{name}</code> <code>{total_minutes}</code> <code>{animals_count}</code> <code>{streak}</code> <code>{longest_streak}</code> <code>{sessions}</code> <code>{badges}</code>
+                </p>
+                <div id="emailTemplatesList" style="display:grid;gap:16px"></div>
             </div>
-            <div class="table-card">
-                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
-                    <h3>Members</h3>
-                    <div style="display:flex;gap:8px;align-items:center">
-                        <input type="number" id="fmGrantId" placeholder="User ID" min="1" style="padding:8px 12px;border:1px solid var(--border);border-radius:8px;font-size:13px;width:100px">
-                        <button onclick="grantFoundingMember()" style="padding:8px 16px;background:var(--forest);color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer">Grant Manually</button>
-                    </div>
-                </div>
-                <div style="overflow-x:auto">
-                    <table>
-                        <thead><tr><th>#</th><th>User</th><th>Email</th><th>Multiplier</th><th>Earned</th></tr></thead>
-                        <tbody id="fmBody"></tbody>
-                    </table>
-                </div>
+
+            <!-- Campaigns -->
+            <div class="user-content" id="comms-tab-campaigns">
+                <p style="color:var(--text-muted);margin-bottom:20px;font-size:14px">
+                    Targeted emails based on user behaviour. Each cohort gets a specific nudge. Emails are de-duped — users who already received a campaign won't get it again.
+                </p>
+                <div id="campaignCohorts" style="display:grid;gap:16px"></div>
             </div>
         </div>
 
@@ -1592,24 +1620,55 @@ document.querySelectorAll('.sidebar nav a').forEach(link => {
         }
 
         if (link.dataset.page === 'overview') loadOverview();
-        else if (link.dataset.page === 'users') loadUsers();
+        else if (link.dataset.page === 'users') {
+            // Reset Users to its Main sub-tab and load it
+            switchUserSubTab('main');
+        }
         else if (link.dataset.page === 'donations') loadDonations();
         else if (link.dataset.page === 'content') loadContent();
         else if (link.dataset.page === 'subjects') loadSubjects();
         else if (link.dataset.page === 'rankings') loadRankings();
         else if (link.dataset.page === 'feedback') loadFeedback();
         else if (link.dataset.page === 'geography') loadGeography();
-        else if (link.dataset.page === 'activity') loadActivity();
         else if (link.dataset.page === 'analytics') initAnalytics();
-        else if (link.dataset.page === 'android-beta') loadAndroidBeta();
-        else if (link.dataset.page === 'campaigns') loadCampaigns();
-        else if (link.dataset.page === 'email-templates') loadEmailTemplates();
-        else if (link.dataset.page === 'push') loadPush();
-        else if (link.dataset.page === 'founding') loadFoundingMembers();
+        else if (link.dataset.page === 'comms') {
+            // Reset Comms to its Push sub-tab and load it
+            switchCommsSubTab('push');
+        }
         else if (link.dataset.page === 'system') loadSystemHealth();
         else if (link.dataset.page === 'tests') initTestsPage();
     });
 });
+
+// ----- Users page sub-tabs -----
+function switchUserSubTab(name) {
+    const usersPage = document.getElementById('page-users');
+    if (!usersPage) return;
+    usersPage.querySelectorAll('.user-tab').forEach(t => t.classList.toggle('active', t.dataset.usertab === name));
+    usersPage.querySelectorAll('.user-content').forEach(c => c.classList.toggle('active', c.id === 'user-tab-' + name));
+    if (name === 'main') loadUsers();
+    else if (name === 'founding') loadFoundingMembers();
+    else if (name === 'android') loadAndroidBeta();
+    else if (name === 'activity') loadActivity();
+}
+
+// ----- Comms page sub-tabs -----
+function switchCommsSubTab(name) {
+    const commsPage = document.getElementById('page-comms');
+    if (!commsPage) return;
+    commsPage.querySelectorAll('.user-tab').forEach(t => t.classList.toggle('active', t.dataset.commstab === name));
+    commsPage.querySelectorAll('.user-content').forEach(c => c.classList.toggle('active', c.id === 'comms-tab-' + name));
+    if (name === 'push') loadPush();
+    else if (name === 'email') loadEmailTemplates();
+    else if (name === 'campaigns') loadCampaigns();
+}
+
+function refreshComms() {
+    const commsPage = document.getElementById('page-comms');
+    if (!commsPage) return;
+    const active = commsPage.querySelector('.user-tab.active');
+    if (active && active.dataset.commstab) switchCommsSubTab(active.dataset.commstab);
+}
 
 // ----- System Health -----
 let sysHealthTimer = null;
