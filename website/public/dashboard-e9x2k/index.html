@@ -1211,19 +1211,19 @@
             </div>
             <div style="display:flex;gap:14px;margin-bottom:14px">
                 <div style="flex:1">
-                    <label style="font-size:13px;font-weight:600;color:var(--text-muted);display:block;margin-bottom:4px">Min Sessions</label>
+                    <label style="font-size:13px;font-weight:600;color:var(--text-muted);display:block;margin-bottom:4px">Min Sessions <span style="font-weight:400">(>=)</span></label>
                     <input id="etMinSessions" type="number" min="0" style="width:100%;padding:10px 14px;border:2px solid var(--border);border-radius:10px;font-size:14px" placeholder="any" />
                 </div>
                 <div style="flex:1">
-                    <label style="font-size:13px;font-weight:600;color:var(--text-muted);display:block;margin-bottom:4px">Max Sessions</label>
+                    <label style="font-size:13px;font-weight:600;color:var(--text-muted);display:block;margin-bottom:4px">Max Sessions <span style="font-weight:400">(<=)</span></label>
                     <input id="etMaxSessions" type="number" min="0" style="width:100%;padding:10px 14px;border:2px solid var(--border);border-radius:10px;font-size:14px" placeholder="any" />
                 </div>
                 <div style="flex:1">
-                    <label style="font-size:13px;font-weight:600;color:var(--text-muted);display:block;margin-bottom:4px">Min Streak</label>
+                    <label style="font-size:13px;font-weight:600;color:var(--text-muted);display:block;margin-bottom:4px">Min Streak <span style="font-weight:400">(>=)</span></label>
                     <input id="etMinStreak" type="number" min="0" style="width:100%;padding:10px 14px;border:2px solid var(--border);border-radius:10px;font-size:14px" placeholder="any" />
                 </div>
                 <div style="flex:1">
-                    <label style="font-size:13px;font-weight:600;color:var(--text-muted);display:block;margin-bottom:4px">Max Streak</label>
+                    <label style="font-size:13px;font-weight:600;color:var(--text-muted);display:block;margin-bottom:4px">Max Streak <span style="font-weight:400">(<=)</span></label>
                     <input id="etMaxStreak" type="number" min="0" style="width:100%;padding:10px 14px;border:2px solid var(--border);border-radius:10px;font-size:14px" placeholder="any" />
                 </div>
             </div>
@@ -3939,8 +3939,8 @@ async function loadEmailTemplates() {
         list.innerHTML = templates.map(t => {
             let triggerInfo = t.trigger_day ? 'Day ' + t.trigger_day : t.inactive_days ? 'After ' + t.inactive_days + 'd inactive' : 'Event-based';
             const targeting = [];
-            if (t.min_sessions != null || t.max_sessions != null) targeting.push('Sessions: ' + (t.min_sessions ?? '0') + '–' + (t.max_sessions ?? '∞'));
-            if (t.min_streak != null || t.max_streak != null) targeting.push('Streak: ' + (t.min_streak ?? '0') + '–' + (t.max_streak ?? '∞'));
+            if (t.min_sessions != null || t.max_sessions != null) targeting.push('Sessions: >=' + (t.min_sessions ?? '0') + (t.max_sessions != null ? ', <=' + t.max_sessions : ''));
+            if (t.min_streak != null || t.max_streak != null) targeting.push('Streak: >=' + (t.min_streak ?? '0') + (t.max_streak != null ? ', <=' + t.max_streak : ''));
             if (targeting.length) triggerInfo += ' · ' + targeting.join(' · ');
             const statusColor = t.is_active ? 'var(--accent)' : 'var(--red)';
             const statusLabel = t.is_active ? 'Active' : 'Inactive';
