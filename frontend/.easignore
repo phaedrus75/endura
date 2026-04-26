@@ -1,0 +1,29 @@
+# EAS Build archive ignores. Mirrors .gitignore + extras.
+# EAS runs npm ci server-side, so node_modules/ is never needed.
+
+node_modules/
+**/node_modules/
+.expo/
+dist/
+*.log
+.DS_Store
+
+# Test-only — Jest runs locally, never on the build machine
+__tests__/
+**/__tests__/
+jest.config.js
+
+# Local IDE / editor
+.vscode/
+.idea/
+*.swp
+
+# Build outputs
+ios/build/
+android/build/
+android/app/build/
+android/.gradle/
+
+# Misc
+coverage/
+.git/
