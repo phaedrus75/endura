@@ -268,9 +268,18 @@ def _cron_run_onboarding_emails():
 
 
 def _cron_sync_app_ranks():
-    """Daily — fetches yesterday + today's ranks from AppFigures and upserts."""
+    """Twice daily — fetches recent ranks from AppFigures and upserts.
+
+    Records the result in _appfigures_state so /admin/appfigures-debug can
+    show the user when the cron last ran and what it did.
+    """
+    started_at = datetime.utcnow()
+    _appfigures_state["last_cron_started_at"] = started_at.isoformat()
     if not os.environ.get("APPFIGURES_PAT", "").strip():
-        logger.info("Cron app_ranks: APPFIGURES_PAT not set, skipping")
+        msg = "APPFIGURES_PAT not set, skipping"
+        logger.info(f"Cron app_ranks: {msg}")
+        _appfigures_state["last_cron_finished_at"] = datetime.utcnow().isoformat()
+        _appfigures_state["last_cron_result"] = {"status": "skipped", "reason": msg}
         return
     from database import SessionLocal
     _db = SessionLocal()
@@ -278,8 +287,12 @@ def _cron_sync_app_ranks():
         today = datetime.utcnow().date()
         result = _sync_app_ranks(today - timedelta(days=2), today, _db)
         logger.info(f"Cron app_ranks: {result}")
+        _appfigures_state["last_cron_finished_at"] = datetime.utcnow().isoformat()
+        _appfigures_state["last_cron_result"] = {"status": "ok", **(result if isinstance(result, dict) else {"raw": str(result)})}
     except Exception as e:
         logger.error(f"Cron app_ranks: failed: {e}", exc_info=True)
+        _appfigures_state["last_cron_finished_at"] = datetime.utcnow().isoformat()
+        _appfigures_state["last_cron_result"] = {"status": "error", "error": str(e)}
     finally:
         _db.close()
 
@@ -288,16 +301,29 @@ def _cron_sync_app_ranks():
 def start_scheduler():
     try:
         from apscheduler.schedulers.background import BackgroundScheduler
-        scheduler = BackgroundScheduler()
+        # Defaults applied to every job:
+        #   misfire_grace_time=3600 → if the container was restarting at the
+        #     scheduled minute (Railway redeploy etc.), the job still fires as
+        #     soon as APScheduler is back online, up to 1h late.
+        #   coalesce=True           → if multiple runs were missed (e.g. long
+        #     downtime), collapse them into a single run on recovery.
+        scheduler = BackgroundScheduler(
+            job_defaults={"misfire_grace_time": 3600, "coalesce": True},
+        )
         scheduler.add_job(_cron_run_onboarding_emails, "cron", hour=8, minute=0, id="onboarding_emails")
-        scheduler.add_job(_cron_sync_app_ranks, "cron", hour=4, minute=0, id="sync_app_ranks")
+        # AppFigures sync runs twice daily (04:00 + 16:00 UTC).
+        # AppFigures publishes daily snapshots end-of-day, but the second run
+        # catches any late updates or recovers if the morning run was missed
+        # (e.g. Railway deploy at the wrong minute).
+        scheduler.add_job(_cron_sync_app_ranks, "cron", hour=4, minute=0, id="sync_app_ranks_am")
+        scheduler.add_job(_cron_sync_app_ranks, "cron", hour=16, minute=0, id="sync_app_ranks_pm")
         # Lifecycle push notifications run a couple hours after the email cron
         # so users on both channels don't get hit with two notifications at the
         # exact same minute. Push at 10:00 UTC = early morning in LATAM, lunchtime
         # in Europe, evening in Asia — covers the bulk of the user base.
         scheduler.add_job(_cron_lifecycle_pushes, "cron", hour=10, minute=0, id="lifecycle_pushes")
         scheduler.start()
-        print("✅ Scheduler started: onboarding emails 08:00 UTC, lifecycle pushes 10:00 UTC, app_ranks sync 04:00 UTC")
+        print("✅ Scheduler started: onboarding emails 08:00 UTC, lifecycle pushes 10:00 UTC, app_ranks sync 04:00 + 16:00 UTC (misfire_grace=1h)")
     except Exception as e:
         print(f"❌ Failed to start scheduler: {e}")
 
@@ -3735,6 +3761,18 @@ def admin_appfigures_debug(_=Depends(verify_admin)):
         "appstore_id_set": bool(os.environ.get("APPFIGURES_APPSTORE_ID", "").strip()),
         "appstore_id_value": os.environ.get("APPFIGURES_APPSTORE_ID", "").strip() or None,
         "product_id_set": bool(os.environ.get("APPFIGURES_PRODUCT_ID", "").strip()),
+        # Cron health: when did the scheduled sync last run, and what happened?
+        "cron": {
+            "schedule_utc": ["04:00", "16:00"],
+            "last_started_at": _appfigures_state.get("last_cron_started_at"),
+            "last_finished_at": _appfigures_state.get("last_cron_finished_at"),
+            "last_result": _appfigures_state.get("last_cron_result"),
+            "last_on_demand_sync": (
+                _appfigures_state["last_on_demand_sync"].isoformat()
+                if isinstance(_appfigures_state.get("last_on_demand_sync"), datetime)
+                else _appfigures_state.get("last_on_demand_sync")
+            ),
+        },
         "tests": [],
     }
     if not out["pat_set"]:
