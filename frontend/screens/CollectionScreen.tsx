@@ -24,7 +24,7 @@ import LottieView from 'lottie-react-native';
 import { colors, shadows, spacing, borderRadius } from '../theme/colors';
 import SwipeDismiss, { DragHandle } from '../components/SwipeDismiss';
 import { useAuth } from '../contexts/AuthContext';
-import { animalsAPI, badgesAPI, donationsAPI, shopAPI, UserAnimal, Animal } from '../services/api';
+import { animalsAPI, badgesAPI, donationsAPI, shopAPI, UserAnimal, Animal, API_URL } from '../services/api';
 import { getAnimalImage } from '../assets/animals';
 import { Analytics } from '../services/analytics';
 
@@ -413,7 +413,13 @@ export default function CollectionScreen() {
 
   const persistAssignments = useCallback(async (assignments: ItemAssignment[]) => {
     try {
-      await shopAPI.saveAssignments(assignments);
+      const normalized = assignments.map(a => ({
+        itemId: a.itemId,
+        x: a.x,
+        y: a.y,
+        page: a.page ?? 0,
+      }));
+      await shopAPI.saveAssignments(normalized);
     } catch {
       // Fallback to local storage
       await AsyncStorage.setItem(assignmentsKey, JSON.stringify(assignments));

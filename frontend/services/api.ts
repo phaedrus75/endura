@@ -22,6 +22,22 @@ export interface User {
   country: string | null;
   is_admin: boolean;
   use_test_timer: boolean;
+  notification_enabled?: boolean;
+  notif_badges_enabled?: boolean;
+  notif_friends_enabled?: boolean;
+  notif_reminders_enabled?: boolean;
+  notif_marketing_enabled?: boolean;
+}
+
+export interface NotificationPrefs {
+  notification_enabled: boolean;
+  notif_badges_enabled: boolean;
+  notif_friends_enabled: boolean;
+  notif_reminders_enabled: boolean;
+  notif_marketing_enabled: boolean;
+  study_reminder_hour: number | null;
+  study_reminder_minute: number | null;
+  has_push_token: boolean;
 }
 
 export interface SchoolSearchResult {
@@ -104,6 +120,7 @@ export interface StudyTip {
 export interface Friend {
   id: number;
   username: string | null;
+  email?: string | null;
   total_study_minutes: number;
   current_streak: number;
   animals_count: number;
@@ -114,6 +131,7 @@ export interface Friend {
 export interface FriendProfile {
   id: number;
   username: string | null;
+  email?: string | null;
   total_study_minutes: number;
   current_streak: number;
   longest_streak: number;
@@ -248,9 +266,9 @@ async function apiFetch<T>(
 ): Promise<T> {
   const token = await SecureStore.getItemAsync('authToken');
   
-  const headers: HeadersInit = {
+  const headers: Record<string, string> = {
     'Content-Type': 'application/json',
-    ...options.headers,
+    ...(options.headers as Record<string, string> | undefined),
   };
   
   if (token) {
@@ -400,6 +418,27 @@ export const authAPI = {
 
   deleteAccount: () =>
     apiFetch<{ message: string }>('/auth/account', { method: 'DELETE' }),
+};
+
+// Push notifications API
+export const pushAPI = {
+  registerToken: (token: string, platform: 'ios' | 'android') =>
+    apiFetch<{ ok: boolean; push_token_updated_at: string; platform: string }>(
+      '/users/me/push-token',
+      { method: 'PUT', body: JSON.stringify({ token, platform }) }
+    ),
+
+  removeToken: () =>
+    apiFetch<{ ok: boolean }>('/users/me/push-token', { method: 'DELETE' }),
+
+  getPrefs: () =>
+    apiFetch<NotificationPrefs>('/users/me/notification-prefs'),
+
+  updatePrefs: (prefs: Partial<NotificationPrefs>) =>
+    apiFetch<NotificationPrefs>('/users/me/notification-prefs', {
+      method: 'PUT',
+      body: JSON.stringify(prefs),
+    }),
 };
 
 // Tasks API

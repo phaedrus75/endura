@@ -94,7 +94,7 @@ function getAvatarColor(id: number): string {
   return AVATAR_COLORS[id % AVATAR_COLORS.length];
 }
 
-function UserAvatar({ id, username, email, profilePicUrl, size = 36 }: { id: number; username?: string; email?: string; profilePicUrl?: string | null; size?: number }) {
+function UserAvatar({ id, username, email, profilePicUrl, size = 36 }: { id: number; username?: string | null; email?: string | null; profilePicUrl?: string | null; size?: number }) {
   if (profilePicUrl) {
     return (
       <Image
@@ -110,7 +110,7 @@ function UserAvatar({ id, username, email, profilePicUrl, size = 36 }: { id: num
       alignItems: 'center', justifyContent: 'center',
     }}>
       <Text style={{ color: '#fff', fontWeight: '700', fontSize: size * 0.4 }}>
-        {getInitials(username, email)}
+        {getInitials(username ?? undefined, email ?? undefined)}
       </Text>
     </View>
   );

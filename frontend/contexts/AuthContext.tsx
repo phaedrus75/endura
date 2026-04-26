@@ -2,6 +2,7 @@ import React, { createContext, useContext, useState, useEffect, ReactNode } from
 import * as SecureStore from 'expo-secure-store';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { authAPI, User } from '../services/api';
+import { unregisterPushNotifications } from '../services/pushNotifications';
 
 const PROFILE_PIC_PREFIX = 'user_profile_picture_';
 
@@ -104,6 +105,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const logout = async () => {
+    // Best-effort: tell the server to forget our push token so we don't keep
+    // pushing to a logged-out device. Never blocks logout itself.
+    unregisterPushNotifications().catch(() => {});
     await authAPI.logout();
     setUser(null);
     setProfilePicState(null);

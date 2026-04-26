@@ -1,6 +1,6 @@
 import React, { useEffect, useRef } from 'react';
 import { StatusBar } from 'expo-status-bar';
-import { NavigationContainer } from '@react-navigation/native';
+import { NavigationContainer, createNavigationContainerRef } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { View, StyleSheet, ActivityIndicator, Platform, Animated } from 'react-native';
@@ -16,8 +16,17 @@ import { colors, shadows, spacing } from './theme/colors';
 import { PostHogProvider } from 'posthog-react-native';
 import { posthogClient, identifyUser, resetUser, Analytics } from './services/analytics';
 import { initMonitoring, identifySentryUser, clearSentryUser, Sentry } from './services/monitoring';
+import {
+  registerForPushNotifications,
+  setupNotificationListeners,
+  setNavigationRef,
+  clearBadgeCount,
+} from './services/pushNotifications';
 
 initMonitoring();
+
+const navigationRef = createNavigationContainerRef<any>();
+setNavigationRef(navigationRef as any);
 
 
 // Screens
@@ -183,11 +192,19 @@ function AppNavigator() {
       });
       identifySentryUser(user.id, user.username);
       Analytics.appOpened();
+      // Register for push notifications once the user is authenticated AND
+      // has finished onboarding (has a username). This ensures the OS
+      // permission prompt only appears for committed users, not on first
+      // launch — much better conversion rate.
+      if (user.username) {
+        registerForPushNotifications().catch(() => {});
+        clearBadgeCount();
+      }
     } else {
       resetUser();
       clearSentryUser();
     }
-  }, [user?.id]);
+  }, [user?.id, user?.username]);
   
   if (isLoading) {
     return (
@@ -224,6 +241,13 @@ function App() {
     DMSans_800ExtraBold,
   });
 
+  // Wire up notification tap → deep link routing once the navigation tree is
+  // mounted. Cleanup on unmount keeps hot-reload sane in dev.
+  useEffect(() => {
+    const unsubscribe = setupNotificationListeners();
+    return () => unsubscribe();
+  }, []);
+
   if (!fontsLoaded) {
     return (
       <View style={styles.loadingContainer}>
@@ -237,7 +261,7 @@ function App() {
       <SafeAreaProvider>
         <AuthProvider>
           <NotificationProvider>
-            <NavigationContainer>
+            <NavigationContainer ref={navigationRef}>
               <PostHogProvider client={posthogClient} autocapture={false}>
                 <StatusBar style="dark" />
                 <AppNavigator />

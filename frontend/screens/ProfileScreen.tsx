@@ -836,7 +836,7 @@ export default function ProfileScreen() {
                 onPress={() => { setShowCountryPicker(true); setCountrySearch(''); }}
                 activeOpacity={0.7}
               >
-                <Text style={editCountry ? { color: colors.text, fontSize: 16 } : { color: colors.textMuted, fontSize: 16 }}>
+                <Text style={editCountry ? { color: colors.textPrimary, fontSize: 16 } : { color: colors.textMuted, fontSize: 16 }}>
                   {editCountry || 'Select your country'}
                 </Text>
               </TouchableOpacity>
@@ -1561,7 +1561,7 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     paddingHorizontal: spacing.md,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: colors.border,
+    borderBottomColor: colors.cardBorder,
   },
   settingsRowText: {
     fontSize: 15,
@@ -1577,7 +1577,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingVertical: 12,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: colors.border,
+    borderBottomColor: colors.cardBorder,
   },
   blockedUserName: {
     fontSize: 15,

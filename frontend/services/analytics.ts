@@ -9,8 +9,11 @@ export const posthogClient = new PostHog(POSTHOG_API_KEY, {
   enableSessionReplay: false,
   flushAt: 20,
   flushInterval: 30000,
-  debug: __DEV__,
 });
+
+if (__DEV__) {
+  posthogClient.debug(true);
+}
 
 export function identifyUser(userId: number, properties?: Record<string, any>) {
   posthogClient.identify(String(userId), properties);

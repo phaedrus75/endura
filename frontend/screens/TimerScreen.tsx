@@ -163,7 +163,7 @@ const FOCUS_QUOTES = [
 
 export default function TimerScreen() {
   const { refreshUser, profilePic, user } = useAuth();
-  const navigation = useNavigation();
+  const navigation = useNavigation<any>();
   const TIME_MULTIPLIER = user?.use_test_timer ? 1 : 60;
   const [selectedMinutes, setSelectedMinutes] = useState(25);
   const [timeLeft, setTimeLeft] = useState(25 * 60);

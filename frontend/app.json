@@ -11,14 +11,21 @@
       "resizeMode": "contain",
       "backgroundColor": "#B5CFB7"
     },
+    "notification": {
+      "icon": "./assets/icon.png",
+      "color": "#5E7F6E",
+      "androidMode": "default",
+      "androidCollapsedTitle": "Endura"
+    },
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.endura.study",
-      "buildNumber": "18",
+      "buildNumber": "19",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
         "NSCameraUsageDescription": "Endura uses your camera to let you take a profile photo that is visible to your friends and study group members.",
-        "NSPhotoLibraryUsageDescription": "Endura accesses your photo library so you can choose an existing photo to use as your profile picture, which is visible to your friends and study group members."
+        "NSPhotoLibraryUsageDescription": "Endura accesses your photo library so you can choose an existing photo to use as your profile picture, which is visible to your friends and study group members.",
+        "UIBackgroundModes": ["remote-notification"]
       }
     },
     "android": {
@@ -27,7 +34,8 @@
         "backgroundColor": "#B5CFB7"
       },
       "package": "com.endura.study",
-      "versionCode": 6
+      "versionCode": 7,
+      "useNextNotificationsApi": true
     },
     "web": {
       "favicon": "./assets/favicon.png"
@@ -44,6 +52,15 @@
       "expo-web-browser",
       "expo-localization",
       "expo-font",
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/icon.png",
+          "color": "#5E7F6E",
+          "defaultChannel": "default",
+          "sounds": []
+        }
+      ],
       [
         "@sentry/react-native/expo",
         {

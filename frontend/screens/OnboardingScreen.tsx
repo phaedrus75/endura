@@ -450,7 +450,7 @@ export default function OnboardingScreen() {
                   onPress={() => { setShowCountryPicker(true); setCountrySearch(''); }}
                   activeOpacity={0.7}
                 >
-                  <Text style={country ? { color: C.text, fontSize: 16 } : { color: C.textMute, fontSize: 16 }}>
+                  <Text style={country ? { color: C.textDark, fontSize: 16 } : { color: C.textMute, fontSize: 16 }}>
                     {country || 'Select your country'}
                   </Text>
                 </TouchableOpacity>

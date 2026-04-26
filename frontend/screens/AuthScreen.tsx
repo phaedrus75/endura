@@ -13,6 +13,7 @@ import {
   Modal,
   Image,
   Linking,
+  TextInput as RNTextInput,
 } from 'react-native';
 import { Text, TextInput } from '../components/StyledText';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -46,7 +47,7 @@ export default function AuthScreen() {
   const [showVerification, setShowVerification] = useState(false);
   const [verifyCode, setVerifyCode] = useState(['', '', '', '', '', '']);
   const [verifyLoading, setVerifyLoading] = useState(false);
-  const verifyInputRefs = useRef<(TextInput | null)[]>([]);
+  const verifyInputRefs = useRef<(RNTextInput | null)[]>([]);
 
   // Terms consent
   const [termsAccepted, setTermsAccepted] = useState(false);
@@ -59,7 +60,7 @@ export default function AuthScreen() {
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [forgotLoading, setForgotLoading] = useState(false);
-  const codeInputRefs = useRef<(TextInput | null)[]>([]);
+  const codeInputRefs = useRef<(RNTextInput | null)[]>([]);
 
   const handleForgotSubmitEmail = async () => {
     if (!forgotEmail) {
