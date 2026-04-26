@@ -3367,6 +3367,11 @@ def admin_overview(db: Session = Depends(get_db), _=Depends(verify_admin)):
         models.TipView.saved_at, models.TipView.user_id,
     )))
 
+    daily_feed_reactions = _series(_bucket(_fetch_dates(
+        db.query(models.FeedReaction.created_at),
+        models.FeedReaction.created_at, models.FeedReaction.user_id,
+    )))
+
     return {
         "total_users": total_users,
         "archived_users": archived_users,
@@ -3410,6 +3415,7 @@ def admin_overview(db: Session = Depends(get_db), _=Depends(verify_admin)):
         "daily_tip_views": daily_tip_views,
         "daily_tip_likes": daily_tip_likes,
         "daily_tip_saves": daily_tip_saves,
+        "daily_feed_reactions": daily_feed_reactions,
         "funnel": {
             "signed_up": real_users,
             "verified_email": verified_users,

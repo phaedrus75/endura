@@ -450,7 +450,8 @@
                 <div class="chart-card"><h3><span data-chart-title="setup">Study Setup</span> <span class="chart-gran-label" style="color:var(--text-muted);font-weight:500">(Daily)</span></h3><canvas id="chartStudySetup"></canvas><div style="font-size:11px;color:var(--text-muted);margin-top:6px;text-align:center"><span style="display:inline-block;width:10px;height:10px;background:rgba(245,158,11,.7);border-radius:2px;margin-right:3px"></span>Subjects Added <span style="display:inline-block;width:10px;height:10px;background:rgba(16,185,129,.7);border-radius:2px;margin-left:10px;margin-right:3px"></span>Todos Created</div></div>
             </div>
             <div class="chart-row">
-                <div class="chart-card" style="grid-column:1 / -1"><h3><span data-chart-title="tips">Tip Engagement</span> <span class="chart-gran-label" style="color:var(--text-muted);font-weight:500">(Daily)</span></h3><canvas id="chartTips"></canvas><div style="font-size:11px;color:var(--text-muted);margin-top:6px;text-align:center"><span style="display:inline-block;width:10px;height:10px;background:rgba(148,163,184,.7);border-radius:2px;margin-right:3px"></span>Viewed (PostHog) <span style="display:inline-block;width:10px;height:10px;background:rgba(59,130,246,.7);border-radius:2px;margin-left:10px;margin-right:3px"></span>Viewed (DB) <span style="display:inline-block;width:10px;height:10px;background:rgba(16,185,129,.7);border-radius:2px;margin-left:10px;margin-right:3px"></span>Saved (DB) <span style="display:inline-block;width:10px;height:10px;background:rgba(239,68,68,.7);border-radius:2px;margin-left:10px;margin-right:3px"></span>Liked (DB)</div></div>
+                <div class="chart-card"><h3><span data-chart-title="tips">Tip Engagement</span> <span class="chart-gran-label" style="color:var(--text-muted);font-weight:500">(Daily)</span></h3><canvas id="chartTips"></canvas><div style="font-size:11px;color:var(--text-muted);margin-top:6px;text-align:center"><span style="display:inline-block;width:10px;height:10px;background:rgba(148,163,184,.7);border-radius:2px;margin-right:3px"></span>Viewed (PostHog) <span style="display:inline-block;width:10px;height:10px;background:rgba(59,130,246,.7);border-radius:2px;margin-left:10px;margin-right:3px"></span>Viewed (DB) <span style="display:inline-block;width:10px;height:10px;background:rgba(16,185,129,.7);border-radius:2px;margin-left:10px;margin-right:3px"></span>Saved (DB) <span style="display:inline-block;width:10px;height:10px;background:rgba(239,68,68,.7);border-radius:2px;margin-left:10px;margin-right:3px"></span>Liked (DB)</div></div>
+                <div class="chart-card"><h3><span data-chart-title="reactions">Feed Reactions</span> <span class="chart-gran-label" style="color:var(--text-muted);font-weight:500">(Daily)</span></h3><canvas id="chartReactions"></canvas><div style="font-size:11px;color:var(--text-muted);margin-top:6px;text-align:center"><span style="display:inline-block;width:10px;height:10px;background:rgba(251,146,60,.7);border-radius:2px;margin-right:3px"></span>Reactions</div></div>
             </div>
 
             <!-- User Funnel -->
@@ -1513,6 +1514,7 @@ let studyChart = null;
 let socialChart = null;
 let studySetupChart = null;
 let tipsChart = null;
+let reactionsChart = null;
 
 // ----- Auth -----
 document.getElementById('loginForm').addEventListener('submit', async e => {
@@ -1854,6 +1856,7 @@ function renderOverviewCharts() {
     const tipViews = weekly ? aggregateWeekly(d.daily_tip_views) : d.daily_tip_views;
     const tipLikes = weekly ? aggregateWeekly(d.daily_tip_likes) : d.daily_tip_likes;
     const tipSaves = weekly ? aggregateWeekly(d.daily_tip_saves) : d.daily_tip_saves;
+    const feedReactions = weekly ? aggregateWeekly(d.daily_feed_reactions) : d.daily_feed_reactions;
     const dauMap = weekly ? aggregateWeeklyMap(phDauData) : phDauData;
     const tipViewedMap = weekly ? aggregateWeeklyMap(phTipViewed) : phTipViewed;
 
@@ -1864,6 +1867,7 @@ function renderOverviewCharts() {
     renderStudySetupChart(subjects, tasks);
     renderDAUChart(dbDau, dauMap);
     renderTipsChart(tipViews, tipLikes, tipSaves, tipViewedMap);
+    renderReactionsChart(feedReactions);
 }
 
 async function loadOverview() {
@@ -2143,6 +2147,13 @@ function renderTipsChart(views, likes, saves, phViewed) {
     datasets.push({ label: 'Saved (DB)', data: (saves || []).map(d => d.count), color: 'rgba(16,185,129,.9)' });
     datasets.push({ label: 'Liked (DB)', data: (likes || []).map(d => d.count), color: 'rgba(239,68,68,.9)' });
     tipsChart = renderMultiLineChart('chartTips', tipsChart, labels, datasets);
+}
+
+function renderReactionsChart(reactions) {
+    const labels = (reactions || []).map(d => d.date.slice(5));
+    reactionsChart = renderMultiLineChart('chartReactions', reactionsChart, labels, [
+        { label: 'Reactions', data: (reactions || []).map(d => d.count), color: 'rgba(251,146,60,.9)' },
+    ]);
 }
 
 // ----- Users -----
