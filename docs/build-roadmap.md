@@ -1,15 +1,15 @@
 # Endura — Build Roadmap
 
 > **Editable working doc.** Tick, cut, reorder, add notes.
-> Last updated: 26 April 2026 (build 19 in progress — push notifications)
+> Last updated: 26 April 2026 (build 20 — reactions push + traffic optimisation)
 
 ---
 
 ## Where we are now
 
 - **App Store:** v1.0.2 build 15
-- **TestFlight:** v1.0.2 build 17 (build 18 queued; build 19 about to land with push)
-- **Active build:** **19 — full push notifications** (in progress, see below)
+- **TestFlight:** v1.0.2 build 19 (live, push notifications working)
+- **Active build:** **20 — reactions push + `/feed/reactions/new` optimisation** (about to upload)
 - **Strategic doc:** `docs/onboarding-friction-analysis.md`
 - **Lifecycle reference:** `docs/onboarding-lifecycle.md`
 - **Push reference:** `docs/push-notifications.md`
@@ -24,7 +24,40 @@ Build 15 was **measurement, not friction reduction.** Build 16 is where we actua
 
 ---
 
-## Build 19 — Full push notifications (in progress, target ship 26 Apr 2026)
+## Build 20 — Reactions push + traffic cleanup (target ship 26 Apr 2026)
+
+**Theme:** "Stop hammering the backend with reaction polls; deliver them as real pushes instead."
+
+Sentry showed `/feed/reactions/new` taking ~10.8K hits/day from a 10-second poll
+running in every authed app, while actual `react` calls were tiny. Fixed end-to-end.
+
+### Backend (already shipped at commit `12d8f36`)
+
+- [x] New `push_friend_reacted` template seeded into `push_templates`
+- [x] `react_to_event` fires `_safe_send_push("push_friend_reacted", owner, ...)` on every reaction, with a 30-min throttle per (sender, event) so swapping emoji doesn't spam the recipient
+- [x] `/feed/reactions/new` short-circuits when the user has no accepted friends (no one *can* react)
+- [x] `/feed/reactions/new` bounds the `ActivityEvent` lookup to last 30 days (was unbounded `.all()`)
+
+### Frontend (this build)
+
+- [x] `ReactionOverlay.POLL_INTERVAL` 10s → 5 min — push is now the primary delivery channel; the poll is just a safety net for users without push permission
+
+### Expected traffic profile after build 20 ships
+
+| Channel | Before | After backend deploy | After build 20 |
+|---|---|---|---|
+| `/feed/reactions/new` | ~10.8K/day | ~2–3K/day | <500/day |
+| `push_friend_reacted` | 0 | live, throttled | live, throttled |
+
+### Validation after TestFlight install
+
+- [ ] Open `/dashboard-e9x2k/` → Comms → Push → filter `template_key=push_friend_reacted`
+- [ ] React from one TestFlight account to another's session → confirm push lands within ~5s and deep-links to Social
+- [ ] In Sentry, watch `/feed/reactions/new` request volume drop by an order of magnitude over the next 24h
+
+---
+
+## Build 19 — Full push notifications (shipped 26 Apr 2026)
 
 **Theme:** "Get users back into a study session at the right moment, without spamming them."
 
