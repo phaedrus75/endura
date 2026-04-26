@@ -4045,8 +4045,8 @@ async function loadCampaigns() {
                         <p style="margin:4px 0 0;font-size:13px;color:var(--text-muted);line-height:1.5">${dropLine}</p>
                     </div>
                     <div style="display:flex;align-items:center;gap:12px">
-                        <span style="font-size:24px;font-weight:700;color:${colors[key] || 'var(--forest)'}">${c.count} <span style="font-size:12px;font-weight:500;color:var(--text-muted)">pending</span></span>
-                        <button onclick="sendCampaign('${key}','${esc(c.label)}',${c.count})" style="padding:10px 20px;background:${colors[key] || 'var(--forest)'};color:#fff;border:none;border-radius:10px;font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap">Send Campaign</button>
+                        <span style="font-size:24px;font-weight:700;color:${colors[key] || 'var(--forest)'}">${c.count} <span style="font-size:12px;font-weight:500;color:var(--text-muted)">in cohort</span></span>
+                        <button onclick="sendCampaign('${key}','${esc(c.label)}',${c.count})" style="padding:10px 20px;background:${colors[key] || 'var(--forest)'};color:#fff;border:none;border-radius:10px;font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap">Send Next Drip</button>
                     </div>
                 </div>
                 ${metricsHtml}
@@ -4059,7 +4059,7 @@ async function loadCampaigns() {
 }
 
 async function sendCampaign(cohortKey, label, count) {
-    if (!confirm(`Send "${label}" campaign to ${count} user(s)?\n\nEach user gets at most one email: the next drip they are eligible for (in order, with day gaps). Others are skipped until a later run.`)) return;
+    if (!confirm(`Send "${label}" campaign to ${count} user(s)?\n\nEach user gets their next eligible drip (in order, with day gaps between drops). Users who received a drip less than the required days ago are skipped until next run.`)) return;
     try {
         const res = await fetch(API_URL + '/admin/campaign-send/' + cohortKey, {
             method: 'POST',

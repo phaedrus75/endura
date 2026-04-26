@@ -5488,28 +5488,47 @@ def admin_campaign_send(cohort_key: str, db: Session = Depends(get_db), _=Depend
     skipped = 0
     failed = 0
     sent_by_template: dict[str, int] = {}
+
+    user_ids = [u.id for u in users if u.email]
+
+    # Batch-fetch all sent template keys for the whole cohort in one query (eliminates N+1).
+    from collections import defaultdict
+    sent_keys_by_user: dict[int, set] = defaultdict(set)
+    for row in db.query(models.EmailLog.user_id, models.EmailLog.template_key).filter(
+        models.EmailLog.user_id.in_(user_ids),
+        models.EmailLog.template_key.in_(all_keys),
+    ).all():
+        sent_keys_by_user[row[0]].add(row[1])
+
+    # Batch-fetch animal/badge counts in two queries instead of 2N.
+    animals_by_user = dict(
+        db.query(models.UserAnimal.user_id, func.count(models.UserAnimal.id))
+        .filter(models.UserAnimal.user_id.in_(user_ids))
+        .group_by(models.UserAnimal.user_id).all()
+    )
+    badges_by_user = dict(
+        db.query(models.UserBadge.user_id, func.count(models.UserBadge.id))
+        .filter(models.UserBadge.user_id.in_(user_ids))
+        .group_by(models.UserBadge.user_id).all()
+    )
+
     for user in users:
         if not user.email:
             continue
-        user_sent = {r[0] for r in db.query(models.EmailLog.template_key).filter(
-            models.EmailLog.user_id == user.id,
-            models.EmailLog.template_key.in_(all_keys),
-        ).all()}
+        user_sent = sent_keys_by_user[user.id]
         template_key = _campaign_pick_next_drop(user, drops, user_sent, now)
         if not template_key:
             skipped += 1
             continue
         name = user.username or "there"
-        animals_count = db.query(func.count(models.UserAnimal.id)).filter(models.UserAnimal.user_id == user.id).scalar() or 0
-        badges_count = db.query(func.count(models.UserBadge.id)).filter(models.UserBadge.user_id == user.id).scalar() or 0
         variables = {
             "name": name,
             "total_minutes": str(user.total_study_minutes or 0),
-            "animals_count": str(animals_count),
+            "animals_count": str(animals_by_user.get(user.id, 0)),
             "streak": str(user.current_streak or 0),
             "longest_streak": str(user.longest_streak or 0),
             "sessions": str(user.total_sessions or 0),
-            "badges": str(badges_count),
+            "badges": str(badges_by_user.get(user.id, 0)),
         }
         if _send_template_email(template_key, user.email, variables, db):
             sent_count += 1
