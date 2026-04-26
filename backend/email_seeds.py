@@ -145,19 +145,68 @@ DEFAULT_EMAIL_TEMPLATES = [
     },
     {
         "template_key": "reengagement",
-        "name": "Re-engagement (Inactive Users)",
-        "subject": "Your animals miss you, {name}! 🐾",
+        "name": "Re-engagement — Beginner (1 session)",
+        "subject": "Your first animal is waiting, {name}! 🥚",
         "trigger_day": None,
-        "inactive_days": 5,
+        "inactive_days": 3,
+        "min_sessions": 1,
+        "max_sessions": 2,
+        "min_streak": None,
+        "max_streak": 1,
         "body_html": f"""<div style="font-family:'Segoe UI',sans-serif;max-width:520px;margin:0 auto;padding:40px 32px;background:#E7EFEA;border-radius:20px">
-    <h1 style="color:#4A7C59;margin:0 0 4px;font-size:24px">We miss you!</h1>
-    <p style="color:#6B9B7A;margin:0 0 24px;font-size:15px">It's been a few days since your last session.</p>
-    {_animal_img("polar bear")}
+    <h1 style="color:#4A7C59;margin:0 0 4px;font-size:24px">Don't stop now!</h1>
+    <p style="color:#6B9B7A;margin:0 0 24px;font-size:15px">You tried Endura — now let's make it a habit.</p>
+    {_animal_img("axolotl")}
     <div style="background:#fff;border-radius:16px;padding:24px;margin-bottom:20px">
-        <p style="color:#333;font-size:15px;line-height:1.7;margin:0 0 12px">Your sanctuary is waiting and there are still more species left to discover.</p>
-        <p style="color:#333;font-size:14px;line-height:1.7;margin:0">Even a quick 15-minute session earns eco-credits and keeps your progress going. Your {{streak}}-day streak is at risk!</p>
+        <p style="color:#333;font-size:15px;line-height:1.7;margin:0 0 12px">You've already studied for <strong>{{total_minutes}} minutes</strong> — that's a great start! Students who study for a second day are <strong>3x more likely</strong> to build a lasting habit.</p>
+        <p style="color:#333;font-size:15px;line-height:1.7;margin:0">Even a quick 15-minute session will earn eco-credits and get you closer to hatching your next animal. Your egg is almost ready! 🥚</p>
     </div>
     <div style="text-align:center"><a href="https://apps.apple.com/app/endura-study-timer/id6759482612" style="display:inline-block;background:#4A7C59;color:#fff;text-decoration:none;padding:12px 28px;border-radius:12px;font-size:14px;font-weight:600">Start a Quick Session</a></div>
+    <p style="color:#999;font-size:11px;text-align:center;margin:16px 0 0">Study smarter. Save wildlife. 🌍</p>
+</div>""",
+    },
+    {
+        "template_key": "reengagement_intermediate",
+        "name": "Re-engagement — Intermediate (3+ sessions)",
+        "subject": "Your {streak}-day streak is fading, {name}! 🔥",
+        "trigger_day": None,
+        "inactive_days": 4,
+        "min_sessions": 3,
+        "max_sessions": None,
+        "min_streak": 2,
+        "max_streak": 4,
+        "body_html": f"""<div style="font-family:'Segoe UI',sans-serif;max-width:520px;margin:0 auto;padding:40px 32px;background:#E7EFEA;border-radius:20px">
+    <h1 style="color:#4A7C59;margin:0 0 4px;font-size:24px">Your streak is slipping!</h1>
+    <p style="color:#6B9B7A;margin:0 0 24px;font-size:15px">Hey {{name}}, you were building real momentum.</p>
+    {_animal_img("polar bear")}
+    <div style="background:#fff;border-radius:16px;padding:24px;margin-bottom:20px">
+        <p style="color:#333;font-size:15px;line-height:1.7;margin:0 0 12px">You've completed <strong>{{sessions}} study sessions</strong> and built a streak of <strong>{{longest_streak}} days</strong>. That's impressive — don't let it go!</p>
+        <p style="color:#333;font-size:15px;line-height:1.7;margin:0">Your <strong>{{animals_count}} animals</strong> are waiting in your sanctuary. One session today keeps the streak alive and earns you more eco-credits.</p>
+    </div>
+    <div style="text-align:center"><a href="https://apps.apple.com/app/endura-study-timer/id6759482612" style="display:inline-block;background:#4A7C59;color:#fff;text-decoration:none;padding:12px 28px;border-radius:12px;font-size:14px;font-weight:600">Keep Your Streak Going</a></div>
+    <p style="color:#999;font-size:11px;text-align:center;margin:16px 0 0">Study smarter. Save wildlife. 🌍</p>
+</div>""",
+    },
+    {
+        "template_key": "reengagement_power",
+        "name": "Re-engagement — Power User (4+ sessions, 5+ streak)",
+        "subject": "We miss you, {name}! Your sanctuary needs you 🌿",
+        "trigger_day": None,
+        "inactive_days": 5,
+        "min_sessions": 4,
+        "max_sessions": None,
+        "min_streak": 5,
+        "max_streak": None,
+        "body_html": f"""<div style="font-family:'Segoe UI',sans-serif;max-width:520px;margin:0 auto;padding:40px 32px;background:#E7EFEA;border-radius:20px">
+    <h1 style="color:#4A7C59;margin:0 0 4px;font-size:24px">Your sanctuary misses you!</h1>
+    <p style="color:#6B9B7A;margin:0 0 24px;font-size:15px">Hey {{name}}, it's been a while since your last session.</p>
+    {_animal_img("mountain gorilla")}
+    <div style="background:#fff;border-radius:16px;padding:24px;margin-bottom:20px">
+        <p style="color:#333;font-size:15px;line-height:1.7;margin:0 0 12px">You've built an incredible record: <strong>{{total_minutes}} minutes</strong> studied, <strong>{{animals_count}} animals</strong> hatched, and a best streak of <strong>{{longest_streak}} days</strong>.</p>
+        <p style="color:#333;font-size:15px;line-height:1.7;margin:0 0 12px">Your friends on Endura are still competing — jump back in and reclaim your spot on the leaderboard!</p>
+        <p style="color:#333;font-size:14px;line-height:1.7;margin:0"><strong>New since you left:</strong> Study tips, more animals to discover, and group challenges. Come see what's new.</p>
+    </div>
+    <div style="text-align:center"><a href="https://apps.apple.com/app/endura-study-timer/id6759482612" style="display:inline-block;background:#4A7C59;color:#fff;text-decoration:none;padding:12px 28px;border-radius:12px;font-size:14px;font-weight:600">Return to Your Sanctuary</a></div>
     <p style="color:#999;font-size:11px;text-align:center;margin:16px 0 0">Study smarter. Save wildlife. 🌍</p>
 </div>""",
     },

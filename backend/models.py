@@ -244,9 +244,15 @@ class User(Base):
     city = Column(String, nullable=True)
     country = Column(String, nullable=True)
 
-    # Push notification token
+    # Push notification token (Expo push token, format: ExponentPushToken[xxx])
     push_token = Column(String, nullable=True)
-    notification_enabled = Column(Boolean, default=True)
+    push_token_updated_at = Column(DateTime, nullable=True)
+    push_platform = Column(String(10), nullable=True)  # ios | android
+    notification_enabled = Column(Boolean, default=True)  # master switch
+    notif_badges_enabled = Column(Boolean, default=True, server_default="1")
+    notif_friends_enabled = Column(Boolean, default=True, server_default="1")
+    notif_reminders_enabled = Column(Boolean, default=True, server_default="1")
+    notif_marketing_enabled = Column(Boolean, default=True, server_default="1")
     study_reminder_hour = Column(Integer, nullable=True)
     study_reminder_minute = Column(Integer, nullable=True)
 
@@ -639,6 +645,10 @@ class EmailTemplate(Base):
     body_html = Column(Text, nullable=False)
     trigger_day = Column(Integer, nullable=True)
     inactive_days = Column(Integer, nullable=True)
+    min_sessions = Column(Integer, nullable=True)
+    max_sessions = Column(Integer, nullable=True)
+    min_streak = Column(Integer, nullable=True)
+    max_streak = Column(Integer, nullable=True)
     is_active = Column(Boolean, default=True)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -659,6 +669,49 @@ class EmailLog(Base):
     opened_at = Column(DateTime, nullable=True)
     clicked = Column(Boolean, default=False)
     clicked_at = Column(DateTime, nullable=True)
+
+
+class PushTemplate(Base):
+    """Configurable push notification templates (lifecycle, campaigns, reminders).
+
+    Body has tight character limits (~178 chars on iOS) so we keep it simple:
+    title + body + optional emoji + optional deep_link route. Variables use
+    the same {placeholder} syntax as EmailTemplate.
+    """
+    __tablename__ = "push_templates"
+
+    id = Column(Integer, primary_key=True, index=True)
+    template_key = Column(String, unique=True, nullable=False, index=True)
+    name = Column(String, nullable=False)
+    title = Column(String(80), nullable=False)
+    body = Column(String(220), nullable=False)
+    category = Column(String(30), nullable=False, default="marketing")  # badge | friend | reminder | campaign | marketing | system
+    deep_link = Column(String(120), nullable=True)  # e.g. "Profile", "Friends", "TakeAction"
+    trigger_day = Column(Integer, nullable=True)  # for lifecycle pushes: days since signup
+    inactive_days = Column(Integer, nullable=True)  # for re-engagement
+    is_active = Column(Boolean, default=True)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class PushLog(Base):
+    """Record of every push notification sent, with delivery tracking from Expo receipts."""
+    __tablename__ = "push_logs"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)
+    push_token = Column(String, nullable=True, index=True)
+    template_key = Column(String, nullable=True, index=True)  # null for ad-hoc/test
+    category = Column(String(30), nullable=True, index=True)
+    title = Column(String, nullable=True)
+    body = Column(String, nullable=True)
+    expo_ticket_id = Column(String, nullable=True, index=True)  # from initial /push/send
+    expo_receipt_id = Column(String, nullable=True, index=True)  # for status lookup
+    sent_at = Column(DateTime, default=datetime.utcnow, index=True)
+    status = Column(String(20), default="sent")  # sent | delivered | failed | dropped
+    error_code = Column(String, nullable=True)  # DeviceNotRegistered | MessageTooBig | etc.
+    error_message = Column(String, nullable=True)
+    opened = Column(Boolean, default=False)
+    opened_at = Column(DateTime, nullable=True)
 
 
 class School(Base):

@@ -389,6 +389,7 @@
             <a data-page="android-beta"><span class="icon">🤖</span> Android Beta</a>
             <a data-page="campaigns"><span class="icon">📣</span> Campaigns</a>
             <a data-page="email-templates"><span class="icon">📧</span> Email Templates</a>
+            <a data-page="push"><span class="icon">🔔</span> Push</a>
             <a data-page="founding"><span class="icon">⭐</span> Founding Members</a>
             <a data-page="system"><span class="icon">🩺</span> System Health</a>
         </nav>
@@ -949,6 +950,128 @@
             <div id="emailTemplatesList" style="display:grid;gap:16px"></div>
         </div>
 
+        <!-- Push Notifications Page -->
+        <div class="page" id="page-push">
+            <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:18px">
+                <h1 class="page-title" style="margin:0">Push Notifications</h1>
+                <button onclick="loadPush()" style="padding:7px 14px;background:var(--forest);color:#fff;border:none;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer">Refresh</button>
+            </div>
+            <p style="color:var(--text-muted);margin-bottom:20px;font-size:14px;max-width:760px">
+                Lifecycle, event, and broadcast pushes sent via Expo. The <strong>opt-in funnel</strong> shows how many users have given push permission. Every push is tracked in the <code>push_logs</code> table — opens are reported by the device, drops are users who opted out of the category.
+            </p>
+
+            <!-- Opt-in funnel -->
+            <div class="kpi-grid" id="pushFunnelKpis" style="margin-bottom:20px">
+                <div class="kpi"><div class="kpi-icon">👥</div><div class="kpi-val" id="push-total">—</div><div class="kpi-label">Total users</div></div>
+                <div class="kpi"><div class="kpi-icon">🔔</div><div class="kpi-val" id="push-with-token">—</div><div class="kpi-label">With push token</div><div class="kpi-sub" id="push-token-pct"></div></div>
+                <div class="kpi"><div class="kpi-icon">✅</div><div class="kpi-val" id="push-master-on">—</div><div class="kpi-label">Master on</div></div>
+                <div class="kpi"><div class="kpi-icon">🍎</div><div class="kpi-val" id="push-ios">—</div><div class="kpi-label">iOS tokens</div></div>
+                <div class="kpi"><div class="kpi-icon">🤖</div><div class="kpi-val" id="push-android">—</div><div class="kpi-label">Android tokens</div></div>
+            </div>
+
+            <!-- 30-day metrics -->
+            <div class="table-card" style="margin-bottom:20px">
+                <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:14px">
+                    <h3 style="margin:0">Send metrics — last 30 days</h3>
+                    <span id="pushMetricsTotals" style="font-size:13px;color:var(--text-muted)"></span>
+                </div>
+                <div style="overflow-x:auto">
+                    <table>
+                        <thead><tr><th>Category</th><th>Sent</th><th>Failed</th><th>Dropped (prefs/token)</th></tr></thead>
+                        <tbody id="pushMetricsBody"></tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Test push to a single user -->
+            <div class="table-card" style="margin-bottom:20px">
+                <h3 style="margin-top:0">🧪 Send test push (single user)</h3>
+                <p style="color:var(--text-muted);font-size:13px;margin-top:0">Bypasses category prefs. Useful for verifying delivery on your own device.</p>
+                <div style="display:grid;grid-template-columns:140px 1fr 1fr 140px auto;gap:10px;align-items:center;margin-bottom:8px">
+                    <input type="number" id="testPushUserId" placeholder="User ID" min="1" style="padding:9px 12px;border:1px solid var(--border);border-radius:8px;font-size:13px">
+                    <input type="text" id="testPushTitle" placeholder="Title (max 80 chars)" maxlength="80" style="padding:9px 12px;border:1px solid var(--border);border-radius:8px;font-size:13px">
+                    <input type="text" id="testPushBody" placeholder="Body (max 220 chars)" maxlength="220" style="padding:9px 12px;border:1px solid var(--border);border-radius:8px;font-size:13px">
+                    <select id="testPushDeepLink" style="padding:9px 12px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:#fff">
+                        <option value="">(no deep link)</option>
+                        <option value="Timer">Timer</option>
+                        <option value="Sanctuary">Sanctuary</option>
+                        <option value="Friends">Friends</option>
+                        <option value="Profile">Profile</option>
+                        <option value="Tips">Tips</option>
+                        <option value="Shop">Shop</option>
+                        <option value="TakeAction">Take Action</option>
+                    </select>
+                    <button onclick="sendTestPush()" style="padding:9px 18px;background:var(--forest);color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap">Send</button>
+                </div>
+                <p id="testPushResult" style="font-size:12px;margin:6px 0 0;min-height:14px"></p>
+            </div>
+
+            <!-- Broadcast -->
+            <div class="table-card" style="margin-bottom:20px">
+                <h3 style="margin-top:0">📣 Broadcast push</h3>
+                <p style="color:var(--text-muted);font-size:13px;margin-top:0">Honours per-category prefs. Drops users without a push token.</p>
+                <div style="display:grid;grid-template-columns:200px 1fr 1fr 130px 130px auto;gap:10px;align-items:center;margin-bottom:8px">
+                    <select id="broadcastCohort" style="padding:9px 12px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:#fff">
+                        <option value="all_with_token">All with token</option>
+                        <option value="active_7d">Active (last 7d)</option>
+                        <option value="inactive_7d">Inactive (7d+)</option>
+                        <option value="verify_email">Unverified email</option>
+                        <option value="start_timer">Verified, no timer</option>
+                        <option value="second_timer">Only 1 session</option>
+                        <option value="invite_friends">2+ sessions</option>
+                    </select>
+                    <input type="text" id="broadcastTitle" placeholder="Title" maxlength="80" style="padding:9px 12px;border:1px solid var(--border);border-radius:8px;font-size:13px">
+                    <input type="text" id="broadcastBody" placeholder="Body" maxlength="220" style="padding:9px 12px;border:1px solid var(--border);border-radius:8px;font-size:13px">
+                    <select id="broadcastCategory" style="padding:9px 12px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:#fff">
+                        <option value="campaign">campaign</option>
+                        <option value="reminder">reminder</option>
+                        <option value="marketing">marketing</option>
+                        <option value="system">system (forced)</option>
+                    </select>
+                    <select id="broadcastDeepLink" style="padding:9px 12px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:#fff">
+                        <option value="">(no deep link)</option>
+                        <option value="Timer">Timer</option>
+                        <option value="Sanctuary">Sanctuary</option>
+                        <option value="Friends">Friends</option>
+                        <option value="Profile">Profile</option>
+                        <option value="Tips">Tips</option>
+                        <option value="Shop">Shop</option>
+                        <option value="TakeAction">Take Action</option>
+                    </select>
+                    <button onclick="sendBroadcast()" style="padding:9px 18px;background:#3b82f6;color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap">Broadcast</button>
+                </div>
+                <p id="broadcastResult" style="font-size:12px;margin:6px 0 0;min-height:14px"></p>
+            </div>
+
+            <!-- Lifecycle cron control -->
+            <div class="table-card" style="margin-bottom:20px">
+                <h3 style="margin-top:0">⏰ Lifecycle pushes</h3>
+                <p style="color:var(--text-muted);font-size:13px;margin-top:0">Runs daily at 10:00 UTC. Sends day-1, day-2, day-3, day-7, day-14 onboarding nudges + re-engagement at 3d/7d quiet. De-duped via <code>push_logs</code>.</p>
+                <button onclick="runLifecyclePushes()" style="padding:9px 18px;background:var(--forest);color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer">Run now (idempotent)</button>
+                <span id="lifecycleResult" style="font-size:12px;color:var(--text-muted);margin-left:12px"></span>
+            </div>
+
+            <!-- Templates -->
+            <div class="table-card" style="margin-bottom:20px">
+                <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:14px">
+                    <h3 style="margin:0">📝 Push templates</h3>
+                    <span style="font-size:12px;color:var(--text-muted)">Variables: <code>{name}</code> <code>{streak}</code> <code>{sessions}</code> <code>{animals_count}</code> <code>{badges}</code> <code>{total_minutes}</code></span>
+                </div>
+                <div id="pushTemplatesList" style="display:grid;gap:12px"></div>
+            </div>
+
+            <!-- Recent send log -->
+            <div class="table-card">
+                <h3 style="margin-top:0">📜 Recent sends (latest 50)</h3>
+                <div style="overflow-x:auto;max-height:480px;overflow-y:auto">
+                    <table>
+                        <thead><tr><th>When</th><th>User</th><th>Category</th><th>Template</th><th>Title</th><th>Status</th><th>Error</th></tr></thead>
+                        <tbody id="pushRecentBody"></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
         <div class="page" id="page-founding">
             <h1 class="page-title">Founding Members</h1>
             <p style="color:var(--text-muted);margin-bottom:20px;font-size:14px">
@@ -1084,6 +1207,24 @@
                 <div style="flex:1">
                     <label style="font-size:13px;font-weight:600;color:var(--text-muted);display:block;margin-bottom:4px">Inactive Days <span style="font-weight:400">(re-engagement)</span></label>
                     <input id="etInactiveDays" type="number" min="0" style="width:100%;padding:10px 14px;border:2px solid var(--border);border-radius:10px;font-size:14px" />
+                </div>
+            </div>
+            <div style="display:flex;gap:14px;margin-bottom:14px">
+                <div style="flex:1">
+                    <label style="font-size:13px;font-weight:600;color:var(--text-muted);display:block;margin-bottom:4px">Min Sessions</label>
+                    <input id="etMinSessions" type="number" min="0" style="width:100%;padding:10px 14px;border:2px solid var(--border);border-radius:10px;font-size:14px" placeholder="any" />
+                </div>
+                <div style="flex:1">
+                    <label style="font-size:13px;font-weight:600;color:var(--text-muted);display:block;margin-bottom:4px">Max Sessions</label>
+                    <input id="etMaxSessions" type="number" min="0" style="width:100%;padding:10px 14px;border:2px solid var(--border);border-radius:10px;font-size:14px" placeholder="any" />
+                </div>
+                <div style="flex:1">
+                    <label style="font-size:13px;font-weight:600;color:var(--text-muted);display:block;margin-bottom:4px">Min Streak</label>
+                    <input id="etMinStreak" type="number" min="0" style="width:100%;padding:10px 14px;border:2px solid var(--border);border-radius:10px;font-size:14px" placeholder="any" />
+                </div>
+                <div style="flex:1">
+                    <label style="font-size:13px;font-weight:600;color:var(--text-muted);display:block;margin-bottom:4px">Max Streak</label>
+                    <input id="etMaxStreak" type="number" min="0" style="width:100%;padding:10px 14px;border:2px solid var(--border);border-radius:10px;font-size:14px" placeholder="any" />
                 </div>
             </div>
             <div style="margin-bottom:14px">
@@ -1399,6 +1540,7 @@ document.querySelectorAll('.sidebar nav a').forEach(link => {
         else if (link.dataset.page === 'android-beta') loadAndroidBeta();
         else if (link.dataset.page === 'campaigns') loadCampaigns();
         else if (link.dataset.page === 'email-templates') loadEmailTemplates();
+        else if (link.dataset.page === 'push') loadPush();
         else if (link.dataset.page === 'founding') loadFoundingMembers();
         else if (link.dataset.page === 'system') loadSystemHealth();
     });
@@ -3795,7 +3937,11 @@ async function loadEmailTemplates() {
         _emailTemplatesCache = {};
         templates.forEach(t => { _emailTemplatesCache[t.template_key] = t; });
         list.innerHTML = templates.map(t => {
-            const triggerInfo = t.trigger_day ? 'Day ' + t.trigger_day : t.inactive_days ? 'After ' + t.inactive_days + ' days inactive' : 'Event-based';
+            let triggerInfo = t.trigger_day ? 'Day ' + t.trigger_day : t.inactive_days ? 'After ' + t.inactive_days + 'd inactive' : 'Event-based';
+            const targeting = [];
+            if (t.min_sessions != null || t.max_sessions != null) targeting.push('Sessions: ' + (t.min_sessions ?? '0') + '–' + (t.max_sessions ?? '∞'));
+            if (t.min_streak != null || t.max_streak != null) targeting.push('Streak: ' + (t.min_streak ?? '0') + '–' + (t.max_streak ?? '∞'));
+            if (targeting.length) triggerInfo += ' · ' + targeting.join(' · ');
             const statusColor = t.is_active ? 'var(--accent)' : 'var(--red)';
             const statusLabel = t.is_active ? 'Active' : 'Inactive';
             const updated = t.updated_at ? new Date(t.updated_at).toLocaleDateString() : '—';
@@ -3831,6 +3977,10 @@ function openEmailModal(templateKey) {
     document.getElementById('etBodyHtml').value = t.body_html;
     document.getElementById('etTriggerDay').value = t.trigger_day ?? '';
     document.getElementById('etInactiveDays').value = t.inactive_days ?? '';
+    document.getElementById('etMinSessions').value = t.min_sessions ?? '';
+    document.getElementById('etMaxSessions').value = t.max_sessions ?? '';
+    document.getElementById('etMinStreak').value = t.min_streak ?? '';
+    document.getElementById('etMaxStreak').value = t.max_streak ?? '';
     document.getElementById('etActive').checked = t.is_active;
     document.getElementById('emailPreviewArea').style.display = 'none';
     document.getElementById('emailModalTitle').textContent = 'Edit: ' + t.name;
@@ -3850,6 +4000,10 @@ async function saveEmailTemplate(e) {
         body_html: document.getElementById('etBodyHtml').value,
         trigger_day: document.getElementById('etTriggerDay').value ? parseInt(document.getElementById('etTriggerDay').value) : null,
         inactive_days: document.getElementById('etInactiveDays').value ? parseInt(document.getElementById('etInactiveDays').value) : null,
+        min_sessions: document.getElementById('etMinSessions').value ? parseInt(document.getElementById('etMinSessions').value) : null,
+        max_sessions: document.getElementById('etMaxSessions').value ? parseInt(document.getElementById('etMaxSessions').value) : null,
+        min_streak: document.getElementById('etMinStreak').value ? parseInt(document.getElementById('etMinStreak').value) : null,
+        max_streak: document.getElementById('etMaxStreak').value ? parseInt(document.getElementById('etMaxStreak').value) : null,
         is_active: document.getElementById('etActive').checked,
     };
     try {
@@ -3876,6 +4030,219 @@ async function previewEmailTemplate() {
         document.getElementById('emailPreviewArea').style.display = 'block';
     } catch(e) { alert('Failed to preview template'); }
 }
+
+// ── Push Notifications ──
+
+let _pushTemplatesCache = {};
+
+async function loadPush() {
+    try {
+        const [funnel, metrics, templates] = await Promise.all([
+            adminFetch('/admin/push/opt-in-funnel'),
+            adminFetch('/admin/push/metrics?days=30'),
+            adminFetch('/admin/push/templates'),
+        ]);
+
+        // Funnel KPIs
+        document.getElementById('push-total').textContent = funnel.total_users;
+        document.getElementById('push-with-token').textContent = funnel.with_push_token;
+        const pct = funnel.total_users > 0 ? Math.round(funnel.with_push_token / funnel.total_users * 100) : 0;
+        document.getElementById('push-token-pct').textContent = pct + '% of users';
+        document.getElementById('push-master-on').textContent = funnel.master_on;
+        document.getElementById('push-ios').textContent = funnel.ios_tokens;
+        document.getElementById('push-android').textContent = funnel.android_tokens;
+
+        // 30-day metrics
+        const totals = metrics.totals || {};
+        document.getElementById('pushMetricsTotals').textContent =
+            `${totals.sent || 0} sent · ${totals.failed || 0} failed · ${totals.dropped || 0} dropped`;
+        const cats = metrics.by_category || {};
+        const tbody = document.getElementById('pushMetricsBody');
+        const catEntries = Object.entries(cats);
+        if (!catEntries.length) {
+            tbody.innerHTML = '<tr><td colspan="4" style="color:var(--text-muted);text-align:center;padding:20px">No pushes sent in the last 30 days.</td></tr>';
+        } else {
+            tbody.innerHTML = catEntries.map(([cat, c]) => `
+                <tr>
+                    <td><strong>${esc(cat)}</strong></td>
+                    <td>${c.sent || 0}</td>
+                    <td style="color:${(c.failed || 0) > 0 ? 'var(--red)' : 'inherit'}">${c.failed || 0}</td>
+                    <td style="color:var(--text-muted)">${c.dropped || 0}</td>
+                </tr>
+            `).join('');
+        }
+
+        // Recent log
+        const recentBody = document.getElementById('pushRecentBody');
+        const recent = metrics.recent || [];
+        if (!recent.length) {
+            recentBody.innerHTML = '<tr><td colspan="7" style="color:var(--text-muted);text-align:center;padding:20px">No recent sends.</td></tr>';
+        } else {
+            recentBody.innerHTML = recent.map(r => {
+                const when = r.sent_at ? new Date(r.sent_at).toLocaleString() : '—';
+                const statusColor = r.status === 'sent' ? 'var(--accent)' : r.status === 'failed' ? 'var(--red)' : 'var(--text-muted)';
+                return `<tr>
+                    <td style="font-size:12px;white-space:nowrap">${esc(when)}</td>
+                    <td>${r.user_id || '—'}</td>
+                    <td>${esc(r.category || '—')}</td>
+                    <td><code style="font-size:11px">${esc(r.template_key || '—')}</code></td>
+                    <td>${esc((r.title || '').slice(0, 40))}</td>
+                    <td><span style="color:${statusColor};font-weight:600">${esc(r.status)}</span></td>
+                    <td style="color:var(--text-muted);font-size:12px">${esc(r.error_code || '')}</td>
+                </tr>`;
+            }).join('');
+        }
+
+        // Templates
+        _pushTemplatesCache = {};
+        templates.forEach(t => { _pushTemplatesCache[t.template_key] = t; });
+        const list = document.getElementById('pushTemplatesList');
+        if (!templates.length) {
+            list.innerHTML = '<p style="color:var(--text-muted)">No templates seeded yet — restart backend to seed defaults.</p>';
+        } else {
+            list.innerHTML = templates.map(t => {
+                const trigger = t.trigger_day != null ? `Day ${t.trigger_day}` : t.inactive_days != null ? `Inactive ${t.inactive_days}d` : 'Event';
+                const statusBg = t.is_active ? '#ecfdf5' : '#fef2f2';
+                const statusColor = t.is_active ? 'var(--accent)' : 'var(--red)';
+                return `<div style="border:1px solid var(--border);border-radius:10px;padding:14px;background:#fff">
+                    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:8px">
+                        <div>
+                            <strong>${esc(t.name)}</strong>
+                            <span style="font-size:11px;color:var(--text-muted);margin-left:6px">${esc(t.category)} · ${esc(trigger)}</span>
+                        </div>
+                        <div style="display:flex;gap:8px;align-items:center">
+                            <span style="background:${statusBg};color:${statusColor};padding:2px 10px;border-radius:12px;font-size:11px;font-weight:600">${t.is_active ? 'Active' : 'Inactive'}</span>
+                            <button onclick="editPushTemplate('${esc(t.template_key)}')" style="padding:6px 14px;background:var(--bg);border:1px solid var(--border);border-radius:8px;font-size:12px;font-weight:600;cursor:pointer">Edit</button>
+                        </div>
+                    </div>
+                    <div style="font-size:13px;color:var(--text);margin-bottom:4px"><strong>${esc(t.title)}</strong></div>
+                    <div style="font-size:13px;color:var(--text-muted)">${esc(t.body)}</div>
+                    <div style="font-size:11px;color:var(--text-muted);margin-top:6px">key: <code>${esc(t.template_key)}</code>${t.deep_link ? ` · deep link: <code>${esc(t.deep_link)}</code>` : ''}</div>
+                </div>`;
+            }).join('');
+        }
+    } catch (e) {
+        const list = document.getElementById('pushTemplatesList');
+        if (list) list.innerHTML = '<p style="color:var(--red)">Failed to load: ' + esc(e.message) + '</p>';
+    }
+}
+
+async function sendTestPush() {
+    const userId = parseInt(document.getElementById('testPushUserId').value, 10);
+    const title = document.getElementById('testPushTitle').value.trim();
+    const body = document.getElementById('testPushBody').value.trim();
+    const deepLink = document.getElementById('testPushDeepLink').value || null;
+    const resultEl = document.getElementById('testPushResult');
+    if (!userId || !title || !body) {
+        resultEl.style.color = 'var(--red)';
+        resultEl.textContent = 'User ID, title, and body are all required.';
+        return;
+    }
+    resultEl.style.color = 'var(--text-muted)';
+    resultEl.textContent = 'Sending…';
+    try {
+        const res = await fetch(API_URL + '/admin/push/test', {
+            method: 'POST',
+            headers: { 'X-Admin-Key': API_KEY, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ user_id: userId, title, body, deep_link: deepLink }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail || ('HTTP ' + res.status));
+        if (data.ok) {
+            resultEl.style.color = 'var(--accent)';
+            resultEl.textContent = `Sent. Expo ticket: ${data.ticket_id || '—'}`;
+        } else {
+            resultEl.style.color = 'var(--red)';
+            resultEl.textContent = `Not delivered: ${data.reason || 'unknown'}`;
+        }
+        loadPush();
+    } catch (e) {
+        resultEl.style.color = 'var(--red)';
+        resultEl.textContent = 'Failed: ' + e.message;
+    }
+}
+
+async function sendBroadcast() {
+    const cohort = document.getElementById('broadcastCohort').value;
+    const title = document.getElementById('broadcastTitle').value.trim();
+    const body = document.getElementById('broadcastBody').value.trim();
+    const category = document.getElementById('broadcastCategory').value;
+    const deepLink = document.getElementById('broadcastDeepLink').value || null;
+    const resultEl = document.getElementById('broadcastResult');
+    if (!title || !body) {
+        resultEl.style.color = 'var(--red)';
+        resultEl.textContent = 'Title and body are required.';
+        return;
+    }
+    if (!confirm(`Broadcast "${title}" to cohort "${cohort}"?\nThis cannot be undone.`)) return;
+    resultEl.style.color = 'var(--text-muted)';
+    resultEl.textContent = 'Sending…';
+    try {
+        const res = await fetch(API_URL + '/admin/push/broadcast', {
+            method: 'POST',
+            headers: { 'X-Admin-Key': API_KEY, 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                cohort_key: cohort,
+                title, body, category,
+                deep_link: deepLink,
+            }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail || ('HTTP ' + res.status));
+        resultEl.style.color = 'var(--accent)';
+        resultEl.textContent = `Sent ${data.sent} · failed ${data.failed} · dropped ${data.dropped}`;
+        loadPush();
+    } catch (e) {
+        resultEl.style.color = 'var(--red)';
+        resultEl.textContent = 'Failed: ' + e.message;
+    }
+}
+
+async function runLifecyclePushes() {
+    const el = document.getElementById('lifecycleResult');
+    el.textContent = 'Running…';
+    try {
+        const res = await fetch(API_URL + '/admin/push/lifecycle-run', {
+            method: 'POST',
+            headers: { 'X-Admin-Key': API_KEY },
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail || ('HTTP ' + res.status));
+        const totals = Object.values(data.sent || {}).reduce((a, b) => a + b, 0);
+        el.textContent = `Checked ${data.checked} users, sent ${totals} pushes.`;
+        loadPush();
+    } catch (e) {
+        el.textContent = 'Failed: ' + e.message;
+    }
+}
+
+function editPushTemplate(key) {
+    const t = _pushTemplatesCache[key];
+    if (!t) return;
+    const newTitle = prompt(`Title for ${key} (max 80 chars):`, t.title);
+    if (newTitle === null) return;
+    const newBody = prompt(`Body for ${key} (max 220 chars):`, t.body);
+    if (newBody === null) return;
+    fetch(API_URL + '/admin/push/templates/' + encodeURIComponent(key), {
+        method: 'PUT',
+        headers: { 'X-Admin-Key': API_KEY, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            template_key: key,
+            name: t.name,
+            title: newTitle.slice(0, 80),
+            body: newBody.slice(0, 220),
+            category: t.category,
+            deep_link: t.deep_link,
+            trigger_day: t.trigger_day,
+            inactive_days: t.inactive_days,
+            is_active: t.is_active,
+        }),
+    }).then(r => r.json()).then(data => {
+        if (data.ok) loadPush();
+        else alert('Update failed: ' + (data.detail || 'unknown'));
+    }).catch(e => alert('Update failed: ' + e.message));
+}
+
 
 // ── Founding Members ──
 async function loadFoundingMembers() {

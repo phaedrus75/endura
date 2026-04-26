@@ -102,6 +102,14 @@ else:
                     _conn.execute(text(f"ALTER TABLE users ADD COLUMN IF NOT EXISTS {_col} {_ddl}"))
                     _conn.commit()
                 print(f"Added {_col} column to users")
+        if _insp.has_table("email_templates"):
+            _et_cols = [c["name"] for c in _insp.get_columns("email_templates")]
+            for _col, _ddl in {"min_sessions": "INTEGER NULL", "max_sessions": "INTEGER NULL", "min_streak": "INTEGER NULL", "max_streak": "INTEGER NULL"}.items():
+                if _col not in _et_cols:
+                    with engine.connect() as _conn:
+                        _conn.execute(text(f"ALTER TABLE email_templates ADD COLUMN IF NOT EXISTS {_col} {_ddl}"))
+                        _conn.commit()
+                    print(f"Added {_col} column to email_templates")
     except Exception as e:
         print(f"Warning: Could not check/create tables: {e}")
 
@@ -149,6 +157,29 @@ app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 app.add_middleware(SlowAPIMiddleware)
 
 
+def _match_reengagement(templates, user, last_active_days, sent_keys):
+    """Pick the best re-engagement template for a user based on session/streak filters."""
+    user_sessions = user.total_sessions or 0
+    user_streak = user.longest_streak or 0
+    best = None
+    for t in templates:
+        if t.template_key in sent_keys:
+            continue
+        if last_active_days < (t.inactive_days or 5):
+            continue
+        if t.min_sessions is not None and user_sessions < t.min_sessions:
+            continue
+        if t.max_sessions is not None and user_sessions > t.max_sessions:
+            continue
+        if t.min_streak is not None and user_streak < t.min_streak:
+            continue
+        if t.max_streak is not None and user_streak > t.max_streak:
+            continue
+        if best is None or (t.min_sessions or 0) > (best.min_sessions or 0):
+            best = t
+    return best
+
+
 def _cron_run_onboarding_emails():
     """Background job: send onboarding lifecycle emails daily."""
     from database import SessionLocal
@@ -165,18 +196,17 @@ def _cron_run_onboarding_emails():
             models.EmailTemplate.is_active == True,
             models.EmailTemplate.trigger_day.isnot(None),
         ).all()
-        reengagement_tmpl = _db.query(models.EmailTemplate).filter(
-            models.EmailTemplate.template_key == "reengagement",
+        reengagement_templates = _db.query(models.EmailTemplate).filter(
             models.EmailTemplate.is_active == True,
-        ).first()
-        if not milestone_templates and not reengagement_tmpl:
+            models.EmailTemplate.inactive_days.isnot(None),
+        ).order_by(models.EmailTemplate.id).all()
+        if not milestone_templates and not reengagement_templates:
             return
 
         milestones = sorted(
             [(t.trigger_day, t.template_key) for t in milestone_templates],
             key=lambda x: x[0],
         )
-        inactive_threshold = reengagement_tmpl.inactive_days if reengagement_tmpl else 5
 
         users = _db.query(models.User).filter(
             models.User.email_verified == True,
@@ -207,13 +237,12 @@ def _cron_run_onboarding_emails():
                             if label in sent:
                                 sent[label] += 1
                             sent_keys.add(tkey)
-                            break  # one milestone email per user per run
-                if (reengagement_tmpl and "reengagement" not in sent_keys
-                        and last_active_days is not None
-                        and last_active_days >= inactive_threshold
-                        and days_since_signup > 3):
-                    if _send_template_email("reengagement", user.email, variables, _db):
-                        sent["reengagement"] += 1
+                            break
+                if (reengagement_templates and last_active_days is not None and days_since_signup > 3):
+                    matched = _match_reengagement(reengagement_templates, user, last_active_days, sent_keys)
+                    if matched:
+                        if _send_template_email(matched.template_key, user.email, variables, _db):
+                            sent["reengagement"] += 1
             except Exception as e:
                 logger.error(f"Cron: Failed to send onboarding email to {user.email}: {e}")
         logger.info(f"Cron: Onboarding emails sent: {sent}, users checked: {len(users)}")
@@ -247,8 +276,13 @@ def start_scheduler():
         scheduler = BackgroundScheduler()
         scheduler.add_job(_cron_run_onboarding_emails, "cron", hour=8, minute=0, id="onboarding_emails")
         scheduler.add_job(_cron_sync_app_ranks, "cron", hour=4, minute=0, id="sync_app_ranks")
+        # Lifecycle push notifications run a couple hours after the email cron
+        # so users on both channels don't get hit with two notifications at the
+        # exact same minute. Push at 10:00 UTC = early morning in LATAM, lunchtime
+        # in Europe, evening in Asia — covers the bulk of the user base.
+        scheduler.add_job(_cron_lifecycle_pushes, "cron", hour=10, minute=0, id="lifecycle_pushes")
         scheduler.start()
-        print("✅ Scheduler started: onboarding emails 08:00 UTC, app_ranks sync 04:00 UTC")
+        print("✅ Scheduler started: onboarding emails 08:00 UTC, lifecycle pushes 10:00 UTC, app_ranks sync 04:00 UTC")
     except Exception as e:
         print(f"❌ Failed to start scheduler: {e}")
 
@@ -1448,6 +1482,21 @@ def complete_study_session(
                                       hatched_animal.name if hatched_animal else None)
         except Exception:
             pass
+        # Push notify on badge earned (one push per session, even if multiple
+        # badges earned simultaneously — pick the first to avoid spam).
+        try:
+            if new_badges:
+                first_badge = new_badges[0]
+                badge_def = crud.BADGE_MAP.get(first_badge) or {}
+                _safe_send_push(
+                    "push_badge_earned", current_user, db,
+                    extra_vars={
+                        "badge_name": badge_def.get("name", "a new badge"),
+                        "badge_emoji": badge_def.get("emoji", "🏅"),
+                    },
+                )
+        except Exception as _e:
+            logger.error(f"Badge push hook failed: {_e}")
         session_dict = {
             "id": study_session.id,
             "task_id": study_session.task_id,
@@ -1815,6 +1864,20 @@ def send_friend_request(
     success, message = crud.send_friend_request(db, current_user.id, request.friend_username)
     if not success:
         raise HTTPException(status_code=400, detail=message)
+    # Notify the recipient. Look up the friend by username (CRUD just resolved
+    # them too; tiny extra query here keeps the hook decoupled from the CRUD
+    # internals).
+    try:
+        recipient = db.query(models.User).filter(
+            models.User.username == request.friend_username
+        ).first()
+        if recipient and recipient.id != current_user.id:
+            _safe_send_push(
+                "push_friend_request", recipient, db,
+                extra_vars={"from_name": current_user.username or "Someone"},
+            )
+    except Exception as _e:
+        logger.error(f"Friend request push hook failed: {_e}")
     return {"message": message}
 
 
@@ -1826,6 +1889,22 @@ def accept_friend(
 ):
     if not crud.accept_friend_request(db, current_user.id, request_id):
         raise HTTPException(status_code=404, detail="Friend request not found")
+    # Notify the original requester that their request was accepted.
+    try:
+        friendship = db.query(models.Friendship).filter(
+            models.Friendship.id == request_id
+        ).first()
+        if friendship and friendship.user_id != current_user.id:
+            requester = db.query(models.User).filter(
+                models.User.id == friendship.user_id
+            ).first()
+            if requester:
+                _safe_send_push(
+                    "push_friend_accepted", requester, db,
+                    extra_vars={"from_name": current_user.username or "Your friend"},
+                )
+    except Exception as _e:
+        logger.error(f"Friend accept push hook failed: {_e}")
     return {"message": "Friend request accepted"}
 
 
@@ -2637,6 +2716,20 @@ async def every_org_webhook(
             db.add(donation)
             db.commit()
             logger.info(f"Donation stored: ${amount} {currency} | user_id={linked_user_id}")
+            # Send a thank-you push if we attributed this donation to a user.
+            # Category 'system' so it always lands (donations are too important
+            # to silence behind marketing prefs).
+            if linked_user_id:
+                try:
+                    user = db.query(models.User).filter(
+                        models.User.id == linked_user_id
+                    ).first()
+                    _safe_send_push(
+                        "push_donation_thank_you", user, db,
+                        extra_vars={"amount": f"{amount:.0f}" if amount.is_integer() else f"{amount:.2f}"},
+                    )
+                except Exception as _e:
+                    logger.error(f"Donation push hook failed: {_e}")
         else:
             logger.info(f"Duplicate donation skipped: {charge_id}")
 
@@ -4926,6 +5019,8 @@ def admin_get_email_templates(db: Session = Depends(get_db), _=Depends(verify_ad
             "id": t.id, "template_key": t.template_key, "name": t.name,
             "subject": t.subject, "body_html": t.body_html,
             "trigger_day": t.trigger_day, "inactive_days": t.inactive_days,
+            "min_sessions": t.min_sessions, "max_sessions": t.max_sessions,
+            "min_streak": t.min_streak, "max_streak": t.max_streak,
             "is_active": t.is_active,
             "updated_at": t.updated_at.isoformat() if t.updated_at else None,
             "stats": {"sent": sent, "opened": opened, "clicked": clicked,
@@ -4947,6 +5042,9 @@ def admin_update_email_template(template_key: str, data: dict, db: Session = Dep
         tmpl.trigger_day = data["trigger_day"]
     if "inactive_days" in data:
         tmpl.inactive_days = data["inactive_days"]
+    for _fld in ("min_sessions", "max_sessions", "min_streak", "max_streak"):
+        if _fld in data:
+            setattr(tmpl, _fld, data[_fld])
     if "is_active" in data:
         tmpl.is_active = bool(data["is_active"])
     tmpl.updated_at = datetime.utcnow()
@@ -5271,19 +5369,18 @@ def run_onboarding_emails(db: Session = Depends(get_db), _=Depends(verify_admin)
         models.EmailTemplate.is_active == True,
         models.EmailTemplate.trigger_day.isnot(None),
     ).all()
-    reengagement_tmpl = db.query(models.EmailTemplate).filter(
-        models.EmailTemplate.template_key == "reengagement",
+    reengagement_templates = db.query(models.EmailTemplate).filter(
         models.EmailTemplate.is_active == True,
-    ).first()
+        models.EmailTemplate.inactive_days.isnot(None),
+    ).order_by(models.EmailTemplate.id).all()
 
-    if not milestone_templates and not reengagement_tmpl:
+    if not milestone_templates and not reengagement_templates:
         return {"sent": sent, "total_users_checked": 0, "note": "No active templates"}
 
     milestones = sorted(
         [(t.trigger_day, t.template_key) for t in milestone_templates],
         key=lambda x: x[0],
     )
-    inactive_threshold = reengagement_tmpl.inactive_days if reengagement_tmpl else 5
 
     users = db.query(models.User).filter(
         models.User.email_verified == True,
@@ -5325,19 +5422,519 @@ def run_onboarding_emails(db: Session = Depends(get_db), _=Depends(verify_admin)
                         if label in sent:
                             sent[label] += 1
                         sent_keys.add(tkey)
-                        break  # one milestone email per user per run
+                        break
 
-            if (reengagement_tmpl and "reengagement" not in sent_keys
-                    and last_active_days is not None
-                    and last_active_days >= inactive_threshold
-                    and days_since_signup > 3):
-                if _send_template_email("reengagement", user.email, variables, db):
-                    sent["reengagement"] += 1
+            if reengagement_templates and last_active_days is not None and days_since_signup > 3:
+                matched = _match_reengagement(reengagement_templates, user, last_active_days, sent_keys)
+                if matched:
+                    if _send_template_email(matched.template_key, user.email, variables, db):
+                        sent["reengagement"] += 1
 
         except Exception as e:
             logger.error(f"Failed to send onboarding email to {user.email}: {e}")
 
     return {"sent": sent, "total_users_checked": len(users)}
+
+
+# ╔═════════════════════════════════════════════════════════════════╗
+# ║                  PUSH NOTIFICATIONS                              ║
+# ╠═════════════════════════════════════════════════════════════════╣
+# ║ Token registration + per-category preferences (mobile-facing).   ║
+# ║ Templated lifecycle pushes via daily cron.                       ║
+# ║ Admin endpoints for ad-hoc test sends, broadcasts, and metrics.  ║
+# ║ Event hooks fire from main.py inline (badge, friend, donation).  ║
+# ╚═════════════════════════════════════════════════════════════════╝
+
+from services import push as push_service  # noqa: E402
+
+
+def _push_variables_for_user(db: Session, user: models.User, extra: dict | None = None) -> dict:
+    """Build the {placeholder} dict shared across all push templates."""
+    animals_count = db.query(func.count(models.UserAnimal.id)).filter(
+        models.UserAnimal.user_id == user.id
+    ).scalar() or 0
+    badges_count = db.query(func.count(models.UserBadge.id)).filter(
+        models.UserBadge.user_id == user.id
+    ).scalar() or 0
+    return {
+        "name": user.username or "there",
+        "total_minutes": str(user.total_study_minutes or 0),
+        "animals_count": str(animals_count),
+        "streak": str(user.current_streak or 0),
+        "longest_streak": str(user.longest_streak or 0),
+        "sessions": str(user.total_sessions or 0),
+        "badges": str(badges_count),
+        **(extra or {}),
+    }
+
+
+def _safe_send_push(template_key: str, user: models.User, db: Session, extra_vars: dict | None = None) -> None:
+    """Fire-and-forget helper for inline event hooks. Never raises."""
+    if not user or not user.push_token:
+        return
+    try:
+        push_service.send_template_to_user(
+            db, user, template_key,
+            _push_variables_for_user(db, user, extra_vars),
+        )
+    except Exception as e:
+        logger.error(f"Inline push send failed (template={template_key}, user={user.id}): {e}")
+
+
+# ── User-facing endpoints ────────────────────────────────────────
+
+class PushTokenRegister(BaseModel):
+    token: str = Field(..., min_length=10, max_length=200)
+    platform: Optional[str] = Field(None, pattern="^(ios|android)$")
+
+
+class NotificationPrefsUpdate(BaseModel):
+    notification_enabled: Optional[bool] = None
+    notif_badges_enabled: Optional[bool] = None
+    notif_friends_enabled: Optional[bool] = None
+    notif_reminders_enabled: Optional[bool] = None
+    notif_marketing_enabled: Optional[bool] = None
+    study_reminder_hour: Optional[int] = Field(None, ge=0, le=23)
+    study_reminder_minute: Optional[int] = Field(None, ge=0, le=59)
+
+
+@app.put("/users/me/push-token")
+@limiter.limit("30/minute")
+def register_push_token(
+    request: Request,
+    body: PushTokenRegister,
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Register or update the Expo push token for the authenticated user.
+
+    Called by the mobile app on every cold start (after permission has been
+    granted) since Expo tokens can rotate. Idempotent — same token replaces
+    the old timestamp without disturbing prefs.
+    """
+    token = body.token.strip()
+    if not push_service.is_valid_expo_token(token):
+        raise HTTPException(status_code=400, detail="Invalid Expo push token format")
+    current_user.push_token = token
+    current_user.push_token_updated_at = datetime.utcnow()
+    if body.platform:
+        current_user.push_platform = body.platform
+    db.commit()
+    return {
+        "ok": True,
+        "push_token_updated_at": current_user.push_token_updated_at.isoformat(),
+        "platform": current_user.push_platform,
+    }
+
+
+@app.delete("/users/me/push-token")
+def remove_push_token(
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Clear the push token (e.g. user logged out or revoked permissions)."""
+    current_user.push_token = None
+    current_user.push_token_updated_at = datetime.utcnow()
+    db.commit()
+    return {"ok": True}
+
+
+@app.get("/users/me/notification-prefs")
+def get_notification_prefs(current_user: models.User = Depends(get_current_user)):
+    return {
+        "notification_enabled": bool(current_user.notification_enabled),
+        "notif_badges_enabled": bool(getattr(current_user, "notif_badges_enabled", True)),
+        "notif_friends_enabled": bool(getattr(current_user, "notif_friends_enabled", True)),
+        "notif_reminders_enabled": bool(getattr(current_user, "notif_reminders_enabled", True)),
+        "notif_marketing_enabled": bool(getattr(current_user, "notif_marketing_enabled", True)),
+        "study_reminder_hour": current_user.study_reminder_hour,
+        "study_reminder_minute": current_user.study_reminder_minute,
+        "has_push_token": bool(current_user.push_token),
+    }
+
+
+@app.put("/users/me/notification-prefs")
+def update_notification_prefs(
+    body: NotificationPrefsUpdate,
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    payload = body.model_dump(exclude_unset=True)
+    for k, v in payload.items():
+        setattr(current_user, k, v)
+    db.commit()
+    return get_notification_prefs(current_user=current_user)
+
+
+# ── Admin endpoints ──────────────────────────────────────────────
+
+class AdminPushTest(BaseModel):
+    user_id: int
+    title: str = Field(..., min_length=1, max_length=80)
+    body: str = Field(..., min_length=1, max_length=220)
+    deep_link: Optional[str] = Field(None, max_length=120)
+
+
+class AdminPushBroadcast(BaseModel):
+    cohort_key: str  # one of CAMPAIGN_COHORTS keys, OR "all_users", "all_with_token"
+    title: str = Field(..., min_length=1, max_length=80)
+    body: str = Field(..., min_length=1, max_length=220)
+    category: str = Field("campaign", max_length=30)
+    deep_link: Optional[str] = Field(None, max_length=120)
+    template_key: Optional[str] = Field(None, max_length=80)
+
+
+class AdminPushTemplateUpsert(BaseModel):
+    template_key: str = Field(..., min_length=1, max_length=80)
+    name: str = Field(..., min_length=1, max_length=120)
+    title: str = Field(..., min_length=1, max_length=80)
+    body: str = Field(..., min_length=1, max_length=220)
+    category: str = Field("marketing", max_length=30)
+    deep_link: Optional[str] = Field(None, max_length=120)
+    trigger_day: Optional[int] = None
+    inactive_days: Optional[int] = None
+    is_active: bool = True
+
+
+@app.get("/admin/push/opt-in-funnel")
+def admin_push_opt_in_funnel(db: Session = Depends(get_db), _=Depends(verify_admin)):
+    """How many users have given push permission, opted into each category."""
+    archived_filter = or_(models.User.is_archived == False, models.User.is_archived == None)  # noqa: E712
+    total = db.query(func.count(models.User.id)).filter(archived_filter).scalar() or 0
+    with_token = db.query(func.count(models.User.id)).filter(
+        archived_filter, models.User.push_token.isnot(None)
+    ).scalar() or 0
+    master_on = db.query(func.count(models.User.id)).filter(
+        archived_filter, models.User.push_token.isnot(None),
+        models.User.notification_enabled == True,  # noqa: E712
+    ).scalar() or 0
+
+    def _cat_count(col):
+        return db.query(func.count(models.User.id)).filter(
+            archived_filter, models.User.push_token.isnot(None),
+            models.User.notification_enabled == True,  # noqa: E712
+            col == True,  # noqa: E712
+        ).scalar() or 0
+
+    return {
+        "total_users": total,
+        "with_push_token": with_token,
+        "master_on": master_on,
+        "by_category": {
+            "badges": _cat_count(models.User.notif_badges_enabled),
+            "friends": _cat_count(models.User.notif_friends_enabled),
+            "reminders": _cat_count(models.User.notif_reminders_enabled),
+            "marketing": _cat_count(models.User.notif_marketing_enabled),
+        },
+        "ios_tokens": db.query(func.count(models.User.id)).filter(
+            archived_filter, models.User.push_token.isnot(None),
+            models.User.push_platform == "ios",
+        ).scalar() or 0,
+        "android_tokens": db.query(func.count(models.User.id)).filter(
+            archived_filter, models.User.push_token.isnot(None),
+            models.User.push_platform == "android",
+        ).scalar() or 0,
+    }
+
+
+@app.get("/admin/push/metrics")
+def admin_push_metrics(
+    days: int = 30,
+    db: Session = Depends(get_db),
+    _=Depends(verify_admin),
+):
+    """Aggregate push send / failure / drop counts over the last N days."""
+    cutoff = datetime.utcnow() - timedelta(days=max(1, min(days, 365)))
+    rows = db.query(
+        models.PushLog.category,
+        models.PushLog.status,
+        func.count(models.PushLog.id),
+    ).filter(models.PushLog.sent_at >= cutoff).group_by(
+        models.PushLog.category, models.PushLog.status
+    ).all()
+
+    by_category: dict[str, dict[str, int]] = {}
+    totals = {"sent": 0, "failed": 0, "dropped": 0}
+    for cat, status, count in rows:
+        cat_key = cat or "uncategorised"
+        by_category.setdefault(cat_key, {"sent": 0, "failed": 0, "dropped": 0})
+        by_category[cat_key][status] = (by_category[cat_key].get(status) or 0) + count
+        if status in totals:
+            totals[status] += count
+
+    recent = db.query(models.PushLog).order_by(
+        models.PushLog.sent_at.desc()
+    ).limit(50).all()
+    recent_payload = [{
+        "id": r.id,
+        "user_id": r.user_id,
+        "template_key": r.template_key,
+        "category": r.category,
+        "title": r.title,
+        "body": r.body,
+        "status": r.status,
+        "error_code": r.error_code,
+        "error_message": r.error_message,
+        "sent_at": r.sent_at.isoformat() if r.sent_at else None,
+    } for r in recent]
+    return {
+        "window_days": days,
+        "totals": totals,
+        "by_category": by_category,
+        "recent": recent_payload,
+    }
+
+
+@app.get("/admin/push/templates")
+def admin_push_list_templates(db: Session = Depends(get_db), _=Depends(verify_admin)):
+    rows = db.query(models.PushTemplate).order_by(
+        models.PushTemplate.category, models.PushTemplate.template_key
+    ).all()
+    return [{
+        "id": t.id,
+        "template_key": t.template_key,
+        "name": t.name,
+        "title": t.title,
+        "body": t.body,
+        "category": t.category,
+        "deep_link": t.deep_link,
+        "trigger_day": t.trigger_day,
+        "inactive_days": t.inactive_days,
+        "is_active": t.is_active,
+        "updated_at": t.updated_at.isoformat() if t.updated_at else None,
+    } for t in rows]
+
+
+@app.put("/admin/push/templates/{template_key}")
+def admin_push_upsert_template(
+    template_key: str,
+    body: AdminPushTemplateUpsert,
+    db: Session = Depends(get_db),
+    _=Depends(verify_admin),
+):
+    if body.template_key != template_key:
+        raise HTTPException(status_code=400, detail="template_key in path and body must match")
+    existing = db.query(models.PushTemplate).filter(
+        models.PushTemplate.template_key == template_key
+    ).first()
+    if existing:
+        for k, v in body.model_dump().items():
+            setattr(existing, k, v)
+    else:
+        existing = models.PushTemplate(**body.model_dump())
+        db.add(existing)
+    db.commit()
+    db.refresh(existing)
+    return {"ok": True, "id": existing.id, "updated_at": existing.updated_at.isoformat()}
+
+
+@app.post("/admin/push/test")
+def admin_push_test(
+    body: AdminPushTest,
+    db: Session = Depends(get_db),
+    _=Depends(verify_admin),
+):
+    """Send a one-off test push to a specific user (bypasses category prefs
+    by setting category='system' so admin can verify delivery end-to-end).
+    """
+    user = db.query(models.User).filter(models.User.id == body.user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    if not user.push_token:
+        raise HTTPException(status_code=400, detail="User has no push token registered")
+    result = push_service.send_to_user(
+        db, user,
+        title=body.title, body=body.body,
+        category="system",  # always send for admin tests
+        deep_link=body.deep_link,
+        data={"admin_test": True},
+    )
+    return result
+
+
+def _resolve_cohort_users(db: Session, cohort_key: str) -> list[models.User]:
+    """Reuse the email campaign cohorts where possible. Adds a few push-only ones."""
+    archived_filter = or_(models.User.is_archived == False, models.User.is_archived == None)  # noqa: E712
+    has_token = models.User.push_token.isnot(None)
+
+    if cohort_key == "all_users":
+        return db.query(models.User).filter(archived_filter).all()
+    if cohort_key == "all_with_token":
+        return db.query(models.User).filter(archived_filter, has_token).all()
+    if cohort_key == "active_7d":
+        cutoff = datetime.utcnow() - timedelta(days=7)
+        return db.query(models.User).filter(
+            archived_filter, has_token,
+            models.User.last_study_date.isnot(None),
+            models.User.last_study_date >= cutoff,
+        ).all()
+    if cohort_key == "inactive_7d":
+        cutoff = datetime.utcnow() - timedelta(days=7)
+        return db.query(models.User).filter(
+            archived_filter, has_token,
+            or_(models.User.last_study_date.is_(None), models.User.last_study_date < cutoff),
+        ).all()
+
+    if cohort_key not in CAMPAIGN_COHORTS:
+        raise HTTPException(status_code=400, detail=f"Unknown cohort: {cohort_key}")
+
+    if cohort_key == "verify_email":
+        return db.query(models.User).filter(
+            archived_filter, has_token,
+            models.User.email_verified == False,  # noqa: E712
+        ).all()
+    if cohort_key == "start_timer":
+        verified_ids = [u.id for u in db.query(models.User.id).filter(
+            archived_filter, has_token, models.User.email_verified == True,  # noqa: E712
+        ).all()]
+        with_sessions = {r[0] for r in db.query(models.StudySession.user_id).filter(
+            models.StudySession.user_id.in_(verified_ids)
+        ).distinct().all()} if verified_ids else set()
+        ids = [uid for uid in verified_ids if uid not in with_sessions]
+        return db.query(models.User).filter(models.User.id.in_(ids)).all() if ids else []
+    if cohort_key == "second_timer":
+        verified_ids = [u.id for u in db.query(models.User.id).filter(
+            archived_filter, has_token, models.User.email_verified == True,  # noqa: E712
+        ).all()]
+        counts = dict(
+            db.query(models.StudySession.user_id, func.count(models.StudySession.id))
+            .filter(models.StudySession.user_id.in_(verified_ids))
+            .group_by(models.StudySession.user_id).all()
+        ) if verified_ids else {}
+        ids = [uid for uid, c in counts.items() if c == 1]
+        return db.query(models.User).filter(models.User.id.in_(ids)).all() if ids else []
+    if cohort_key == "invite_friends":
+        verified_ids = [u.id for u in db.query(models.User.id).filter(
+            archived_filter, has_token, models.User.email_verified == True,  # noqa: E712
+        ).all()]
+        counts = dict(
+            db.query(models.StudySession.user_id, func.count(models.StudySession.id))
+            .filter(models.StudySession.user_id.in_(verified_ids))
+            .group_by(models.StudySession.user_id).all()
+        ) if verified_ids else {}
+        ids = [uid for uid, c in counts.items() if c >= 2]
+        return db.query(models.User).filter(models.User.id.in_(ids)).all() if ids else []
+    return []
+
+
+@app.post("/admin/push/broadcast")
+def admin_push_broadcast(
+    body: AdminPushBroadcast,
+    db: Session = Depends(get_db),
+    _=Depends(verify_admin),
+):
+    """Broadcast an ad-hoc push to a cohort. Honours per-category prefs.
+
+    Cohort keys:
+      - all_users, all_with_token, active_7d, inactive_7d
+      - verify_email, start_timer, second_timer, invite_friends (mirrors emails)
+    """
+    users = _resolve_cohort_users(db, body.cohort_key)
+    if not users:
+        return {"sent": 0, "dropped": 0, "failed": 0, "total": 0, "cohort": body.cohort_key}
+
+    title, send_body = body.title, body.body
+    if body.template_key:
+        tmpl = db.query(models.PushTemplate).filter(
+            models.PushTemplate.template_key == body.template_key
+        ).first()
+        if tmpl:
+            title, send_body = tmpl.title, tmpl.body  # ignored variables — broadcast is one msg
+
+    result = push_service.broadcast_to_users(
+        db, users,
+        title=title, body=send_body,
+        category=body.category,
+        template_key=body.template_key,
+        deep_link=body.deep_link,
+    )
+    result["cohort"] = body.cohort_key
+    return result
+
+
+# ── Lifecycle cron + admin trigger ───────────────────────────────
+
+def _run_lifecycle_pushes(db: Session) -> dict:
+    """Send lifecycle push templates (those with trigger_day) to eligible users.
+
+    De-duped via PushLog: a user only ever gets a given template once. Mirrors
+    the email lifecycle logic but operates on push prefs (notif_marketing for
+    'campaign' templates, notif_reminders for 're-engagement' templates).
+    """
+    now = datetime.utcnow()
+    sent_counts: dict[str, int] = {}
+
+    lifecycle_tmpls = db.query(models.PushTemplate).filter(
+        models.PushTemplate.is_active == True,  # noqa: E712
+        models.PushTemplate.trigger_day.isnot(None),
+    ).order_by(models.PushTemplate.trigger_day).all()
+    reengagement_tmpls = db.query(models.PushTemplate).filter(
+        models.PushTemplate.is_active == True,  # noqa: E712
+        models.PushTemplate.inactive_days.isnot(None),
+    ).order_by(models.PushTemplate.inactive_days).all()
+    if not lifecycle_tmpls and not reengagement_tmpls:
+        return {"sent": sent_counts, "checked": 0, "note": "no_templates"}
+
+    archived_filter = or_(models.User.is_archived == False, models.User.is_archived == None)  # noqa: E712
+    users = db.query(models.User).filter(
+        archived_filter, models.User.push_token.isnot(None),
+    ).all()
+
+    for user in users:
+        if not user.created_at:
+            continue
+        days_since_signup = (now - user.created_at).days
+        last_active_days = (now - user.last_study_date).days if user.last_study_date else None
+
+        sent_keys = {pl.template_key for pl in db.query(models.PushLog.template_key).filter(
+            models.PushLog.user_id == user.id,
+            models.PushLog.template_key.isnot(None),
+            models.PushLog.status.in_(["sent", "delivered"]),
+        ).distinct().all()}
+
+        variables = _push_variables_for_user(db, user)
+
+        # 1) Lifecycle: at most one trigger_day push per run, in order.
+        for tmpl in lifecycle_tmpls:
+            if days_since_signup >= tmpl.trigger_day and tmpl.template_key not in sent_keys:
+                result = push_service.send_template_to_user(db, user, tmpl.template_key, variables)
+                if result.get("ok"):
+                    sent_counts[tmpl.template_key] = sent_counts.get(tmpl.template_key, 0) + 1
+                    sent_keys.add(tmpl.template_key)
+                    break  # one per user per run
+        # 2) Re-engagement: only if user has been quiet long enough.
+        if last_active_days is not None and days_since_signup > 3:
+            for tmpl in reengagement_tmpls:
+                if (last_active_days >= tmpl.inactive_days
+                        and tmpl.template_key not in sent_keys):
+                    result = push_service.send_template_to_user(db, user, tmpl.template_key, variables)
+                    if result.get("ok"):
+                        sent_counts[tmpl.template_key] = sent_counts.get(tmpl.template_key, 0) + 1
+                        sent_keys.add(tmpl.template_key)
+                        break  # one re-engagement per run
+
+    return {"sent": sent_counts, "checked": len(users)}
+
+
+def _cron_lifecycle_pushes():
+    """Daily — runs after onboarding emails so app-installers get both.
+    Cheaply idempotent (PushLog dedup).
+    """
+    from database import SessionLocal
+    _db = SessionLocal()
+    try:
+        result = _run_lifecycle_pushes(_db)
+        logger.info(f"Cron lifecycle_pushes: {result}")
+    except Exception as e:
+        logger.error(f"Cron lifecycle_pushes failed: {e}", exc_info=True)
+    finally:
+        _db.close()
+
+
+@app.post("/admin/push/lifecycle-run")
+def admin_run_lifecycle_pushes(db: Session = Depends(get_db), _=Depends(verify_admin)):
+    """Manual trigger for lifecycle pushes (idempotent, safe to call repeatedly)."""
+    return _run_lifecycle_pushes(db)
 
 
 # Public endpoint so the app can fetch shop items dynamically
