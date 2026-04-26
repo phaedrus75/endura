@@ -5088,20 +5088,63 @@ CAMPAIGN_COHORTS = {
     "verify_email": {
         "label": "Signed up but not verified",
         "template_key": "campaign_verify_email",
+        "drops": [
+            {"template_key": "campaign_verify_email", "min_days_since_signup": 0},
+            {"template_key": "campaign_verify_email_2", "min_days_since_signup": 3},
+            {"template_key": "campaign_verify_email_3", "min_days_since_signup": 7},
+        ],
     },
     "start_timer": {
         "label": "Verified but never started a timer",
         "template_key": "campaign_start_timer",
+        "drops": [
+            {"template_key": "campaign_start_timer", "min_days_since_signup": 0},
+            {"template_key": "campaign_start_timer_2", "min_days_since_signup": 4},
+            {"template_key": "campaign_start_timer_3", "min_days_since_signup": 8},
+        ],
     },
     "second_timer": {
         "label": "Only 1 session (encourage session 2)",
         "template_key": "campaign_second_timer",
+        "drops": [
+            {"template_key": "campaign_second_timer", "min_days_since_signup": 0},
+            {"template_key": "campaign_second_timer_2", "min_days_since_signup": 3},
+            {"template_key": "campaign_second_timer_3", "min_days_since_signup": 7},
+        ],
     },
     "invite_friends": {
         "label": "2+ sessions — invite friends & groups",
         "template_key": "campaign_invite_friends",
+        "drops": [
+            {"template_key": "campaign_invite_friends", "min_days_since_signup": 0},
+            {"template_key": "campaign_invite_friends_2", "min_days_since_signup": 5},
+            {"template_key": "campaign_invite_friends_3", "min_days_since_signup": 10},
+        ],
     },
 }
+
+
+def _cohort_campaign_template_keys(info: dict) -> list[str]:
+    return [d["template_key"] for d in info["drops"]]
+
+
+def _campaign_pick_next_drop(user, drops: list, sent_keys: set, now: datetime) -> Optional[str]:
+    """Next campaign template for this user: in-order drips, day gates, one send per run."""
+    if not user.created_at:
+        return None
+    days = (now - user.created_at).days
+    for idx, d in enumerate(drops):
+        tk = d["template_key"]
+        if tk in sent_keys:
+            continue
+        mind = int(d.get("min_days_since_signup", 0))
+        if days < mind:
+            return None
+        for i in range(idx):
+            if drops[i]["template_key"] not in sent_keys:
+                return None
+        return tk
+    return None
 
 
 @app.get("/admin/campaign-cohorts")
@@ -5170,59 +5213,61 @@ def admin_campaign_cohorts(db: Session = Depends(get_db), _=Depends(verify_admin
 
 @app.get("/admin/campaign-metrics")
 def admin_campaign_metrics(db: Session = Depends(get_db), _=Depends(verify_admin)):
-    """Return send/open/click/conversion metrics for each campaign."""
+    """Return send/open/click/conversion metrics for each campaign (all drip templates per cohort)."""
     metrics = {}
     for cohort_key, info in CAMPAIGN_COHORTS.items():
-        tkey = info["template_key"]
-        logs = db.query(models.EmailLog).filter(models.EmailLog.template_key == tkey).all()
+        tkeys = _cohort_campaign_template_keys(info)
+        logs = db.query(models.EmailLog).filter(models.EmailLog.template_key.in_(tkeys)).all()
         sent = len(logs)
         delivered = sum(1 for l in logs if l.delivered)
         opened = sum(1 for l in logs if l.opened)
         clicked = sum(1 for l in logs if l.clicked)
 
         converted = 0
-        if sent > 0:
-            sent_user_ids = [l.user_id for l in logs if l.user_id]
-            if sent_user_ids:
-                if cohort_key == "verify_email":
-                    converted = db.query(func.count(models.User.id)).filter(
-                        models.User.id.in_(sent_user_ids),
-                        models.User.email_verified == True,
-                    ).scalar() or 0
-                elif cohort_key == "start_timer":
-                    converted = db.query(func.count(func.distinct(models.StudySession.user_id))).filter(
-                        models.StudySession.user_id.in_(sent_user_ids),
-                    ).scalar() or 0
-                elif cohort_key == "second_timer":
-                    converted = db.query(models.StudySession.user_id).filter(
-                        models.StudySession.user_id.in_(sent_user_ids),
-                    ).group_by(models.StudySession.user_id).having(
-                        func.count(models.StudySession.id) >= 2
-                    ).count()
-                elif cohort_key == "invite_friends":
-                    converted = db.query(func.count(func.distinct(models.Friendship.user_id))).filter(
-                        models.Friendship.user_id.in_(sent_user_ids),
-                        models.Friendship.status == "accepted",
-                    ).scalar() or 0
+        unique_recipients = list({l.user_id for l in logs if l.user_id})
+        if unique_recipients:
+            if cohort_key == "verify_email":
+                converted = db.query(func.count(models.User.id)).filter(
+                    models.User.id.in_(unique_recipients),
+                    models.User.email_verified == True,
+                ).scalar() or 0
+            elif cohort_key == "start_timer":
+                converted = db.query(func.count(func.distinct(models.StudySession.user_id))).filter(
+                    models.StudySession.user_id.in_(unique_recipients),
+                ).scalar() or 0
+            elif cohort_key == "second_timer":
+                converted = db.query(models.StudySession.user_id).filter(
+                    models.StudySession.user_id.in_(unique_recipients),
+                ).group_by(models.StudySession.user_id).having(
+                    func.count(models.StudySession.id) >= 2
+                ).count()
+            elif cohort_key == "invite_friends":
+                converted = db.query(func.count(func.distinct(models.Friendship.user_id))).filter(
+                    models.Friendship.user_id.in_(unique_recipients),
+                    models.Friendship.status == "accepted",
+                ).scalar() or 0
 
+        n_recipients = len(unique_recipients)
         metrics[cohort_key] = {
-            "template_key": tkey,
+            "template_key": info["template_key"],
+            "template_keys": tkeys,
             "label": info["label"],
             "sent": sent,
             "delivered": delivered,
             "opened": opened,
             "clicked": clicked,
             "converted": converted,
+            "unique_recipients": n_recipients,
             "open_rate": round(opened / sent * 100, 1) if sent > 0 else 0,
             "click_rate": round(clicked / sent * 100, 1) if sent > 0 else 0,
-            "conversion_rate": round(converted / sent * 100, 1) if sent > 0 else 0,
+            "conversion_rate": round(converted / n_recipients * 100, 1) if n_recipients > 0 else 0,
         }
     return metrics
 
 
 @app.post("/admin/campaign-send/{cohort_key}")
 def admin_campaign_send(cohort_key: str, db: Session = Depends(get_db), _=Depends(verify_admin)):
-    """Send a campaign email to all users in a cohort. Skips users already sent this template."""
+    """Send the next eligible campaign drip per user (day-gated, in order)."""
     if cohort_key not in CAMPAIGN_COHORTS:
         raise HTTPException(status_code=400, detail=f"Unknown cohort: {cohort_key}")
 
@@ -5230,8 +5275,9 @@ def admin_campaign_send(cohort_key: str, db: Session = Depends(get_db), _=Depend
     if not resend_key:
         raise HTTPException(status_code=500, detail="RESEND_API_KEY not configured")
 
-    template_key = CAMPAIGN_COHORTS[cohort_key]["template_key"]
-    cohorts = admin_campaign_cohorts.__wrapped__(db=db, _=None) if hasattr(admin_campaign_cohorts, '__wrapped__') else None
+    cohort_info = CAMPAIGN_COHORTS[cohort_key]
+    drops = cohort_info["drops"]
+    all_keys = _cohort_campaign_template_keys(cohort_info)
 
     # Re-fetch cohort to get users
     archived_filter = or_(models.User.is_archived == False, models.User.is_archived == None)
@@ -5277,17 +5323,20 @@ def admin_campaign_send(cohort_key: str, db: Session = Depends(get_db), _=Depend
     else:
         users = []
 
-    already_sent = {r[0] for r in db.query(models.EmailLog.user_id).filter(
-        models.EmailLog.template_key == template_key
-    ).all()}
-
+    now = datetime.utcnow()
     sent_count = 0
     skipped = 0
     failed = 0
+    sent_by_template: dict[str, int] = {}
     for user in users:
         if not user.email:
             continue
-        if user.id in already_sent:
+        user_sent = {r[0] for r in db.query(models.EmailLog.template_key).filter(
+            models.EmailLog.user_id == user.id,
+            models.EmailLog.template_key.in_(all_keys),
+        ).all()}
+        template_key = _campaign_pick_next_drop(user, drops, user_sent, now)
+        if not template_key:
             skipped += 1
             continue
         name = user.username or "there"
@@ -5304,16 +5353,18 @@ def admin_campaign_send(cohort_key: str, db: Session = Depends(get_db), _=Depend
         }
         if _send_template_email(template_key, user.email, variables, db):
             sent_count += 1
+            sent_by_template[template_key] = sent_by_template.get(template_key, 0) + 1
         else:
             failed += 1
 
     return {
         "cohort": cohort_key,
-        "template": template_key,
+        "drops": all_keys,
         "total_in_cohort": len(users),
         "sent": sent_count,
-        "skipped_already_sent": skipped,
+        "skipped_no_eligible_drop": skipped,
         "failed": failed,
+        "sent_by_template": sent_by_template,
     }
 
 
@@ -6530,6 +6581,124 @@ def admin_schools_cleanup(
         ],
         "total_schools_after": sum(r[1] for r in country_rows),
     }
+
+
+# ── Test Runner (admin only) ──────────────────────────────────────────────────
+
+@app.post("/admin/run-tests")
+def run_tests(
+    suite: str = Query("all", description="Which suite to run: all | unit | api | flows"),
+    x_admin_key: str = Header(...),
+    _: None = Depends(verify_admin),
+):
+    """
+    Run the backend regression test suite and return structured results.
+    Accepts suite=all|unit|api|flows.
+    Returns JSON with pass/fail counts and per-test detail.
+    IMPORTANT: Only available when backend has pytest installed (dev/staging).
+    Never run this against the production DB — it uses a separate SQLite test DB.
+    """
+    import subprocess
+    import sys
+    import json as _json_mod
+
+    suite_map = {
+        "all": "tests/",
+        "unit": "tests/unit/",
+        "api": "tests/api/",
+        "flows": "tests/flows/",
+    }
+    test_path = suite_map.get(suite, "tests/")
+
+    backend_dir = os.path.dirname(os.path.abspath(__file__))
+
+    # Run pytest with JSON report output
+    cmd = [
+        sys.executable, "-m", "pytest", test_path,
+        "--tb=short", "-q",
+        "--no-header",
+        "--json-report", "--json-report-file=-",  # output JSON to stdout
+        "--timeout=120",
+    ]
+
+    try:
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            cwd=backend_dir,
+            timeout=180,
+            env={**os.environ, "DATABASE_URL": "sqlite:///./test_endura.db"},
+        )
+        stdout = result.stdout or ""
+        stderr = result.stderr or ""
+
+        # Try to parse JSON report (from pytest-json-report)
+        report = None
+        for line in stdout.splitlines():
+            if line.startswith("{") and '"tests"' in line:
+                try:
+                    report = _json_mod.loads(line)
+                    break
+                except Exception:
+                    pass
+
+        if report:
+            tests = report.get("tests", [])
+            summary = report.get("summary", {})
+            return {
+                "status": "passed" if result.returncode == 0 else "failed",
+                "suite": suite,
+                "exit_code": result.returncode,
+                "summary": summary,
+                "passed": summary.get("passed", 0),
+                "failed": summary.get("failed", 0),
+                "errors": summary.get("error", 0),
+                "total": summary.get("total", 0),
+                "duration_seconds": report.get("duration", 0),
+                "tests": [
+                    {
+                        "id": t.get("nodeid", ""),
+                        "outcome": t.get("outcome", ""),
+                        "duration": round(t.get("duration", 0), 3),
+                        "call_message": (
+                            t.get("call", {}).get("longrepr", "") or ""
+                        )[:500] if t.get("outcome") != "passed" else "",
+                    }
+                    for t in tests
+                ],
+            }
+
+        # Fallback: return raw output if JSON report not available
+        lines = stdout.splitlines()
+        passed = sum(1 for l in lines if " passed" in l or "PASSED" in l)
+        failed = sum(1 for l in lines if " failed" in l or "FAILED" in l)
+        return {
+            "status": "passed" if result.returncode == 0 else "failed",
+            "suite": suite,
+            "exit_code": result.returncode,
+            "summary": {"passed": passed, "failed": failed},
+            "passed": passed,
+            "failed": failed,
+            "raw_output": (stdout + "\n" + stderr)[:8000],
+        }
+
+    except subprocess.TimeoutExpired:
+        return JSONResponse(status_code=504, content={
+            "error": "Test suite timed out after 3 minutes",
+            "suite": suite,
+        })
+    except FileNotFoundError:
+        return JSONResponse(status_code=503, content={
+            "error": "pytest not found — install test dependencies first (pip install pytest pytest-json-report)",
+            "suite": suite,
+        })
+    except Exception as exc:
+        logger.error(f"run-tests failed: {exc}")
+        return JSONResponse(status_code=500, content={
+            "error": str(exc)[:500],
+            "suite": suite,
+        })
 
 
 if __name__ == "__main__":

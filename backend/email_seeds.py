@@ -478,6 +478,166 @@ DEFAULT_EMAIL_TEMPLATES = [
 </div>""",
     },
     {
+        "template_key": "campaign_verify_email_2",
+        "name": "Campaign — Verify Email (reminder 2)",
+        "subject": "Still waiting to verify — your egg can't hatch yet! 🥚",
+        "trigger_day": None,
+        "inactive_days": None,
+        "body_html": f"""<div style="font-family:'Segoe UI',sans-serif;max-width:520px;margin:0 auto;padding:40px 32px;background:#E7EFEA;border-radius:20px">
+    <h1 style="color:#4A7C59;margin:0 0 4px;font-size:24px">Quick reminder</h1>
+    <p style="color:#6B9B7A;margin:0 0 24px;font-size:15px">Hey {{name}}, we're holding your spot — verify your email so you can start hatching real wildlife.</p>
+    {_animal_img("sea turtle")}
+    <div style="background:#fff;border-radius:16px;padding:24px;margin-bottom:20px">
+        <p style="color:#333;font-size:15px;line-height:1.7;margin:0 0 12px">Open Endura, enter the code from your inbox, and you're in. It takes less than a minute.</p>
+        <p style="color:#333;font-size:15px;line-height:1.7;margin:0">Every verified student helps us grow the flock protecting endangered species. 🌿</p>
+    </div>
+    <div style="text-align:center;margin-bottom:20px">
+        <a href="https://apps.apple.com/app/endura-study-timer/id6759482612" style="display:inline-block;background:#4A7C59;color:#fff;text-decoration:none;padding:14px 32px;border-radius:12px;font-size:15px;font-weight:600">Open Endura & Verify</a>
+    </div>
+    <p style="color:#999;font-size:12px;text-align:center;margin:0">Study smarter. Save wildlife. 🌍</p>
+</div>""",
+    },
+    {
+        "template_key": "campaign_verify_email_3",
+        "name": "Campaign — Verify Email (reminder 3)",
+        "subject": "Last nudge: verify to unlock Endura ✉️🐾",
+        "trigger_day": None,
+        "inactive_days": None,
+        "body_html": f"""<div style="font-family:'Segoe UI',sans-serif;max-width:520px;margin:0 auto;padding:40px 32px;background:#E7EFEA;border-radius:20px">
+    <h1 style="color:#4A7C59;margin:0 0 4px;font-size:24px">We'd love to have you</h1>
+    <p style="color:#6B9B7A;margin:0 0 24px;font-size:15px">Hey {{name}}, this is our last verify reminder — after that we'll leave your inbox in peace.</p>
+    {_animal_img("fennec fox")}
+    <div style="background:#fff;border-radius:16px;padding:24px;margin-bottom:20px">
+        <p style="color:#333;font-size:15px;line-height:1.7;margin:0 0 12px">Verify once, then study anytime: your sanctuary, streaks, and conservation impact all start there.</p>
+        <p style="color:#333;font-size:14px;line-height:1.7;margin:0">If you didn't mean to sign up, you can ignore this — no hard feelings.</p>
+    </div>
+    <div style="text-align:center;margin-bottom:20px">
+        <a href="https://apps.apple.com/app/endura-study-timer/id6759482612" style="display:inline-block;background:#4A7C59;color:#fff;text-decoration:none;padding:14px 32px;border-radius:12px;font-size:15px;font-weight:600">Verify in the app</a>
+    </div>
+    <p style="color:#999;font-size:12px;text-align:center;margin:0">Study smarter. Save wildlife. 🌍</p>
+</div>""",
+    },
+    {
+        "template_key": "campaign_start_timer_2",
+        "name": "Campaign — Start Timer (reminder 2)",
+        "subject": "15 minutes is enough to hatch your first animal 🥚",
+        "trigger_day": None,
+        "inactive_days": None,
+        "body_html": f"""<div style="font-family:'Segoe UI',sans-serif;max-width:520px;margin:0 auto;padding:40px 32px;background:#E7EFEA;border-radius:20px">
+    <h1 style="color:#4A7C59;margin:0 0 4px;font-size:24px">Start small</h1>
+    <p style="color:#6B9B7A;margin:0 0 24px;font-size:15px">Hey {{name}}, you don't need a long block — even a short timer counts toward your first hatch.</p>
+    {_animal_img("hedgehog")}
+    <div style="background:#fff;border-radius:16px;padding:24px;margin-bottom:20px">
+        <p style="color:#333;font-size:15px;line-height:1.7;margin:0 0 12px">Pick any subject, tap Start, and let the egg do the rest. Your first endangered animal is one session away.</p>
+        <p style="color:#333;font-size:14px;line-height:1.7;margin:0">You've got this — the flock is rooting for you. 🌿</p>
+    </div>
+    <div style="text-align:center;margin-bottom:20px">
+        <a href="https://apps.apple.com/app/endura-study-timer/id6759482612" style="display:inline-block;background:#4A7C59;color:#fff;text-decoration:none;padding:14px 32px;border-radius:12px;font-size:15px;font-weight:600">Open Endura</a>
+    </div>
+    <p style="color:#999;font-size:12px;text-align:center;margin:0">Study smarter. Save wildlife. 🌍</p>
+</div>""",
+    },
+    {
+        "template_key": "campaign_start_timer_3",
+        "name": "Campaign — Start Timer (reminder 3)",
+        "subject": "Your first timer is still waiting 🌿",
+        "trigger_day": None,
+        "inactive_days": None,
+        "body_html": f"""<div style="font-family:'Segoe UI',sans-serif;max-width:520px;margin:0 auto;padding:40px 32px;background:#E7EFEA;border-radius:20px">
+    <h1 style="color:#4A7C59;margin:0 0 4px;font-size:24px">Whenever you're ready</h1>
+    <p style="color:#6B9B7A;margin:0 0 24px;font-size:15px">Hey {{name}}, Endura works best when you try one real session — then the habit builds naturally.</p>
+    {_animal_img("beaver")}
+    <div style="background:#fff;border-radius:16px;padding:24px;margin-bottom:20px">
+        <p style="color:#333;font-size:15px;line-height:1.7;margin:0 0 12px">This is our last nudge on getting started. Open the app, start any timer length, and watch conservation credits roll in as you focus.</p>
+        <p style="color:#333;font-size:14px;line-height:1.7;margin:0">We're here when you are — no pressure, just wildlife that could use your study time.</p>
+    </div>
+    <div style="text-align:center;margin-bottom:20px">
+        <a href="https://apps.apple.com/app/endura-study-timer/id6759482612" style="display:inline-block;background:#4A7C59;color:#fff;text-decoration:none;padding:14px 32px;border-radius:12px;font-size:15px;font-weight:600">Start a timer</a>
+    </div>
+    <p style="color:#999;font-size:12px;text-align:center;margin:0">Study smarter. Save wildlife. 🌍</p>
+</div>""",
+    },
+    {
+        "template_key": "campaign_second_timer_2",
+        "name": "Campaign — Session 2 (reminder 2)",
+        "subject": "Session #2 locks in the habit — you've got this 🔁",
+        "trigger_day": None,
+        "inactive_days": None,
+        "body_html": f"""<div style="font-family:'Segoe UI',sans-serif;max-width:520px;margin:0 auto;padding:40px 32px;background:#E7EFEA;border-radius:20px">
+    <h1 style="color:#4A7C59;margin:0 0 4px;font-size:24px">One more session</h1>
+    <p style="color:#6B9B7A;margin:0 0 24px;font-size:15px">Hey {{name}}, learners who book a second study block soon after the first stick with it far longer.</p>
+    {_animal_img("snow leopard")}
+    <div style="background:#fff;border-radius:16px;padding:24px;margin-bottom:20px">
+        <p style="color:#333;font-size:15px;line-height:1.7;margin:0 0 12px">You've already studied <strong>{{total_minutes}} minutes</strong>. Stack another session and grow your sanctuary — new species unlock as you go.</p>
+        <p style="color:#333;font-size:14px;line-height:1.7;margin:0">Same flow as last time: pick a duration, focus, hatch. 🥚</p>
+    </div>
+    <div style="text-align:center;margin-bottom:20px">
+        <a href="https://apps.apple.com/app/endura-study-timer/id6759482612" style="display:inline-block;background:#4A7C59;color:#fff;text-decoration:none;padding:14px 32px;border-radius:12px;font-size:15px;font-weight:600">Start session 2</a>
+    </div>
+    <p style="color:#999;font-size:12px;text-align:center;margin:0">Study smarter. Save wildlife. 🌍</p>
+</div>""",
+    },
+    {
+        "template_key": "campaign_second_timer_3",
+        "name": "Campaign — Session 2 (reminder 3)",
+        "subject": "Don't leave it at one session — your animal wants round 2 🐾",
+        "trigger_day": None,
+        "inactive_days": None,
+        "body_html": f"""<div style="font-family:'Segoe UI',sans-serif;max-width:520px;margin:0 auto;padding:40px 32px;background:#E7EFEA;border-radius:20px">
+    <h1 style="color:#4A7C59;margin:0 0 4px;font-size:24px">Finish the one-two</h1>
+    <p style="color:#6B9B7A;margin:0 0 24px;font-size:15px">Hey {{name}}, one great session is a win — two close together turns it into momentum.</p>
+    {_animal_img("arctic fox")}
+    <div style="background:#fff;border-radius:16px;padding:24px;margin-bottom:20px">
+        <p style="color:#333;font-size:15px;line-height:1.7;margin:0 0 12px">This is our last prompt on session two. Whenever you're ready, open Endura and run another timer — your eco-credits and sanctuary keep growing.</p>
+        <p style="color:#333;font-size:14px;line-height:1.7;margin:0">Small repeats beat perfect plans. 🌿</p>
+    </div>
+    <div style="text-align:center;margin-bottom:20px">
+        <a href="https://apps.apple.com/app/endura-study-timer/id6759482612" style="display:inline-block;background:#4A7C59;color:#fff;text-decoration:none;padding:14px 32px;border-radius:12px;font-size:15px;font-weight:600">Open Endura</a>
+    </div>
+    <p style="color:#999;font-size:12px;text-align:center;margin:0">Study smarter. Save wildlife. 🌍</p>
+</div>""",
+    },
+    {
+        "template_key": "campaign_invite_friends_2",
+        "name": "Campaign — Invite Friends (reminder 2)",
+        "subject": "Studying alone works — studying together wins 👥",
+        "trigger_day": None,
+        "inactive_days": None,
+        "body_html": f"""<div style="font-family:'Segoe UI',sans-serif;max-width:520px;margin:0 auto;padding:40px 32px;background:#E7EFEA;border-radius:20px">
+    <h1 style="color:#4A7C59;margin:0 0 4px;font-size:24px">Bring a friend</h1>
+    <p style="color:#6B9B7A;margin:0 0 24px;font-size:15px">Hey {{name}}, you've logged <strong>{{sessions}} sessions</strong> — you're exactly the person friends trust for study tips.</p>
+    {_animal_img("zebra")}
+    <div style="background:#fff;border-radius:16px;padding:24px;margin-bottom:20px">
+        <p style="color:#333;font-size:15px;line-height:1.7;margin:0 0 12px">Share Endura with one classmate: leaderboards and groups make focus contagious, and you both rack up conservation impact.</p>
+        <p style="color:#333;font-size:14px;line-height:1.7;margin:0">iOS App Store and Android beta links are one tap away in the app — forward whichever fits your crew.</p>
+    </div>
+    <div style="text-align:center;margin-bottom:20px">
+        <a href="https://apps.apple.com/app/endura-study-timer/id6759482612" style="display:inline-block;background:#4A7C59;color:#fff;text-decoration:none;padding:14px 32px;border-radius:12px;font-size:15px;font-weight:600">Open Endura</a>
+    </div>
+    <p style="color:#999;font-size:12px;text-align:center;margin:0">Study smarter. Save wildlife. 🌍</p>
+</div>""",
+    },
+    {
+        "template_key": "campaign_invite_friends_3",
+        "name": "Campaign — Invite Friends (reminder 3)",
+        "subject": "Create a study group — save wildlife as a team 🌍",
+        "trigger_day": None,
+        "inactive_days": None,
+        "body_html": f"""<div style="font-family:'Segoe UI',sans-serif;max-width:520px;margin:0 auto;padding:40px 32px;background:#E7EFEA;border-radius:20px">
+    <h1 style="color:#4A7C59;margin:0 0 4px;font-size:24px">Groups multiply the good</h1>
+    <p style="color:#6B9B7A;margin:0 0 24px;font-size:15px">Hey {{name}}, you're on a roll with <strong>{{sessions}} sessions</strong> — a private group keeps everyone accountable.</p>
+    {_animal_img("african elephant")}
+    <div style="background:#fff;border-radius:16px;padding:24px;margin-bottom:20px">
+        <p style="color:#333;font-size:15px;line-height:1.7;margin:0 0 12px">In Endura: tap <em>Groups</em>, create a group, invite by username, and cheer each other's study streaks in real time.</p>
+        <p style="color:#333;font-size:14px;line-height:1.7;margin:0">Last invite on this series from us — your inbox stays quiet until the next big Endura moment.</p>
+    </div>
+    <div style="text-align:center;margin-bottom:20px">
+        <a href="https://apps.apple.com/app/endura-study-timer/id6759482612" style="display:inline-block;background:#4A7C59;color:#fff;text-decoration:none;padding:14px 32px;border-radius:12px;font-size:15px;font-weight:600">Open Endura</a>
+    </div>
+    <p style="color:#999;font-size:12px;text-align:center;margin:0">Study smarter. Save wildlife. 🌍</p>
+</div>""",
+    },
+    {
         "template_key": "android_invite",
         "name": "Android Beta Invite",
         "subject": "You're in! Endura is ready on Android 🎉",

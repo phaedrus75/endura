@@ -43,6 +43,11 @@ class UserResponse(BaseModel):
     country: Optional[str] = None
     is_admin: bool = False
     use_test_timer: bool = False
+    notification_enabled: bool = True
+    notif_badges_enabled: bool = True
+    notif_friends_enabled: bool = True
+    notif_reminders_enabled: bool = True
+    notif_marketing_enabled: bool = True
 
     class Config:
         from_attributes = True
