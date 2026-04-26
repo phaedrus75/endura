@@ -1191,6 +1191,27 @@
                 <div style="font-size:16px;font-weight:600;margin-bottom:8px">No tests run yet</div>
                 <div style="font-size:13px">Select a suite and click Run Tests to start. Takes 60–90 seconds.</div>
             </div>
+
+            <!-- History (always visible if there are previous runs) -->
+            <div id="testHistorySection" class="table-card" style="margin-top:20px;display:none">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+                    <h3 style="margin:0">📜 Recent test runs</h3>
+                    <span id="testHistoryCount" style="font-size:12px;color:var(--text-muted)"></span>
+                </div>
+                <div style="overflow-x:auto">
+                    <table>
+                        <thead><tr>
+                            <th>When</th><th>Suite</th><th>Result</th>
+                            <th style="text-align:right">Passed</th>
+                            <th style="text-align:right">Failed</th>
+                            <th style="text-align:right">Errors</th>
+                            <th style="text-align:right">Duration</th>
+                            <th>Summary</th>
+                        </tr></thead>
+                        <tbody id="testHistoryBody"></tbody>
+                    </table>
+                </div>
+            </div>
         </div>
 
         <!-- System Health Page -->
@@ -4421,7 +4442,48 @@ async function grantFoundingMember() {
 // ─── Tests Page ──────────────────────────────────────────────────────────────
 
 function initTestsPage() {
-    // Nothing to auto-load — user triggers run manually
+    // Load run history so user lands on the page seeing previous results
+    loadTestHistory();
+}
+
+async function loadTestHistory() {
+    try {
+        const res = await fetch(API_URL + '/admin/test-runs?limit=20', {
+            headers: { 'X-Admin-Key': API_KEY },
+        });
+        if (!res.ok) return;
+        const data = await res.json();
+        const runs = data.runs || [];
+        const section = document.getElementById('testHistorySection');
+        const body = document.getElementById('testHistoryBody');
+        const count = document.getElementById('testHistoryCount');
+        if (!runs.length) {
+            section.style.display = 'none';
+            return;
+        }
+        section.style.display = '';
+        count.textContent = `${runs.length} most recent`;
+        body.innerHTML = runs.map(r => {
+            const when = r.started_at ? new Date(r.started_at).toLocaleString() : '—';
+            const statusColor = r.status === 'passed' ? 'var(--accent)' : (r.status === 'failed' ? 'var(--red)' : '#94a3b8');
+            const statusIcon = r.status === 'passed' ? '✅' : (r.status === 'failed' ? '❌' : (r.status === 'timeout' ? '⏱️' : '🟠'));
+            const dur = (r.duration_seconds != null) ? `${r.duration_seconds.toFixed(1)}s` : '—';
+            return `
+                <tr>
+                    <td style="white-space:nowrap;font-size:12px;color:var(--text-muted)">${when}</td>
+                    <td><span style="font-family:monospace;font-size:12px">${escHtml(r.suite || '')}</span></td>
+                    <td><span style="color:${statusColor};font-weight:600;font-size:12px">${statusIcon} ${escHtml(r.status || '')}</span></td>
+                    <td style="text-align:right;color:var(--accent);font-weight:600">${r.passed || 0}</td>
+                    <td style="text-align:right;color:${(r.failed || 0) > 0 ? 'var(--red)' : 'var(--text-muted)'};font-weight:600">${r.failed || 0}</td>
+                    <td style="text-align:right;color:${(r.errors || 0) > 0 ? 'var(--red)' : 'var(--text-muted)'}">${r.errors || 0}</td>
+                    <td style="text-align:right;font-size:12px;color:var(--text-muted)">${dur}</td>
+                    <td style="font-size:12px;color:var(--text-muted);max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escHtml(r.raw_summary || '')}">${escHtml(r.raw_summary || '—')}</td>
+                </tr>
+            `;
+        }).join('');
+    } catch (e) {
+        console.warn('loadTestHistory failed', e);
+    }
 }
 
 async function runTests() {
@@ -4467,6 +4529,7 @@ async function runTests() {
     } finally {
         btn.disabled = false;
         btn.textContent = '▶ Run Tests';
+        loadTestHistory();
     }
 }
 

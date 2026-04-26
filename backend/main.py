@@ -71,7 +71,7 @@ else:
     try:
         _insp = sa_inspect(engine)
         for _tbl in ["android_beta_signups", "email_templates", "email_logs",
-                     "push_templates", "push_logs"]:
+                     "push_templates", "push_logs", "test_runs"]:
             if not _insp.has_table(_tbl):
                 Base.metadata.tables[_tbl].create(bind=engine)
                 print(f"Created missing table: {_tbl}")
@@ -6623,16 +6623,67 @@ def admin_schools_cleanup(
 
 # ── Test Runner (admin only) ──────────────────────────────────────────────────
 
+def _persist_test_run(
+    db: Session,
+    *,
+    suite: str,
+    status: str,
+    exit_code: Optional[int],
+    passed: int,
+    failed: int,
+    errors: int,
+    total: int,
+    duration_seconds: Optional[float],
+    started_at: datetime,
+    failed_test_ids: Optional[list] = None,
+    raw_summary: Optional[str] = None,
+) -> Optional[int]:
+    """Insert a TestRun row. Returns the new row id, or None on failure
+    (we never want a logging failure to break the API response)."""
+    try:
+        import json as _json_mod
+        row = models.TestRun(
+            suite=suite[:20],
+            status=status[:20],
+            exit_code=exit_code,
+            passed=int(passed or 0),
+            failed=int(failed or 0),
+            errors=int(errors or 0),
+            total=int(total or 0),
+            duration_seconds=duration_seconds,
+            started_at=started_at,
+            finished_at=datetime.utcnow(),
+            triggered_by="admin",
+            failed_tests=_json_mod.dumps((failed_test_ids or [])[:50]) if failed_test_ids else None,
+            raw_summary=(raw_summary or "")[:500] or None,
+        )
+        db.add(row)
+        db.commit()
+        return row.id
+    except Exception as e:
+        logger.warning(f"persist_test_run failed (non-fatal): {e}")
+        try:
+            db.rollback()
+        except Exception:
+            pass
+        return None
+
+
 @app.post("/admin/run-tests")
 def run_tests(
     suite: str = Query("all", description="Which suite to run: all | unit | api | flows"),
     x_admin_key: str = Header(...),
+    db: Session = Depends(get_db),
     _: None = Depends(verify_admin),
 ):
     """
     Run the backend regression test suite and return structured results.
     Accepts suite=all|unit|api|flows.
     Returns JSON with pass/fail counts and per-test detail.
+
+    Each invocation is persisted to the test_runs table for history tracking
+    (visible at /admin/test-runs and on the admin dashboard's Tests tab).
+
     IMPORTANT: Only available when backend has pytest installed (dev/staging).
     Never run this against the production DB — it uses a separate SQLite test DB.
     """
@@ -6649,6 +6700,7 @@ def run_tests(
     test_path = suite_map.get(suite, "tests/")
 
     backend_dir = os.path.dirname(os.path.abspath(__file__))
+    started_at = datetime.utcnow()
 
     # Run pytest with JSON report output
     cmd = [
@@ -6684,8 +6736,24 @@ def run_tests(
         if report:
             tests = report.get("tests", [])
             summary = report.get("summary", {})
+            status_str = "passed" if result.returncode == 0 else "failed"
+            failed_ids = [t.get("nodeid", "") for t in tests if t.get("outcome") != "passed"]
+            run_id = _persist_test_run(
+                db,
+                suite=suite,
+                status=status_str,
+                exit_code=result.returncode,
+                passed=summary.get("passed", 0),
+                failed=summary.get("failed", 0),
+                errors=summary.get("error", 0),
+                total=summary.get("total", 0),
+                duration_seconds=report.get("duration", 0),
+                started_at=started_at,
+                failed_test_ids=failed_ids,
+                raw_summary=f"{summary.get('passed', 0)} passed, {summary.get('failed', 0)} failed in {report.get('duration', 0):.1f}s",
+            )
             return {
-                "status": "passed" if result.returncode == 0 else "failed",
+                "status": status_str,
                 "suite": suite,
                 "exit_code": result.returncode,
                 "summary": summary,
@@ -6694,6 +6762,7 @@ def run_tests(
                 "errors": summary.get("error", 0),
                 "total": summary.get("total", 0),
                 "duration_seconds": report.get("duration", 0),
+                "run_id": run_id,
                 "tests": [
                     {
                         "id": t.get("nodeid", ""),
@@ -6711,32 +6780,101 @@ def run_tests(
         lines = stdout.splitlines()
         passed = sum(1 for l in lines if " passed" in l or "PASSED" in l)
         failed = sum(1 for l in lines if " failed" in l or "FAILED" in l)
+        status_str = "passed" if result.returncode == 0 else "failed"
+        run_id = _persist_test_run(
+            db,
+            suite=suite,
+            status=status_str,
+            exit_code=result.returncode,
+            passed=passed,
+            failed=failed,
+            errors=0,
+            total=passed + failed,
+            duration_seconds=None,
+            started_at=started_at,
+            raw_summary=(stdout.splitlines()[-1] if stdout.splitlines() else "")[:500],
+        )
         return {
-            "status": "passed" if result.returncode == 0 else "failed",
+            "status": status_str,
             "suite": suite,
             "exit_code": result.returncode,
             "summary": {"passed": passed, "failed": failed},
             "passed": passed,
             "failed": failed,
             "raw_output": (stdout + "\n" + stderr)[:8000],
+            "run_id": run_id,
         }
 
     except subprocess.TimeoutExpired:
+        _persist_test_run(
+            db, suite=suite, status="timeout", exit_code=None,
+            passed=0, failed=0, errors=0, total=0,
+            duration_seconds=None, started_at=started_at,
+            raw_summary="Timed out after 180s",
+        )
         return JSONResponse(status_code=504, content={
             "error": "Test suite timed out after 3 minutes",
             "suite": suite,
         })
     except FileNotFoundError:
+        _persist_test_run(
+            db, suite=suite, status="error", exit_code=None,
+            passed=0, failed=0, errors=0, total=0,
+            duration_seconds=None, started_at=started_at,
+            raw_summary="pytest not installed",
+        )
         return JSONResponse(status_code=503, content={
             "error": "pytest not found — install test dependencies first (pip install pytest pytest-json-report)",
             "suite": suite,
         })
     except Exception as exc:
         logger.error(f"run-tests failed: {exc}")
+        _persist_test_run(
+            db, suite=suite, status="error", exit_code=None,
+            passed=0, failed=0, errors=0, total=0,
+            duration_seconds=None, started_at=started_at,
+            raw_summary=str(exc)[:500],
+        )
         return JSONResponse(status_code=500, content={
             "error": str(exc)[:500],
             "suite": suite,
         })
+
+
+@app.get("/admin/test-runs")
+def admin_test_runs(
+    limit: int = Query(20, ge=1, le=200),
+    db: Session = Depends(get_db),
+    _=Depends(verify_admin),
+):
+    """Recent regression test runs, newest first. Used by the admin dashboard
+    Tests tab to show history + spot flakes/regressions over time."""
+    rows = (
+        db.query(models.TestRun)
+        .order_by(models.TestRun.started_at.desc())
+        .limit(limit)
+        .all()
+    )
+    return {
+        "runs": [
+            {
+                "id": r.id,
+                "suite": r.suite,
+                "status": r.status,
+                "exit_code": r.exit_code,
+                "passed": r.passed,
+                "failed": r.failed,
+                "errors": r.errors,
+                "total": r.total,
+                "duration_seconds": r.duration_seconds,
+                "started_at": r.started_at.isoformat() if r.started_at else None,
+                "finished_at": r.finished_at.isoformat() if r.finished_at else None,
+                "triggered_by": r.triggered_by,
+                "raw_summary": r.raw_summary,
+            }
+            for r in rows
+        ]
+    }
 
 
 if __name__ == "__main__":

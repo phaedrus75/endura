@@ -714,6 +714,30 @@ class PushLog(Base):
     opened_at = Column(DateTime, nullable=True)
 
 
+class TestRun(Base):
+    """Record of every regression test run triggered from the admin dashboard.
+
+    Stored so we have a history of pass/fail trends, can spot flaky tests, and
+    confirm CI hasn't regressed. One row per /admin/run-tests invocation.
+    """
+    __tablename__ = "test_runs"
+
+    id = Column(Integer, primary_key=True, index=True)
+    suite = Column(String(20), nullable=False, index=True)  # all | unit | api | flows
+    status = Column(String(20), nullable=False, index=True)  # passed | failed | error | timeout
+    exit_code = Column(Integer, nullable=True)
+    passed = Column(Integer, default=0)
+    failed = Column(Integer, default=0)
+    errors = Column(Integer, default=0)
+    total = Column(Integer, default=0)
+    duration_seconds = Column(Float, nullable=True)
+    started_at = Column(DateTime, default=datetime.utcnow, index=True)
+    finished_at = Column(DateTime, nullable=True)
+    triggered_by = Column(String, nullable=True)  # 'admin' for now; later: cron, ci, etc.
+    failed_tests = Column(Text, nullable=True)  # JSON array of failed test ids (truncated)
+    raw_summary = Column(Text, nullable=True)   # short summary line for quick display
+
+
 class School(Base):
     __tablename__ = "schools"
 
