@@ -2679,7 +2679,7 @@ def react_to_event(
                 recent = db.query(models.PushLog.id).filter(
                     models.PushLog.user_id == owner.id,
                     models.PushLog.template_key == "push_friend_reacted",
-                    models.PushLog.created_at >= cutoff,
+                    models.PushLog.sent_at >= cutoff,
                     # Same sender + same event encoded into the body.
                     models.PushLog.body.like(f"%{current_user.username or ''}%"),
                     models.PushLog.body.like(f"%{(event.description or '')[:40]}%"),
