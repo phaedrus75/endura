@@ -133,6 +133,20 @@ try:
         elif "endura.eco/animals" not in (existing.body_html or ""):
             existing.body_html = _tmpl["body_html"]
             existing.subject = _tmpl["subject"]
+    # Keep re-engagement drip thresholds in sync with seeds (does not overwrite body/subject)
+    for _tmpl in DEFAULT_EMAIL_TEMPLATES:
+        if not str(_tmpl.get("template_key", "")).startswith("reengagement"):
+            continue
+        ex = _seed_db.query(models.EmailTemplate).filter(
+            models.EmailTemplate.template_key == _tmpl["template_key"]
+        ).first()
+        if ex:
+            ex.name = _tmpl["name"]
+            ex.inactive_days = _tmpl.get("inactive_days")
+            ex.min_sessions = _tmpl.get("min_sessions")
+            ex.max_sessions = _tmpl.get("max_sessions")
+            ex.min_streak = _tmpl.get("min_streak")
+            ex.max_streak = _tmpl.get("max_streak")
     _seed_db.commit()
     # Push notification templates — only insert missing keys so admin edits
     # made via the dashboard are never overwritten on restart.
@@ -175,7 +189,8 @@ def _match_reengagement(templates, user, last_active_days, sent_keys):
             continue
         if t.max_streak is not None and user_streak > t.max_streak:
             continue
-        if best is None or (t.min_sessions or 0) > (best.min_sessions or 0):
+        # Pick the next unsent drop: lowest inactive_days among all matching tiers
+        if best is None or (t.inactive_days or 0) < (best.inactive_days or 0):
             best = t
     return best
 

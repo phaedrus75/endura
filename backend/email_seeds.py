@@ -148,7 +148,7 @@ DEFAULT_EMAIL_TEMPLATES = [
         "name": "Re-engagement — Beginner (1 session)",
         "subject": "Your first animal is waiting, {name}! 🥚",
         "trigger_day": None,
-        "inactive_days": 3,
+        "inactive_days": 2,
         "min_sessions": 1,
         "max_sessions": 2,
         "min_streak": None,
@@ -170,7 +170,7 @@ DEFAULT_EMAIL_TEMPLATES = [
         "name": "Re-engagement — Intermediate (3+ sessions)",
         "subject": "Your {streak}-day streak is fading, {name}! 🔥",
         "trigger_day": None,
-        "inactive_days": 4,
+        "inactive_days": 3,
         "min_sessions": 3,
         "max_sessions": None,
         "min_streak": 2,
@@ -192,7 +192,7 @@ DEFAULT_EMAIL_TEMPLATES = [
         "name": "Re-engagement — Power User (4+ sessions, 5+ streak)",
         "subject": "We miss you, {name}! Your sanctuary needs you 🌿",
         "trigger_day": None,
-        "inactive_days": 5,
+        "inactive_days": 4,
         "min_sessions": 4,
         "max_sessions": None,
         "min_streak": 5,
@@ -207,6 +207,138 @@ DEFAULT_EMAIL_TEMPLATES = [
         <p style="color:#333;font-size:14px;line-height:1.7;margin:0"><strong>New since you left:</strong> Study tips, more animals to discover, and group challenges. Come see what's new.</p>
     </div>
     <div style="text-align:center"><a href="https://apps.apple.com/app/endura-study-timer/id6759482612" style="display:inline-block;background:#4A7C59;color:#fff;text-decoration:none;padding:12px 28px;border-radius:12px;font-size:14px;font-weight:600">Return to Your Sanctuary</a></div>
+    <p style="color:#999;font-size:11px;text-align:center;margin:16px 0 0">Study smarter. Save wildlife. 🌍</p>
+</div>""",
+    },
+    {
+        "template_key": "reengagement_b2",
+        "name": "Re-engagement — Beginner drop 2",
+        "subject": "Still here? Your egg misses you, {name} 🥚",
+        "trigger_day": None,
+        "inactive_days": 5,
+        "min_sessions": 1,
+        "max_sessions": 2,
+        "min_streak": None,
+        "max_streak": 1,
+        "body_html": f"""<div style="font-family:'Segoe UI',sans-serif;max-width:520px;margin:0 auto;padding:40px 32px;background:#E7EFEA;border-radius:20px">
+    <h1 style="color:#4A7C59;margin:0 0 4px;font-size:24px">New species are waiting</h1>
+    <p style="color:#6B9B7A;margin:0 0 24px;font-size:15px">Hey {{name}}, it's been almost a week since we saw you.</p>
+    {_animal_img("red panda")}
+    <div style="background:#fff;border-radius:16px;padding:24px;margin-bottom:20px">
+        <p style="color:#333;font-size:15px;line-height:1.7;margin:0 0 12px">Every study session unlocks more endangered animals to hatch — from red pandas to sea turtles. You've already started — don't leave your sanctuary empty.</p>
+        <p style="color:#333;font-size:15px;line-height:1.7;margin:0">Open Endura for just <strong>15 minutes</strong> today and you'll earn eco-credits toward your next hatch.</p>
+    </div>
+    <div style="text-align:center"><a href="https://apps.apple.com/app/endura-study-timer/id6759482612" style="display:inline-block;background:#4A7C59;color:#fff;text-decoration:none;padding:12px 28px;border-radius:12px;font-size:14px;font-weight:600">Open Endura</a></div>
+    <p style="color:#999;font-size:11px;text-align:center;margin:16px 0 0">Study smarter. Save wildlife. 🌍</p>
+</div>""",
+    },
+    {
+        "template_key": "reengagement_b3",
+        "name": "Re-engagement — Beginner drop 3",
+        "subject": "One last nudge — your wildlife needs you, {name}",
+        "trigger_day": None,
+        "inactive_days": 7,
+        "min_sessions": 1,
+        "max_sessions": 2,
+        "min_streak": None,
+        "max_streak": 1,
+        "body_html": f"""<div style="font-family:'Segoe UI',sans-serif;max-width:520px;margin:0 auto;padding:40px 32px;background:#E7EFEA;border-radius:20px">
+    <h1 style="color:#4A7C59;margin:0 0 4px;font-size:24px">Thousands of students are studying today</h1>
+    <p style="color:#6B9B7A;margin:0 0 24px;font-size:15px">Hey {{name}}, you're not alone — Endura is buzzing with study sessions right now.</p>
+    {_animal_img("koala")}
+    <div style="background:#fff;border-radius:16px;padding:24px;margin-bottom:20px">
+        <p style="color:#333;font-size:15px;line-height:1.7;margin:0 0 12px">This is our final gentle reminder. When you're ready, your timer, your animals, and your progress will be right where you left them.</p>
+        <p style="color:#333;font-size:14px;line-height:1.7;margin:0">Tap below — even a short session helps real conservation. We'd love to have you back.</p>
+    </div>
+    <div style="text-align:center"><a href="https://apps.apple.com/app/endura-study-timer/id6759482612" style="display:inline-block;background:#4A7C59;color:#fff;text-decoration:none;padding:12px 28px;border-radius:12px;font-size:14px;font-weight:600">Come Back Today</a></div>
+    <p style="color:#999;font-size:11px;text-align:center;margin:16px 0 0">Study smarter. Save wildlife. 🌍</p>
+</div>""",
+    },
+    {
+        "template_key": "reengagement_i2",
+        "name": "Re-engagement — Intermediate drop 2",
+        "subject": "Your friends are still on the leaderboard, {name}",
+        "trigger_day": None,
+        "inactive_days": 6,
+        "min_sessions": 3,
+        "max_sessions": None,
+        "min_streak": 2,
+        "max_streak": 4,
+        "body_html": f"""<div style="font-family:'Segoe UI',sans-serif;max-width:520px;margin:0 auto;padding:40px 32px;background:#E7EFEA;border-radius:20px">
+    <h1 style="color:#4A7C59;margin:0 0 4px;font-size:24px">Don't let them pass you!</h1>
+    <p style="color:#6B9B7A;margin:0 0 24px;font-size:15px">Hey {{name}}, your study group and friends are still racking up minutes.</p>
+    {_animal_img("amur leopard")}
+    <div style="background:#fff;border-radius:16px;padding:24px;margin-bottom:20px">
+        <p style="color:#333;font-size:15px;line-height:1.7;margin:0 0 12px">You've proven you can stick with it — <strong>{{sessions}} sessions</strong> and a <strong>{{longest_streak}}-day</strong> best streak. A single session today puts you back in the game.</p>
+        <p style="color:#333;font-size:15px;line-height:1.7;margin:0">Check the leaderboard — friendly competition is one of the best motivators to study.</p>
+    </div>
+    <div style="text-align:center"><a href="https://apps.apple.com/app/endura-study-timer/id6759482612" style="display:inline-block;background:#4A7C59;color:#fff;text-decoration:none;padding:12px 28px;border-radius:12px;font-size:14px;font-weight:600">Jump Back In</a></div>
+    <p style="color:#999;font-size:11px;text-align:center;margin:16px 0 0">Study smarter. Save wildlife. 🌍</p>
+</div>""",
+    },
+    {
+        "template_key": "reengagement_i3",
+        "name": "Re-engagement — Intermediate drop 3",
+        "subject": "Last call — your streak record is worth saving, {name}",
+        "trigger_day": None,
+        "inactive_days": 9,
+        "min_sessions": 3,
+        "max_sessions": None,
+        "min_streak": 2,
+        "max_streak": 4,
+        "body_html": f"""<div style="font-family:'Segoe UI',sans-serif;max-width:520px;margin:0 auto;padding:40px 32px;background:#E7EFEA;border-radius:20px">
+    <h1 style="color:#4A7C59;margin:0 0 4px;font-size:24px">You worked hard for that streak</h1>
+    <p style="color:#6B9B7A;margin:0 0 24px;font-size:15px">Hey {{name}}, we won't keep emailing forever — but we didn't want you to lose what you built.</p>
+    {_animal_img("grizzly bear")}
+    <div style="background:#fff;border-radius:16px;padding:24px;margin-bottom:20px">
+        <p style="color:#333;font-size:15px;line-height:1.7;margin:0 0 12px">Students who return after a break often beat their old records. Your <strong>{{animals_count}} animals</strong> and <strong>{{total_minutes}} minutes</strong> of study time are still yours.</p>
+        <p style="color:#333;font-size:14px;line-height:1.7;margin:0">One session — that's all it takes to feel like yourself again.</p>
+    </div>
+    <div style="text-align:center"><a href="https://apps.apple.com/app/endura-study-timer/id6759482612" style="display:inline-block;background:#4A7C59;color:#fff;text-decoration:none;padding:12px 28px;border-radius:12px;font-size:14px;font-weight:600">Start One Session</a></div>
+    <p style="color:#999;font-size:11px;text-align:center;margin:16px 0 0">Study smarter. Save wildlife. 🌍</p>
+</div>""",
+    },
+    {
+        "template_key": "reengagement_p2",
+        "name": "Re-engagement — Power user drop 2",
+        "subject": "The sanctuary is quiet without you, {name}",
+        "trigger_day": None,
+        "inactive_days": 7,
+        "min_sessions": 4,
+        "max_sessions": None,
+        "min_streak": 5,
+        "max_streak": None,
+        "body_html": f"""<div style="font-family:'Segoe UI',sans-serif;max-width:520px;margin:0 auto;padding:40px 32px;background:#E7EFEA;border-radius:20px">
+    <h1 style="color:#4A7C59;margin:0 0 4px;font-size:24px">You're a core part of the flock</h1>
+    <p style="color:#6B9B7A;margin:0 0 24px;font-size:15px">Hey {{name}}, power users like you inspire others.</p>
+    {_animal_img("blue whale")}
+    <div style="background:#fff;border-radius:16px;padding:24px;margin-bottom:20px">
+        <p style="color:#333;font-size:15px;line-height:1.7;margin:0 0 12px">New study tips, seasonal challenges, and more species have landed since you last opened the app. Your <strong>{{longest_streak}}-day</strong> personal best is waiting to be extended.</p>
+        <p style="color:#333;font-size:15px;line-height:1.7;margin:0">Your groups and friends haven't forgotten you — open Endura and say hello.</p>
+    </div>
+    <div style="text-align:center"><a href="https://apps.apple.com/app/endura-study-timer/id6759482612" style="display:inline-block;background:#4A7C59;color:#fff;text-decoration:none;padding:12px 28px;border-radius:12px;font-size:14px;font-weight:600">Explore What's New</a></div>
+    <p style="color:#999;font-size:11px;text-align:center;margin:16px 0 0">Study smarter. Save wildlife. 🌍</p>
+</div>""",
+    },
+    {
+        "template_key": "reengagement_p3",
+        "name": "Re-engagement — Power user drop 3",
+        "subject": "We'll be here — whenever you're ready, {name}",
+        "trigger_day": None,
+        "inactive_days": 10,
+        "min_sessions": 4,
+        "max_sessions": None,
+        "min_streak": 5,
+        "max_streak": None,
+        "body_html": f"""<div style="font-family:'Segoe UI',sans-serif;max-width:520px;margin:0 auto;padding:40px 32px;background:#E7EFEA;border-radius:20px">
+    <h1 style="color:#4A7C59;margin:0 0 4px;font-size:24px">This is our last re-engagement email</h1>
+    <p style="color:#6B9B7A;margin:0 0 24px;font-size:15px">Hey {{name}}, we respect your inbox.</p>
+    {_animal_img("panda")}
+    <div style="background:#fff;border-radius:16px;padding:24px;margin-bottom:20px">
+        <p style="color:#333;font-size:15px;line-height:1.7;margin:0 0 12px">You've done amazing things in Endura — <strong>{{total_minutes}} minutes</strong> studied and <strong>{{animals_count}} animals</strong> hatched. If life got busy, that's okay.</p>
+        <p style="color:#333;font-size:14px;line-height:1.7;margin:0">Whenever you're ready, open the app: your sanctuary, badges, and friends will be waiting. No pressure — just wildlife that misses you a little.</p>
+    </div>
+    <div style="text-align:center"><a href="https://apps.apple.com/app/endura-study-timer/id6759482612" style="display:inline-block;background:#4A7C59;color:#fff;text-decoration:none;padding:12px 28px;border-radius:12px;font-size:14px;font-weight:600">Open Endura</a></div>
     <p style="color:#999;font-size:11px;text-align:center;margin:16px 0 0">Study smarter. Save wildlife. 🌍</p>
 </div>""",
     },
