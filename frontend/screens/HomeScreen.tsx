@@ -82,9 +82,17 @@ const NatureLandscape = () => (
   </View>
 );
 
-// Egg nestled in a large 🪹 emoji nest
-const EggInNest = () => (
-  <View style={styles.eggNestContainer}>
+// Egg nestled in a large 🪹 emoji nest. Tapping the egg jumps to the Timer
+// screen — same destination as the "Study to hatch me" button below it, so
+// either affordance gets the user studying.
+const EggInNest = ({ onPress }: { onPress?: () => void }) => (
+  <TouchableOpacity
+    style={styles.eggNestContainer}
+    onPress={onPress}
+    activeOpacity={0.85}
+    accessibilityRole="button"
+    accessibilityLabel="Start a study session to hatch your egg"
+  >
     <View style={styles.eggWrapper}>
       <LottieView
         source={require('../assets/egg-animation.json')}
@@ -94,7 +102,7 @@ const EggInNest = () => (
       />
     </View>
     <Text style={styles.nestEmoji}>🪹</Text>
-  </View>
+  </TouchableOpacity>
 );
 
 // Emoji map for animals (synced with backend)
@@ -497,7 +505,7 @@ export default function HomeScreen() {
 
           {/* Egg Section nestled in Cozy Nest */}
           <View style={styles.eggSection}>
-            <EggInNest />
+            <EggInNest onPress={() => navigation.navigate('Timer')} />
           </View>
           
           {/* Study Button - Below the egg */}

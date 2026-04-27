@@ -28,6 +28,46 @@ import { sessionsAPI, animalsAPI, subjectsAPI, BadgeInfo, Subject } from '../ser
 import { useAuth } from '../contexts/AuthContext';
 import { getAnimalImage } from '../assets/animals';
 import { Analytics } from '../services/analytics';
+import { scheduleLocalNotification, cancelLocalNotification } from '../services/pushNotifications';
+
+// AsyncStorage keys for resilient timer state.
+//
+// Why we persist this to disk:
+//   1. iOS / Android can kill the JS context any time the app is backgrounded
+//      (low memory, force-close, OS swap-out, crash). When that happens all
+//      `useState` is gone — including a finished timer waiting on the user to
+//      tap-to-hatch the egg. Without persistence, the user would silently lose
+//      a session and the egg would seem to "disappear".
+//   2. We split into two keys so we can tell *what stage* the user was in:
+//      `timer:active`   → started a timer that hasn't yet been recorded on the
+//                          server. On reopen, we either resume (still running)
+//                          or we treat it as a finished session (time's up)
+//                          and transition into the hatch celebration.
+//      `timer:hatch`    → server already saved the session, but the user hasn't
+//                          watched the hatch animation yet. On reopen, re-show
+//                          the celebration modal so they get their reward.
+const ACTIVE_TIMER_KEY = (uid: string | number | null | undefined) => `timer:active:${uid ?? 'anon'}`;
+const PENDING_HATCH_KEY = (uid: string | number | null | undefined) => `timer:hatch:${uid ?? 'anon'}`;
+
+type ActiveTimerState = {
+  startedAt: number; // epoch ms
+  durationSec: number;
+  selectedMinutes: number;
+  animalId: number | null;
+  animalName: string | null;
+  subjectId: number | null;
+  subjectName: string | null;
+  notificationId: string | null;
+  useTestTimer: boolean;
+};
+
+type PendingHatchState = {
+  animalEmoji: string;
+  animalName: string;
+  ecoCredits: number;
+  sessionSaveError: boolean;
+  badges: BadgeInfo[];
+};
 
 // 30 Endangered Animals - unlocked in order (synced with backend)
 const ENDANGERED_ANIMALS = [
@@ -317,6 +357,170 @@ export default function TimerScreen() {
     }
   };
 
+  // ---- Resilient timer persistence ----
+  // See ACTIVE_TIMER_KEY / PENDING_HATCH_KEY comments at the top of the file.
+  // These helpers are tolerant of failure: a storage error must never break
+  // the timer UX, so all writes/reads swallow errors and just no-op.
+  const persistActiveTimer = async (state: ActiveTimerState) => {
+    try {
+      await AsyncStorage.setItem(ACTIVE_TIMER_KEY(user?.id), JSON.stringify(state));
+    } catch {}
+  };
+  const clearActiveTimer = async () => {
+    try {
+      await AsyncStorage.removeItem(ACTIVE_TIMER_KEY(user?.id));
+    } catch {}
+  };
+  const persistPendingHatch = async (state: PendingHatchState) => {
+    try {
+      await AsyncStorage.setItem(PENDING_HATCH_KEY(user?.id), JSON.stringify(state));
+    } catch {}
+  };
+  const clearPendingHatch = async () => {
+    try {
+      await AsyncStorage.removeItem(PENDING_HATCH_KEY(user?.id));
+    } catch {}
+  };
+
+  // Restore a finished session whose celebration the user never saw, or resume
+  // a still-running timer if the JS context was killed mid-session. Runs once
+  // per logged-in user (re-runs on user change so account-switch works).
+  const recoveredForUserRef = useRef<number | string | null>(null);
+  useEffect(() => {
+    if (!user?.id) return;
+    if (recoveredForUserRef.current === user.id) return;
+    recoveredForUserRef.current = user.id;
+
+    const recover = async () => {
+      try {
+        // 1. Pending hatch wins: server already has the session, we just need
+        //    to show the user the celebration they missed.
+        const pendingRaw = await AsyncStorage.getItem(PENDING_HATCH_KEY(user.id));
+        if (pendingRaw) {
+          const pending: PendingHatchState = JSON.parse(pendingRaw);
+          setHatchedAnimalInfo({
+            emoji: pending.animalEmoji,
+            name: pending.animalName,
+            ecoCredits: pending.ecoCredits,
+          });
+          setSessionSaveError(!!pending.sessionSaveError);
+          setNewBadges(Array.isArray(pending.badges) ? pending.badges : []);
+          setHatchStage(0);
+          eggWobble.setValue(0);
+          eggScale.setValue(1);
+          eggOpacity.setValue(1);
+          animalRevealScale.setValue(0);
+          setShowConfetti(false);
+          setShowCelebrationModal(true);
+          // Clear the active key if it somehow still exists — the session is
+          // already on the server; we don't want to double-record.
+          await clearActiveTimer();
+          return;
+        }
+
+        // 2. Active timer state: either still running, or finished while the
+        //    app was killed. Either way, recover.
+        const activeRaw = await AsyncStorage.getItem(ACTIVE_TIMER_KEY(user.id));
+        if (!activeRaw) return;
+        const active: ActiveTimerState = JSON.parse(activeRaw);
+        const elapsedSec = Math.floor((Date.now() - active.startedAt) / 1000);
+        const remainingSec = active.durationSec - elapsedSec;
+
+        if (remainingSec > 0) {
+          // Still running — restore the in-progress timer so it keeps ticking.
+          setSelectedMinutes(active.selectedMinutes);
+          setSelectedAnimalId(active.animalId);
+          if (active.subjectId && active.subjectName) {
+            setSelectedSubject({
+              id: active.subjectId,
+              name: active.subjectName,
+              display_name: active.subjectName,
+              is_default: false,
+            });
+          }
+          setTimeLeft(remainingSec);
+          isRunningRef.current = true;
+          setIsRunning(true);
+          setIsPaused(false);
+          return;
+        }
+
+        // 3. Timer already finished. Save the session on the server (the user
+        //    earned this!) and transition into the hatch celebration. Match
+        //    the in-foreground completion path as closely as possible.
+        const localAnimal = ENDANGERED_ANIMALS.find(a => a.id === active.animalId);
+        const hatchedName = active.animalName || localAnimal?.name || 'Mystery Animal';
+        const hatchedEmoji = localAnimal?.emoji || '🐾';
+        const estimatedCoins =
+          active.selectedMinutes +
+          (active.selectedMinutes >= 25 ? 5 : 0) +
+          (active.selectedMinutes >= 50 ? 10 : 0);
+
+        setHatchedAnimalInfo({ emoji: hatchedEmoji, name: hatchedName, ecoCredits: estimatedCoins });
+        setHatchStage(0);
+        eggWobble.setValue(0);
+        eggScale.setValue(1);
+        eggOpacity.setValue(1);
+        animalRevealScale.setValue(0);
+        setShowConfetti(false);
+        setShowCelebrationModal(true);
+        setSessionSaveError(false);
+
+        if (active.animalId && !unlockedAnimals.includes(active.animalId)) {
+          saveUnlockedAnimals([...unlockedAnimals, active.animalId]);
+        }
+
+        let finalCoins = estimatedCoins;
+        let earnedBadges: BadgeInfo[] = [];
+        let saveOk = false;
+        try {
+          const result: any = await sessionsAPI.completeSession(
+            active.selectedMinutes,
+            undefined,
+            active.animalName || undefined,
+            active.subjectId || undefined,
+          );
+          saveOk = true;
+          if (result && typeof result === 'object') {
+            const sessionCoins = result?.session?.coins_earned;
+            const directCoins = result?.coins_earned;
+            if (sessionCoins != null) finalCoins = sessionCoins;
+            else if (directCoins != null) finalCoins = directCoins;
+            if (Array.isArray(result?.new_badges)) earnedBadges = result.new_badges;
+          }
+          setHatchedAnimalInfo(prev => prev ? { ...prev, ecoCredits: finalCoins } : prev);
+          if (earnedBadges.length > 0) setNewBadges(earnedBadges);
+        } catch (err) {
+          // Server save failed (probably offline). Keep `active` around so
+          // we'll retry the next time the app opens — better one duplicate
+          // session than silently losing the user's work.
+          if (__DEV__) console.warn('Recovered session save failed:', err);
+          setSessionSaveError(true);
+        }
+
+        // Cancel any still-pending local notification (it's already fired or
+        // is about to fire and would just be redundant now).
+        if (active.notificationId) await cancelLocalNotification(active.notificationId);
+
+        if (saveOk) {
+          await clearActiveTimer();
+          await persistPendingHatch({
+            animalEmoji: hatchedEmoji,
+            animalName: hatchedName,
+            ecoCredits: finalCoins,
+            sessionSaveError: false,
+            badges: earnedBadges,
+          });
+          try { await refreshUser(); } catch {}
+        }
+      } catch (e) {
+        if (__DEV__) console.warn('Timer recovery failed:', e);
+      }
+    };
+
+    recover();
+  }, [user?.id]);
+
   // Handle back button press during timer
   useEffect(() => {
     const backHandler = BackHandler.addEventListener('hardwareBackPress', () => {
@@ -404,7 +608,7 @@ export default function TimerScreen() {
     const animalName = ENDANGERED_ANIMALS.find(a => a.id === selectedAnimalId)?.name || 'your animal';
     Alert.alert(
       '💀 YOUR EGG WILL DIE!',
-      `If you leave now, ${animalName} will never hatch. This endangered creature is counting on you to stay focused. Every second matters.\n\nYou will lose ALL progress and earn ZERO eco-credits.`,
+      `If you leave now, your animal will never hatch. This endangered creature is counting on you to stay focused. Every second matters.\n\nYou will lose ALL progress and earn ZERO eco-credits.`,
       [
         {
           text: "I'll stay!",
@@ -416,7 +620,7 @@ export default function TimerScreen() {
         {
           text: 'Abandon Egg',
           style: 'destructive',
-          onPress: () => {
+          onPress: async () => {
             const dying = ENDANGERED_ANIMALS.find(a => a.id === selectedAnimalId)?.name || 'Your animal';
             if (intervalRef.current) clearInterval(intervalRef.current);
             isRunningRef.current = false;
@@ -427,6 +631,16 @@ export default function TimerScreen() {
             setDeathCause('abandoned');
             setShowEggDeathModal(true);
             Vibration.vibrate([0, 300, 100, 300]);
+            // The egg died — drop persisted state and silence the OS reminder.
+            try {
+              const activeRaw = await AsyncStorage.getItem(ACTIVE_TIMER_KEY(user?.id));
+              if (activeRaw) {
+                const active: ActiveTimerState = JSON.parse(activeRaw);
+                await cancelLocalNotification(active.notificationId);
+              }
+            } catch {}
+            await clearActiveTimer();
+            await clearPendingHatch();
             if (onConfirm) onConfirm();
           },
         },
@@ -492,6 +706,20 @@ export default function TimerScreen() {
       saveUnlockedAnimals([...unlockedAnimals, selectedAnimalId]);
     }
 
+    // Cancel the OS reminder we scheduled at start — the user is already here.
+    let scheduledNotificationId: string | null = null;
+    try {
+      const activeRaw = await AsyncStorage.getItem(ACTIVE_TIMER_KEY(user?.id));
+      if (activeRaw) {
+        const active: ActiveTimerState = JSON.parse(activeRaw);
+        scheduledNotificationId = active.notificationId || null;
+      }
+    } catch {}
+    await cancelLocalNotification(scheduledNotificationId);
+
+    let finalCoins = estimatedCoins;
+    let earnedBadges: BadgeInfo[] = [];
+    let saveOk = false;
     try {
       const result: any = await sessionsAPI.completeSession(
         selectedMinutes,
@@ -499,25 +727,55 @@ export default function TimerScreen() {
         localAnimal?.name,
         selectedSubject?.id || undefined
       );
+      saveOk = true;
       if (result && typeof result === 'object') {
         const sessionCoins = result?.session?.coins_earned;
         const directCoins = result?.coins_earned;
         if (sessionCoins !== undefined && sessionCoins !== null) {
+          finalCoins = sessionCoins;
           setHatchedAnimalInfo(prev => prev ? { ...prev, ecoCredits: sessionCoins } : prev);
         } else if (directCoins !== undefined && directCoins !== null) {
+          finalCoins = directCoins;
           setHatchedAnimalInfo(prev => prev ? { ...prev, ecoCredits: directCoins } : prev);
         }
         if (Array.isArray(result?.new_badges) && result.new_badges.length > 0) {
+          earnedBadges = result.new_badges;
           setNewBadges(result.new_badges);
         }
       }
     } catch (error: any) {
       if (__DEV__) console.warn('Session save failed (celebration still showing):', error?.message || error);
       try {
-        await sessionsAPI.completeSession(selectedMinutes, undefined, localAnimal?.name, undefined);
+        const retry: any = await sessionsAPI.completeSession(selectedMinutes, undefined, localAnimal?.name, undefined);
+        saveOk = true;
+        if (retry?.session?.coins_earned != null) finalCoins = retry.session.coins_earned;
+        else if (retry?.coins_earned != null) finalCoins = retry.coins_earned;
       } catch (_retryErr) {
         setSessionSaveError(true);
       }
+    }
+
+    // Once the server has the session, drop the active record and stash the
+    // hatch info — that way a force-close before the user taps the egg still
+    // re-shows the celebration on next launch (and never double-records).
+    if (saveOk) {
+      await clearActiveTimer();
+      await persistPendingHatch({
+        animalEmoji: hatchedEmoji,
+        animalName: hatchedName,
+        ecoCredits: finalCoins,
+        sessionSaveError: false,
+        badges: earnedBadges,
+      });
+    } else {
+      // Save failed — keep `active` so the recovery effect retries next launch.
+      await persistPendingHatch({
+        animalEmoji: hatchedEmoji,
+        animalName: hatchedName,
+        ecoCredits: finalCoins,
+        sessionSaveError: true,
+        badges: [],
+      });
     }
 
     try { await refreshUser(); } catch (_) {}
@@ -567,6 +825,9 @@ export default function TimerScreen() {
     setSelectedAnimalId(null);
     setSelectedSubject(null);
     resetTimer();
+    // The user has now seen the hatch — drop the persisted state so we don't
+    // re-show it on next launch.
+    clearPendingHatch();
   };
 
   const closeBadgesModal = () => {
@@ -589,13 +850,46 @@ export default function TimerScreen() {
     setShowSubjectModal(true);
   };
 
-  const confirmSubjectAndStart = () => {
+  const confirmSubjectAndStart = async () => {
     if (!selectedSubject) {
       Alert.alert('Select a Subject', 'Please select what subject you are studying!');
       return;
     }
     setShowSubjectModal(false);
     Analytics.sessionStarted(selectedMinutes, selectedSubject?.display_name || '');
+
+    const durationSec = selectedMinutes * TIME_MULTIPLIER;
+    const localAnimal = ENDANGERED_ANIMALS.find(a => a.id === selectedAnimalId);
+
+    // Schedule the OS-level "timer done" reminder before flipping isRunning so
+    // a force-close immediately after start still produces a notification.
+    const notificationId = await scheduleLocalNotification(
+      'Your timer is done! Tap to hatch egg 🥚',
+      `${selectedMinutes} ${selectedMinutes === 1 ? 'minute' : 'minutes'} of focus complete — open Endura to hatch your animal.`,
+      durationSec,
+      {
+        deep_link: 'Timer',
+        kind: 'timer_complete',
+        // Carrying template_key tells pushNotifications.reportLocalFired to log
+        // this device-scheduled notification to the backend so it shows on the
+        // admin dashboard alongside server-sent pushes.
+        template_key: 'push_timer_done',
+        category: 'local',
+      },
+    );
+
+    await persistActiveTimer({
+      startedAt: Date.now(),
+      durationSec,
+      selectedMinutes,
+      animalId: selectedAnimalId,
+      animalName: localAnimal?.name || null,
+      subjectId: selectedSubject?.id || null,
+      subjectName: selectedSubject?.display_name || null,
+      notificationId,
+      useTestTimer: !!user?.use_test_timer,
+    });
+
     setIsRunning(true);
     setIsPaused(false);
   };

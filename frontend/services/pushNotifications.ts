@@ -150,9 +150,12 @@ export function setupNotificationListeners(): () => void {
 
   const receivedSub = Notifications.addNotificationReceivedListener(notification => {
     if (__DEV__) console.log('Notification received in foreground:', notification.request.content.title);
+    void reportLocalFired(notification, false);
   });
 
   const responseSub = Notifications.addNotificationResponseReceivedListener(response => {
+    void reportLocalFired(response.notification, true);
+
     const data = response.notification.request.content.data || {};
     const deepLink = (data as any).deep_link as string | undefined;
     if (!deepLink) return;
@@ -178,9 +181,86 @@ export function setupNotificationListeners(): () => void {
   };
 }
 
+/** If a notification carries a `template_key` in its data payload, POST to
+ *  /push/local-fired so admin metrics see device-scheduled notifications.
+ *  Server-sent pushes (which are already logged by the backend at send time)
+ *  don't carry `template_key` in `data`, so they are skipped here. Called from
+ *  both `received` (delivery) and `response` (tap) listeners — backend dedupes
+ *  on `identifier` and just flips `opened` on the second call. */
+async function reportLocalFired(
+  notification: Notifications.Notification,
+  opened: boolean,
+): Promise<void> {
+  try {
+    const data = (notification.request.content.data || {}) as Record<string, unknown>;
+    const templateKey = typeof data.template_key === 'string' ? data.template_key : null;
+    if (!templateKey) return;
+    await pushAPI.logLocalFired({
+      template_key: templateKey,
+      identifier: notification.request.identifier,
+      title: notification.request.content.title || undefined,
+      body: notification.request.content.body || undefined,
+      category: typeof data.category === 'string' ? data.category : 'local',
+      opened,
+    });
+  } catch (e: any) {
+    if (__DEV__) console.log('logLocalFired failed (non-fatal):', e?.message || e);
+  }
+}
+
 /** Reset the app icon badge count (e.g. when user opens the app). */
 export async function clearBadgeCount(): Promise<void> {
   try {
     await Notifications.setBadgeCountAsync(0);
+  } catch {}
+}
+
+/**
+ * Schedule a *local* notification to fire after `seconds` seconds.
+ *
+ * Used for the focus timer: we want the OS to ping the user the moment their
+ * session ends, even if the app was force-closed or backgrounded. Local
+ * notifications do not require network or the Expo push service — the OS
+ * itself wakes us up at the scheduled time.
+ *
+ * Returns the scheduled identifier (or null if scheduling failed) so the
+ * caller can cancel it later (e.g. user finishes the timer in-app and we
+ * don't want a redundant ping).
+ */
+export async function scheduleLocalNotification(
+  title: string,
+  body: string,
+  seconds: number,
+  data: Record<string, unknown> = {}
+): Promise<string | null> {
+  if (seconds <= 0) return null;
+  try {
+    configureForegroundHandler();
+    await ensureAndroidChannel();
+    const id = await Notifications.scheduleNotificationAsync({
+      content: {
+        title,
+        body,
+        sound: 'default',
+        data,
+      },
+      trigger: {
+        type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
+        seconds: Math.max(1, Math.round(seconds)),
+        repeats: false,
+      } as Notifications.TimeIntervalTriggerInput,
+    });
+    return id || null;
+  } catch (e: any) {
+    if (__DEV__) console.warn('scheduleLocalNotification failed:', e?.message || e);
+    return null;
+  }
+}
+
+/** Cancel a previously scheduled local notification by id. Best-effort. */
+export async function cancelLocalNotification(id: string | null | undefined): Promise<void> {
+  if (!id) return;
+  try {
+    await Notifications.cancelScheduledNotificationAsync(id);
   } catch {}
 }

@@ -470,6 +470,42 @@ export default function SocialScreen() {
     );
   };
 
+  const handleLeaveGroup = (group: StudyGroup) => {
+    const isCreator = group.creator_id === user?.id;
+    const otherMemberCount = group.members.filter(m => m.user_id !== user?.id).length;
+
+    // If you're the creator and you're the last person → leaving wipes the
+    // whole group. Surface that consequence instead of silently deleting.
+    const willDeleteGroup = isCreator && otherMemberCount === 0;
+
+    const title = willDeleteGroup ? `Delete "${group.name}"?` : `Leave "${group.name}"?`;
+    const message = willDeleteGroup
+      ? "You're the last member, so leaving will permanently delete this group and all its messages. This can't be undone."
+      : isCreator
+        ? "You'll stop counting toward this group's goal. Since you created it, ownership will pass to the longest-tenured member."
+        : "You'll stop counting toward this group's goal. The group creator can re-invite you later.";
+    const confirmLabel = willDeleteGroup ? 'Delete Group' : 'Leave Group';
+
+    Alert.alert(title, message, [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: confirmLabel,
+        style: 'destructive',
+        onPress: async () => {
+          try {
+            await groupsAPI.leave(group.id);
+            // Close any open modals tied to the group we just left.
+            setShowEditGroup(null);
+            setSelectedGroup(null);
+            await loadData();
+          } catch (e: any) {
+            Alert.alert('Error', e.message || 'Could not leave group');
+          }
+        },
+      },
+    ]);
+  };
+
   // ---- Group Actions ----
   const handleCreateGroup = async () => {
     if (!groupName.trim()) return;
@@ -653,6 +689,17 @@ export default function SocialScreen() {
   const renderLeaderboard = () => {
     const activeList = leaderboardTab === 'all' ? globalLeaderboard : leaderboardTab === 'friends' ? friendsLeaderboard : schoolLeaderboard;
     const userRank = activeList.findIndex(e => e.user_id === user?.id);
+    // Defense-in-depth: if the backend response is non-empty but somehow doesn't
+    // include the current user (e.g. the leaderboard endpoint partially failed
+    // and dropped them, or the user hasn't joined a school yet on the school
+    // tab), still show them at the bottom so they're never missing from their
+    // own friends/school screen. We only do this when we have *some* entries —
+    // an entirely-empty list still falls through to the "Add friends…" CTA.
+    const showFallbackSelf =
+      userRank === -1 &&
+      activeList.length > 0 &&
+      leaderboardTab !== 'all' &&
+      !!user?.id;
 
     return (
       <View style={styles.tabContent}>
@@ -736,6 +783,18 @@ export default function SocialScreen() {
                   <Text style={[styles.leaderboardName, styles.leaderboardNameSelf]} numberOfLines={1}>You</Text>
                   <Text style={styles.leaderboardStreak}>🔥 {user?.current_streak || 0}</Text>
                   <Text style={styles.leaderboardMins}>{formatStudyTime(activeList[userRank]?.total_study_minutes ?? user?.total_study_minutes ?? 0)}</Text>
+                </View>
+              )}
+
+              {showFallbackSelf && (
+                <View style={[styles.leaderboardRow, styles.leaderboardRowSelf, { marginTop: 8, borderTopWidth: 1, borderTopColor: '#E7EFEA', paddingTop: 10 }]}>
+                  <Text style={styles.leaderboardRank}>—</Text>
+                  <View style={{ marginRight: 6 }}>
+                    <UserAvatar id={user?.id || 0} username={user?.username || undefined} profilePicUrl={profilePic} size={24} />
+                  </View>
+                  <Text style={[styles.leaderboardName, styles.leaderboardNameSelf]} numberOfLines={1}>You</Text>
+                  <Text style={styles.leaderboardStreak}>🔥 {user?.current_streak || 0}</Text>
+                  <Text style={styles.leaderboardMins}>{formatStudyTime(user?.total_study_minutes ?? 0)}</Text>
                 </View>
               )}
             </>
@@ -1329,6 +1388,22 @@ export default function SocialScreen() {
                     </View>
                   );
                 })}
+
+                <TouchableOpacity
+                  style={[styles.modalDanger, { marginTop: 14 }]}
+                  onPress={() => {
+                    setShowChatActions(false);
+                    handleLeaveGroup(selectedGroup);
+                  }}
+                  activeOpacity={0.85}
+                >
+                  <Text style={styles.modalDangerText}>
+                    {selectedGroup.creator_id === user?.id &&
+                    selectedGroup.members.filter(m => m.user_id !== user?.id).length === 0
+                      ? 'Delete Group'
+                      : 'Leave Group'}
+                  </Text>
+                </TouchableOpacity>
               </View>
             )}
 
@@ -1736,6 +1811,21 @@ export default function SocialScreen() {
               <TouchableOpacity style={styles.modalCancel} onPress={() => setShowEditGroup(null)}>
                 <Text style={styles.modalCancelText}>Cancel</Text>
               </TouchableOpacity>
+
+              {showEditGroup && (
+                <TouchableOpacity
+                  style={styles.modalDanger}
+                  onPress={() => handleLeaveGroup(showEditGroup)}
+                  activeOpacity={0.85}
+                >
+                  <Text style={styles.modalDangerText}>
+                    {showEditGroup.creator_id === user?.id &&
+                    showEditGroup.members.filter(m => m.user_id !== user?.id).length === 0
+                      ? 'Delete Group'
+                      : 'Leave Group'}
+                  </Text>
+                </TouchableOpacity>
+              )}
             </View>
           </ScrollView>
         </View>
@@ -2640,6 +2730,16 @@ const styles = StyleSheet.create({
   modalPrimaryText: { fontSize: 16, fontWeight: '700', color: '#fff' },
   modalCancel: { paddingVertical: 12, alignItems: 'center', marginTop: 4 },
   modalCancelText: { fontSize: 14, fontWeight: '600', color: colors.textMuted },
+  modalDanger: {
+    paddingVertical: 14,
+    alignItems: 'center',
+    marginTop: spacing.md,
+    borderRadius: borderRadius.full,
+    borderWidth: 1.5,
+    borderColor: '#E5B4B4',
+    backgroundColor: '#FFF5F5',
+  },
+  modalDangerText: { fontSize: 14, fontWeight: '700', color: '#C04141' },
   friendPickerRow: { maxHeight: 44, marginBottom: 4 },
   friendPickerChip: {
     paddingHorizontal: 16, paddingVertical: 10, borderRadius: 20,

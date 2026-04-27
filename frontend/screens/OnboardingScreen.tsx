@@ -54,7 +54,24 @@ export default function OnboardingScreen() {
     return COUNTRIES.filter(c => c.toLowerCase().includes(q));
   }, [countrySearch]);
   const [isLoading, setIsLoading] = useState(false);
-  const { refreshUser, setProfilePic } = useAuth();
+  const { refreshUser, setProfilePic, logout } = useAuth();
+
+  const handleSignOut = () => {
+    Alert.alert(
+      'Sign out?',
+      'You can come back any time and pick up where you left off.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Sign out',
+          style: 'destructive',
+          onPress: async () => {
+            try { await logout(); } catch {}
+          },
+        },
+      ],
+    );
+  };
 
   // Subject picker state
   const [showSubjectPicker, setShowSubjectPicker] = useState(false);
@@ -217,6 +234,12 @@ export default function OnboardingScreen() {
     return (
       <LinearGradient colors={['#E7EFEA', '#DCEAE3']} style={{ flex: 1 }}>
         <SafeAreaView style={{ flex: 1 }}>
+          <View style={ps.topBar}>
+            <View style={{ flex: 1 }} />
+            <TouchableOpacity onPress={handleSignOut} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+              <Text style={ps.signOutText}>Sign out</Text>
+            </TouchableOpacity>
+          </View>
           <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
             <ScrollView contentContainerStyle={ps.content} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
               <Text style={ps.title}>What do you study?</Text>
@@ -292,6 +315,12 @@ export default function OnboardingScreen() {
   return (
     <LinearGradient colors={['#E7EFEA', '#DCEAE3']} style={{ flex: 1 }}>
       <SafeAreaView style={{ flex: 1 }}>
+        <View style={ps.topBar}>
+          <View style={{ flex: 1 }} />
+          <TouchableOpacity onPress={handleSignOut} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+            <Text style={ps.signOutText}>Sign out</Text>
+          </TouchableOpacity>
+        </View>
         <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
           <ScrollView contentContainerStyle={ps.content} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
             <Text style={ps.title}>Set Up Your Profile</Text>
@@ -464,7 +493,19 @@ const sp = StyleSheet.create({
 
 // Profile setup styles
 const ps = StyleSheet.create({
-  content: { flexGrow: 1, paddingHorizontal: 32, paddingTop: 32, paddingBottom: 48 },
+  topBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingTop: 8,
+    paddingBottom: 4,
+  },
+  signOutText: {
+    color: C.textMid,
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  content: { flexGrow: 1, paddingHorizontal: 32, paddingTop: 8, paddingBottom: 48 },
   title: { fontSize: 28, fontWeight: '800', color: C.textDark, textAlign: 'center', marginBottom: 4 },
   sub: { fontSize: 15, color: C.textMid, textAlign: 'center', marginBottom: 28 },
   avatarWrap: { alignItems: 'center', marginBottom: 20 },

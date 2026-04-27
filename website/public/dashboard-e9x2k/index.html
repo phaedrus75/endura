@@ -1009,7 +1009,7 @@
             <!-- Push -->
             <div class="user-content active" id="comms-tab-push">
             <p style="color:var(--text-muted);margin-bottom:20px;font-size:14px;max-width:760px">
-                Lifecycle, event, and broadcast pushes sent via Expo. The <strong>opt-in funnel</strong> shows how many users have given push permission. Every push is tracked in the <code>push_logs</code> table — opens are reported by the device, drops are users who opted out of the category.
+                Lifecycle, event, and broadcast pushes sent via Expo, plus <strong><code>local</code></strong>-category notifications scheduled directly on the device by the OS (e.g. <code>push_timer_done</code> when a focus session ends). The <strong>opt-in funnel</strong> shows how many users have given push permission. Every push is tracked in the <code>push_logs</code> table — opens are reported by the device, drops are users who opted out of the category. Local notifications report delivery + open via <code>POST /push/local-fired</code>.
             </p>
 
             <!-- Opt-in funnel -->

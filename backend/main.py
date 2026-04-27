@@ -5916,6 +5916,71 @@ def update_notification_prefs(
     return get_notification_prefs(current_user=current_user)
 
 
+class LocalNotificationFired(BaseModel):
+    """Reported by the device when a locally-scheduled notification actually fires.
+
+    Local notifications are scheduled by the OS (via expo-notifications) and never
+    touch the backend at send-time, so without this endpoint they're invisible to
+    admin dashboards. The mobile app calls this from its `received` listener
+    (delivery confirmation) and `response` listener (tap = open).
+    """
+
+    template_key: str = Field(..., min_length=1, max_length=80)
+    identifier: str = Field(..., min_length=1, max_length=200)
+    title: Optional[str] = Field(None, max_length=200)
+    body: Optional[str] = Field(None, max_length=500)
+    category: Optional[str] = Field("local", max_length=30)
+    opened: bool = False
+
+
+@app.post("/push/local-fired")
+@limiter.limit("60/minute")
+def log_local_notification_fired(
+    request: Request,
+    body: LocalNotificationFired,
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Record a device-scheduled notification in `push_logs` so it appears on the
+    admin dashboard alongside server-sent pushes.
+
+    The device sends one call when the notification is delivered (foreground) and
+    optionally a second call when the user taps it. We dedupe by (user_id,
+    identifier) — the second call just flips `opened=True` so we capture both
+    delivery counts and open rates without inflating totals.
+    """
+    ticket_key = f"local:{body.identifier}"
+    existing = db.query(models.PushLog).filter(
+        models.PushLog.user_id == current_user.id,
+        models.PushLog.expo_ticket_id == ticket_key,
+    ).first()
+
+    now = datetime.utcnow()
+    if existing:
+        if body.opened and not existing.opened:
+            existing.opened = True
+            existing.opened_at = now
+            db.commit()
+        return {"ok": True, "id": existing.id, "updated": True}
+
+    log = models.PushLog(
+        user_id=current_user.id,
+        push_token=current_user.push_token,
+        template_key=body.template_key,
+        category=body.category or "local",
+        title=body.title,
+        body=body.body,
+        expo_ticket_id=ticket_key,
+        sent_at=now,
+        status="delivered",
+        opened=bool(body.opened),
+        opened_at=now if body.opened else None,
+    )
+    db.add(log)
+    db.commit()
+    return {"ok": True, "id": log.id, "updated": False}
+
+
 # ── Admin endpoints ──────────────────────────────────────────────
 
 class AdminPushTest(BaseModel):

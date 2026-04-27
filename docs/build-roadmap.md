@@ -1,7 +1,7 @@
 # Endura — Build Roadmap
 
 > **Editable working doc.** Tick, cut, reorder, add notes.
-> Last updated: 26 April 2026 (build 20 — reactions push + traffic optimisation)
+> Last updated: 27 April 2026 (build 21 — onboarding rework + timer resilience)
 
 ---
 
@@ -21,6 +21,31 @@
 - [x] Server-side onboarding timestamps (`username_set_at`, `onboarding_completed_at`) for funnel measurement
 
 Build 15 was **measurement, not friction reduction.** Build 16 is where we actually move the cliff.
+
+---
+
+## Build 21 — Onboarding rework + timer resilience (in progress)
+
+**Theme:** "Show the value before asking for the email; never let a finished study session vanish."
+
+### Onboarding (shipped to chat)
+
+- [x] New `WalkthroughScreen` shows the 6 feature slides *before* email + verification (was the other way around)
+- [x] `Avatar` component: profile picture defaults to the user's first initial on a deterministically-coloured background; sign-up photo step is now optional and editable from the profile screen later
+- [x] "Sign out" escape hatch on the onboarding profile + subjects screens (previously, a user who landed in onboarding had no way out without creating an account)
+
+### Timer / egg flow (this PR)
+
+Bug report: *"if a user forgets to open the app right after the egg is ready to hatch, the next time they open the app their egg disappears and they can never tap to hatch — it deletes as a timer, study session, eco-credit, animal hatched, etc."*
+
+Root cause: timer state lived only in component `useState`. When iOS / Android killed the JS context (force-close, low memory, OS swap-out), a finished session that hadn't yet been celebrated was lost — and a session in flight could disappear mid-timer.
+
+- [x] **Persist active timer** to AsyncStorage on start (`{startedAt, durationSec, animalId, subjectId, notificationId}`). On TimerScreen mount we either resume the in-progress timer or, if it already expired, post the session to `/sessions` and surface the hatch celebration the user missed.
+- [x] **Persist pending hatch** after `handleTimerComplete` saves the session. If the user kills the app before tapping through the egg, the celebration re-appears on next launch — server data is never double-recorded.
+- [x] **Local "timer done" notification.** When the timer starts we schedule a `Notifications.scheduleNotificationAsync` for `durationSec` later: *"Your timer is done! Tap to hatch egg 🥚"* — fires even if the app is force-closed. Tapping it deep-links to `Timer`, where the recovery effect immediately pops the egg.
+- [x] Notification is cancelled when the user finishes (or abandons) the timer in-app, so they never get a redundant ping.
+- [x] Persisted state is cleared on egg-abandon (the user explicitly chose to lose progress) and on celebration close (the user has now seen their reward).
+- [x] Recovery is offline-tolerant: if `/sessions` save fails, we keep `timer:active` and retry on the next launch — better one duplicate session than silently dropping the user's work.
 
 ---
 

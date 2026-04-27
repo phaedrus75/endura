@@ -61,6 +61,86 @@ class TestPushTokenEndpoints:
         assert resp.status_code == 401
 
 
+class TestLocalNotificationFired:
+    """POST /push/local-fired — device-scheduled notifications report back so
+    they appear on the admin dashboard alongside server-sent pushes."""
+
+    PAYLOAD = {
+        "template_key": "push_timer_done",
+        "identifier": "abc-123",
+        "title": "Your timer is done!",
+        "body": "25 minutes complete.",
+        "category": "local",
+        "opened": False,
+    }
+
+    def test_logs_delivery(self, client, alice, alice_headers, db):
+        """Inserts a push_logs row with status=delivered when the device confirms
+        the notification fired."""
+        resp = client.post("/push/local-fired", json=self.PAYLOAD, headers=alice_headers)
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["ok"] is True
+        assert body["updated"] is False
+
+        log = db.query(models.PushLog).filter(models.PushLog.id == body["id"]).first()
+        assert log is not None
+        assert log.user_id == alice.id
+        assert log.template_key == "push_timer_done"
+        assert log.category == "local"
+        assert log.status == "delivered"
+        assert log.opened is False
+        assert log.expo_ticket_id == "local:abc-123"
+
+    def test_dedupes_by_identifier_and_marks_opened_on_tap(
+        self, client, alice, alice_headers, db
+    ):
+        """Second call with the same identifier doesn't insert a new row — it
+        flips `opened=True` so we capture taps without inflating delivery counts."""
+        first = client.post("/push/local-fired", json=self.PAYLOAD, headers=alice_headers)
+        assert first.status_code == 200
+        first_id = first.json()["id"]
+
+        second = client.post(
+            "/push/local-fired",
+            json={**self.PAYLOAD, "opened": True},
+            headers=alice_headers,
+        )
+        assert second.status_code == 200
+        body = second.json()
+        assert body["id"] == first_id
+        assert body["updated"] is True
+
+        # Only one row in push_logs for this identifier, and it's now opened.
+        rows = (
+            db.query(models.PushLog)
+            .filter(models.PushLog.expo_ticket_id == "local:abc-123")
+            .all()
+        )
+        assert len(rows) == 1
+        assert rows[0].opened is True
+        assert rows[0].opened_at is not None
+
+    def test_requires_auth(self, client):
+        """Anonymous calls are rejected so the endpoint can't be used to spam logs."""
+        resp = client.post("/push/local-fired", json=self.PAYLOAD)
+        assert resp.status_code == 401
+
+    def test_appears_in_admin_metrics(self, client, alice_headers):
+        """After logging a local notification, /admin/push/metrics should count it
+        in the `local` category — confirming the dashboard surfaces it."""
+        from tests.conftest import admin_headers
+        client.post("/push/local-fired", json=self.PAYLOAD, headers=alice_headers)
+
+        resp = client.get("/admin/push/metrics?days=7", headers=admin_headers())
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "local" in data["by_category"], (
+            f"local notifications missing from metrics: {data['by_category']}"
+        )
+        assert data["by_category"]["local"].get("delivered", 0) >= 1
+
+
 class TestAdminPushEndpoints:
     def test_get_opt_in_funnel(self, client):
         """GET /admin/push/opt-in-funnel returns KPIs."""

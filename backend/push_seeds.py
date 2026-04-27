@@ -138,4 +138,19 @@ DEFAULT_PUSH_TEMPLATES = [
         "category": "reminder",
         "deep_link": "Timer",
     },
+
+    # ── Local (device-scheduled) notifications ──
+    # These are scheduled directly by the mobile app via expo-notifications and
+    # never go through Expo Push API. The device pings POST /push/local-fired
+    # when they actually deliver, so they show up in admin metrics. We seed the
+    # template so it appears in the dashboard's template list and can be edited
+    # without redeploying the app.
+    {
+        "template_key": "push_timer_done",
+        "name": "Timer complete (local)",
+        "title": "Your timer is done! Tap to hatch egg 🥚",
+        "body": "{minutes} minutes of focus complete — open Endura to hatch your animal.",
+        "category": "local",
+        "deep_link": "Timer",
+    },
 ]

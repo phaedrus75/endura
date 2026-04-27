@@ -575,7 +575,9 @@ def get_global_leaderboard(db: Session, period: str = "all_time") -> List[dict]:
             "rank": rank,
             "user_id": u.id,
             "username": u.username or f"User {u.id}",
-            "total_study_minutes": u.total_study_minutes,
+            # `total_study_minutes` is `Optional[int]` in the DB (legacy NULLs);
+            # coerce so pydantic never sees None on a non-optional field.
+            "total_study_minutes": int(u.total_study_minutes or 0),
             "current_streak": get_effective_streak(u),
             "animals_count": 0,
             "total_donated": 0,
@@ -584,43 +586,38 @@ def get_global_leaderboard(db: Session, period: str = "all_time") -> List[dict]:
     return leaderboard
 
 
-def get_school_leaderboard(db: Session, current_user, period: str = "all_time") -> List[dict]:
+def get_school_leaderboard(db: Session, current_user, period: str = "all_time", limit: int = 100) -> List[dict]:
     if not current_user.school:
         return []
     school_lower = current_user.school.strip().lower()
+    # IMPORTANT: do NOT call `.limit(limit)` here. We must sort by study minutes
+    # *first* and then truncate, otherwise Postgres returns rows in arbitrary
+    # order and the top studiers can be cut off before they're ever ranked
+    # (see endura-v-2 bug: missing users on friends/school leaderboards).
     users = db.query(models.User).filter(
         models.User.school.isnot(None),
         func.lower(func.trim(models.User.school)) == school_lower,
         or_(models.User.is_archived == False, models.User.is_archived == None),
-    ).limit(100).all()
+    ).all()
 
     if period == "week":
         user_ids = [u.id for u in users]
         weekly = _weekly_minutes_map(db, user_ids)
-        users_with_mins = [(u, weekly.get(u.id, 0)) for u in users]
-        users_with_mins.sort(key=lambda x: x[1], reverse=True)
-        leaderboard = []
-        for rank, (u, mins) in enumerate(users_with_mins, 1):
-            leaderboard.append({
-                "rank": rank,
-                "user_id": u.id,
-                "username": u.username or f"User {u.id}",
-                "total_study_minutes": mins,
-                "current_streak": get_effective_streak(u),
-                "animals_count": 0,
-                "total_donated": 0,
-                "profile_pic_url": u.profile_pic_url,
-            })
-        return leaderboard
+        users_with_mins = [(u, int(weekly.get(u.id) or 0)) for u in users]
+    else:
+        # Coerce NULL → 0 to avoid crashing the sort on legacy rows. See
+        # `get_leaderboard` for the full failure-mode write-up.
+        users_with_mins = [(u, int(u.total_study_minutes or 0)) for u in users]
+    users_with_mins.sort(key=lambda x: x[1], reverse=True)
+    users_with_mins = users_with_mins[:limit]
 
-    users_sorted = sorted(users, key=lambda u: u.total_study_minutes, reverse=True)
     leaderboard = []
-    for rank, u in enumerate(users_sorted, 1):
+    for rank, (u, mins) in enumerate(users_with_mins, 1):
         leaderboard.append({
             "rank": rank,
             "user_id": u.id,
             "username": u.username or f"User {u.id}",
-            "total_study_minutes": u.total_study_minutes,
+            "total_study_minutes": mins,
             "current_streak": get_effective_streak(u),
             "animals_count": 0,
             "total_donated": 0,
@@ -629,22 +626,38 @@ def get_school_leaderboard(db: Session, current_user, period: str = "all_time") 
     return leaderboard
 
 
-def get_leaderboard(db: Session, user_id: int, limit: int = 20, period: str = "all_time") -> List[dict]:
+def get_leaderboard(db: Session, user_id: int, limit: int = 100, period: str = "all_time") -> List[dict]:
+    """Friends leaderboard (current_user + accepted friends).
+
+    History: this function previously applied `.limit(limit)` *before* sorting
+    by study minutes, which meant Postgres truncated the friend list in
+    arbitrary row order and only the surviving subset was ranked. With more
+    than ~20 friends the current user could fall outside the cut entirely, and
+    high-scoring friends added later would silently disappear from the
+    leaderboard. We now fetch the full friend set, sort, and *then* truncate.
+    """
     friends = get_friends(db, user_id)
-    friend_ids = [entry["user"].id for entry in friends] + [user_id]
+    # Defensive de-dup: if a user has stray duplicate friendship rows, dedupe
+    # so they don't appear twice on the leaderboard.
+    friend_ids = list({entry["user"].id for entry in friends} | {user_id})
 
     users = db.query(models.User).filter(
         models.User.id.in_(friend_ids),
         or_(models.User.is_archived == False, models.User.is_archived == None),
-    ).limit(limit).all()
+    ).all()
 
     if period == "week":
         weekly = _weekly_minutes_map(db, friend_ids)
-        users_with_mins = [(u, weekly.get(u.id, 0)) for u in users]
-        users_with_mins.sort(key=lambda x: x[1], reverse=True)
+        users_with_mins = [(u, int(weekly.get(u.id) or 0)) for u in users]
     else:
-        users_with_mins = [(u, u.total_study_minutes) for u in users]
-        users_with_mins.sort(key=lambda x: x[1], reverse=True)
+        # Coerce NULL → 0. Legacy users created before `default=0` was added
+        # to `total_study_minutes` can still hold NULL; without this, the
+        # sort below raises `TypeError: '<' not supported between NoneType
+        # and int` and the entire leaderboard 500s — making the current
+        # user invisible on their own friends leaderboard.
+        users_with_mins = [(u, int(u.total_study_minutes or 0)) for u in users]
+    users_with_mins.sort(key=lambda x: x[1], reverse=True)
+    users_with_mins = users_with_mins[:limit]
 
     uid_list = [u.id for u, _ in users_with_mins]
     animals_by_uid: dict = {}
@@ -801,12 +814,62 @@ def join_group(db: Session, user_id: int, group_id: int) -> tuple:
 
 
 def leave_group(db: Session, user_id: int, group_id: int) -> bool:
+    """Remove `user_id` from `group_id`.
+
+    Returns False if the user wasn't a member; True otherwise.
+
+    Creator handling — important for the leave-group UX: if the user leaving is
+    also the group creator, blindly deleting their `GroupMember` row would
+    leave the group orphaned (`creator_id` pointing at a non-member, so admin
+    actions silently fail and the group can't be edited or deleted by anyone).
+    Two cases:
+      * Other members exist → transfer the creator role to the longest-tenured
+        remaining member (smallest `GroupMember.id`), promote them to admin,
+        and remove the original creator.
+      * They were the last member → tear the group down entirely (messages,
+        memberships, group row) so it doesn't linger as a ghost.
+    """
     member = db.query(models.GroupMember).filter(
         models.GroupMember.group_id == group_id,
-        models.GroupMember.user_id == user_id
+        models.GroupMember.user_id == user_id,
     ).first()
     if not member:
         return False
+
+    group = db.query(models.StudyGroup).filter(models.StudyGroup.id == group_id).first()
+    if not group:
+        # Membership row pointed at a missing group — clean it up and call it done.
+        db.delete(member)
+        db.commit()
+        return True
+
+    if group.creator_id == user_id:
+        next_member = (
+            db.query(models.GroupMember)
+            .filter(
+                models.GroupMember.group_id == group_id,
+                models.GroupMember.user_id != user_id,
+            )
+            .order_by(models.GroupMember.id.asc())
+            .first()
+        )
+        if next_member:
+            group.creator_id = next_member.user_id
+            next_member.role = "admin"
+            db.delete(member)
+            db.commit()
+            return True
+        # Last member — wipe the group + its messages so it doesn't linger.
+        db.query(models.GroupMessage).filter(
+            models.GroupMessage.group_id == group_id
+        ).delete(synchronize_session=False)
+        db.query(models.GroupMember).filter(
+            models.GroupMember.group_id == group_id
+        ).delete(synchronize_session=False)
+        db.delete(group)
+        db.commit()
+        return True
+
     db.delete(member)
     db.commit()
     return True

@@ -439,6 +439,25 @@ export const pushAPI = {
       method: 'PUT',
       body: JSON.stringify(prefs),
     }),
+
+  /**
+   * Report that a locally-scheduled notification fired on this device, so the
+   * admin dashboard can count it alongside server-sent pushes. Called twice per
+   * notification: once on delivery (`opened: false`), once on tap (`opened: true`).
+   * Backend dedupes by `identifier`.
+   */
+  logLocalFired: (payload: {
+    template_key: string;
+    identifier: string;
+    title?: string;
+    body?: string;
+    category?: string;
+    opened?: boolean;
+  }) =>
+    apiFetch<{ ok: boolean; id: number; updated: boolean }>(
+      '/push/local-fired',
+      { method: 'POST', body: JSON.stringify(payload) }
+    ),
 };
 
 // Tasks API
