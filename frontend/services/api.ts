@@ -476,12 +476,55 @@ export interface FeedbackSubmission {
   attachment_urls?: string[];
 }
 
+/** One row in GET /me/feedback — a thread the user started while signed in. */
+export interface FeedbackInboxItem {
+  id: number;
+  feedback_type: string;
+  title: string | null;
+  message_preview: string;
+  status: string;
+  last_message_at: string;
+  created_at: string;
+  unread_count: number;
+}
+
+export interface FeedbackThreadMessage {
+  id: number;
+  sender: 'admin' | 'user' | string;
+  body: string;
+  created_at: string;
+  read_at: string | null;
+}
+
+export interface FeedbackThreadPayload {
+  feedback: {
+    id: number;
+    feedback_type: string;
+    title: string | null;
+    message: string;
+    status: string;
+    created_at: string;
+    updated_at: string;
+    attachment_urls: string[];
+  };
+  messages: FeedbackThreadMessage[];
+}
+
 export const feedbackAPI = {
   submit: (payload: FeedbackSubmission) =>
     apiFetch<{ id: number; message: string }>('/feedback', {
       method: 'POST',
       body: JSON.stringify(payload),
     }),
+
+  list: () => apiFetch<{ items: FeedbackInboxItem[] }>('/me/feedback'),
+
+  thread: (id: number) => apiFetch<FeedbackThreadPayload>(`/me/feedback/${id}`),
+
+  markRead: (id: number) =>
+    apiFetch<{ ok: boolean; marked: number }>(`/me/feedback/${id}/read`, { method: 'POST' }),
+
+  unreadCount: () => apiFetch<{ unread_count: number }>('/me/feedback/unread-count'),
 
   /**
    * Upload a single image to be attached to a feedback submission. Returns

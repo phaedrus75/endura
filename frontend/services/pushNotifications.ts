@@ -25,6 +25,7 @@ import * as Device from 'expo-device';
 import { Platform } from 'react-native';
 import { pushAPI } from './api';
 import { Sentry } from './monitoring';
+import { feedbackNavigation } from './feedbackNavigation';
 
 let _hasConfiguredHandler = false;
 let _navigationRef: { current: any } | null = null;
@@ -151,15 +152,35 @@ export function setupNotificationListeners(): () => void {
   const receivedSub = Notifications.addNotificationReceivedListener(notification => {
     if (__DEV__) console.log('Notification received in foreground:', notification.request.content.title);
     void reportLocalFired(notification, false);
+
+    const d = (notification.request.content.data || {}) as Record<string, unknown>;
+    const dl = typeof d.deep_link === 'string' ? d.deep_link : '';
+    if (dl.startsWith('endura://feedback/')) {
+      feedbackNavigation.refreshFeedbackUnread?.();
+    }
   });
 
   const responseSub = Notifications.addNotificationResponseReceivedListener(response => {
     void reportLocalFired(response.notification, true);
 
-    const data = response.notification.request.content.data || {};
-    const deepLink = (data as any).deep_link as string | undefined;
-    if (!deepLink) return;
+    const data = (response.notification.request.content.data || {}) as Record<string, unknown>;
+    const deepLink = typeof data.deep_link === 'string' ? data.deep_link : undefined;
     const nav = _navigationRef?.current;
+
+    const feedbackMatch = deepLink && /^endura:\/\/feedback\/(\d+)$/.exec(deepLink);
+    if (feedbackMatch && nav?.isReady?.()) {
+      try {
+        nav.navigate('Main', {
+          screen: 'Tabs',
+          params: { screen: 'Home', params: { openFeedbackThreadId: Number(feedbackMatch[1]) } },
+        });
+      } catch (e) {
+        if (__DEV__) console.log('Feedback deep link navigation failed:', e);
+      }
+      return;
+    }
+
+    if (!deepLink) return;
     if (!nav) {
       if (__DEV__) console.log('Notification tap: navigation not ready, deep_link =', deepLink);
       return;

@@ -1,16 +1,11 @@
 /**
- * FeedbackModal — in-app feedback form.
+ * FeedbackModal — inbox (signed-in), thread detail, and compose flows.
  *
- * Submits to the backend `POST /feedback` endpoint, which writes a
- * `user_feedback` row visible from the admin dashboard's Feedback view.
- * Anonymous submissions are supported (the endpoint uses `get_optional_user`),
- * but we always pass auth so user_id is attached when present.
- *
- * Auto-attached metadata (app_version, os, device_model, screen_context)
- * helps triage without requiring the user to type anything beyond the
- * actual feedback message — keep the surface friction-free.
+ * Signed-in users see an Intercom-style inbox of their past submissions plus
+ * admin replies (`GET /me/feedback`). Anonymous / optional-auth users still
+ * get the friction-free compose form only.
  */
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   View,
   StyleSheet,
@@ -28,9 +23,11 @@ import Constants from 'expo-constants';
 import * as Device from 'expo-device';
 import * as ImagePicker from 'expo-image-picker';
 import { Text, TextInput } from './StyledText';
-import { feedbackAPI, FeedbackType } from '../services/api';
+import { feedbackAPI, FeedbackType, type FeedbackInboxItem, type FeedbackThreadPayload } from '../services/api';
 import { useAuth } from '../contexts/AuthContext';
 import { ensurePermission } from '../utils/permissions';
+import FeedbackInbox from './FeedbackInbox';
+import FeedbackThread from './FeedbackThread';
 
 const MAX_ATTACHMENTS = 4;
 
@@ -54,15 +51,26 @@ const TYPES: { id: FeedbackType; label: string; emoji: string; placeholder: stri
   { id: 'praise', label: 'Love', emoji: '💚', placeholder: 'Tell us what you love so we keep doing more of it.' },
 ];
 
+type FeedbackView = 'inbox' | 'thread' | 'compose';
+
 interface FeedbackModalProps {
   visible: boolean;
   onClose: () => void;
   /** Where in the app the user opened the modal — used for triage. */
   screenContext?: string;
+  /** When set (e.g. from a push notification route param), open this thread. */
+  initialThreadId?: number | null;
 }
 
-export default function FeedbackModal({ visible, onClose, screenContext }: FeedbackModalProps) {
+export default function FeedbackModal({ visible, onClose, screenContext, initialThreadId }: FeedbackModalProps) {
   const { user } = useAuth();
+  const [view, setView] = useState<FeedbackView>('compose');
+  const [inboxItems, setInboxItems] = useState<FeedbackInboxItem[]>([]);
+  const [inboxLoading, setInboxLoading] = useState(false);
+  const [threadData, setThreadData] = useState<FeedbackThreadPayload | null>(null);
+  const [threadLoading, setThreadLoading] = useState(false);
+  const [composeFromInbox, setComposeFromInbox] = useState(false);
+
   const [type, setType] = useState<FeedbackType>('bug');
   const [title, setTitle] = useState('');
   const [message, setMessage] = useState('');
@@ -70,16 +78,73 @@ export default function FeedbackModal({ visible, onClose, screenContext }: Feedb
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [submitting, setSubmitting] = useState(false);
 
-  useEffect(() => {
-    if (visible) {
-      setType('bug');
-      setTitle('');
-      setMessage('');
-      setEmail(user?.email || '');
-      setAttachments([]);
-      setSubmitting(false);
+  const reloadInbox = useCallback(async () => {
+    if (!user) return;
+    try {
+      const { items } = await feedbackAPI.list();
+      setInboxItems(items);
+    } catch {
+      setInboxItems([]);
     }
-  }, [visible, user?.email]);
+  }, [user]);
+
+  useEffect(() => {
+    if (!visible) {
+      setView('compose');
+      setInboxItems([]);
+      setInboxLoading(false);
+      setThreadData(null);
+      setThreadLoading(false);
+      setComposeFromInbox(false);
+      return;
+    }
+
+    setType('bug');
+    setTitle('');
+    setMessage('');
+    setEmail(user?.email || '');
+    setAttachments([]);
+    setSubmitting(false);
+
+    if (!user) {
+      setView('compose');
+      return;
+    }
+
+    if (initialThreadId != null && initialThreadId > 0) {
+      setView('thread');
+      setThreadLoading(true);
+      void (async () => {
+        try {
+          const d = await feedbackAPI.thread(initialThreadId);
+          setThreadData(d);
+          await feedbackAPI.markRead(initialThreadId);
+        } catch {
+          setThreadData(null);
+          Alert.alert('Could not load', 'This conversation may have been removed.');
+          setView('compose');
+        } finally {
+          setThreadLoading(false);
+        }
+      })();
+      void reloadInbox();
+      return;
+    }
+
+    setInboxLoading(true);
+    void (async () => {
+      try {
+        const { items } = await feedbackAPI.list();
+        setInboxItems(items);
+        setView(items.length ? 'inbox' : 'compose');
+      } catch {
+        setInboxItems([]);
+        setView('compose');
+      } finally {
+        setInboxLoading(false);
+      }
+    })();
+  }, [visible, user?.id, user?.email, initialThreadId, reloadInbox]);
 
   const updateAttachment = (id: string, patch: Partial<Attachment>) => {
     setAttachments(prev => prev.map(a => (a.id === id ? { ...a, ...patch } : a)));
@@ -178,7 +243,9 @@ export default function FeedbackModal({ visible, onClose, screenContext }: Feedb
       onClose();
       Alert.alert(
         'Thank you!',
-        "We've received your feedback and will take a look. Replies (when needed) come from team@endura.eco."
+        user
+          ? "We've received your feedback. When the team replies, you'll see it here under Messages (💬) and get a notification."
+          : "We've received your feedback and will take a look. Replies (when needed) come from team@endura.eco."
       );
     } catch (e: any) {
       Alert.alert(
@@ -192,36 +259,49 @@ export default function FeedbackModal({ visible, onClose, screenContext }: Feedb
 
   const activeType = TYPES.find(t => t.id === type) ?? TYPES[0];
 
-  return (
-    <Modal
-      visible={visible}
-      animationType="slide"
-      transparent
-      onRequestClose={onClose}
-    >
-      <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        style={styles.backdrop}
-      >
-        <TouchableOpacity
-          style={StyleSheet.absoluteFill}
-          activeOpacity={1}
-          onPress={onClose}
-        />
-        <View style={styles.sheet}>
-          <View style={styles.handle} />
-          <View style={styles.header}>
-            <Text style={styles.headerTitle}>Send feedback</Text>
-            <TouchableOpacity onPress={onClose} style={styles.closeBtn} accessibilityLabel="Close">
-              <Text style={styles.closeText}>✕</Text>
-            </TouchableOpacity>
-          </View>
+  const headerTitle =
+    !user ? 'Send feedback' : view === 'inbox' ? 'Messages' : view === 'thread' ? 'Reply' : 'Send feedback';
 
-          <ScrollView
-            keyboardShouldPersistTaps="handled"
-            contentContainerStyle={{ paddingBottom: 24 }}
-            showsVerticalScrollIndicator={false}
-          >
+  const showHeaderBack =
+    !!user && (view === 'thread' || (view === 'compose' && composeFromInbox));
+
+  const handleHeaderBack = () => {
+    if (view === 'thread') {
+      setThreadData(null);
+      setView(inboxItems.length ? 'inbox' : 'compose');
+      return;
+    }
+    if (view === 'compose' && composeFromInbox) {
+      setComposeFromInbox(false);
+      setView('inbox');
+    }
+  };
+
+  const openThread = (id: number) => {
+    setView('thread');
+    setThreadLoading(true);
+    void (async () => {
+      try {
+        const d = await feedbackAPI.thread(id);
+        setThreadData(d);
+        await feedbackAPI.markRead(id);
+        void reloadInbox();
+      } catch {
+        Alert.alert('Could not load', 'Please try again.');
+        setView('inbox');
+      } finally {
+        setThreadLoading(false);
+      }
+    })();
+  };
+
+  const goToComposeFromInbox = () => {
+    setComposeFromInbox(true);
+    setView('compose');
+  };
+
+  const renderCompose = () => (
+    <>
             <Text style={styles.subtle}>
               We read every message. Your input shapes the next build.
             </Text>
@@ -347,6 +427,62 @@ export default function FeedbackModal({ visible, onClose, screenContext }: Feedb
                 <Text style={styles.submitText}>Send feedback</Text>
               )}
             </TouchableOpacity>
+    </>
+  );
+
+  return (
+    <Modal
+      visible={visible}
+      animationType="slide"
+      transparent
+      onRequestClose={onClose}
+    >
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        style={styles.backdrop}
+      >
+        <TouchableOpacity
+          style={StyleSheet.absoluteFill}
+          activeOpacity={1}
+          onPress={onClose}
+        />
+        <View style={styles.sheet}>
+          <View style={styles.handle} />
+          <View style={styles.headerRow}>
+            <View style={styles.headerLeft}>
+              {showHeaderBack ? (
+                <TouchableOpacity onPress={handleHeaderBack} style={styles.headerBackBtn} accessibilityLabel="Back">
+                  <Text style={styles.headerBackText}>‹</Text>
+                </TouchableOpacity>
+              ) : (
+                <View style={styles.headerBackPlaceholder} />
+              )}
+              <Text style={styles.headerTitle} numberOfLines={1}>
+                {headerTitle}
+              </Text>
+            </View>
+            <TouchableOpacity onPress={onClose} style={styles.closeBtn} accessibilityLabel="Close">
+              <Text style={styles.closeText}>✕</Text>
+            </TouchableOpacity>
+          </View>
+
+          <ScrollView
+            keyboardShouldPersistTaps="handled"
+            contentContainerStyle={{ paddingBottom: 24 }}
+            showsVerticalScrollIndicator={false}
+          >
+            {!user || view === 'compose' ? (
+              renderCompose()
+            ) : view === 'inbox' ? (
+              <FeedbackInbox
+                items={inboxItems}
+                loading={inboxLoading}
+                onSelect={openThread}
+                onCompose={goToComposeFromInbox}
+              />
+            ) : (
+              <FeedbackThread data={threadData} loading={threadLoading} />
+            )}
           </ScrollView>
         </View>
       </KeyboardAvoidingView>
@@ -377,13 +513,39 @@ const styles = StyleSheet.create({
     backgroundColor: '#D7DFD9',
     marginVertical: 8,
   },
-  header: {
+  headerRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 4,
+    marginBottom: 8,
+  },
+  headerLeft: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    minWidth: 0,
+    marginRight: 8,
+  },
+  headerBackBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 4,
+  },
+  headerBackText: {
+    fontSize: 28,
+    fontWeight: '300',
+    color: '#5E7F6E',
+    marginTop: -2,
+  },
+  headerBackPlaceholder: {
+    width: 36,
+    marginRight: 4,
   },
   headerTitle: {
+    flex: 1,
     fontSize: 22,
     fontWeight: '700',
     color: '#2D3B36',

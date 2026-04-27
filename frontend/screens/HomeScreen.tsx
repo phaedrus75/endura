@@ -12,10 +12,11 @@ import {
   KeyboardAvoidingView,
   Platform,
   Animated,
+  AppState,
 } from 'react-native';
 import { Text, TextInput } from '../components/StyledText';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useFocusEffect, useNavigation } from '@react-navigation/native';
+import { useFocusEffect, useNavigation, useRoute } from '@react-navigation/native';
 import ConfettiCannon from 'react-native-confetti-cannon';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import LottieView from 'lottie-react-native';
@@ -64,7 +65,8 @@ const shadows = {
     elevation: 8,
   },
 };
-import { animalsAPI, tasksAPI, statsAPI, subjectsAPI, Egg, Task, UserStats, UserAnimal, Subject } from '../services/api';
+import { animalsAPI, tasksAPI, statsAPI, subjectsAPI, feedbackAPI, Egg, Task, UserStats, UserAnimal, Subject } from '../services/api';
+import { feedbackNavigation } from '../services/feedbackNavigation';
 import { animalImages, getAnimalImage } from '../assets/animals';
 import FeedbackModal from '../components/FeedbackModal';
 
@@ -159,6 +161,7 @@ const formatStudyTime = (minutes: number) => {
 export default function HomeScreen() {
   const { user, refreshUser, profilePic } = useAuth();
   const navigation = useNavigation<any>();
+  const route = useRoute<any>();
   const [egg, setEgg] = useState<Egg | null>(null);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [stats, setStats] = useState<UserStats | null>(null);
@@ -170,6 +173,8 @@ export default function HomeScreen() {
   const [showHatchModal, setShowHatchModal] = useState(false);
   const [hatchedAnimal, setHatchedAnimal] = useState<any>(null);
   const [showFeedback, setShowFeedback] = useState(false);
+  const [feedbackThreadId, setFeedbackThreadId] = useState<number | undefined>();
+  const [feedbackUnread, setFeedbackUnread] = useState(0);
   const [showAddTask, setShowAddTask] = useState(false);
   const [showCompleted, setShowCompleted] = useState(false);
   const [subjects, setSubjects] = useState<Subject[]>([]);
@@ -203,6 +208,51 @@ export default function HomeScreen() {
   };
 
   useEffect(() => { loadSubjects(); }, [user?.id]);
+
+  const refreshFeedbackUnread = useCallback(async () => {
+    if (!user) {
+      setFeedbackUnread(0);
+      return;
+    }
+    try {
+      const r = await feedbackAPI.unreadCount();
+      setFeedbackUnread(r.unread_count);
+    } catch {
+      setFeedbackUnread(0);
+    }
+  }, [user?.id]);
+
+  useFocusEffect(
+    useCallback(() => {
+      const tid = route.params?.openFeedbackThreadId;
+      if (tid != null && tid !== '') {
+        setFeedbackThreadId(Number(tid));
+        setShowFeedback(true);
+        try {
+          navigation.setParams({ openFeedbackThreadId: undefined } as never);
+        } catch {
+          /* ignore */
+        }
+      }
+      void refreshFeedbackUnread();
+      const interval = setInterval(() => void refreshFeedbackUnread(), 30000);
+      return () => clearInterval(interval);
+    }, [route.params?.openFeedbackThreadId, navigation, refreshFeedbackUnread])
+  );
+
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', state => {
+      if (state === 'active') void refreshFeedbackUnread();
+    });
+    return () => sub.remove();
+  }, [refreshFeedbackUnread]);
+
+  useEffect(() => {
+    feedbackNavigation.refreshFeedbackUnread = () => void refreshFeedbackUnread();
+    return () => {
+      feedbackNavigation.refreshFeedbackUnread = null;
+    };
+  }, [refreshFeedbackUnread]);
 
   const handleSubjectSearch = (text: string) => {
     setNewSubjectName(text);
@@ -449,14 +499,17 @@ export default function HomeScreen() {
         {/* Hero Card — header, chips, egg & CTA */}
         <View style={styles.heroCard}>
           {/* Feedback button — sits to the left of the profile pic */}
-          <TouchableOpacity
-            style={styles.feedbackButton}
-            onPress={() => setShowFeedback(true)}
-            accessibilityLabel="Send feedback"
-            accessibilityRole="button"
-          >
-            <Text style={styles.feedbackButtonEmoji}>💬</Text>
-          </TouchableOpacity>
+          <View style={styles.feedbackButtonWrap}>
+            <TouchableOpacity
+              style={styles.feedbackButtonInner}
+              onPress={() => setShowFeedback(true)}
+              accessibilityLabel="Send feedback"
+              accessibilityRole="button"
+            >
+              <Text style={styles.feedbackButtonEmoji}>💬</Text>
+            </TouchableOpacity>
+            {feedbackUnread > 0 ? <View style={styles.feedbackUnreadDot} /> : null}
+          </View>
 
           {/* Profile pic — top right corner */}
           <TouchableOpacity 
@@ -1020,8 +1073,13 @@ export default function HomeScreen() {
 
       <FeedbackModal
         visible={showFeedback}
-        onClose={() => setShowFeedback(false)}
+        onClose={() => {
+          setShowFeedback(false);
+          setFeedbackThreadId(undefined);
+          void refreshFeedbackUnread();
+        }}
         screenContext="Home"
+        initialThreadId={feedbackThreadId}
       />
 
     </SafeAreaView>
@@ -1087,19 +1145,33 @@ const styles = StyleSheet.create({
     zIndex: 10,
     ...shadows.small,
   },
-  feedbackButton: {
+  feedbackButtonWrap: {
     position: 'absolute',
     top: spacing.md,
-    // Sit just to the left of profileButton (right: spacing.md, width 44, gap 8)
     right: spacing.md + 44 + 8,
+    width: 44,
+    height: 44,
+    zIndex: 10,
+  },
+  feedbackButtonInner: {
     width: 44,
     height: 44,
     borderRadius: 22,
     backgroundColor: colors.surface,
     justifyContent: 'center',
     alignItems: 'center',
-    zIndex: 10,
     ...shadows.small,
+  },
+  feedbackUnreadDot: {
+    position: 'absolute',
+    top: 2,
+    right: 2,
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: '#E11D48',
+    borderWidth: 2,
+    borderColor: colors.surface,
   },
   feedbackButtonEmoji: {
     fontSize: 20,
