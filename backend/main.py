@@ -5987,6 +5987,98 @@ def admin_push_opt_in_funnel(db: Session = Depends(get_db), _=Depends(verify_adm
     }
 
 
+@app.get("/admin/betterstack-status")
+def admin_betterstack_status(_=Depends(verify_admin)):
+    """Fetch and parse the public BetterStack status page for status.endura.eco.
+
+    Returns structured JSON so the admin dashboard can display live uptime data
+    without redirecting away. Cached for 60 s on the server to avoid hammering
+    the status page on every auto-refresh.
+    """
+    import re
+    import time
+    import threading
+
+    # Simple in-process cache (60 s TTL) — no extra dependency needed.
+    cache = getattr(admin_betterstack_status, "_cache", None)
+    if cache and time.time() - cache["ts"] < 60:
+        return cache["data"]
+
+    STATUS_URL = "https://status.endura.eco/"
+    try:
+        import requests as _req
+        resp = _req.get(STATUS_URL, timeout=8, headers={"User-Agent": "EnduraAdmin/1.0"})
+        html = resp.text
+    except Exception as e:
+        return {"ok": False, "error": str(e), "source": STATUS_URL}
+
+    def _find(pattern, default="—"):
+        m = re.search(pattern, html, re.IGNORECASE | re.DOTALL)
+        return m.group(1).strip() if m else default
+
+    # Extract overall banner: "All services are online" / "Partial outage" / etc.
+    overall = _find(r'<h1[^>]*>\s*(.*?)\s*</h1>', "Unknown")
+    # Strip HTML tags from overall in case there are nested elements
+    overall = re.sub(r"<[^>]+>", "", overall).strip() or "Unknown"
+
+    # Extract per-service blocks — BetterStack renders each monitor as a row.
+    # Pattern: service name followed by status word.
+    services = []
+    # Grab all "name ... Operational|Degraded|Outage|Maintenance" pairs
+    service_blocks = re.findall(
+        r'(?:Operational|Degraded Performance|Partial Outage|Major Outage|Under Maintenance)',
+        html, re.IGNORECASE
+    )
+    # Simpler: scan for the known service name + its status
+    for name_pat, status_pat in re.findall(
+        r'(endura\.eco|endura api|backend|frontend)\b.*?'
+        r'(Operational|Degraded Performance|Partial Outage|Major Outage|Under Maintenance)',
+        html, re.IGNORECASE | re.DOTALL
+    ):
+        services.append({"name": name_pat, "status": status_pat})
+
+    # If regex above yields nothing fall back to counting status words in HTML
+    if not services:
+        for word in ["Operational", "Degraded Performance", "Partial Outage", "Major Outage"]:
+            if word.lower() in html.lower():
+                services.append({"name": "endura.eco", "status": word})
+                break
+
+    # Uptime percentage — "100% uptime" or "99.9% uptime"
+    uptime_pct = _find(r'(\d+(?:\.\d+)?%)\s*uptime')
+
+    # Last-updated timestamp
+    last_updated = _find(r'[Ll]ast updated[^:]*[:\s]+(.*?(?:\d{4}.*?)(?=\s*(?:<|\n|$)))')
+    last_updated = re.sub(r"<[^>]+>", "", last_updated).strip()
+
+    # 30-day status blocks — look for "Operational" / "Not monitored" day entries
+    day_blocks = re.findall(
+        r'(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+(\d{1,2}),?\s+(\d{4})[^\n]*\n\s*(Operational|Not monitored|Degraded|Outage)',
+        html, re.IGNORECASE
+    )
+    history = [
+        {"date": f"{m} {d} {y}", "status": s}
+        for m, d, y, s in day_blocks[-30:]
+    ]
+
+    is_ok = "online" in overall.lower() or any(
+        s.get("status", "").lower() == "operational" for s in services
+    )
+
+    result = {
+        "ok": is_ok,
+        "overall": overall,
+        "services": services if services else [{"name": "endura.eco", "status": "Operational" if is_ok else "Unknown"}],
+        "uptime_pct": uptime_pct,
+        "last_updated": last_updated,
+        "history": history,
+        "source": STATUS_URL,
+        "fetched_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+    }
+    admin_betterstack_status._cache = {"ts": time.time(), "data": result}
+    return result
+
+
 @app.get("/admin/push/metrics")
 def admin_push_metrics(
     days: int = 30,

@@ -1256,6 +1256,23 @@
                 </div>
             </div>
 
+            <!-- BetterStack live status -->
+            <div class="table-card" style="margin-bottom:20px">
+                <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:8px">
+                    <h3 style="margin:0">🟢 BetterStack Uptime</h3>
+                    <a href="https://status.endura.eco/" target="_blank" rel="noopener" style="font-size:12px;color:var(--forest);text-decoration:none;font-weight:600">View full page ↗</a>
+                </div>
+                <div id="bsContent">
+                    <div class="kpi-grid" style="margin-bottom:12px">
+                        <div class="kpi"><div class="kpi-icon">🌐</div><div class="kpi-val" id="bsOverall" style="font-size:15px">—</div><div class="kpi-label">Overall Status</div></div>
+                        <div class="kpi"><div class="kpi-icon">📈</div><div class="kpi-val" id="bsUptime">—</div><div class="kpi-label">Uptime</div></div>
+                        <div class="kpi"><div class="kpi-icon">🕐</div><div class="kpi-val" id="bsFetched" style="font-size:13px;font-weight:500">—</div><div class="kpi-label">Fetched at</div></div>
+                    </div>
+                    <div id="bsHistory" style="display:flex;gap:3px;flex-wrap:wrap;margin-top:4px"></div>
+                    <p id="bsError" style="color:var(--red);font-size:13px;display:none"></p>
+                </div>
+            </div>
+
             <!-- Raw /health response (for debugging) -->
             <div class="table-card" style="margin-bottom:20px">
                 <h3 style="margin-top:0">Raw /health response</h3>
@@ -1777,6 +1794,43 @@ async function loadSystemHealth() {
     if (sysHealthTimer) clearInterval(sysHealthTimer);
     const onSystemPage = document.getElementById('page-system').classList.contains('active');
     if (onSystemPage) sysHealthTimer = setInterval(loadSystemHealth, 30000);
+
+    // Load BetterStack status in parallel (best-effort, never blocks the main health check)
+    loadBetterStackStatus();
+}
+
+async function loadBetterStackStatus() {
+    const overallEl = document.getElementById('bsOverall');
+    const uptimeEl  = document.getElementById('bsUptime');
+    const fetchedEl = document.getElementById('bsFetched');
+    const histEl    = document.getElementById('bsHistory');
+    const errEl     = document.getElementById('bsError');
+    overallEl.textContent = '…';
+    errEl.style.display = 'none';
+    try {
+        const d = await adminFetch('/admin/betterstack-status');
+        const isOk = d.ok;
+        overallEl.textContent  = d.overall || '—';
+        overallEl.style.color  = isOk ? 'var(--accent)' : 'var(--red)';
+        uptimeEl.textContent   = d.uptime_pct || '—';
+        fetchedEl.textContent  = d.fetched_at ? new Date(d.fetched_at).toLocaleTimeString() : '—';
+
+        // 30-day history pills
+        if (d.history && d.history.length) {
+            histEl.innerHTML = d.history.map(h => {
+                const op = h.status.toLowerCase().includes('operational');
+                const nm = h.status.toLowerCase().includes('not monitored');
+                const color = op ? '#10b981' : nm ? '#cbd5e1' : '#ef4444';
+                return `<span title="${esc(h.date)}: ${esc(h.status)}" style="display:inline-block;width:14px;height:28px;border-radius:3px;background:${color};cursor:default"></span>`;
+            }).join('');
+        } else {
+            histEl.innerHTML = '<span style="font-size:12px;color:var(--text-muted)">No history data</span>';
+        }
+    } catch (e) {
+        errEl.textContent = `Could not load BetterStack status: ${e.message}`;
+        errEl.style.display = '';
+        overallEl.textContent = '—';
+    }
 }
 
 function formatUptime(seconds) {
