@@ -1,31 +1,27 @@
-import React, { useState, useRef, useEffect, useMemo } from 'react';
+import React, { useState, useRef, useMemo } from 'react';
 import {
   View,
   TouchableOpacity,
   StyleSheet,
-  Dimensions,
   Alert,
   ActivityIndicator,
-  Animated,
   ScrollView,
   Image,
   Platform,
   ActionSheetIOS,
   KeyboardAvoidingView,
-  ImageSourcePropType,
 } from 'react-native';
 import { Text, TextInput } from '../components/StyledText';
-import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as ImagePicker from 'expo-image-picker';
-import { colors, shadows, spacing, borderRadius } from '../theme/colors';
+import { shadows, spacing } from '../theme/colors';
 import { useAuth } from '../contexts/AuthContext';
 import * as SecureStore from 'expo-secure-store';
 import { API_URL, authAPI, SchoolSearchResult, subjectsAPI, Subject } from '../services/api';
 import { Analytics } from '../services/analytics';
 import COUNTRIES from '../constants/countries';
-
-const { width: SW, height: SH } = Dimensions.get('window');
+import Avatar from '../components/Avatar';
 
 const C = {
   bg: '#E8F5E9', hero: '#C5DEC9', surface: '#FFFFFF', sage: '#6B9B9B',
@@ -35,101 +31,11 @@ const C = {
 };
 
 // ═══════════════════════════════════════════════════════════════════════════
-//  SCREENSHOT IMAGES — actual app screenshots used as onboarding backgrounds
-// ═══════════════════════════════════════════════════════════════════════════
-
-const SCREENSHOTS = {
-  home: require('../assets/onboarding/home.png'),
-  timer: require('../assets/onboarding/timer.png'),
-  sanctuary: require('../assets/onboarding/sanctuary.png'),
-  progress: require('../assets/onboarding/progress.png'),
-  tips: require('../assets/onboarding/tips.png'),
-  friends: require('../assets/onboarding/friends.png'),
-};
-
-function ScreenshotSlide({ source }: { source: ImageSourcePropType }) {
-  return (
-    <View style={{ flex: 1, overflow: 'hidden' }}>
-      <Image
-        source={source}
-        style={{ width: '100%', height: '108.5%', position: 'absolute', bottom: 0 }}
-        resizeMode="contain"
-      />
-    </View>
-  );
-}
-
-// ═══════════════════════════════════════════════════════════════════════════
-//  SLIDE DATA
-// ═══════════════════════════════════════════════════════════════════════════
-
-interface Slide {
-  image: ImageSourcePropType;
-  tag: string;
-  title: string;
-  body: string;
-}
-
-const SLIDES: Slide[] = [
-  {
-    image: SCREENSHOTS.home,
-    tag: 'YOUR DASHBOARD',
-    title: 'Everything starts here',
-    body: 'See your streaks, badges, animals and tasks at a glance. Tap the egg to jump into a study session!',
-  },
-  {
-    image: SCREENSHOTS.timer,
-    tag: 'FOCUS TIMER',
-    title: 'Study and earn eco-credits',
-    body: 'Pick a duration, hit start, and every minute you study earns eco-credits that hatch your egg.',
-  },
-  {
-    image: SCREENSHOTS.sanctuary,
-    tag: 'YOUR SANCTUARY',
-    title: 'Hatch & collect animals',
-    body: 'When your egg fills up it hatches into a real endangered species. Build your own wildlife sanctuary!',
-  },
-  {
-    image: SCREENSHOTS.progress,
-    tag: 'TRACK PROGRESS',
-    title: 'See how far you\'ve come',
-    body: 'View weekly study stats, subject breakdowns, and badges. Watch your consistency grow over time.',
-  },
-  {
-    image: SCREENSHOTS.tips,
-    tag: 'STUDY TIPS',
-    title: 'Scroll through study tips',
-    body: 'Swipe through unique, research-backed advice from animal friends, save favourites, and share with mates.',
-  },
-  {
-    image: SCREENSHOTS.friends,
-    tag: 'FRIENDS & LEADERBOARD',
-    title: 'Better together',
-    body: 'Add friends from your school, climb the leaderboard, join study groups, and motivate each other.',
-  },
-];
-
-// ═══════════════════════════════════════════════════════════════════════════
 //  MAIN COMPONENT
 // ═══════════════════════════════════════════════════════════════════════════
 
 export default function OnboardingScreen() {
-  const insets = useSafeAreaInsets();
-  const [step, setStep] = useState(0);
-  const slideOpacities = useRef(SLIDES.map((_, i) => new Animated.Value(i === 0 ? 1 : 0))).current;
-  const textOpacity = useRef(new Animated.Value(1)).current;
-  const isAnimating = useRef(false);
   const onboardingStartRef = useRef<number>(Date.now());
-
-  useEffect(() => {
-    Analytics.onboardingStarted();
-  }, []);
-
-  useEffect(() => {
-    if (step < SLIDES.length) {
-      Analytics.onboardingSlideViewed(step, SLIDES[step].tag);
-    }
-  }, [step]);
 
   // Profile setup state
   const [username, setUsername] = useState('');
@@ -158,28 +64,6 @@ export default function OnboardingScreen() {
   const [showSubjectSuggestions, setShowSubjectSuggestions] = useState(false);
   const subjectSearchTimeout = useRef<NodeJS.Timeout | null>(null);
   const [subjectSaving, setSubjectSaving] = useState(false);
-
-  const isSetup = step === SLIDES.length;
-
-  const go = (next: number) => {
-    if (isAnimating.current || next < 0 || next > SLIDES.length) return;
-    isAnimating.current = true;
-    const prev = step;
-    Animated.parallel([
-      Animated.timing(slideOpacities[prev], { toValue: 0, duration: 200, useNativeDriver: true }),
-      Animated.timing(textOpacity, { toValue: 0, duration: 150, useNativeDriver: true }),
-    ]).start(() => {
-      setStep(next);
-      if (next < SLIDES.length) {
-        Animated.parallel([
-          Animated.timing(slideOpacities[next], { toValue: 1, duration: 250, useNativeDriver: true }),
-          Animated.timing(textOpacity, { toValue: 1, duration: 250, useNativeDriver: true }),
-        ]).start(() => { isAnimating.current = false; });
-      } else {
-        isAnimating.current = false;
-      }
-    });
-  };
 
   // ── helpers ──
   const handleSchoolSearch = (text: string) => {
@@ -288,7 +172,6 @@ export default function OnboardingScreen() {
   };
 
   const handleComplete = async () => {
-    if (!profilePicUri) { Alert.alert('Profile Photo Required', 'Please add a profile picture to continue.'); return; }
     const u = username.trim();
     if (!u) { Alert.alert('Username Required', 'Please enter a username to continue.'); return; }
     if (!school.trim()) { Alert.alert('School Required', 'Please enter your school to continue.'); return; }
@@ -330,7 +213,6 @@ export default function OnboardingScreen() {
     finally { setIsLoading(false); }
   };
 
-  // ═══════ SUBJECT PICKER (after profile setup) ═══════
   if (showSubjectPicker) {
     return (
       <LinearGradient colors={['#E7EFEA', '#DCEAE3']} style={{ flex: 1 }}>
@@ -407,201 +289,103 @@ export default function OnboardingScreen() {
   }
 
   // ═══════ PROFILE SETUP ═══════
-  if (isSetup) {
-    return (
-      <LinearGradient colors={['#E7EFEA', '#DCEAE3']} style={{ flex: 1 }}>
-        <SafeAreaView style={{ flex: 1 }}>
-          <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
-            <ScrollView contentContainerStyle={ps.content} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
-              <Text style={ps.title}>Set Up Your Profile</Text>
-              <Text style={ps.sub}>All fields are required to continue</Text>
+  return (
+    <LinearGradient colors={['#E7EFEA', '#DCEAE3']} style={{ flex: 1 }}>
+      <SafeAreaView style={{ flex: 1 }}>
+        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
+          <ScrollView contentContainerStyle={ps.content} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+            <Text style={ps.title}>Set Up Your Profile</Text>
+            <Text style={ps.sub}>Choose a username to get started — you can always update the rest later</Text>
 
-              <TouchableOpacity onPress={handleAvatarPress} activeOpacity={0.8} style={ps.avatarWrap}>
-                <View style={ps.avatarCircle}>
-                  {profilePicUri ? <Image source={{ uri: profilePicUri }} style={ps.avatarImg} /> : <Text style={ps.avatarPlus}>+</Text>}
-                </View>
-                <Text style={ps.avatarLabel}>Add Photo *</Text>
-              </TouchableOpacity>
-
-              <View style={ps.field}>
-                <Text style={ps.label}>Username *</Text>
-                <TextInput style={ps.input} placeholder="Choose a username" placeholderTextColor={C.textMute} value={username} onChangeText={setUsername} autoCapitalize="none" autoCorrect={false} maxLength={30} />
+            <TouchableOpacity onPress={handleAvatarPress} activeOpacity={0.8} style={ps.avatarWrap}>
+              <View style={ps.avatarCircle}>
+                {profilePicUri ? (
+                  <Image source={{ uri: profilePicUri }} style={ps.avatarImg} />
+                ) : (
+                  <Avatar
+                    name={username.trim() || '?'}
+                    size={110}
+                    style={{ borderRadius: 55 }}
+                  />
+                )}
               </View>
+              <Text style={ps.avatarLabel}>{profilePicUri ? 'Change Photo' : 'Add Photo (optional)'}</Text>
+            </TouchableOpacity>
 
-              <View style={[ps.field, { zIndex: 10 }]}>
-                <Text style={ps.label}>School *</Text>
-                <TextInput style={ps.input} placeholder="e.g. Southbank International School" placeholderTextColor={C.textMute} value={school} onChangeText={handleSchoolSearch} autoCapitalize="words" />
-                {showSchoolSuggestions && schoolSuggestions.length > 0 && (
-                  <View style={ps.sugBox}><ScrollView style={{ maxHeight: 150 }} keyboardShouldPersistTaps="handled" nestedScrollEnabled>
-                    {schoolSuggestions.map((sc, i) => (
-                      <TouchableOpacity key={`${sc.name}-${i}`} style={ps.sugItem} onPress={() => selectSchool(sc)}>
-                        <Text style={ps.sugName} numberOfLines={1}>{sc.name}</Text>
-                        <Text style={ps.sugLoc} numberOfLines={1}>{[sc.city, sc.country].filter(Boolean).join(', ')}</Text>
+            <View style={ps.field}>
+              <Text style={ps.label}>Username *</Text>
+              <TextInput style={ps.input} placeholder="Choose a username" placeholderTextColor={C.textMute} value={username} onChangeText={setUsername} autoCapitalize="none" autoCorrect={false} maxLength={30} />
+            </View>
+
+            <View style={[ps.field, { zIndex: 10 }]}>
+              <Text style={ps.label}>School *</Text>
+              <TextInput style={ps.input} placeholder="e.g. Southbank International School" placeholderTextColor={C.textMute} value={school} onChangeText={handleSchoolSearch} autoCapitalize="words" />
+              {showSchoolSuggestions && schoolSuggestions.length > 0 && (
+                <View style={ps.sugBox}><ScrollView style={{ maxHeight: 150 }} keyboardShouldPersistTaps="handled" nestedScrollEnabled>
+                  {schoolSuggestions.map((sc, i) => (
+                    <TouchableOpacity key={`${sc.name}-${i}`} style={ps.sugItem} onPress={() => selectSchool(sc)}>
+                      <Text style={ps.sugName} numberOfLines={1}>{sc.name}</Text>
+                      <Text style={ps.sugLoc} numberOfLines={1}>{[sc.city, sc.country].filter(Boolean).join(', ')}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView></View>
+              )}
+            </View>
+
+            <View style={[ps.field, { zIndex: 5 }]}>
+              <Text style={ps.label}>Country *</Text>
+              <TouchableOpacity
+                style={ps.input}
+                onPress={() => { setShowCountryPicker(true); setCountrySearch(''); }}
+                activeOpacity={0.7}
+              >
+                <Text style={country ? { color: C.textDark, fontSize: 16 } : { color: C.textMute, fontSize: 16 }}>
+                  {country || 'Select your country'}
+                </Text>
+              </TouchableOpacity>
+              {showCountryPicker && (
+                <View style={ps.sugBox}>
+                  <TextInput
+                    style={[ps.input, { marginBottom: 4 }]}
+                    placeholder="Search countries..."
+                    placeholderTextColor={C.textMute}
+                    value={countrySearch}
+                    onChangeText={setCountrySearch}
+                    autoFocus
+                  />
+                  <ScrollView style={{ maxHeight: 180 }} keyboardShouldPersistTaps="handled" nestedScrollEnabled>
+                    {filteredCountries.map((c) => (
+                      <TouchableOpacity
+                        key={c}
+                        style={ps.sugItem}
+                        onPress={() => { setCountry(c); setShowCountryPicker(false); setCountrySearch(''); }}
+                      >
+                        <Text style={[ps.sugName, country === c && { color: C.primary, fontWeight: '700' }]}>{c}</Text>
                       </TouchableOpacity>
                     ))}
-                  </ScrollView></View>
-                )}
-              </View>
+                    {filteredCountries.length === 0 && (
+                      <Text style={{ padding: 12, color: C.textMute, textAlign: 'center', fontSize: 14 }}>No countries found</Text>
+                    )}
+                  </ScrollView>
+                </View>
+              )}
+            </View>
 
-              <View style={[ps.field, { zIndex: 5 }]}>
-                <Text style={ps.label}>Country *</Text>
-                <TouchableOpacity
-                  style={ps.input}
-                  onPress={() => { setShowCountryPicker(true); setCountrySearch(''); }}
-                  activeOpacity={0.7}
-                >
-                  <Text style={country ? { color: C.textDark, fontSize: 16 } : { color: C.textMute, fontSize: 16 }}>
-                    {country || 'Select your country'}
-                  </Text>
-                </TouchableOpacity>
-                {showCountryPicker && (
-                  <View style={ps.sugBox}>
-                    <TextInput
-                      style={[ps.input, { marginBottom: 4 }]}
-                      placeholder="Search countries..."
-                      placeholderTextColor={C.textMute}
-                      value={countrySearch}
-                      onChangeText={setCountrySearch}
-                      autoFocus
-                    />
-                    <ScrollView style={{ maxHeight: 180 }} keyboardShouldPersistTaps="handled" nestedScrollEnabled>
-                      {filteredCountries.map((c) => (
-                        <TouchableOpacity
-                          key={c}
-                          style={ps.sugItem}
-                          onPress={() => { setCountry(c); setShowCountryPicker(false); setCountrySearch(''); }}
-                        >
-                          <Text style={[ps.sugName, country === c && { color: C.primary, fontWeight: '700' }]}>{c}</Text>
-                        </TouchableOpacity>
-                      ))}
-                      {filteredCountries.length === 0 && (
-                        <Text style={{ padding: 12, color: C.textMute, textAlign: 'center', fontSize: 14 }}>No countries found</Text>
-                      )}
-                    </ScrollView>
-                  </View>
-                )}
-              </View>
-
-              <TouchableOpacity style={[ps.cta, isLoading && { opacity: 0.7 }, { marginTop: spacing.md }]} onPress={handleComplete} disabled={isLoading} activeOpacity={0.8}>
-                <LinearGradient colors={[C.primary, C.dark]} style={ps.ctaGrad} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}>
-                  {isLoading ? <ActivityIndicator color="#fff" /> : <Text style={ps.ctaText}>Start My Journey</Text>}
-                </LinearGradient>
-              </TouchableOpacity>
-            </ScrollView>
-          </KeyboardAvoidingView>
-        </SafeAreaView>
-      </LinearGradient>
-    );
-  }
-
-  // ═══════ WALKTHROUGH SLIDES ═══════
-  const sl = SLIDES[step];
-
-  return (
-    <View style={{ flex: 1, backgroundColor: '#fff' }}>
-      <View style={{ flex: 1, backgroundColor: '#E7EFEA' }}>
-        <SafeAreaView style={{ flex: 1 }} edges={['top']}>
-          {/* Progress bar at top */}
-          <View style={wb.progressRow}>
-            {SLIDES.map((_, i) => (
-              <View key={i} style={[wb.progressSeg, i <= step && wb.progressSegActive]} />
-            ))}
-          </View>
-
-          {/* All slides stacked, each with its own opacity */}
-          <View style={{ flex: 1 }}>
-            {SLIDES.map((slide, i) => (
-              <Animated.View
-                key={i}
-                style={{ ...StyleSheet.absoluteFillObject, opacity: slideOpacities[i] }}
-                pointerEvents={i === step ? 'auto' : 'none'}
-              >
-                <ScreenshotSlide source={slide.image} />
-              </Animated.View>
-            ))}
-          </View>
-        </SafeAreaView>
-      </View>
-
-      {/* Instruction card at bottom */}
-      <View style={[wb.card, { paddingBottom: Math.max(insets.bottom, 16) }]}>
-        <View style={wb.cardHandle} />
-        <Animated.View style={{ opacity: textOpacity, alignItems: 'center' }}>
-          <Text style={wb.cardTag}>{sl.tag}</Text>
-          <Text style={wb.cardTitle}>{sl.title}</Text>
-          <Text style={wb.cardBody}>{sl.body}</Text>
-        </Animated.View>
-
-        <View style={wb.dotsRow}>
-          {SLIDES.map((_, i) => (
-            <View key={i} style={[wb.dot, i === step && wb.dotActive]} />
-          ))}
-        </View>
-
-        <View style={wb.btnRow}>
-          {step > 0 && (
-            <TouchableOpacity style={wb.backBtn} onPress={() => go(step - 1)} activeOpacity={0.8}>
-              <Text style={wb.backText}>Back</Text>
+            <TouchableOpacity style={[ps.cta, isLoading && { opacity: 0.7 }, { marginTop: spacing.md }]} onPress={handleComplete} disabled={isLoading} activeOpacity={0.8}>
+              <LinearGradient colors={[C.primary, C.dark]} style={ps.ctaGrad} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}>
+                {isLoading ? <ActivityIndicator color="#fff" /> : <Text style={ps.ctaText}>Start My Journey</Text>}
+              </LinearGradient>
             </TouchableOpacity>
-          )}
-          <TouchableOpacity
-            style={wb.nextBtn}
-            onPress={() => {
-              if (step === SLIDES.length - 1) Analytics.onboardingWalkthroughCompleted();
-              go(step + 1);
-            }}
-            activeOpacity={0.8}
-          >
-            <LinearGradient colors={['#5F8C87', '#3B5466']} style={wb.nextGrad} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}>
-              <Text style={wb.nextText}>{step === SLIDES.length - 1 ? 'Set Up Profile' : 'Next'}</Text>
-            </LinearGradient>
-          </TouchableOpacity>
-        </View>
-        <TouchableOpacity
-          style={{ paddingVertical: 6 }}
-          onPress={() => {
-            Analytics.onboardingWalkthroughSkipped(step);
-            go(SLIDES.length);
-          }}
-        >
-          <Text style={wb.skipText}>Skip</Text>
-        </TouchableOpacity>
-      </View>
-    </View>
+          </ScrollView>
+        </KeyboardAvoidingView>
+      </SafeAreaView>
+    </LinearGradient>
   );
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
 //  STYLES
 // ═══════════════════════════════════════════════════════════════════════════
-
-// Walkthrough wrapper styles
-const wb = StyleSheet.create({
-  progressRow: { flexDirection: 'row', gap: 5, marginHorizontal: 20, marginTop: 6, marginBottom: 4 },
-  progressSeg: { flex: 1, height: 3, borderRadius: 2, backgroundColor: 'rgba(95,140,135,0.18)' },
-  progressSegActive: { backgroundColor: '#5F8C87' },
-
-  card: {
-    backgroundColor: '#fff', borderTopLeftRadius: 0, borderTopRightRadius: 0,
-    paddingHorizontal: 24, paddingTop: 14, alignItems: 'center',
-  },
-  cardHandle: { width: 36, height: 4, borderRadius: 2, backgroundColor: '#D0DDD6', marginBottom: 14 },
-  cardTag: { fontSize: 12, fontWeight: '700', color: '#5F8C87', textTransform: 'uppercase', letterSpacing: 2, marginBottom: 6 },
-  cardTitle: { fontSize: 26, fontWeight: '800', color: '#2F4A3E', textAlign: 'center', marginBottom: 8 },
-  cardBody: { fontSize: 16, lineHeight: 23, color: '#7C8F86', textAlign: 'center', marginBottom: 16, paddingHorizontal: 4 },
-
-  dotsRow: { flexDirection: 'row', gap: 6, marginBottom: 16 },
-  dot: { width: 7, height: 7, borderRadius: 4, backgroundColor: '#D0DDD6' },
-  dotActive: { backgroundColor: '#5F8C87', width: 18 },
-
-  btnRow: { flexDirection: 'row', gap: 10, width: '100%' },
-  backBtn: { flex: 1, borderRadius: 14, borderWidth: 1.5, borderColor: '#C0D0C6', justifyContent: 'center', alignItems: 'center', paddingVertical: 12 },
-  backText: { color: '#5F8C87', fontSize: 15, fontWeight: '700' },
-  nextBtn: { flex: 2, borderRadius: 14, overflow: 'hidden', ...shadows.medium },
-  nextGrad: { paddingVertical: 12, alignItems: 'center', borderRadius: 14 },
-  nextText: { color: '#fff', fontSize: 15, fontWeight: '700' },
-  skipText: { color: '#7C8F86', fontSize: 13, fontWeight: '500' },
-});
 
 // Subject picker styles
 const sp = StyleSheet.create({

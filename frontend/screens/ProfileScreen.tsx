@@ -23,6 +23,7 @@ import { LinearGradient as ExpoLinearGradient } from 'expo-linear-gradient';
 import Svg, { Circle, Rect, G, Text as SvgText, Path, Defs, LinearGradient, Stop } from 'react-native-svg';
 import * as ImagePicker from 'expo-image-picker';
 import { colors, shadows, spacing, borderRadius } from '../theme/colors';
+import Avatar from '../components/Avatar';
 import SwipeDismiss, { DragHandle } from '../components/SwipeDismiss';
 import { useAuth } from '../contexts/AuthContext';
 import {
@@ -518,11 +519,12 @@ export default function ProfileScreen() {
         >
           <TouchableOpacity onPress={handleAvatarPress} activeOpacity={0.8}>
             <View style={styles.avatarContainer}>
-              {profilePic ? (
-                <Image source={{ uri: profilePic }} style={styles.avatarImage} />
-              ) : (
-                <Text style={styles.avatarEmoji}>👤</Text>
-              )}
+              <Avatar
+                uri={profilePic}
+                name={user?.username}
+                size={94}
+                style={styles.avatarImage}
+              />
               <View style={styles.cameraOverlay}>
                 <Text style={styles.cameraIcon}>📷</Text>
               </View>

@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { StatusBar } from 'expo-status-bar';
 import { NavigationContainer, createNavigationContainerRef } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
@@ -9,6 +9,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { useFonts, DMSans_400Regular, DMSans_500Medium, DMSans_600SemiBold, DMSans_700Bold, DMSans_800ExtraBold, DMSans_300Light } from '@expo-google-fonts/dm-sans';
+import * as SecureStore from 'expo-secure-store';
 
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { NotificationProvider } from './contexts/NotificationContext';
@@ -32,6 +33,7 @@ setNavigationRef(navigationRef as any);
 // Screens
 import AuthScreen from './screens/AuthScreen';
 import OnboardingScreen from './screens/OnboardingScreen';
+import WalkthroughScreen, { WALKTHROUGH_SEEN_KEY } from './screens/WalkthroughScreen';
 import HomeScreen from './screens/HomeScreen';
 import TimerScreen from './screens/TimerScreen';
 import CollectionScreen from './screens/CollectionScreen';
@@ -182,6 +184,13 @@ function MainStackNavigator() {
 
 function AppNavigator() {
   const { isAuthenticated, isLoading, user } = useAuth();
+  const [walkthroughSeen, setWalkthroughSeen] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    SecureStore.getItemAsync(WALKTHROUGH_SEEN_KEY)
+      .then(v => setWalkthroughSeen(v === 'true'))
+      .catch(() => setWalkthroughSeen(false));
+  }, []);
 
   useEffect(() => {
     if (user) {
@@ -206,7 +215,7 @@ function AppNavigator() {
     }
   }, [user?.id, user?.username]);
   
-  if (isLoading) {
+  if (isLoading || walkthroughSeen === null) {
     return (
       <View style={styles.loadingContainer}>
         <View style={styles.loadingIcon}>
@@ -221,7 +230,16 @@ function AppNavigator() {
   return (
     <Stack.Navigator screenOptions={{ headerShown: false }}>
       {!isAuthenticated ? (
-        <Stack.Screen name="Auth" component={AuthScreen} />
+        // First-time visitors see the feature walkthrough first, then Auth.
+        // Returning visitors (walkthroughSeen=true) go straight to Auth.
+        walkthroughSeen ? (
+          <Stack.Screen name="Auth" component={AuthScreen} />
+        ) : (
+          <>
+            <Stack.Screen name="Walkthrough" component={WalkthroughScreen} />
+            <Stack.Screen name="Auth" component={AuthScreen} />
+          </>
+        )
       ) : !user?.username ? (
         <Stack.Screen name="Onboarding" component={OnboardingScreen} />
       ) : (

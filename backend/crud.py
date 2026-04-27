@@ -399,9 +399,16 @@ def get_pending_requests(db: Session, user_id: int) -> List[dict]:
         models.Friendship.friend_id == user_id,
         models.Friendship.status == "pending"
     ).all()
+    if not pending:
+        return []
+    sender_ids = list({f.user_id for f in pending})
+    senders = {
+        u.id: u
+        for u in db.query(models.User).filter(models.User.id.in_(sender_ids)).all()
+    }
     results = []
     for f in pending:
-        sender = db.query(models.User).filter(models.User.id == f.user_id).first()
+        sender = senders.get(f.user_id)
         if sender and not getattr(sender, "is_archived", False):
             results.append({
                 "id": f.id,
@@ -417,13 +424,25 @@ def get_friends(db: Session, user_id: int):
         models.Friendship.status == "accepted",
         ((models.Friendship.user_id == user_id) | (models.Friendship.friend_id == user_id))
     ).all()
-    
-    results = []
+    if not friendships:
+        return []
+
+    rows = []
+    friend_ids = []
     for f in friendships:
-        friend_id = f.friend_id if f.user_id == user_id else f.user_id
-        friend = db.query(models.User).filter(models.User.id == friend_id).first()
+        fid = f.friend_id if f.user_id == user_id else f.user_id
+        rows.append((fid, f.created_at))
+        friend_ids.append(fid)
+    unique_ids = list(set(friend_ids))
+    users_by_id = {
+        u.id: u
+        for u in db.query(models.User).filter(models.User.id.in_(unique_ids)).all()
+    }
+    results = []
+    for fid, since in rows:
+        friend = users_by_id.get(fid)
         if friend and not getattr(friend, "is_archived", False):
-            results.append({"user": friend, "friends_since": f.created_at})
+            results.append({"user": friend, "friends_since": since})
     return results
 
 
@@ -627,24 +646,37 @@ def get_leaderboard(db: Session, user_id: int, limit: int = 20, period: str = "a
         users_with_mins = [(u, u.total_study_minutes) for u in users]
         users_with_mins.sort(key=lambda x: x[1], reverse=True)
 
+    uid_list = [u.id for u, _ in users_with_mins]
+    animals_by_uid: dict = {}
+    donation_by_uid: dict = {}
+    if uid_list:
+        animals_by_uid = dict(
+            db.query(models.UserAnimal.user_id, func.count(models.UserAnimal.id))
+            .filter(models.UserAnimal.user_id.in_(uid_list))
+            .group_by(models.UserAnimal.user_id)
+            .all()
+        )
+        donation_by_uid = {
+            uid: float(amt or 0)
+            for uid, amt in db.query(
+                models.Donation.user_id,
+                func.coalesce(func.sum(models.Donation.amount), 0),
+            )
+            .filter(models.Donation.user_id.in_(uid_list))
+            .group_by(models.Donation.user_id)
+            .all()
+        }
+
     leaderboard = []
     for rank, (user, mins) in enumerate(users_with_mins, 1):
-        animals_count = db.query(models.UserAnimal).filter(
-            models.UserAnimal.user_id == user.id
-        ).count()
-
-        total_donated = db.query(
-            func.coalesce(func.sum(models.Donation.amount), 0)
-        ).filter(models.Donation.user_id == user.id).scalar()
-
         leaderboard.append({
             "rank": rank,
             "user_id": user.id,
             "username": user.username or f"User {user.id}",
             "total_study_minutes": mins,
             "current_streak": get_effective_streak(user),
-            "animals_count": animals_count,
-            "total_donated": float(total_donated),
+            "animals_count": int(animals_by_uid.get(user.id, 0)),
+            "total_donated": float(donation_by_uid.get(user.id, 0)),
             "profile_pic_url": user.profile_pic_url,
         })
 
