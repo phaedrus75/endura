@@ -1,4 +1,4 @@
-from sqlalchemy.orm import Session, joinedload
+from sqlalchemy.orm import Session, joinedload, selectinload
 from sqlalchemy import func, desc, or_
 from datetime import datetime, timedelta
 from typing import List, Optional
@@ -999,33 +999,38 @@ def get_friend_feed(db: Session, user_id: int, limit: int = 30) -> List[dict]:
     if not visible_ids:
         return []
 
-    events = db.query(models.ActivityEvent).filter(
-        models.ActivityEvent.user_id.in_(visible_ids)
-    ).order_by(models.ActivityEvent.created_at.desc()).limit(limit).all()
+    events = (
+        db.query(models.ActivityEvent)
+        .options(selectinload(models.ActivityEvent.user))
+        .filter(models.ActivityEvent.user_id.in_(visible_ids))
+        .order_by(models.ActivityEvent.created_at.desc())
+        .limit(limit)
+        .all()
+    )
 
     if not events:
         return []
 
-    # Batch-fetch all users and reactions in two queries (eliminates N+1).
-    event_user_ids = list({e.user_id for e in events})
     event_ids = [e.id for e in events]
-
-    users_by_id = {
-        u.id: u
-        for u in db.query(models.User).filter(models.User.id.in_(event_user_ids)).all()
-    }
     reactions_by_event: dict[int, list] = {e.id: [] for e in events}
-    for r in db.query(models.FeedReaction).filter(
-        models.FeedReaction.event_id.in_(event_ids)
-    ).all():
-        reactions_by_event[r.event_id].append({"user_id": r.user_id, "reaction": r.reaction})
+    # Eager-load reaction authors so touching r.user never emits N+1 SELECTs.
+    for r in (
+        db.query(models.FeedReaction)
+        .options(selectinload(models.FeedReaction.user))
+        .filter(models.FeedReaction.event_id.in_(event_ids))
+        .all()
+    ):
+        row = {"user_id": r.user_id, "reaction": r.reaction}
+        if r.user is not None:
+            row["username"] = r.user.username
+        reactions_by_event[r.event_id].append(row)
 
     results = []
     for e in events:
-        u = users_by_id.get(e.user_id)
+        author = e.user
         results.append({
             "id": e.id, "user_id": e.user_id,
-            "username": u.username if u else None,
+            "username": author.username if author is not None else None,
             "event_type": e.event_type, "description": e.description,
             "created_at": e.created_at,
             "reactions": reactions_by_event[e.id],
