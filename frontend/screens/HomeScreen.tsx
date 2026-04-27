@@ -66,6 +66,7 @@ const shadows = {
 };
 import { animalsAPI, tasksAPI, statsAPI, subjectsAPI, Egg, Task, UserStats, UserAnimal, Subject } from '../services/api';
 import { animalImages, getAnimalImage } from '../assets/animals';
+import FeedbackModal from '../components/FeedbackModal';
 
 const { width, height } = Dimensions.get('window');
 
@@ -168,6 +169,7 @@ export default function HomeScreen() {
   const [showConfetti, setShowConfetti] = useState(false);
   const [showHatchModal, setShowHatchModal] = useState(false);
   const [hatchedAnimal, setHatchedAnimal] = useState<any>(null);
+  const [showFeedback, setShowFeedback] = useState(false);
   const [showAddTask, setShowAddTask] = useState(false);
   const [showCompleted, setShowCompleted] = useState(false);
   const [subjects, setSubjects] = useState<Subject[]>([]);
@@ -446,6 +448,16 @@ export default function HomeScreen() {
       >
         {/* Hero Card — header, chips, egg & CTA */}
         <View style={styles.heroCard}>
+          {/* Feedback button — sits to the left of the profile pic */}
+          <TouchableOpacity
+            style={styles.feedbackButton}
+            onPress={() => setShowFeedback(true)}
+            accessibilityLabel="Send feedback"
+            accessibilityRole="button"
+          >
+            <Text style={styles.feedbackButtonEmoji}>💬</Text>
+          </TouchableOpacity>
+
           {/* Profile pic — top right corner */}
           <TouchableOpacity 
             style={styles.profileButton}
@@ -1006,6 +1018,12 @@ export default function HomeScreen() {
         </TouchableOpacity>
       </Modal>
 
+      <FeedbackModal
+        visible={showFeedback}
+        onClose={() => setShowFeedback(false)}
+        screenContext="Home"
+      />
+
     </SafeAreaView>
   );
 }
@@ -1068,6 +1086,23 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     zIndex: 10,
     ...shadows.small,
+  },
+  feedbackButton: {
+    position: 'absolute',
+    top: spacing.md,
+    // Sit just to the left of profileButton (right: spacing.md, width 44, gap 8)
+    right: spacing.md + 44 + 8,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: colors.surface,
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 10,
+    ...shadows.small,
+  },
+  feedbackButtonEmoji: {
+    fontSize: 20,
   },
   profileButtonEmoji: {
     fontSize: 22,

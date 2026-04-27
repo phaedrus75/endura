@@ -460,6 +460,58 @@ export const pushAPI = {
     ),
 };
 
+// User feedback API — submits to the existing POST /feedback endpoint that
+// also powers the admin dashboard's Feedback / feature-request views.
+export type FeedbackType = 'bug' | 'feature' | 'question' | 'praise';
+
+export interface FeedbackSubmission {
+  feedback_type: FeedbackType;
+  message: string;
+  title?: string;
+  email?: string;
+  app_version?: string;
+  os?: string;
+  device_model?: string;
+  screen_context?: string;
+  attachment_urls?: string[];
+}
+
+export const feedbackAPI = {
+  submit: (payload: FeedbackSubmission) =>
+    apiFetch<{ id: number; message: string }>('/feedback', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+
+  /**
+   * Upload a single image to be attached to a feedback submission. Returns
+   * the public URL — the caller should collect these and pass them as
+   * `attachment_urls` to `submit()`. Mirrors `uploadProfilePic` mechanics.
+   */
+  uploadAttachment: async (uri: string): Promise<{ url: string }> => {
+    const token = await SecureStore.getItemAsync('authToken');
+    const formData = new FormData();
+    const filename = uri.split('/').pop() || 'feedback.jpg';
+    const match = /\.(\w+)$/.exec(filename);
+    const type = match ? `image/${match[1].toLowerCase() === 'jpg' ? 'jpeg' : match[1].toLowerCase()}` : 'image/jpeg';
+    formData.append('file', { uri, name: filename, type } as any);
+    const response = await fetch(`${API_URL}/feedback/attachments`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+      body: formData,
+    });
+    if (response.status === 401) {
+      await SecureStore.deleteItemAsync('authToken');
+      throw new Error('Please sign in to attach images.');
+    }
+    if (!response.ok) {
+      const text = await response.text().catch(() => '');
+      throw new Error(text || 'Failed to upload image');
+    }
+    return response.json();
+  },
+};
+
 // Tasks API
 export const tasksAPI = {
   getTasks: (includeCompleted = false) =>

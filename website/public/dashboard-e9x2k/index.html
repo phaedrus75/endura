@@ -477,6 +477,12 @@
                 <div class="table-card">
                     <div class="table-toolbar" style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
                         <input type="text" id="userSearch" placeholder="Search by username or email..." style="flex:1;min-width:200px">
+                        <label style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--text);cursor:pointer;white-space:nowrap" title="Exclude archived (closed) accounts from the list">
+                            <input type="checkbox" id="usersHideArchived" onchange="onUsersArchiveFilterChange('hide')"> Hide archived
+                        </label>
+                        <label style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--text);cursor:pointer;white-space:nowrap" title="Show only archived (closed) accounts">
+                            <input type="checkbox" id="usersArchivedOnly" onchange="onUsersArchiveFilterChange('only')"> Archived only (closed)
+                        </label>
                         <select id="countryFilter" onchange="applyUserFilters()" style="padding:10px 14px;border:1px solid var(--border);border-radius:10px;font-size:14px;min-width:140px">
                             <option value="">All Countries</option>
                         </select>
@@ -2235,10 +2241,41 @@ document.getElementById('userSearch').addEventListener('input', e => {
     searchTimeout = setTimeout(() => { usersPage = 1; loadUsers(e.target.value); }, 300);
 });
 
+function usersArchivedFilterParam() {
+    const onlyEl = document.getElementById('usersArchivedOnly');
+    const hideEl = document.getElementById('usersHideArchived');
+    if (onlyEl && onlyEl.checked) return 'archived_only';
+    if (hideEl && hideEl.checked) return 'active';
+    return 'all';
+}
+
+function syncUsersArchiveFilterControls() {
+    const hideEl = document.getElementById('usersHideArchived');
+    const onlyEl = document.getElementById('usersArchivedOnly');
+    if (!hideEl || !onlyEl) return;
+    onlyEl.disabled = hideEl.checked;
+    hideEl.disabled = onlyEl.checked;
+}
+
+function onUsersArchiveFilterChange(which) {
+    const hideEl = document.getElementById('usersHideArchived');
+    const onlyEl = document.getElementById('usersArchivedOnly');
+    if (!hideEl || !onlyEl) return;
+    if (which === 'hide' && hideEl.checked) onlyEl.checked = false;
+    if (which === 'only' && onlyEl.checked) hideEl.checked = false;
+    syncUsersArchiveFilterControls();
+    usersPage = 1;
+    loadUsers(document.getElementById('userSearch').value.trim());
+}
+
 async function loadUsers(search = '') {
     try {
-        const q = search ? `?search=${encodeURIComponent(search)}&limit=1000` : '?limit=1000';
-        const d = await adminFetch('/admin/users' + q);
+        const af = usersArchivedFilterParam();
+        const params = new URLSearchParams();
+        if (search) params.set('search', search);
+        params.set('archived_filter', af);
+        params.set('limit', '25000');
+        const d = await adminFetch('/admin/users?' + params.toString());
         usersData = d.users;
         populateFilterDropdowns();
         renderUsersTable();
@@ -3838,8 +3875,14 @@ function openFeedback(idx) {
     const userPart = fb.username ? `@${fb.username}` : (fb.email || 'anonymous');
     document.getElementById('fbDetailMeta').textContent = `${userPart} · ${new Date(fb.created_at).toLocaleString()}`;
     document.getElementById('fbDetailMessage').textContent = fb.message;
-    document.getElementById('fbDetailScreenshot').innerHTML = fb.screenshot_url
-        ? `<a href="${esc(fb.screenshot_url)}" target="_blank"><img src="${esc(fb.screenshot_url)}" style="max-width:100%;border-radius:8px;border:1px solid var(--border)"></a>`
+    // Prefer the new `attachment_urls` array; fall back to legacy `screenshot_url`.
+    const _atts = Array.isArray(fb.attachment_urls) && fb.attachment_urls.length
+        ? fb.attachment_urls
+        : (fb.screenshot_url ? [fb.screenshot_url] : []);
+    document.getElementById('fbDetailScreenshot').innerHTML = _atts.length
+        ? `<div style="display:flex;flex-wrap:wrap;gap:8px">${_atts.map(u =>
+            `<a href="${esc(u)}" target="_blank" style="flex:0 0 auto"><img src="${esc(u)}" style="max-height:160px;max-width:240px;border-radius:8px;border:1px solid var(--border)"></a>`
+          ).join('')}</div>`
         : '';
     const ctxBits = [
         fb.app_version && `app v${fb.app_version}`,

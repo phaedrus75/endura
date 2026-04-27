@@ -3593,8 +3593,12 @@ def admin_users(
     search: Optional[str] = None,
     sort: str = "created_at",
     order: str = "desc",
-    limit: int = 1000,
+    limit: int = Query(10000, ge=1, le=50000),
     offset: int = 0,
+    archived_filter: str = Query(
+        "all",
+        description="all = everyone; active = not archived; archived_only = closed/archived accounts",
+    ),
     db: Session = Depends(get_db),
     _=Depends(verify_admin),
 ):
@@ -3603,6 +3607,16 @@ def admin_users(
         pattern = f"%{search}%"
         q = q.filter(
             (models.User.username.ilike(pattern)) | (models.User.email.ilike(pattern))
+        )
+
+    if archived_filter == "active":
+        q = q.filter(or_(models.User.is_archived == False, models.User.is_archived == None))  # noqa: E712
+    elif archived_filter == "archived_only":
+        q = q.filter(models.User.is_archived == True)  # noqa: E712
+    elif archived_filter != "all":
+        raise HTTPException(
+            status_code=400,
+            detail="archived_filter must be one of: all, active, archived_only",
         )
 
     ALLOWED_SORT_COLS = {"created_at", "username", "total_study_minutes", "current_streak", "last_study_date"}
@@ -4394,6 +4408,19 @@ def submit_feedback(
 ):
     """Submit user feedback. Auth optional — anonymous submissions allowed.
     Returns the created feedback id and a friendly message."""
+    # Sanity-check attachment URLs: must be from our own /uploads/ host so we
+    # don't end up storing arbitrary external links pasted by clients. Anything
+    # that fails the check is silently dropped rather than rejecting the whole
+    # submission — the message itself is still valuable.
+    safe_attachments: list[str] = []
+    if payload.attachment_urls:
+        for url in payload.attachment_urls[:6]:
+            if isinstance(url, str) and "/uploads/" in url and len(url) <= 500:
+                safe_attachments.append(url)
+    # Keep `screenshot_url` populated with the first attachment for back-compat
+    # with the existing admin dashboard view.
+    primary_screenshot = payload.screenshot_url or (safe_attachments[0] if safe_attachments else None)
+
     fb = models.UserFeedback(
         user_id=current_user.id if current_user else None,
         email=payload.email or (current_user.email if current_user else None),
@@ -4404,7 +4431,8 @@ def submit_feedback(
         os=payload.os,
         device_model=payload.device_model,
         screen_context=payload.screen_context,
-        screenshot_url=payload.screenshot_url,
+        screenshot_url=primary_screenshot,
+        attachment_urls=_json.dumps(safe_attachments) if safe_attachments else None,
         status="new",
         priority="medium",
     )
@@ -4419,6 +4447,43 @@ def submit_feedback(
         "id": fb.id,
         "message": "Thanks! We've received your feedback and will take a look.",
     }
+
+
+@app.post("/feedback/attachments")
+async def upload_feedback_attachment(
+    file: UploadFile = File(...),
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Upload a single image attachment for a feedback submission.
+
+    Returns the public URL the client should include in `attachment_urls` when
+    calling POST /feedback. Auth is required (unlike POST /feedback itself) to
+    prevent the upload bucket from becoming a free anonymous file host.
+    Reuses the same `Upload` model + magic-byte validator as profile pics.
+    """
+    if file.content_type not in {"image/png", "image/jpeg", "image/webp", "image/gif"}:
+        raise HTTPException(400, "Only PNG, JPEG, WebP, or GIF images are allowed")
+    data = await file.read()
+    if len(data) > 5 * 1024 * 1024:
+        raise HTTPException(400, "File too large (max 5 MB)")
+    if not _valid_image_magic(data):
+        raise HTTPException(400, "File does not appear to be a valid image")
+    upload = models.Upload(
+        filename=file.filename or "feedback.jpg",
+        content_type=file.content_type,
+        data=data,
+    )
+    db.add(upload)
+    db.commit()
+    db.refresh(upload)
+    base = os.getenv("API_BASE_URL", "https://web-production-34028.up.railway.app")
+    url = f"{base}/uploads/{upload.public_id}"
+    logger.info(
+        f"Feedback attachment uploaded id={upload.id} user_id={current_user.id} "
+        f"size={len(data)} type={file.content_type}"
+    )
+    return {"url": url}
 
 
 @app.get("/feedback/feature-requests")
@@ -4584,6 +4649,11 @@ def admin_list_feedback(
                 "device_model": fb.device_model,
                 "screen_context": fb.screen_context,
                 "screenshot_url": fb.screenshot_url,
+                "attachment_urls": (
+                    _json.loads(fb.attachment_urls)
+                    if fb.attachment_urls
+                    else ([fb.screenshot_url] if fb.screenshot_url else [])
+                ),
                 "admin_notes": fb.admin_notes,
                 "internal_link": fb.internal_link,
                 "created_at": fb.created_at.isoformat(),

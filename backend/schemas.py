@@ -372,6 +372,9 @@ class FeedbackCreate(BaseModel):
     device_model: Optional[str] = Field(None, max_length=80)
     screen_context: Optional[str] = Field(None, max_length=120)
     screenshot_url: Optional[str] = Field(None, max_length=500)
+    # New: multiple-image attachments. Each entry is an upload URL produced
+    # by POST /feedback/attachments. Capped at 6 to keep storage bounded.
+    attachment_urls: Optional[List[str]] = Field(None, max_length=6)
 
 
 class FeedbackResponse(BaseModel):

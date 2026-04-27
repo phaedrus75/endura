@@ -795,6 +795,10 @@ class UserFeedback(Base):
     device_model = Column(String(80), nullable=True)
     screen_context = Column(String(120), nullable=True)             # Where the user was when submitting
     screenshot_url = Column(String(500), nullable=True)
+    # JSON-encoded list of attachment URLs (multiple images supported).
+    # `screenshot_url` is preserved as legacy/primary for back-compat with
+    # older admin views; new code should prefer this column.
+    attachment_urls = Column(Text, nullable=True)
     # Triage fields
     status = Column(String(20), default="new", nullable=False, index=True)  # new|triaged|in_progress|done|wontfix|duplicate
     priority = Column(String(20), default="medium", nullable=False)         # low|medium|high|critical

@@ -38,6 +38,15 @@ class TestAdminUsers:
         resp = client.get(f"/admin/users?search=alice", headers=admin_headers())
         assert resp.status_code == 200
 
+    def test_users_archived_filter_active_and_invalid(self, client, alice):
+        """archived_filter=active and archived_only accepted; invalid value → 400."""
+        resp = client.get("/admin/users?archived_filter=active", headers=admin_headers())
+        assert resp.status_code == 200
+        resp2 = client.get("/admin/users?archived_filter=archived_only", headers=admin_headers())
+        assert resp2.status_code == 200
+        bad = client.get("/admin/users?archived_filter=yes", headers=admin_headers())
+        assert bad.status_code == 400
+
 
 class TestAdminFeedback:
     def test_feedback_list_filtered_by_status(self, client, alice, alice_headers):
