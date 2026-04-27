@@ -2265,6 +2265,7 @@ function onUsersArchiveFilterChange(which) {
     if (which === 'only' && onlyEl.checked) hideEl.checked = false;
     syncUsersArchiveFilterControls();
     usersPage = 1;
+    renderUsersTable();
     loadUsers(document.getElementById('userSearch').value.trim());
 }
 
@@ -2278,14 +2279,21 @@ async function loadUsers(search = '') {
         const d = await adminFetch('/admin/users?' + params.toString());
         usersData = d.users;
         populateFilterDropdowns();
-        renderUsersTable();
     } catch (e) { console.error('Users load failed', e); }
+    renderUsersTable();
 }
 
 function getFilteredUsers() {
     const country = document.getElementById('countryFilter').value;
     const school = document.getElementById('schoolFilter').value;
+    const hideEl = document.getElementById('usersHideArchived');
+    const onlyEl = document.getElementById('usersArchivedOnly');
+    const hideArchived = !!(hideEl && hideEl.checked);
+    const archivedOnly = !!(onlyEl && onlyEl.checked);
     let rows = usersData.filter(u => {
+        const archived = u.is_archived === true;
+        if (archivedOnly && !archived) return false;
+        if (hideArchived && !archivedOnly && archived) return false;
         if (country && (u.country || '') !== country) return false;
         if (school && (u.school || '') !== school) return false;
         return true;
