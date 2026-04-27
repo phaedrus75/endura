@@ -3214,6 +3214,7 @@ async function loadSimilarSchools() {
                     <div style="background:var(--card);padding:10px 14px;display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap">
                         <div>
                             <span style="font-weight:700;font-size:13px">${esc(c.canonical_suggestion)}</span>
+                            ${c.country ? `<span style="margin-left:8px;font-size:11px;padding:2px 7px;background:#f1f5f9;border-radius:10px;color:var(--text-muted)">${esc(c.country)}</span>` : ''}
                             <span style="margin-left:8px;font-size:11px;color:var(--text-muted)">${c.variant_count} variants · ${c.total_users} users total</span>
                         </div>
                         <span style="font-size:11px;padding:2px 8px;border-radius:20px;background:${c.variant_count > 3 ? 'rgba(239,68,68,.1)' : 'rgba(16,185,129,.1)'};color:${c.variant_count > 3 ? 'var(--red)' : 'var(--accent)'}">

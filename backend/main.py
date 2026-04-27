@@ -6763,57 +6763,62 @@ def admin_schools_similar(
     """
     from difflib import SequenceMatcher
 
-    # Pull distinct (users.school, count) pairs — free-text field on User.
+    # Pull distinct (school, country, count) tuples — only compare within country.
     rows = (
-        db.query(models.User.school, func.count(models.User.id))
+        db.query(models.User.school, models.User.country, func.count(models.User.id))
         .filter(models.User.school.isnot(None), models.User.school != "")
-        .group_by(models.User.school)
+        .group_by(models.User.school, models.User.country)
         .order_by(func.count(models.User.id).desc())
         .all()
     )
-    # Filter by min_users and build list of (raw_name, user_count, normalised_name)
-    entries = [
-        (raw, cnt, _normalize_school_name(raw))
-        for raw, cnt in rows
-        if cnt >= min_users
-    ]
 
     def _sim(a: str, b: str) -> float:
         return SequenceMatcher(None, a, b).ratio()
 
-    # Greedy single-linkage clustering on normalised names.
-    clusters: list[list[tuple[str, int, str]]] = []
-    assigned = [False] * len(entries)
-    for i, (raw_i, cnt_i, norm_i) in enumerate(entries):
-        if assigned[i]:
-            continue
-        cluster = [(raw_i, cnt_i, norm_i)]
-        assigned[i] = True
-        for j, (raw_j, cnt_j, norm_j) in enumerate(entries):
-            if assigned[j] or i == j:
+    def _cluster_entries(entries):
+        """Greedy single-linkage clustering within a list of (raw, cnt, norm) tuples."""
+        clusters = []
+        assigned = [False] * len(entries)
+        for i, (raw_i, cnt_i, norm_i) in enumerate(entries):
+            if assigned[i]:
                 continue
-            if norm_i == norm_j:
-                # Already caught by exact dedup — include but label differently
-                cluster.append((raw_j, cnt_j, norm_j))
-                assigned[j] = True
-            elif _sim(norm_i, norm_j) >= threshold:
-                cluster.append((raw_j, cnt_j, norm_j))
-                assigned[j] = True
-        if len(cluster) > 1:
-            clusters.append(cluster)
+            cluster = [(raw_i, cnt_i, norm_i)]
+            assigned[i] = True
+            for j, (raw_j, cnt_j, norm_j) in enumerate(entries):
+                if assigned[j] or i == j:
+                    continue
+                if norm_i == norm_j or _sim(norm_i, norm_j) >= threshold:
+                    cluster.append((raw_j, cnt_j, norm_j))
+                    assigned[j] = True
+            if len(cluster) > 1:
+                clusters.append(cluster)
+        return clusters
 
-    # Sort clusters: most users first, then most variants first
-    clusters.sort(key=lambda c: (-sum(cnt for _, cnt, _ in c), -len(c)))
+    # Group entries by country, then cluster within each country.
+    by_country: dict[str, list[tuple[str, int, str]]] = {}
+    for raw, country, cnt in rows:
+        if cnt < min_users:
+            continue
+        key = (country or "").strip()
+        by_country.setdefault(key, []).append((raw, cnt, _normalize_school_name(raw)))
+
+    all_clusters: list[tuple[str, list]] = []  # (country, cluster)
+    for country, entries in by_country.items():
+        for cluster in _cluster_entries(entries):
+            all_clusters.append((country, cluster))
+
+    # Sort: most total users first, then most variants first.
+    all_clusters.sort(key=lambda x: (-sum(cnt for _, cnt, _ in x[1]), -len(x[1])))
 
     result = []
-    for cluster in clusters:
+    for country, cluster in all_clusters:
         variants = sorted(cluster, key=lambda x: -x[1])
-        canonical = variants[0][0]  # highest-user-count variant = suggested canonical
+        canonical = variants[0][0]
         total_users = sum(cnt for _, cnt, _ in variants)
-        # Compute pairwise similarity to the canonical for display
         norm_canonical = _normalize_school_name(canonical)
         result.append({
             "canonical_suggestion": canonical,
+            "country": country or None,
             "total_users": total_users,
             "variant_count": len(variants),
             "variants": [
@@ -6827,9 +6832,10 @@ def admin_schools_similar(
             ],
         })
 
+    total_distinct = sum(len(entries) for entries in by_country.values())
     return {
         "threshold": threshold,
-        "total_distinct_schools": len(entries),
+        "total_distinct_schools": total_distinct,
         "similar_clusters": len(result),
         "clusters": result,
     }
