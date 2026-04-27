@@ -1,4 +1,4 @@
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import func, desc, or_
 from datetime import datetime, timedelta
 from typing import List, Optional
@@ -203,9 +203,13 @@ def get_all_animals(db: Session) -> List[models.Animal]:
 
 
 def get_user_animals(db: Session, user_id: int) -> List[models.UserAnimal]:
-    return db.query(models.UserAnimal).filter(
-        models.UserAnimal.user_id == user_id
-    ).order_by(models.UserAnimal.hatched_at.desc()).all()
+    return (
+        db.query(models.UserAnimal)
+        .options(joinedload(models.UserAnimal.animal))
+        .filter(models.UserAnimal.user_id == user_id)
+        .order_by(models.UserAnimal.hatched_at.desc())
+        .all()
+    )
 
 
 def name_animal(db: Session, user_animal_id: int, user_id: int, nickname: str) -> Optional[models.UserAnimal]:
