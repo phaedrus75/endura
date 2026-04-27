@@ -8,14 +8,27 @@ interface FeedbackInboxProps {
   loading: boolean;
   onSelect: (id: number) => void;
   onCompose: () => void;
+  loadError?: string | null;
+  onRetry?: () => void;
 }
 
-export default function FeedbackInbox({ items, loading, onSelect, onCompose }: FeedbackInboxProps) {
+export default function FeedbackInbox({ items, loading, onSelect, onCompose, loadError, onRetry }: FeedbackInboxProps) {
   return (
     <View style={styles.wrap}>
       <TouchableOpacity style={styles.composeCta} onPress={onCompose} accessibilityRole="button">
         <Text style={styles.composeCtaText}>＋ Send new feedback</Text>
       </TouchableOpacity>
+
+      {!!loadError && (
+        <View style={styles.errorBanner}>
+          <Text style={styles.errorText}>{loadError}</Text>
+          {onRetry ? (
+            <TouchableOpacity onPress={onRetry} style={styles.retryBtn}>
+              <Text style={styles.retryBtnText}>Try again</Text>
+            </TouchableOpacity>
+          ) : null}
+        </View>
+      )}
 
       {loading ? (
         <View style={styles.centered}>
@@ -41,6 +54,9 @@ export default function FeedbackInbox({ items, loading, onSelect, onCompose }: F
               <Text style={styles.preview} numberOfLines={2}>
                 {row.message_preview}
               </Text>
+              {row.has_team_reply ? (
+                <Text style={styles.teamHint}>Team replied — tap to read</Text>
+              ) : null}
             </TouchableOpacity>
           ))}
         </ScrollView>
@@ -73,4 +89,21 @@ const styles = StyleSheet.create({
   dot: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#E11D48' },
   title: { fontSize: 16, fontWeight: '700', color: '#2D3B36', marginBottom: 4 },
   preview: { fontSize: 13, color: '#5A6B65', lineHeight: 18 },
+  teamHint: {
+    marginTop: 6,
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#5E7F6E',
+  },
+  errorBanner: {
+    backgroundColor: '#fef2f2',
+    borderWidth: 1,
+    borderColor: '#fecaca',
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 12,
+  },
+  errorText: { fontSize: 13, color: '#991b1b', marginBottom: 8 },
+  retryBtn: { alignSelf: 'flex-start', paddingVertical: 6, paddingHorizontal: 12, backgroundColor: '#fff', borderRadius: 8, borderWidth: 1, borderColor: '#fecaca' },
+  retryBtnText: { fontSize: 13, fontWeight: '600', color: '#991b1b' },
 });

@@ -2,7 +2,7 @@ from fastapi import FastAPI, Depends, HTTPException, status, Request, Header, Up
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
-from sqlalchemy import text, func, or_
+from sqlalchemy import text, func, or_, and_
 from datetime import timedelta, datetime, date
 from typing import List, Optional
 from slowapi import Limiter, _rate_limit_exceeded_handler
@@ -4494,6 +4494,22 @@ def submit_feedback(
     }
 
 
+def _me_feedback_owner_clause(current_user: models.User):
+    """Inbox ownership: normal ``user_id`` match, plus anon rows that used this
+    account's email (POST /feedback without JWT still stored ``email``)."""
+    uid_match = models.UserFeedback.user_id == current_user.id
+    if not current_user.email:
+        return uid_match
+    return or_(
+        uid_match,
+        and_(
+            models.UserFeedback.user_id.is_(None),
+            models.UserFeedback.email.isnot(None),
+            func.lower(models.UserFeedback.email) == func.lower(current_user.email),
+        ),
+    )
+
+
 @app.get("/me/feedback/unread-count")
 def me_feedback_unread_count(
     current_user: models.User = Depends(get_current_user),
@@ -4507,7 +4523,7 @@ def me_feedback_unread_count(
             models.UserFeedback.id == models.FeedbackMessage.feedback_id,
         )
         .filter(
-            models.UserFeedback.user_id == current_user.id,
+            _me_feedback_owner_clause(current_user),
             models.FeedbackMessage.sender == "admin",
             models.FeedbackMessage.read_at.is_(None),
         )
@@ -4525,12 +4541,13 @@ def me_feedback_list(
     """Inbox: all feedback threads submitted while signed in as this user."""
     threads = (
         db.query(models.UserFeedback)
-        .filter(models.UserFeedback.user_id == current_user.id)
+        .filter(_me_feedback_owner_clause(current_user))
         .order_by(models.UserFeedback.updated_at.desc())
         .all()
     )
     ids = [t.id for t in threads]
     unread_map: dict[int, int] = {}
+    has_team_reply: set[int] = set()
     if ids:
         for fid, cnt in (
             db.query(
@@ -4546,6 +4563,16 @@ def me_feedback_list(
             .all()
         ):
             unread_map[int(fid)] = int(cnt)
+        for (fid,) in (
+            db.query(models.FeedbackMessage.feedback_id)
+            .filter(
+                models.FeedbackMessage.feedback_id.in_(ids),
+                models.FeedbackMessage.sender == "admin",
+            )
+            .distinct()
+            .all()
+        ):
+            has_team_reply.add(int(fid))
 
     def _preview(msg: str) -> str:
         msg = (msg or "").strip()
@@ -4564,6 +4591,7 @@ def me_feedback_list(
                 "last_message_at": fb.updated_at.isoformat(),
                 "created_at": fb.created_at.isoformat(),
                 "unread_count": unread_map.get(fb.id, 0),
+                "has_team_reply": fb.id in has_team_reply,
             }
             for fb in threads
         ]
@@ -4581,7 +4609,7 @@ def me_feedback_thread(
         db.query(models.UserFeedback)
         .filter(
             models.UserFeedback.id == feedback_id,
-            models.UserFeedback.user_id == current_user.id,
+            _me_feedback_owner_clause(current_user),
         )
         .first()
     )
@@ -4633,7 +4661,7 @@ def me_feedback_mark_read(
         db.query(models.UserFeedback)
         .filter(
             models.UserFeedback.id == feedback_id,
-            models.UserFeedback.user_id == current_user.id,
+            _me_feedback_owner_clause(current_user),
         )
         .first()
     )

@@ -486,6 +486,8 @@ export interface FeedbackInboxItem {
   last_message_at: string;
   created_at: string;
   unread_count: number;
+  /** True when at least one admin message exists — tap row to read it. */
+  has_team_reply?: boolean;
 }
 
 export interface FeedbackThreadMessage {

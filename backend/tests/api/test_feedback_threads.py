@@ -153,6 +153,40 @@ class TestMeFeedbackInbox:
         assert rb.json()["id"] not in a_ids
         assert rb.json()["id"] in b_ids
 
+    def test_me_list_includes_email_only_anon_for_same_account(
+        self, client, alice, alice_headers, db, support_template
+    ):
+        """POST /feedback without auth but with the user's email must still show in their inbox."""
+        r = client.post(
+            "/feedback",
+            json={
+                "feedback_type": "bug",
+                "message": "Submitted while token missing",
+                "email": alice.email,
+            },
+        )
+        assert r.status_code == 200
+        fid = r.json()["id"]
+        row = db.query(models.UserFeedback).filter(models.UserFeedback.id == fid).first()
+        assert row is not None
+        assert row.user_id is None
+
+        client.post(
+            f"/admin/feedback/{fid}/reply",
+            json={"message": "Team response"},
+            headers=admin_headers(),
+        )
+
+        la = client.get("/me/feedback", headers=alice_headers)
+        assert la.status_code == 200
+        match = next((x for x in la.json()["items"] if x["id"] == fid), None)
+        assert match is not None
+        assert match.get("has_team_reply") is True
+
+        th = client.get(f"/me/feedback/{fid}", headers=alice_headers)
+        assert th.status_code == 200
+        assert len(th.json()["messages"]) == 1
+
     def test_me_thread_404_for_other_user(
         self, client, alice, bob, alice_headers, bob_headers, db
     ):

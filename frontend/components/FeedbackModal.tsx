@@ -70,6 +70,7 @@ export default function FeedbackModal({ visible, onClose, screenContext, initial
   const [threadData, setThreadData] = useState<FeedbackThreadPayload | null>(null);
   const [threadLoading, setThreadLoading] = useState(false);
   const [composeFromInbox, setComposeFromInbox] = useState(false);
+  const [inboxLoadError, setInboxLoadError] = useState<string | null>(null);
 
   const [type, setType] = useState<FeedbackType>('bug');
   const [title, setTitle] = useState('');
@@ -79,14 +80,15 @@ export default function FeedbackModal({ visible, onClose, screenContext, initial
   const [submitting, setSubmitting] = useState(false);
 
   const reloadInbox = useCallback(async () => {
-    if (!user) return;
     try {
       const { items } = await feedbackAPI.list();
       setInboxItems(items);
-    } catch {
+      setInboxLoadError(null);
+    } catch (e: any) {
       setInboxItems([]);
+      setInboxLoadError(e?.message || 'Could not load messages');
     }
-  }, [user]);
+  }, []);
 
   useEffect(() => {
     if (!visible) {
@@ -96,6 +98,7 @@ export default function FeedbackModal({ visible, onClose, screenContext, initial
       setThreadData(null);
       setThreadLoading(false);
       setComposeFromInbox(false);
+      setInboxLoadError(null);
       return;
     }
 
@@ -136,15 +139,37 @@ export default function FeedbackModal({ visible, onClose, screenContext, initial
       try {
         const { items } = await feedbackAPI.list();
         setInboxItems(items);
+        setInboxLoadError(null);
         setView(items.length ? 'inbox' : 'compose');
-      } catch {
+      } catch (e: any) {
         setInboxItems([]);
-        setView('compose');
+        setInboxLoadError(e?.message || 'Could not load messages');
+        setView('inbox');
       } finally {
         setInboxLoading(false);
       }
     })();
-  }, [visible, user?.id, user?.email, initialThreadId, reloadInbox]);
+  }, [visible, user?.id, user?.email, initialThreadId]);
+
+  const retryInboxLoad = useCallback(() => {
+    if (!user) return;
+    setInboxLoadError(null);
+    setInboxLoading(true);
+    void (async () => {
+      try {
+        const { items } = await feedbackAPI.list();
+        setInboxItems(items);
+        setInboxLoadError(null);
+        setView(items.length ? 'inbox' : 'compose');
+      } catch (e: any) {
+        setInboxItems([]);
+        setInboxLoadError(e?.message || 'Could not load messages');
+        setView('inbox');
+      } finally {
+        setInboxLoading(false);
+      }
+    })();
+  }, [user]);
 
   const updateAttachment = (id: string, patch: Partial<Attachment>) => {
     setAttachments(prev => prev.map(a => (a.id === id ? { ...a, ...patch } : a)));
@@ -479,6 +504,8 @@ export default function FeedbackModal({ visible, onClose, screenContext, initial
                 loading={inboxLoading}
                 onSelect={openThread}
                 onCompose={goToComposeFromInbox}
+                loadError={inboxLoadError}
+                onRetry={retryInboxLoad}
               />
             ) : (
               <FeedbackThread data={threadData} loading={threadLoading} />
