@@ -113,3 +113,93 @@ class TestFeedbackEndpoints:
             resp = client.post(f"/feedback/{feedback.id}/upvote",
                                headers=jwt_headers(bob.email))
             assert resp.status_code == 200
+
+    def test_upload_feedback_attachment(self, client, alice_headers):
+        """POST /feedback/attachments accepts a valid PNG and returns a URL."""
+        # Smallest valid 1x1 PNG (89 bytes)
+        png = (
+            b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR"
+            b"\x00\x00\x00\x01\x00\x00\x00\x01\x08\x06\x00\x00\x00\x1f\x15\xc4"
+            b"\x89\x00\x00\x00\rIDATx\x9cc\xfc\xff\xff?\x03\x00\x06\x00\x02\xfe"
+            b"\x97!\x9d\xb1\x00\x00\x00\x00IEND\xaeB`\x82"
+        )
+        resp = client.post(
+            "/feedback/attachments",
+            files={"file": ("shot.png", png, "image/png")},
+            headers=alice_headers,
+        )
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert "url" in body and "/uploads/" in body["url"]
+
+    def test_upload_feedback_attachment_requires_auth(self, client):
+        """Anonymous upload is rejected — protects against the upload bucket
+        becoming a free public file host."""
+        resp = client.post(
+            "/feedback/attachments",
+            files={"file": ("shot.png", b"\x89PNG\r\n\x1a\n", "image/png")},
+        )
+        assert resp.status_code in (401, 403)
+
+    def test_upload_feedback_attachment_rejects_non_image(self, client, alice_headers):
+        resp = client.post(
+            "/feedback/attachments",
+            files={"file": ("note.txt", b"hello world", "text/plain")},
+            headers=alice_headers,
+        )
+        assert resp.status_code == 400
+
+    def test_submit_feedback_with_attachments(self, client, alice_headers, db):
+        """End-to-end: upload two images, submit feedback referencing them,
+        and verify both are persisted in attachment_urls + screenshot_url
+        is populated with the first for back-compat."""
+        import json as _json
+        png = (
+            b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR"
+            b"\x00\x00\x00\x01\x00\x00\x00\x01\x08\x06\x00\x00\x00\x1f\x15\xc4"
+            b"\x89\x00\x00\x00\rIDATx\x9cc\xfc\xff\xff?\x03\x00\x06\x00\x02\xfe"
+            b"\x97!\x9d\xb1\x00\x00\x00\x00IEND\xaeB`\x82"
+        )
+        urls = []
+        for name in ("a.png", "b.png"):
+            r = client.post(
+                "/feedback/attachments",
+                files={"file": (name, png, "image/png")},
+                headers=alice_headers,
+            )
+            assert r.status_code == 200
+            urls.append(r.json()["url"])
+
+        resp = client.post(
+            "/feedback",
+            json={
+                "feedback_type": "bug",
+                "message": "Two screenshots attached",
+                "attachment_urls": urls,
+            },
+            headers=alice_headers,
+        )
+        assert resp.status_code == 200
+        fb_id = resp.json()["id"]
+        fb = db.query(models.UserFeedback).filter_by(id=fb_id).first()
+        assert fb is not None
+        assert _json.loads(fb.attachment_urls) == urls
+        # Legacy screenshot_url is auto-populated with the first attachment.
+        assert fb.screenshot_url == urls[0]
+
+    def test_submit_feedback_drops_external_attachment_urls(self, client, alice_headers, db):
+        """attachment_urls pointing outside our /uploads/ host are silently
+        dropped — defends against client-side abuse."""
+        resp = client.post(
+            "/feedback",
+            json={
+                "feedback_type": "bug",
+                "message": "Trying to sneak in a phishing link",
+                "attachment_urls": ["https://evil.example.com/payload.png"],
+            },
+            headers=alice_headers,
+        )
+        assert resp.status_code == 200
+        fb = db.query(models.UserFeedback).order_by(models.UserFeedback.id.desc()).first()
+        assert fb.attachment_urls in (None, "[]")
+        assert fb.screenshot_url is None
