@@ -811,6 +811,24 @@ class UserFeedback(Base):
     resolved_at = Column(DateTime, nullable=True)
 
 
+class FeedbackMessage(Base):
+    """One row per message in a feedback thread (admin reply in Phase 1; user
+    replies in Phase 2). Parent row is `user_feedback`; the original submission
+    text lives on the parent, not duplicated here.
+    """
+    __tablename__ = "feedback_messages"
+
+    id = Column(Integer, primary_key=True, index=True)
+    feedback_id = Column(
+        Integer, ForeignKey("user_feedback.id", ondelete="CASCADE"),
+        nullable=False, index=True,
+    )
+    sender = Column(String(10), nullable=False)  # admin | user
+    body = Column(Text, nullable=False)
+    read_at = Column(DateTime, nullable=True, index=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+
+
 class FeedbackUpvote(Base):
     """Per-user upvotes on feature requests. Prevents duplicate voting."""
     __tablename__ = "feedback_upvotes"

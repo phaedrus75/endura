@@ -909,6 +909,13 @@
                     <div id="fbDetailScreenshot" style="margin-bottom:16px"></div>
                     <div id="fbDetailContext" style="font-size:12px;color:var(--text-muted);margin-bottom:16px;padding:10px;background:var(--bg);border-radius:8px;font-family:monospace"></div>
 
+                    <div id="fbReplyBanner" style="display:none;margin-bottom:12px;padding:10px 12px;background:#fef3c7;border:1px solid #fcd34d;border-radius:8px;font-size:13px;color:#92400e"></div>
+                    <label style="font-size:12px;color:var(--text-muted);display:block;margin-bottom:6px">Team replies</label>
+                    <div id="fbDetailThread" style="margin-bottom:14px;min-height:24px"></div>
+                    <label style="font-size:12px;color:var(--text-muted);display:block;margin-bottom:4px">Reply to user (push if signed in, else email)</label>
+                    <textarea id="fbDetailReply" rows="3" placeholder="Write a reply…" style="width:100%;padding:10px;border:1px solid var(--border);border-radius:8px;font-family:inherit;font-size:14px;resize:vertical;margin-bottom:8px"></textarea>
+                    <button type="button" onclick="sendFeedbackReply()" style="padding:8px 16px;background:var(--forest);color:white;border:none;border-radius:8px;cursor:pointer;font-size:13px;font-weight:600;margin-bottom:16px">Send reply</button>
+
                     <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px">
                         <div>
                             <label style="font-size:12px;color:var(--text-muted);display:block;margin-bottom:4px">Status</label>
@@ -3873,7 +3880,22 @@ async function loadFeedback() {
     }
 }
 
-function openFeedback(idx) {
+function renderFeedbackThread(messages) {
+    const el = document.getElementById('fbDetailThread');
+    const adminMsgs = (messages || []).filter(m => m.sender === 'admin');
+    if (!adminMsgs.length) {
+        el.innerHTML = '<div style="font-size:12px;color:var(--text-muted)">No team replies yet.</div>';
+        return;
+    }
+    el.innerHTML = adminMsgs.map(m =>
+        `<div style="margin-bottom:10px;padding:10px 12px;border-radius:10px;background:#f3f4f6;border:1px solid #e5e7eb">
+            <div style="font-size:11px;color:#6b7280;font-weight:600;margin-bottom:4px">Endura team · ${esc(timeAgo(m.created_at))}</div>
+            <div style="font-size:14px;white-space:pre-wrap">${esc(m.body)}</div>
+        </div>`
+    ).join('');
+}
+
+async function openFeedback(idx) {
     const fb = _feedbackData[idx];
     if (!fb) return;
     _feedbackEditing = fb;
@@ -3903,7 +3925,62 @@ function openFeedback(idx) {
     document.getElementById('fbDetailPriority').value = fb.priority;
     document.getElementById('fbDetailLink').value = fb.internal_link || '';
     document.getElementById('fbDetailNotes').value = fb.admin_notes || '';
+    document.getElementById('fbDetailReply').value = '';
+    const banner = document.getElementById('fbReplyBanner');
+    const canDeliver = fb.user_id || (fb.email && String(fb.email).trim());
+    if (!canDeliver) {
+        banner.style.display = 'block';
+        banner.textContent = 'This user cannot be reached (anonymous, no email). Replies are saved for internal records only — they will not be notified.';
+    } else {
+        banner.style.display = 'none';
+    }
+    document.getElementById('fbDetailThread').innerHTML = '<div style="font-size:12px;color:var(--text-muted)">Loading thread…</div>';
     document.getElementById('feedbackOverlay').style.display = 'flex';
+    try {
+        const detail = await adminFetch('/admin/feedback/' + fb.id);
+        _feedbackEditing = Object.assign({}, fb, detail.feedback);
+        _feedbackEditing._messages = detail.messages || [];
+        renderFeedbackThread(detail.messages);
+    } catch (e) {
+        document.getElementById('fbDetailThread').innerHTML =
+            `<div style="color:#dc2626;font-size:13px">${esc(e.message || 'Failed to load thread')}</div>`;
+    }
+}
+
+async function sendFeedbackReply() {
+    if (!_feedbackEditing) return;
+    const ta = document.getElementById('fbDetailReply');
+    const text = (ta.value || '').trim();
+    if (!text) {
+        alert('Write a message first.');
+        return;
+    }
+    const id = _feedbackEditing.id;
+    try {
+        const res = await fetch(API_URL + '/admin/feedback/' + id + '/reply', {
+            method: 'POST',
+            headers: { 'X-Admin-Key': API_KEY, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ message: text }),
+        });
+        if (!res.ok) {
+            const err = await res.json().catch(() => ({}));
+            throw new Error(err.detail || res.status);
+        }
+        const data = await res.json();
+        ta.value = '';
+        if (data.delivery === 'uncontactable') {
+            alert('Reply saved. This user cannot be notified (anonymous, no email).');
+        }
+        const detail = await adminFetch('/admin/feedback/' + id);
+        _feedbackEditing = Object.assign({}, _feedbackEditing, detail.feedback);
+        _feedbackEditing._messages = detail.messages || [];
+        renderFeedbackThread(detail.messages);
+        if (data.delivery === 'push' || data.delivery === 'email') {
+            /* optional: subtle confirmation without blocking */
+        }
+    } catch (e) {
+        alert('Send failed: ' + (e.message || e));
+    }
 }
 
 function closeFeedback() {

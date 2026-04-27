@@ -153,4 +153,14 @@ DEFAULT_PUSH_TEMPLATES = [
         "category": "local",
         "deep_link": "Timer",
     },
+
+    # ── Support: admin reply to in-app feedback (deep_link set per-send) ──
+    {
+        "template_key": "support_reply",
+        "name": "Support team replied to feedback",
+        "title": "The Endura team replied",
+        "body": "{preview}",
+        "category": "system",
+        "deep_link": None,
+    },
 ]

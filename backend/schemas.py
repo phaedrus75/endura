@@ -396,3 +396,7 @@ class AdminFeedbackUpdate(BaseModel):
     priority: Optional[str] = Field(None, pattern="^(low|medium|high|critical)$")
     admin_notes: Optional[str] = Field(None, max_length=5000)
     internal_link: Optional[str] = Field(None, max_length=300)
+
+
+class AdminFeedbackReplyCreate(BaseModel):
+    message: str = Field(..., min_length=1, max_length=5000)

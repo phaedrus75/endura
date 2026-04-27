@@ -4409,6 +4409,42 @@ def admin_app_rankings_timeseries(
 
 # ============ User Feedback ============
 
+def _feedback_reply_deliver_bg(
+    user_id: Optional[int],
+    email: Optional[str],
+    feedback_id: int,
+    preview: str,
+    full_body: str,
+    feedback_title: Optional[str],
+) -> None:
+    """Daemon thread: send Expo push (authed) or Resend email (anon with email)."""
+    from database import SessionLocal
+    from services.support_email import send_support_reply_email_sync
+
+    db = SessionLocal()
+    try:
+        if user_id:
+            u = db.query(models.User).filter(models.User.id == user_id).first()
+            if u:
+                push_service.send_template_to_user(
+                    db,
+                    u,
+                    "support_reply",
+                    {"preview": preview},
+                    deep_link_override=f"endura://feedback/{feedback_id}",
+                )
+        elif email:
+            send_support_reply_email_sync(email, full_body, feedback_title)
+    finally:
+        db.close()
+
+
+def _send_feedback_reply_bg(*args) -> None:
+    import threading
+
+    threading.Thread(target=_feedback_reply_deliver_bg, args=args, daemon=True).start()
+
+
 @app.post("/feedback")
 def submit_feedback(
     payload: schemas.FeedbackCreate,
@@ -4456,6 +4492,165 @@ def submit_feedback(
         "id": fb.id,
         "message": "Thanks! We've received your feedback and will take a look.",
     }
+
+
+@app.get("/me/feedback/unread-count")
+def me_feedback_unread_count(
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Unread admin replies across all threads owned by the current user."""
+    n = (
+        db.query(func.count(models.FeedbackMessage.id))
+        .join(
+            models.UserFeedback,
+            models.UserFeedback.id == models.FeedbackMessage.feedback_id,
+        )
+        .filter(
+            models.UserFeedback.user_id == current_user.id,
+            models.FeedbackMessage.sender == "admin",
+            models.FeedbackMessage.read_at.is_(None),
+        )
+        .scalar()
+        or 0
+    )
+    return {"unread_count": int(n)}
+
+
+@app.get("/me/feedback")
+def me_feedback_list(
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Inbox: all feedback threads submitted while signed in as this user."""
+    threads = (
+        db.query(models.UserFeedback)
+        .filter(models.UserFeedback.user_id == current_user.id)
+        .order_by(models.UserFeedback.updated_at.desc())
+        .all()
+    )
+    ids = [t.id for t in threads]
+    unread_map: dict[int, int] = {}
+    if ids:
+        for fid, cnt in (
+            db.query(
+                models.FeedbackMessage.feedback_id,
+                func.count(models.FeedbackMessage.id),
+            )
+            .filter(
+                models.FeedbackMessage.feedback_id.in_(ids),
+                models.FeedbackMessage.sender == "admin",
+                models.FeedbackMessage.read_at.is_(None),
+            )
+            .group_by(models.FeedbackMessage.feedback_id)
+            .all()
+        ):
+            unread_map[int(fid)] = int(cnt)
+
+    def _preview(msg: str) -> str:
+        msg = (msg or "").strip()
+        if len(msg) <= 120:
+            return msg
+        return msg[:117] + "…"
+
+    return {
+        "items": [
+            {
+                "id": fb.id,
+                "feedback_type": fb.feedback_type,
+                "title": fb.title,
+                "message_preview": _preview(fb.message),
+                "status": fb.status,
+                "last_message_at": fb.updated_at.isoformat(),
+                "created_at": fb.created_at.isoformat(),
+                "unread_count": unread_map.get(fb.id, 0),
+            }
+            for fb in threads
+        ]
+    }
+
+
+@app.get("/me/feedback/{feedback_id}")
+def me_feedback_thread(
+    feedback_id: int,
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Single thread: original submission + admin reply rows."""
+    fb = (
+        db.query(models.UserFeedback)
+        .filter(
+            models.UserFeedback.id == feedback_id,
+            models.UserFeedback.user_id == current_user.id,
+        )
+        .first()
+    )
+    if not fb:
+        raise HTTPException(status_code=404, detail="Feedback not found")
+    msgs = (
+        db.query(models.FeedbackMessage)
+        .filter(models.FeedbackMessage.feedback_id == fb.id)
+        .order_by(models.FeedbackMessage.created_at.asc())
+        .all()
+    )
+    att_urls = (
+        _json.loads(fb.attachment_urls)
+        if fb.attachment_urls
+        else ([fb.screenshot_url] if fb.screenshot_url else [])
+    )
+    return {
+        "feedback": {
+            "id": fb.id,
+            "feedback_type": fb.feedback_type,
+            "title": fb.title,
+            "message": fb.message,
+            "status": fb.status,
+            "created_at": fb.created_at.isoformat(),
+            "updated_at": fb.updated_at.isoformat(),
+            "attachment_urls": att_urls,
+        },
+        "messages": [
+            {
+                "id": m.id,
+                "sender": m.sender,
+                "body": m.body,
+                "created_at": m.created_at.isoformat(),
+                "read_at": m.read_at.isoformat() if m.read_at else None,
+            }
+            for m in msgs
+        ],
+    }
+
+
+@app.post("/me/feedback/{feedback_id}/read")
+def me_feedback_mark_read(
+    feedback_id: int,
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Mark all admin replies in this thread as read (clears unread badge)."""
+    fb = (
+        db.query(models.UserFeedback)
+        .filter(
+            models.UserFeedback.id == feedback_id,
+            models.UserFeedback.user_id == current_user.id,
+        )
+        .first()
+    )
+    if not fb:
+        raise HTTPException(status_code=404, detail="Feedback not found")
+    now = datetime.utcnow()
+    q = db.query(models.FeedbackMessage).filter(
+        models.FeedbackMessage.feedback_id == feedback_id,
+        models.FeedbackMessage.sender == "admin",
+        models.FeedbackMessage.read_at.is_(None),
+    )
+    marked = 0
+    for row in q.all():
+        row.read_at = now
+        marked += 1
+    db.commit()
+    return {"ok": True, "marked": marked}
 
 
 @app.post("/feedback/attachments")
@@ -4671,6 +4866,120 @@ def admin_list_feedback(
             }
             for fb in items
         ],
+    }
+
+
+@app.get("/admin/feedback/{feedback_id}")
+def admin_get_feedback_detail(
+    feedback_id: int,
+    db: Session = Depends(get_db),
+    _=Depends(verify_admin),
+):
+    """Single feedback row + message thread for the admin dashboard."""
+    fb = db.query(models.UserFeedback).filter(models.UserFeedback.id == feedback_id).first()
+    if not fb:
+        raise HTTPException(status_code=404, detail="Feedback not found")
+    user_row = None
+    if fb.user_id:
+        user_row = db.query(models.User).filter(models.User.id == fb.user_id).first()
+    msgs = (
+        db.query(models.FeedbackMessage)
+        .filter(models.FeedbackMessage.feedback_id == fb.id)
+        .order_by(models.FeedbackMessage.created_at.asc())
+        .all()
+    )
+    return {
+        "feedback": {
+            "id": fb.id,
+            "feedback_type": fb.feedback_type,
+            "title": fb.title,
+            "message": fb.message,
+            "status": fb.status,
+            "priority": fb.priority,
+            "upvotes": fb.upvotes,
+            "email": fb.email,
+            "user_id": fb.user_id,
+            "username": user_row.username if user_row else None,
+            "app_version": fb.app_version,
+            "os": fb.os,
+            "device_model": fb.device_model,
+            "screen_context": fb.screen_context,
+            "screenshot_url": fb.screenshot_url,
+            "attachment_urls": (
+                _json.loads(fb.attachment_urls)
+                if fb.attachment_urls
+                else ([fb.screenshot_url] if fb.screenshot_url else [])
+            ),
+            "admin_notes": fb.admin_notes,
+            "internal_link": fb.internal_link,
+            "created_at": fb.created_at.isoformat(),
+            "updated_at": fb.updated_at.isoformat(),
+            "resolved_at": fb.resolved_at.isoformat() if fb.resolved_at else None,
+        },
+        "messages": [
+            {
+                "id": m.id,
+                "sender": m.sender,
+                "body": m.body,
+                "created_at": m.created_at.isoformat(),
+                "read_at": m.read_at.isoformat() if m.read_at else None,
+            }
+            for m in msgs
+        ],
+    }
+
+
+@app.post("/admin/feedback/{feedback_id}/reply")
+def admin_reply_to_feedback(
+    feedback_id: int,
+    payload: schemas.AdminFeedbackReplyCreate,
+    db: Session = Depends(get_db),
+    _=Depends(verify_admin),
+):
+    """Post an admin reply; persists row then delivers push (authed) or email (anon)."""
+    fb = db.query(models.UserFeedback).filter(models.UserFeedback.id == feedback_id).first()
+    if not fb:
+        raise HTTPException(status_code=404, detail="Feedback not found")
+    body = payload.message.strip()
+    msg = models.FeedbackMessage(
+        feedback_id=fb.id,
+        sender="admin",
+        body=body,
+    )
+    db.add(msg)
+    fb.updated_at = datetime.utcnow()
+    if fb.status == "new":
+        fb.status = "triaged"
+    db.commit()
+    db.refresh(msg)
+
+    preview = body if len(body) <= 100 else body[:97] + "…"
+    delivery = "uncontactable"
+    if fb.user_id:
+        delivery = "push"
+        _send_feedback_reply_bg(
+            fb.user_id,
+            None,
+            fb.id,
+            preview,
+            body,
+            fb.title,
+        )
+    elif fb.email and fb.email.strip():
+        delivery = "email"
+        _send_feedback_reply_bg(
+            None,
+            fb.email.strip(),
+            fb.id,
+            preview,
+            body,
+            fb.title,
+        )
+
+    return {
+        "ok": True,
+        "message_id": msg.id,
+        "delivery": delivery,
     }
 
 

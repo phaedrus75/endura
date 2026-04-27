@@ -83,3 +83,12 @@ class TestAdminVerbsPreflight:
             f"a {method}, it will fail with 'Failed to fetch'."
         )
         assert method in resp.headers.get("access-control-allow-methods", "").upper()
+
+
+class TestAdminFeedbackReplyPreflight:
+    """Admin dashboard POST /admin/feedback/{id}/reply uses JSON + X-Admin-Key."""
+
+    def test_post_admin_feedback_reply_preflight(self, client):
+        resp = _preflight(client, method="POST", path="/admin/feedback/1/reply")
+        assert resp.status_code == 200
+        assert "POST" in resp.headers.get("access-control-allow-methods", "").upper()

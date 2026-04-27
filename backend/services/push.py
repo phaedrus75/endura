@@ -195,13 +195,18 @@ def send_to_user(
         )
         return {"ok": False, "status": "dropped", "reason": reason}
 
+    data_payload: dict[str, Any] = {"category": category, **(data or {})}
+    if template_key:
+        data_payload["template_key"] = template_key
+    if deep_link:
+        data_payload["deep_link"] = deep_link
     msg: dict[str, Any] = {
         "to": user.push_token,
         "title": title[:80],
         "body": body[:220],
         "sound": "default",
         "priority": "high",
-        "data": {"category": category, **(data or {}), **({"deep_link": deep_link} if deep_link else {})},
+        "data": data_payload,
     }
     if category == "badge":
         msg["badge"] = 1  # bump app icon badge
@@ -245,8 +250,14 @@ def send_template_to_user(
     variables: dict | None = None,
     *,
     skip_if_already_sent: bool = False,
+    deep_link_override: str | None = None,
 ) -> dict:
-    """Look up a PushTemplate by key, render variables, send."""
+    """Look up a PushTemplate by key, render variables, send.
+
+    ``deep_link_override`` is merged into the Expo payload's ``data.deep_link``
+    instead of the template's stored ``deep_link`` — used for per-recipient
+    routes like ``endura://feedback/42`` that cannot be baked into a static row.
+    """
     tmpl = db.query(models.PushTemplate).filter(
         models.PushTemplate.template_key == template_key,
         models.PushTemplate.is_active == True,  # noqa: E712
@@ -264,12 +275,13 @@ def send_template_to_user(
             return {"ok": False, "status": "dropped", "reason": "already_sent"}
 
     title, body = _render(tmpl, variables or {})
+    effective_deep = deep_link_override if deep_link_override is not None else tmpl.deep_link
     return send_to_user(
         db, user,
         title=title, body=body,
         category=tmpl.category,
         template_key=template_key,
-        deep_link=tmpl.deep_link,
+        deep_link=effective_deep,
     )
 
 
