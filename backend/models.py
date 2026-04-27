@@ -1,5 +1,5 @@
 from sqlalchemy import Column, Integer, String, Float, DateTime, Boolean, ForeignKey, Text, LargeBinary, UniqueConstraint
-from sqlalchemy.orm import relationship
+from sqlalchemy.orm import relationship, synonym
 from datetime import datetime
 from uuid import uuid4
 from database import Base
@@ -714,6 +714,8 @@ class PushLog(Base):
     error_message = Column(String, nullable=True)
     opened = Column(Boolean, default=False)
     opened_at = Column(DateTime, nullable=True)
+    # Alias so any code using the conventional `created_at` name still works.
+    created_at = synonym("sent_at")
 
 
 class TestRun(Base):
