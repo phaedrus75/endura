@@ -22,6 +22,7 @@ import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { LinearGradient as ExpoLinearGradient } from 'expo-linear-gradient';
 import Svg, { Circle, Rect, G, Text as SvgText, Path, Defs, LinearGradient, Stop } from 'react-native-svg';
 import * as ImagePicker from 'expo-image-picker';
+import { ensurePermission } from '../utils/permissions';
 import { colors, shadows, spacing, borderRadius } from '../theme/colors';
 import Avatar from '../components/Avatar';
 import SwipeDismiss, { DragHandle } from '../components/SwipeDismiss';
@@ -306,11 +307,7 @@ export default function ProfileScreen() {
 
   const pickImage = async (source: 'camera' | 'gallery') => {
     if (source === 'camera') {
-      const perm = await ImagePicker.requestCameraPermissionsAsync();
-      if (!perm.granted) {
-        Alert.alert('Permission needed', 'Please allow camera access to take a photo.');
-        return;
-      }
+      if (!(await ensurePermission('camera'))) return;
       const result = await ImagePicker.launchCameraAsync({
         allowsEditing: true,
         aspect: [1, 1],
@@ -320,11 +317,7 @@ export default function ProfileScreen() {
         await setProfilePic(result.assets[0].uri);
       }
     } else {
-      const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
-      if (!perm.granted) {
-        Alert.alert('Permission needed', 'Please allow photo library access.');
-        return;
-      }
+      if (!(await ensurePermission('media'))) return;
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ['images'],
         allowsEditing: true,

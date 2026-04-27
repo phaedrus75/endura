@@ -24,11 +24,13 @@ import {
   Image,
 } from 'react-native';
 import * as Application from 'expo-application';
+import Constants from 'expo-constants';
 import * as Device from 'expo-device';
 import * as ImagePicker from 'expo-image-picker';
 import { Text, TextInput } from './StyledText';
 import { feedbackAPI, FeedbackType } from '../services/api';
 import { useAuth } from '../contexts/AuthContext';
+import { ensurePermission } from '../utils/permissions';
 
 const MAX_ATTACHMENTS = 4;
 
@@ -101,11 +103,7 @@ export default function FeedbackModal({ visible, onClose, screenContext }: Feedb
       Alert.alert('Limit reached', `You can attach up to ${MAX_ATTACHMENTS} images.`);
       return;
     }
-    const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (!perm.granted) {
-      Alert.alert('Permission needed', 'Please allow photo library access to attach an image.');
-      return;
-    }
+    if (!(await ensurePermission('media'))) return;
     const remaining = MAX_ATTACHMENTS - attachments.length;
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ['images'],
@@ -125,12 +123,25 @@ export default function FeedbackModal({ visible, onClose, screenContext }: Feedb
     newOnes.forEach(a => { void uploadAttachment(a.id, a.localUri); });
   };
 
-  const metadata = useMemo(() => ({
-    app_version: Application.nativeApplicationVersion || undefined,
-    os: `${Platform.OS} ${Platform.Version}`.slice(0, 40),
-    device_model: (Device.modelName || Device.deviceName || undefined)?.slice(0, 80),
-    screen_context: screenContext?.slice(0, 120),
-  }), [screenContext]);
+  const metadata = useMemo(() => {
+    // Prefer the version from app.json (`expo.version`) because:
+    //   1. In Expo Go, `Application.nativeApplicationVersion` returns
+    //      Expo Go's own version (e.g. "54.0.6"), not our app — see the
+    //      misleading "App 54.0.6" we shipped in the first cut.
+    //   2. In standalone production builds, `Constants.expoConfig.version`
+    //      and `nativeApplicationVersion` are both populated from the same
+    //      `expo.version` field, so they agree.
+    const appVersion =
+      Constants.expoConfig?.version ||
+      Application.nativeApplicationVersion ||
+      undefined;
+    return {
+      app_version: appVersion,
+      os: `${Platform.OS} ${Platform.Version}`.slice(0, 40),
+      device_model: (Device.modelName || Device.deviceName || undefined)?.slice(0, 80),
+      screen_context: screenContext?.slice(0, 120),
+    };
+  }, [screenContext]);
 
   const handleSubmit = async () => {
     const trimmed = message.trim();

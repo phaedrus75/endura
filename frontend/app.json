@@ -20,11 +20,11 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.endura.study",
-      "buildNumber": "21",
+      "buildNumber": "22",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
-        "NSCameraUsageDescription": "Endura uses your camera to let you take a profile photo that is visible to your friends and study group members.",
-        "NSPhotoLibraryUsageDescription": "Endura accesses your photo library so you can choose an existing photo to use as your profile picture, which is visible to your friends and study group members.",
+        "NSCameraUsageDescription": "Endura uses your camera so you can take a profile photo or attach a screenshot when sending feedback to the team.",
+        "NSPhotoLibraryUsageDescription": "Endura accesses your photo library so you can choose a profile picture and attach screenshots when sending feedback to help us reproduce issues. Selected images are uploaded only when you save the change or submit the form.",
         "UIBackgroundModes": ["remote-notification"]
       }
     },
@@ -34,7 +34,7 @@
         "backgroundColor": "#B5CFB7"
       },
       "package": "com.endura.study",
-      "versionCode": 8
+      "versionCode": 9
     },
     "web": {
       "favicon": "./assets/favicon.png"
