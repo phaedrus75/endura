@@ -2082,18 +2082,24 @@ def get_friends(
     db: Session = Depends(get_db)
 ):
     friends_data = crud.get_friends(db, current_user.id)
+    friend_ids = [entry["user"].id for entry in friends_data]
+    animals_map: dict[int, int] = {}
+    if friend_ids:
+        for uid, cnt in db.query(
+            models.UserAnimal.user_id, func.count(models.UserAnimal.id)
+        ).filter(models.UserAnimal.user_id.in_(friend_ids)).group_by(
+            models.UserAnimal.user_id
+        ).all():
+            animals_map[uid] = cnt
     result = []
     for entry in friends_data:
         friend = entry["user"]
-        animals_count = db.query(models.UserAnimal).filter(
-            models.UserAnimal.user_id == friend.id
-        ).count()
         result.append({
             "id": friend.id,
             "username": friend.username,
             "total_study_minutes": friend.total_study_minutes,
             "current_streak": crud.get_effective_streak(friend),
-            "animals_count": animals_count,
+            "animals_count": animals_map.get(friend.id, 0),
             "profile_pic_url": friend.profile_pic_url,
             "friends_since": entry["friends_since"].isoformat() if entry["friends_since"] else None,
         })
