@@ -374,7 +374,10 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=_allowed_origins,
     allow_credentials=True,
-    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    # Include PATCH explicitly — without it the browser preflights for
+    # admin endpoints like PATCH /admin/feedback/{id} get rejected and
+    # the dashboard surfaces a confusing "Failed to fetch" toast.
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["Authorization", "Content-Type", "X-Admin-Key"],
 )
 
