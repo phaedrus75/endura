@@ -6748,6 +6748,93 @@ def admin_schools_audit(
     }
 
 
+@app.get("/admin/schools/similar")
+def admin_schools_similar(
+    threshold: float = 0.82,
+    min_users: int = 1,
+    db: Session = Depends(get_db),
+    _=Depends(verify_admin),
+):
+    """Fuzzy-match school names entered by users to surface likely typos / variants.
+
+    Uses difflib.SequenceMatcher on normalised names.  Returns clusters where
+    at least two distinct raw strings are above `threshold` similarity (0-1).
+    Only includes schools with at least `min_users` users.
+    """
+    from difflib import SequenceMatcher
+
+    # Pull distinct (users.school, count) pairs — free-text field on User.
+    rows = (
+        db.query(models.User.school, func.count(models.User.id))
+        .filter(models.User.school.isnot(None), models.User.school != "")
+        .group_by(models.User.school)
+        .order_by(func.count(models.User.id).desc())
+        .all()
+    )
+    # Filter by min_users and build list of (raw_name, user_count, normalised_name)
+    entries = [
+        (raw, cnt, _normalize_school_name(raw))
+        for raw, cnt in rows
+        if cnt >= min_users
+    ]
+
+    def _sim(a: str, b: str) -> float:
+        return SequenceMatcher(None, a, b).ratio()
+
+    # Greedy single-linkage clustering on normalised names.
+    clusters: list[list[tuple[str, int, str]]] = []
+    assigned = [False] * len(entries)
+    for i, (raw_i, cnt_i, norm_i) in enumerate(entries):
+        if assigned[i]:
+            continue
+        cluster = [(raw_i, cnt_i, norm_i)]
+        assigned[i] = True
+        for j, (raw_j, cnt_j, norm_j) in enumerate(entries):
+            if assigned[j] or i == j:
+                continue
+            if norm_i == norm_j:
+                # Already caught by exact dedup — include but label differently
+                cluster.append((raw_j, cnt_j, norm_j))
+                assigned[j] = True
+            elif _sim(norm_i, norm_j) >= threshold:
+                cluster.append((raw_j, cnt_j, norm_j))
+                assigned[j] = True
+        if len(cluster) > 1:
+            clusters.append(cluster)
+
+    # Sort clusters: most users first, then most variants first
+    clusters.sort(key=lambda c: (-sum(cnt for _, cnt, _ in c), -len(c)))
+
+    result = []
+    for cluster in clusters:
+        variants = sorted(cluster, key=lambda x: -x[1])
+        canonical = variants[0][0]  # highest-user-count variant = suggested canonical
+        total_users = sum(cnt for _, cnt, _ in variants)
+        # Compute pairwise similarity to the canonical for display
+        norm_canonical = _normalize_school_name(canonical)
+        result.append({
+            "canonical_suggestion": canonical,
+            "total_users": total_users,
+            "variant_count": len(variants),
+            "variants": [
+                {
+                    "name": raw,
+                    "users": cnt,
+                    "similarity": round(_sim(_normalize_school_name(raw), norm_canonical), 3),
+                    "exact_match_after_normalise": _normalize_school_name(raw) == norm_canonical,
+                }
+                for raw, cnt, _ in variants
+            ],
+        })
+
+    return {
+        "threshold": threshold,
+        "total_distinct_schools": len(entries),
+        "similar_clusters": len(result),
+        "clusters": result,
+    }
+
+
 @app.post("/admin/schools/cleanup")
 def admin_schools_cleanup(
     dry_run: bool = False,
