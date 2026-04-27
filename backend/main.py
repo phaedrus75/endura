@@ -2310,19 +2310,43 @@ def save_assignments(
     current_user: models.User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    db.query(models.UserItemAssignment).filter(
-        models.UserItemAssignment.user_id == current_user.id
-    ).delete()
+    from sqlalchemy.exc import IntegrityError
+
+    # Deduplicate by item_id — last position for a given item wins.
+    seen: dict = {}
     for a in req.assignments:
-        db.add(models.UserItemAssignment(
-            user_id=current_user.id,
-            item_id=a.itemId,
-            x=a.x,
-            y=a.y,
-            page=a.page,
-        ))
-    db.commit()
-    return {"saved": len(req.assignments)}
+        seen[a.itemId] = a
+    deduped = list(seen.values())
+
+    try:
+        db.query(models.UserItemAssignment).filter(
+            models.UserItemAssignment.user_id == current_user.id
+        ).delete()
+        for a in deduped:
+            db.add(models.UserItemAssignment(
+                user_id=current_user.id,
+                item_id=a.itemId,
+                x=a.x,
+                y=a.y,
+                page=a.page,
+            ))
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        # A concurrent save already wrote the same rows — re-read and overwrite.
+        db.query(models.UserItemAssignment).filter(
+            models.UserItemAssignment.user_id == current_user.id
+        ).delete()
+        for a in deduped:
+            db.add(models.UserItemAssignment(
+                user_id=current_user.id,
+                item_id=a.itemId,
+                x=a.x,
+                y=a.y,
+                page=a.page,
+            ))
+        db.commit()
+    return {"saved": len(deduped)}
 
 
 # ============ Badge Endpoints ============
