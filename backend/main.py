@@ -5695,6 +5695,9 @@ def admin_get_email_templates(db: Session = Depends(get_db), _=Depends(verify_ad
         sent = db.query(func.count(models.EmailLog.id)).filter(models.EmailLog.template_key == t.template_key).scalar() or 0
         opened = db.query(func.count(models.EmailLog.id)).filter(models.EmailLog.template_key == t.template_key, models.EmailLog.opened == True).scalar() or 0
         clicked = db.query(func.count(models.EmailLog.id)).filter(models.EmailLog.template_key == t.template_key, models.EmailLog.clicked == True).scalar() or 0
+        last_sent_at = db.query(func.max(models.EmailLog.sent_at)).filter(
+            models.EmailLog.template_key == t.template_key
+        ).scalar()
         result.append({
             "id": t.id, "template_key": t.template_key, "name": t.name,
             "subject": t.subject, "body_html": t.body_html,
@@ -5703,6 +5706,7 @@ def admin_get_email_templates(db: Session = Depends(get_db), _=Depends(verify_ad
             "min_streak": t.min_streak, "max_streak": t.max_streak,
             "is_active": t.is_active,
             "updated_at": t.updated_at.isoformat() if t.updated_at else None,
+            "last_sent_at": last_sent_at.isoformat() if last_sent_at else None,
             "stats": {"sent": sent, "opened": opened, "clicked": clicked,
                       "open_rate": round(opened / sent * 100, 1) if sent else 0,
                       "click_rate": round(clicked / sent * 100, 1) if sent else 0},
