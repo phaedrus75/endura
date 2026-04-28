@@ -19,8 +19,10 @@ import { Text, TextInput } from '../components/StyledText';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, shadows, spacing, borderRadius } from '../theme/colors';
 import SwipeDismiss, { DragHandle } from '../components/SwipeDismiss';
+import { useRoute } from '@react-navigation/native';
 import { useAuth } from '../contexts/AuthContext';
 import { authAPI } from '../services/api';
+import { Analytics } from '../services/analytics';
 
 const { width } = Dimensions.get('window');
 
@@ -36,6 +38,8 @@ const LogoImage = () => (
 );
 
 export default function AuthScreen() {
+  const route = useRoute<any>();
+  const onboardingVariant = route?.params?.onboardingVariant || 'unknown';
   const [showForm, setShowForm] = useState(false);
   const [isLogin, setIsLogin] = useState(false);
   const [email, setEmail] = useState('');
@@ -177,6 +181,10 @@ export default function AuthScreen() {
       setVerifyLoading(false);
     }
   };
+
+  useEffect(() => {
+    Analytics.onboardingAuthViewed(onboardingVariant);
+  }, [onboardingVariant]);
 
   useEffect(() => {
     const clearOldData = async () => {

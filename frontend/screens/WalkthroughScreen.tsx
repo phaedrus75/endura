@@ -88,22 +88,24 @@ function ScreenshotSlide({ source }: { source: ImageSourcePropType }) {
 
 interface Props {
   navigation: any;
+  route?: any;
 }
 
-export default function WalkthroughScreen({ navigation }: Props) {
+export default function WalkthroughScreen({ navigation, route }: Props) {
   const insets = useSafeAreaInsets();
   const [step, setStep] = useState(0);
   const slideOpacities = useRef(SLIDES.map((_, i) => new Animated.Value(i === 0 ? 1 : 0))).current;
   const textOpacity = useRef(new Animated.Value(1)).current;
   const isAnimating = useRef(false);
+  const onboardingVariant = route?.params?.onboardingVariant || 'unknown';
 
   useEffect(() => {
-    Analytics.onboardingStarted();
-  }, []);
+    Analytics.onboardingStarted(onboardingVariant);
+  }, [onboardingVariant]);
 
   useEffect(() => {
-    Analytics.onboardingSlideViewed(step, SLIDES[step]?.tag ?? '');
-  }, [step]);
+    Analytics.onboardingSlideViewed(step, SLIDES[step]?.tag ?? '', onboardingVariant);
+  }, [step, onboardingVariant]);
 
   const markSeenAndNavigate = async () => {
     try { await SecureStore.setItemAsync(WALKTHROUGH_SEEN_KEY, 'true'); } catch {}
@@ -176,7 +178,7 @@ export default function WalkthroughScreen({ navigation }: Props) {
             style={s.nextBtn}
             onPress={() => {
               if (isLast) {
-                Analytics.onboardingWalkthroughCompleted();
+                Analytics.onboardingWalkthroughCompleted(onboardingVariant);
                 markSeenAndNavigate();
               } else {
                 go(step + 1);
@@ -193,7 +195,7 @@ export default function WalkthroughScreen({ navigation }: Props) {
         <TouchableOpacity
           style={{ paddingVertical: 6 }}
           onPress={() => {
-            Analytics.onboardingWalkthroughSkipped(step);
+            Analytics.onboardingWalkthroughSkipped(step, onboardingVariant);
             markSeenAndNavigate();
           }}
         >

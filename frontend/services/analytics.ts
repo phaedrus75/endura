@@ -60,19 +60,30 @@ export const Analytics = {
     trackEvent('screen_viewed', { screen: screenName }),
 
   // ── Onboarding funnel ──
-  onboardingStarted: () => trackEvent('onboarding_started'),
-  onboardingSlideViewed: (slideNumber: number, slideName: string) =>
-    trackEvent('onboarding_slide_viewed', { slide_number: slideNumber, slide_name: slideName }),
-  onboardingWalkthroughSkipped: (atSlide: number) =>
-    trackEvent('onboarding_walkthrough_skipped', { at_slide: atSlide }),
-  onboardingWalkthroughCompleted: () => trackEvent('onboarding_walkthrough_completed'),
-  onboardingProfileSubmitted: (props: { has_photo: boolean; has_school: boolean; has_country: boolean }) =>
-    trackEvent('onboarding_profile_submitted', props),
-  onboardingProfileSaveFailed: (step: string, error: string) =>
-    trackEvent('onboarding_profile_save_failed', { step, error }),
-  onboardingSubjectsSaved: (count: number) =>
-    trackEvent('onboarding_subjects_saved', { count }),
-  onboardingSubjectsSkipped: () => trackEvent('onboarding_subjects_skipped'),
-  onboardingCompleted: (totalSeconds: number) =>
-    trackEvent('onboarding_completed', { total_seconds: totalSeconds }),
+  onboardingExperimentAssigned: (variant: 'v1' | 'v2', source: 'new' | 'stored') =>
+    trackEvent('onboarding_experiment_assigned', { variant, source }),
+  onboardingAuthViewed: (variant: string) =>
+    trackEvent('onboarding_auth_viewed', { variant }),
+  onboardingProfileViewed: (variant: string) =>
+    trackEvent('onboarding_profile_viewed', { variant }),
+  onboardingSubjectsViewed: (variant: string) =>
+    trackEvent('onboarding_subjects_viewed', { variant }),
+  onboardingStarted: (variant?: string) =>
+    trackEvent('onboarding_started', { variant: variant || 'unknown' }),
+  onboardingSlideViewed: (slideNumber: number, slideName: string, variant?: string) =>
+    trackEvent('onboarding_slide_viewed', { slide_number: slideNumber, slide_name: slideName, variant: variant || 'unknown' }),
+  onboardingWalkthroughSkipped: (atSlide: number, variant?: string) =>
+    trackEvent('onboarding_walkthrough_skipped', { at_slide: atSlide, variant: variant || 'unknown' }),
+  onboardingWalkthroughCompleted: (variant?: string) =>
+    trackEvent('onboarding_walkthrough_completed', { variant: variant || 'unknown' }),
+  onboardingProfileSubmitted: (props: { has_photo: boolean; has_school: boolean; has_country: boolean }, variant?: string) =>
+    trackEvent('onboarding_profile_submitted', { ...props, variant: variant || 'unknown' }),
+  onboardingProfileSaveFailed: (step: string, error: string, variant?: string) =>
+    trackEvent('onboarding_profile_save_failed', { step, error, variant: variant || 'unknown' }),
+  onboardingSubjectsSaved: (count: number, variant?: string) =>
+    trackEvent('onboarding_subjects_saved', { count, variant: variant || 'unknown' }),
+  onboardingSubjectsSkipped: (variant?: string) =>
+    trackEvent('onboarding_subjects_skipped', { variant: variant || 'unknown' }),
+  onboardingCompleted: (totalSeconds: number, variant?: string) =>
+    trackEvent('onboarding_completed', { total_seconds: totalSeconds, variant: variant || 'unknown' }),
 };

@@ -14,6 +14,7 @@ import {
   Animated,
   AppState,
 } from 'react-native';
+import * as SecureStore from 'expo-secure-store';
 import { Text, TextInput } from '../components/StyledText';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect, useNavigation, useRoute } from '@react-navigation/native';
@@ -65,10 +66,16 @@ const shadows = {
     elevation: 8,
   },
 };
-import { animalsAPI, tasksAPI, statsAPI, subjectsAPI, feedbackAPI, Egg, Task, UserStats, UserAnimal, Subject } from '../services/api';
+import {
+  animalsAPI, tasksAPI, statsAPI, subjectsAPI, feedbackAPI, researchAPI,
+  Egg, Task, UserStats, UserAnimal, Subject, ResearchSurveyPayload,
+} from '../services/api';
 import { feedbackNavigation } from '../services/feedbackNavigation';
 import { animalImages, getAnimalImage } from '../assets/animals';
 import FeedbackModal from '../components/FeedbackModal';
+import ResearchSurveyModal from '../components/ResearchSurveyModal';
+
+const RESEARCH_PROMPT_SNOOZE_KEY = 'researchPromptSnoozeUntil';
 
 const { width, height } = Dimensions.get('window');
 
@@ -192,6 +199,13 @@ export default function HomeScreen() {
   const [editTaskDueDate, setEditTaskDueDate] = useState<Date | null>(null);
   const [showEditDatePicker, setShowEditDatePicker] = useState(false);
   const [hatchStage, setHatchStage] = useState(0);
+  const [showResearchModal, setShowResearchModal] = useState(false);
+  const [researchMode, setResearchMode] = useState<'consent' | 'survey'>('consent');
+  const [researchCopy, setResearchCopy] = useState<{ title?: string; body?: string } | undefined>();
+  const [researchSurvey, setResearchSurvey] = useState<ResearchSurveyPayload | null>(null);
+  const [researchAssignmentId, setResearchAssignmentId] = useState<number | null>(null);
+  const [researchLoading, setResearchLoading] = useState(false);
+  const researchPromptedThisSession = useRef(false);
   const confettiRef = useRef<any>(null);
   const eggWobble = useRef(new Animated.Value(0)).current;
   const eggScale = useRef(new Animated.Value(1)).current;
@@ -208,6 +222,38 @@ export default function HomeScreen() {
   };
 
   useEffect(() => { loadSubjects(); }, [user?.id]);
+
+  const checkResearchPrompt = useCallback(async () => {
+    if (!user || researchPromptedThisSession.current) return;
+    const snoozeUntil = await SecureStore.getItemAsync(RESEARCH_PROMPT_SNOOZE_KEY).catch(() => null);
+    if (snoozeUntil) {
+      const ts = Date.parse(snoozeUntil);
+      if (!Number.isNaN(ts) && ts > Date.now()) return;
+    }
+    try {
+      const next = await researchAPI.getNextSurvey();
+      if (next.needs_consent) {
+        setResearchMode('consent');
+        setResearchCopy(next.copy);
+        setResearchSurvey(null);
+        setResearchAssignmentId(null);
+        setShowResearchModal(true);
+        researchPromptedThisSession.current = true;
+        return;
+      }
+      if (next.assignment?.id && next.survey) {
+        setResearchMode('survey');
+        setResearchCopy(undefined);
+        setResearchSurvey(next.survey);
+        setResearchAssignmentId(next.assignment.id);
+        setShowResearchModal(true);
+        researchPromptedThisSession.current = true;
+        try { await researchAPI.startSurvey(next.assignment.id); } catch {}
+      }
+    } catch {
+      // Silent fail to avoid interrupting core app flow
+    }
+  }, [user?.id]);
 
   const refreshFeedbackUnread = useCallback(async () => {
     if (!user) {
@@ -236,8 +282,9 @@ export default function HomeScreen() {
       }
       void refreshFeedbackUnread();
       const interval = setInterval(() => void refreshFeedbackUnread(), 30000);
+      void checkResearchPrompt();
       return () => clearInterval(interval);
-    }, [route.params?.openFeedbackThreadId, navigation, refreshFeedbackUnread])
+    }, [route.params?.openFeedbackThreadId, navigation, refreshFeedbackUnread, checkResearchPrompt])
   );
 
   useEffect(() => {
@@ -1080,6 +1127,69 @@ export default function HomeScreen() {
         }}
         screenContext="Home"
         initialThreadId={feedbackThreadId}
+      />
+
+      <ResearchSurveyModal
+        visible={showResearchModal}
+        mode={researchMode}
+        copy={researchCopy}
+        survey={researchSurvey}
+        loading={researchLoading}
+        onClose={async () => {
+          setShowResearchModal(false);
+          await SecureStore.setItemAsync(RESEARCH_PROMPT_SNOOZE_KEY, new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString()).catch(() => {});
+        }}
+        onAcceptConsent={async () => {
+          setResearchLoading(true);
+          try {
+            await researchAPI.setConsent(true);
+            setShowResearchModal(false);
+            await SecureStore.deleteItemAsync(RESEARCH_PROMPT_SNOOZE_KEY).catch(() => {});
+            researchPromptedThisSession.current = false;
+            await checkResearchPrompt();
+          } catch {
+            Alert.alert('Could not save', 'Please try again in a moment.');
+          } finally {
+            setResearchLoading(false);
+          }
+        }}
+        onDeclineConsent={async () => {
+          setResearchLoading(true);
+          try {
+            await researchAPI.setConsent(false);
+            setShowResearchModal(false);
+            await SecureStore.setItemAsync(RESEARCH_PROMPT_SNOOZE_KEY, new Date(Date.now() + 60 * 24 * 60 * 60 * 1000).toISOString()).catch(() => {});
+          } catch {
+            Alert.alert('Could not save', 'Please try again in a moment.');
+          } finally {
+            setResearchLoading(false);
+          }
+        }}
+        onSnoozeSurvey={async () => {
+          if (!researchAssignmentId) return setShowResearchModal(false);
+          setResearchLoading(true);
+          try {
+            await researchAPI.snoozeSurvey(researchAssignmentId, 14);
+            setShowResearchModal(false);
+          } catch {
+            Alert.alert('Could not snooze', 'Please try again.');
+          } finally {
+            setResearchLoading(false);
+          }
+        }}
+        onSubmitSurvey={async (answers) => {
+          if (!researchAssignmentId) return setShowResearchModal(false);
+          setResearchLoading(true);
+          try {
+            await researchAPI.submitSurvey(researchAssignmentId, answers);
+            setShowResearchModal(false);
+            Alert.alert('Thank you!', researchSurvey?.thank_you_text || 'Your responses help us improve study outcomes and conservation impact.');
+          } catch (e: any) {
+            Alert.alert('Could not submit', e?.message || 'Please try again.');
+          } finally {
+            setResearchLoading(false);
+          }
+        }}
       />
 
     </SafeAreaView>

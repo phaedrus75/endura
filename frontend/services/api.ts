@@ -238,6 +238,40 @@ export interface FeedEvent {
   reactions: { user_id: number; reaction: string }[];
 }
 
+export interface ResearchConsentState {
+  consent: boolean | null;
+  consent_at: string | null;
+  copy?: { title?: string; body?: string };
+}
+
+export interface ResearchSurveyQuestion {
+  id: number;
+  question_key: string;
+  prompt: string;
+  question_type: 'likert' | 'single_choice' | 'multi_choice' | 'free_text' | 'number' | string;
+  options?: string[] | null;
+  is_required: boolean;
+  sort_order: number;
+}
+
+export interface ResearchSurveyPayload {
+  id: number;
+  survey_key: string;
+  title: string;
+  description?: string | null;
+  intro_text?: string | null;
+  thank_you_text?: string | null;
+  trigger_type: string;
+  questions: ResearchSurveyQuestion[];
+}
+
+export interface ResearchNextSurvey {
+  needs_consent: boolean;
+  assignment: { id: number; status: string; trigger_reason?: string | null } | null;
+  survey: ResearchSurveyPayload | null;
+  copy?: { title?: string; body?: string };
+}
+
 export interface UserStats {
   total_coins: number;
   current_coins: number;
@@ -787,6 +821,30 @@ export const feedAPI = {
       event_description: string;
       created_at: string;
     }[]>('/feed/reactions/new'),
+};
+
+export const researchAPI = {
+  getConsent: () => apiFetch<ResearchConsentState>('/research/consent'),
+  setConsent: (consent: boolean) =>
+    apiFetch<{ ok: boolean; consent: boolean }>('/research/consent', {
+      method: 'POST',
+      body: JSON.stringify({ consent }),
+    }),
+  getNextSurvey: () => apiFetch<ResearchNextSurvey>('/research/surveys/next'),
+  startSurvey: (assignmentId: number) =>
+    apiFetch<{ ok: boolean; status: string }>(`/research/surveys/${assignmentId}/start`, { method: 'POST' }),
+  submitSurvey: (assignmentId: number, answers: Array<{ question_id: number; answer: any }>) =>
+    apiFetch<{ ok: boolean; status: string }>(`/research/surveys/${assignmentId}/submit`, {
+      method: 'POST',
+      body: JSON.stringify({ answers }),
+    }),
+  snoozeSurvey: (assignmentId: number, days = 14) =>
+    apiFetch<{ ok: boolean; status: string; snoozed_until: string }>(`/research/surveys/${assignmentId}/snooze`, {
+      method: 'POST',
+      body: JSON.stringify({ days }),
+    }),
+  dismissSurvey: (assignmentId: number) =>
+    apiFetch<{ ok: boolean; status: string }>(`/research/surveys/${assignmentId}/dismiss`, { method: 'POST' }),
 };
 
 // Badges API

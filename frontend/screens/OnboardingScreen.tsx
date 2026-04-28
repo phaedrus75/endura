@@ -1,4 +1,4 @@
-import React, { useState, useRef, useMemo } from 'react';
+import React, { useState, useRef, useMemo, useEffect } from 'react';
 import {
   View,
   TouchableOpacity,
@@ -15,6 +15,7 @@ import { Text, TextInput } from '../components/StyledText';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as ImagePicker from 'expo-image-picker';
+import { useRoute } from '@react-navigation/native';
 import { shadows, spacing } from '../theme/colors';
 import { useAuth } from '../contexts/AuthContext';
 import * as SecureStore from 'expo-secure-store';
@@ -36,6 +37,9 @@ const C = {
 
 export default function OnboardingScreen() {
   const onboardingStartRef = useRef<number>(Date.now());
+  const subjectStepViewedRef = useRef(false);
+  const route = useRoute<any>();
+  const onboardingVariant = route?.params?.onboardingVariant || 'unknown';
 
   // Profile setup state
   const [username, setUsername] = useState('');
@@ -81,6 +85,17 @@ export default function OnboardingScreen() {
   const [showSubjectSuggestions, setShowSubjectSuggestions] = useState(false);
   const subjectSearchTimeout = useRef<NodeJS.Timeout | null>(null);
   const [subjectSaving, setSubjectSaving] = useState(false);
+
+  useEffect(() => {
+    Analytics.onboardingProfileViewed(onboardingVariant);
+  }, [onboardingVariant]);
+
+  useEffect(() => {
+    if (showSubjectPicker && !subjectStepViewedRef.current) {
+      subjectStepViewedRef.current = true;
+      Analytics.onboardingSubjectsViewed(onboardingVariant);
+    }
+  }, [showSubjectPicker, onboardingVariant]);
 
   // ── helpers ──
   const handleSchoolSearch = (text: string) => {
@@ -172,9 +187,9 @@ export default function OnboardingScreen() {
   const handleSaveSubjects = async () => {
     setSubjectSaving(true);
     if (selectedSubjects.length > 0) {
-      Analytics.onboardingSubjectsSaved(selectedSubjects.length);
+      Analytics.onboardingSubjectsSaved(selectedSubjects.length, onboardingVariant);
     } else {
-      Analytics.onboardingSubjectsSkipped();
+      Analytics.onboardingSubjectsSkipped(onboardingVariant);
     }
     try {
       for (const sub of selectedSubjects) {
@@ -183,7 +198,7 @@ export default function OnboardingScreen() {
       try { await authAPI.completeOnboarding(); } catch {}
       await refreshUser();
       const totalSeconds = Math.round((Date.now() - onboardingStartRef.current) / 1000);
-      Analytics.onboardingCompleted(totalSeconds);
+      Analytics.onboardingCompleted(totalSeconds, onboardingVariant);
     } catch {}
     finally { setSubjectSaving(false); }
   };
@@ -198,7 +213,7 @@ export default function OnboardingScreen() {
       has_photo: !!profilePicUri,
       has_school: !!school.trim(),
       has_country: !!country.trim(),
-    });
+    }, onboardingVariant);
 
     setIsLoading(true);
     try {
@@ -207,7 +222,7 @@ export default function OnboardingScreen() {
       if (!res.ok) {
         const err = await res.json().catch(() => ({ detail: 'Failed to set username' }));
         const d = err.detail || 'Failed to set username';
-        Analytics.onboardingProfileSaveFailed('username', typeof d === 'string' ? d : 'Failed to set username');
+        Analytics.onboardingProfileSaveFailed('username', typeof d === 'string' ? d : 'Failed to set username', onboardingVariant);
         if (typeof d === 'string' && d.toLowerCase().includes('taken')) Alert.alert('Username Taken', `@${u} is already in use. Try a different one.`);
         else Alert.alert('Error', d);
         return;
@@ -215,16 +230,16 @@ export default function OnboardingScreen() {
       try {
         await authAPI.updateProfile({ school: school.trim(), country: country.trim() });
       } catch (err: any) {
-        Analytics.onboardingProfileSaveFailed('profile_update', err?.message || 'unknown');
+        Analytics.onboardingProfileSaveFailed('profile_update', err?.message || 'unknown', onboardingVariant);
       }
       try {
         await setProfilePic(profilePicUri);
       } catch (err: any) {
-        Analytics.onboardingProfileSaveFailed('profile_pic', err?.message || 'unknown');
+        Analytics.onboardingProfileSaveFailed('profile_pic', err?.message || 'unknown', onboardingVariant);
       }
       setShowSubjectPicker(true);
     } catch (e: any) {
-      Analytics.onboardingProfileSaveFailed('exception', e?.message || 'unknown');
+      Analytics.onboardingProfileSaveFailed('exception', e?.message || 'unknown', onboardingVariant);
       Alert.alert('Error', e?.message || 'Something went wrong');
     }
     finally { setIsLoading(false); }

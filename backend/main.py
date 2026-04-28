@@ -73,7 +73,9 @@ else:
         _insp = sa_inspect(engine)
         for _tbl in ["android_beta_signups", "email_templates", "email_logs",
                      "push_templates", "push_logs", "test_runs",
-                     "product_tests", "product_test_events"]:
+                     "product_tests", "product_test_events",
+                     "research_surveys", "research_survey_questions",
+                     "research_survey_assignments", "research_survey_responses"]:
             if not _insp.has_table(_tbl):
                 Base.metadata.tables[_tbl].create(bind=engine)
                 print(f"Created missing table: {_tbl}")
@@ -88,6 +90,16 @@ else:
                 _conn.execute(text("ALTER TABLE users ADD COLUMN is_archived BOOLEAN DEFAULT FALSE"))
                 _conn.commit()
             print("Added is_archived column to users")
+        if "research_consent" not in _user_cols:
+            with engine.connect() as _conn:
+                _conn.execute(text("ALTER TABLE users ADD COLUMN research_consent BOOLEAN"))
+                _conn.commit()
+            print("Added research_consent column to users")
+        if "research_consent_at" not in _user_cols:
+            with engine.connect() as _conn:
+                _conn.execute(text("ALTER TABLE users ADD COLUMN research_consent_at TIMESTAMP"))
+                _conn.commit()
+            print("Added research_consent_at column to users")
         # Push notification metadata + per-category prefs (Alembic also handles
         # this; this block is a safety net for envs that haven't run migrations).
         _push_cols = {
@@ -7537,6 +7549,554 @@ def admin_schools_cleanup(
             {"country": r[0], "schools": r[1]} for r in country_rows
         ],
         "total_schools_after": sum(r[1] for r in country_rows),
+    }
+
+
+# ── Research Surveys (consent + in-app habits questionnaires) ─────────────────
+
+class ResearchConsentBody(BaseModel):
+    consent: bool
+
+
+class ResearchQuestionCreate(BaseModel):
+    question_key: str = Field(..., min_length=2, max_length=80)
+    prompt: str = Field(..., min_length=2, max_length=2000)
+    question_type: str = Field(..., pattern="^(likert|single_choice|multi_choice|free_text|number)$")
+    options: Optional[list[str]] = None
+    is_required: bool = True
+    sort_order: int = 0
+
+
+class ResearchSurveyCreate(BaseModel):
+    survey_key: str = Field(..., min_length=2, max_length=100)
+    title: str = Field(..., min_length=3, max_length=160)
+    description: Optional[str] = Field(default=None, max_length=4000)
+    intro_text: Optional[str] = Field(default=None, max_length=4000)
+    thank_you_text: Optional[str] = Field(default=None, max_length=2000)
+    trigger_type: str = Field(default="manual", pattern="^(manual|post_onboarding|periodic)$")
+    trigger_days_after_signup: Optional[int] = Field(default=None, ge=0, le=3650)
+    cooldown_days: int = Field(default=14, ge=1, le=365)
+    is_active: bool = True
+    questions: list[ResearchQuestionCreate] = Field(default_factory=list)
+
+
+class ResearchSurveyUpdate(BaseModel):
+    title: Optional[str] = Field(default=None, min_length=3, max_length=160)
+    description: Optional[str] = Field(default=None, max_length=4000)
+    intro_text: Optional[str] = Field(default=None, max_length=4000)
+    thank_you_text: Optional[str] = Field(default=None, max_length=2000)
+    trigger_type: Optional[str] = Field(default=None, pattern="^(manual|post_onboarding|periodic)$")
+    trigger_days_after_signup: Optional[int] = Field(default=None, ge=0, le=3650)
+    cooldown_days: Optional[int] = Field(default=None, ge=1, le=365)
+    is_active: Optional[bool] = None
+
+
+class ResearchAssignBody(BaseModel):
+    user_ids: Optional[list[int]] = None
+    limit: int = Field(default=200, ge=1, le=5000)
+    consented_only: bool = True
+    trigger_reason: str = Field(default="manual_admin", max_length=80)
+
+
+class ResearchAnswerIn(BaseModel):
+    question_id: int
+    answer: object
+
+
+class ResearchSubmitBody(BaseModel):
+    answers: list[ResearchAnswerIn] = Field(default_factory=list)
+
+
+class ResearchSnoozeBody(BaseModel):
+    days: int = Field(default=14, ge=1, le=90)
+
+
+def _serialize_research_question(q: models.ResearchSurveyQuestion) -> dict:
+    return {
+        "id": q.id,
+        "question_key": q.question_key,
+        "prompt": q.prompt,
+        "question_type": q.question_type,
+        "options": _json.loads(q.options_json) if q.options_json else None,
+        "is_required": bool(q.is_required),
+        "sort_order": q.sort_order,
+    }
+
+
+def _serialize_research_survey(
+    s: models.ResearchSurvey,
+    *,
+    questions: list[models.ResearchSurveyQuestion] | None = None,
+    stats: dict | None = None,
+) -> dict:
+    out = {
+        "id": s.id,
+        "survey_key": s.survey_key,
+        "title": s.title,
+        "description": s.description,
+        "intro_text": s.intro_text,
+        "thank_you_text": s.thank_you_text,
+        "trigger_type": s.trigger_type,
+        "trigger_days_after_signup": s.trigger_days_after_signup,
+        "cooldown_days": s.cooldown_days,
+        "is_active": bool(s.is_active),
+        "created_at": s.created_at.isoformat() if s.created_at else None,
+        "updated_at": s.updated_at.isoformat() if s.updated_at else None,
+    }
+    if questions is not None:
+        out["questions"] = [_serialize_research_question(q) for q in questions]
+    if stats is not None:
+        out["stats"] = stats
+    return out
+
+
+def _build_research_stats(db: Session, survey_ids: list[int]) -> dict[int, dict]:
+    out = {sid: {"assigned": 0, "shown": 0, "started": 0, "submitted": 0, "dismissed": 0, "snoozed": 0} for sid in survey_ids}
+    if not survey_ids:
+        return out
+    rows = (
+        db.query(
+            models.ResearchSurveyAssignment.survey_id,
+            models.ResearchSurveyAssignment.status,
+            func.count(models.ResearchSurveyAssignment.id),
+        )
+        .filter(models.ResearchSurveyAssignment.survey_id.in_(survey_ids))
+        .group_by(models.ResearchSurveyAssignment.survey_id, models.ResearchSurveyAssignment.status)
+        .all()
+    )
+    for sid, st, cnt in rows:
+        if sid in out and st in out[sid]:
+            out[sid][st] = int(cnt or 0)
+    return out
+
+
+@app.get("/research/consent")
+def get_research_consent(
+    current_user: models.User = Depends(get_current_user),
+):
+    return {
+        "consent": current_user.research_consent,
+        "consent_at": current_user.research_consent_at.isoformat() if current_user.research_consent_at else None,
+        "copy": {
+            "title": "Help us improve sustainable study habits",
+            "body": "Join short optional surveys so Endura can learn what study patterns really work — helping students and supporting our conservation mission. You can opt out anytime.",
+        },
+    }
+
+
+@app.post("/research/consent")
+def set_research_consent(
+    payload: ResearchConsentBody,
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    current_user.research_consent = bool(payload.consent)
+    current_user.research_consent_at = datetime.utcnow()
+    db.commit()
+    return {"ok": True, "consent": current_user.research_consent}
+
+
+@app.get("/research/surveys/next")
+def get_next_research_survey(
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    if current_user.research_consent is not True:
+        return {
+            "needs_consent": True,
+            "survey": None,
+            "assignment": None,
+            "copy": {
+                "title": "Help us improve study habits for good",
+                "body": "Answer occasional short surveys to help us understand effective study psychology and improve Endura's impact for students and wildlife.",
+            },
+        }
+
+    now = datetime.utcnow()
+    assignment = (
+        db.query(models.ResearchSurveyAssignment)
+        .join(models.ResearchSurvey, models.ResearchSurvey.id == models.ResearchSurveyAssignment.survey_id)
+        .filter(
+            models.ResearchSurveyAssignment.user_id == current_user.id,
+            models.ResearchSurvey.is_active == True,  # noqa: E712
+            models.ResearchSurveyAssignment.status.in_(["assigned", "shown", "started", "snoozed"]),
+            or_(models.ResearchSurveyAssignment.snoozed_until.is_(None), models.ResearchSurveyAssignment.snoozed_until <= now),
+        )
+        .order_by(models.ResearchSurveyAssignment.assigned_at.asc())
+        .first()
+    )
+
+    if assignment is None:
+        existing_survey_ids = {
+            r[0]
+            for r in db.query(models.ResearchSurveyAssignment.survey_id)
+            .filter(models.ResearchSurveyAssignment.user_id == current_user.id)
+            .all()
+        }
+        active_surveys = (
+            db.query(models.ResearchSurvey)
+            .filter(models.ResearchSurvey.is_active == True)  # noqa: E712
+            .order_by(models.ResearchSurvey.created_at.asc())
+            .all()
+        )
+        for s in active_surveys:
+            if s.id in existing_survey_ids:
+                continue
+            if s.trigger_type == "manual":
+                continue
+            if s.trigger_type == "post_onboarding":
+                if not current_user.onboarding_completed_at:
+                    continue
+                min_day = int(s.trigger_days_after_signup or 0)
+                days_since_onboarding = (now - current_user.onboarding_completed_at).days
+                if days_since_onboarding < min_day:
+                    continue
+            elif s.trigger_type == "periodic":
+                min_day = int(s.trigger_days_after_signup or 0)
+                days_since_signup = (now - (current_user.created_at or now)).days
+                if days_since_signup < min_day:
+                    continue
+            assignment = models.ResearchSurveyAssignment(
+                user_id=current_user.id,
+                survey_id=s.id,
+                status="assigned",
+                trigger_reason=f"auto_{s.trigger_type}",
+            )
+            db.add(assignment)
+            db.commit()
+            db.refresh(assignment)
+            break
+
+    if assignment is None:
+        return {"needs_consent": False, "survey": None, "assignment": None}
+
+    survey = db.query(models.ResearchSurvey).filter(models.ResearchSurvey.id == assignment.survey_id).first()
+    if not survey:
+        return {"needs_consent": False, "survey": None, "assignment": None}
+    questions = (
+        db.query(models.ResearchSurveyQuestion)
+        .filter(models.ResearchSurveyQuestion.survey_id == survey.id)
+        .order_by(models.ResearchSurveyQuestion.sort_order.asc(), models.ResearchSurveyQuestion.id.asc())
+        .all()
+    )
+    if assignment.status == "assigned":
+        assignment.status = "shown"
+        assignment.shown_at = now
+        db.commit()
+
+    return {
+        "needs_consent": False,
+        "assignment": {
+            "id": assignment.id,
+            "status": assignment.status,
+            "trigger_reason": assignment.trigger_reason,
+            "assigned_at": assignment.assigned_at.isoformat() if assignment.assigned_at else None,
+            "snoozed_until": assignment.snoozed_until.isoformat() if assignment.snoozed_until else None,
+        },
+        "survey": _serialize_research_survey(survey, questions=questions),
+    }
+
+
+@app.post("/research/surveys/{assignment_id}/start")
+def start_research_survey(
+    assignment_id: int,
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    assignment = (
+        db.query(models.ResearchSurveyAssignment)
+        .filter(
+            models.ResearchSurveyAssignment.id == assignment_id,
+            models.ResearchSurveyAssignment.user_id == current_user.id,
+        )
+        .first()
+    )
+    if not assignment:
+        raise HTTPException(status_code=404, detail="Survey assignment not found")
+    if assignment.status in ("submitted", "dismissed"):
+        return {"ok": True, "status": assignment.status}
+    assignment.status = "started"
+    assignment.started_at = datetime.utcnow()
+    assignment.snoozed_until = None
+    db.commit()
+    return {"ok": True, "status": assignment.status}
+
+
+@app.post("/research/surveys/{assignment_id}/submit")
+def submit_research_survey(
+    assignment_id: int,
+    payload: ResearchSubmitBody,
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    assignment = (
+        db.query(models.ResearchSurveyAssignment)
+        .filter(
+            models.ResearchSurveyAssignment.id == assignment_id,
+            models.ResearchSurveyAssignment.user_id == current_user.id,
+        )
+        .first()
+    )
+    if not assignment:
+        raise HTTPException(status_code=404, detail="Survey assignment not found")
+
+    questions = (
+        db.query(models.ResearchSurveyQuestion)
+        .filter(models.ResearchSurveyQuestion.survey_id == assignment.survey_id)
+        .all()
+    )
+    by_qid = {q.id: q for q in questions}
+    if not by_qid:
+        raise HTTPException(status_code=400, detail="Survey has no questions configured")
+    answer_map = {a.question_id: a.answer for a in payload.answers}
+    for q in questions:
+        if q.is_required and q.id not in answer_map:
+            raise HTTPException(status_code=400, detail=f"Missing required answer for question {q.question_key}")
+
+    db.query(models.ResearchSurveyResponse).filter(
+        models.ResearchSurveyResponse.assignment_id == assignment.id
+    ).delete(synchronize_session=False)
+    for qid, ans in answer_map.items():
+        if qid not in by_qid:
+            continue
+        db.add(models.ResearchSurveyResponse(
+            assignment_id=assignment.id,
+            survey_id=assignment.survey_id,
+            user_id=current_user.id,
+            question_id=qid,
+            answer_json=_json.dumps(ans),
+            submitted_at=datetime.utcnow(),
+        ))
+    assignment.status = "submitted"
+    assignment.submitted_at = datetime.utcnow()
+    assignment.snoozed_until = None
+    db.commit()
+    return {"ok": True, "status": assignment.status}
+
+
+@app.post("/research/surveys/{assignment_id}/snooze")
+def snooze_research_survey(
+    assignment_id: int,
+    payload: ResearchSnoozeBody,
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    assignment = (
+        db.query(models.ResearchSurveyAssignment)
+        .filter(
+            models.ResearchSurveyAssignment.id == assignment_id,
+            models.ResearchSurveyAssignment.user_id == current_user.id,
+        )
+        .first()
+    )
+    if not assignment:
+        raise HTTPException(status_code=404, detail="Survey assignment not found")
+    assignment.status = "snoozed"
+    assignment.snoozed_until = datetime.utcnow() + timedelta(days=payload.days)
+    db.commit()
+    return {"ok": True, "status": assignment.status, "snoozed_until": assignment.snoozed_until.isoformat()}
+
+
+@app.post("/research/surveys/{assignment_id}/dismiss")
+def dismiss_research_survey(
+    assignment_id: int,
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    assignment = (
+        db.query(models.ResearchSurveyAssignment)
+        .filter(
+            models.ResearchSurveyAssignment.id == assignment_id,
+            models.ResearchSurveyAssignment.user_id == current_user.id,
+        )
+        .first()
+    )
+    if not assignment:
+        raise HTTPException(status_code=404, detail="Survey assignment not found")
+    assignment.status = "dismissed"
+    assignment.dismissed_at = datetime.utcnow()
+    assignment.snoozed_until = None
+    db.commit()
+    return {"ok": True, "status": assignment.status}
+
+
+@app.get("/admin/research/surveys")
+def admin_list_research_surveys(
+    include_questions: bool = Query(default=True),
+    include_stats: bool = Query(default=True),
+    db: Session = Depends(get_db),
+    _=Depends(verify_admin),
+):
+    rows = (
+        db.query(models.ResearchSurvey)
+        .order_by(models.ResearchSurvey.created_at.desc())
+        .all()
+    )
+    by_id = [r.id for r in rows]
+    q_map: dict[int, list] = {}
+    if include_questions and by_id:
+        qq = (
+            db.query(models.ResearchSurveyQuestion)
+            .filter(models.ResearchSurveyQuestion.survey_id.in_(by_id))
+            .order_by(models.ResearchSurveyQuestion.sort_order.asc(), models.ResearchSurveyQuestion.id.asc())
+            .all()
+        )
+        for q in qq:
+            q_map.setdefault(q.survey_id, []).append(q)
+    stats_map = _build_research_stats(db, by_id) if include_stats else {}
+    return {
+        "surveys": [
+            _serialize_research_survey(
+                r,
+                questions=q_map.get(r.id) if include_questions else None,
+                stats=stats_map.get(r.id) if include_stats else None,
+            )
+            for r in rows
+        ]
+    }
+
+
+@app.post("/admin/research/surveys")
+def admin_create_research_survey(
+    payload: ResearchSurveyCreate,
+    db: Session = Depends(get_db),
+    _=Depends(verify_admin),
+):
+    key = payload.survey_key.strip()
+    if db.query(models.ResearchSurvey.id).filter(models.ResearchSurvey.survey_key == key).first():
+        raise HTTPException(status_code=409, detail="survey_key already exists")
+    survey = models.ResearchSurvey(
+        survey_key=key,
+        title=payload.title.strip(),
+        description=(payload.description or "").strip() or None,
+        intro_text=(payload.intro_text or "").strip() or None,
+        thank_you_text=(payload.thank_you_text or "").strip() or None,
+        trigger_type=payload.trigger_type,
+        trigger_days_after_signup=payload.trigger_days_after_signup,
+        cooldown_days=payload.cooldown_days,
+        is_active=payload.is_active,
+    )
+    db.add(survey)
+    db.flush()
+    for q in payload.questions:
+        row = models.ResearchSurveyQuestion(
+            survey_id=survey.id,
+            question_key=q.question_key.strip(),
+            prompt=q.prompt.strip(),
+            question_type=q.question_type,
+            options_json=_json.dumps(q.options) if q.options else None,
+            is_required=q.is_required,
+            sort_order=q.sort_order,
+        )
+        db.add(row)
+    db.commit()
+    questions = (
+        db.query(models.ResearchSurveyQuestion)
+        .filter(models.ResearchSurveyQuestion.survey_id == survey.id)
+        .order_by(models.ResearchSurveyQuestion.sort_order.asc(), models.ResearchSurveyQuestion.id.asc())
+        .all()
+    )
+    return _serialize_research_survey(survey, questions=questions, stats=_build_research_stats(db, [survey.id]).get(survey.id))
+
+
+@app.patch("/admin/research/surveys/{survey_id}")
+def admin_update_research_survey(
+    survey_id: int,
+    payload: ResearchSurveyUpdate,
+    db: Session = Depends(get_db),
+    _=Depends(verify_admin),
+):
+    survey = db.query(models.ResearchSurvey).filter(models.ResearchSurvey.id == survey_id).first()
+    if not survey:
+        raise HTTPException(status_code=404, detail="Survey not found")
+    data = payload.model_dump(exclude_unset=True)
+    for k, v in data.items():
+        setattr(survey, k, v)
+    db.commit()
+    questions = (
+        db.query(models.ResearchSurveyQuestion)
+        .filter(models.ResearchSurveyQuestion.survey_id == survey.id)
+        .order_by(models.ResearchSurveyQuestion.sort_order.asc(), models.ResearchSurveyQuestion.id.asc())
+        .all()
+    )
+    return _serialize_research_survey(survey, questions=questions, stats=_build_research_stats(db, [survey.id]).get(survey.id))
+
+
+@app.post("/admin/research/surveys/{survey_id}/assign")
+def admin_assign_research_survey(
+    survey_id: int,
+    payload: ResearchAssignBody,
+    db: Session = Depends(get_db),
+    _=Depends(verify_admin),
+):
+    survey = db.query(models.ResearchSurvey).filter(models.ResearchSurvey.id == survey_id).first()
+    if not survey:
+        raise HTTPException(status_code=404, detail="Survey not found")
+
+    if payload.user_ids:
+        users = db.query(models.User).filter(models.User.id.in_(payload.user_ids)).all()
+    else:
+        q = db.query(models.User).filter(or_(models.User.is_archived == False, models.User.is_archived == None))
+        if payload.consented_only:
+            q = q.filter(models.User.research_consent == True)  # noqa: E712
+        users = q.order_by(models.User.created_at.desc()).limit(payload.limit).all()
+
+    existing_pairs = {
+        (r[0], r[1])
+        for r in db.query(models.ResearchSurveyAssignment.user_id, models.ResearchSurveyAssignment.survey_id)
+        .filter(
+            models.ResearchSurveyAssignment.survey_id == survey_id,
+            models.ResearchSurveyAssignment.user_id.in_([u.id for u in users]) if users else text("1=0"),
+        )
+        .all()
+    }
+    created = 0
+    for u in users:
+        if payload.consented_only and u.research_consent is not True:
+            continue
+        if (u.id, survey_id) in existing_pairs:
+            continue
+        db.add(models.ResearchSurveyAssignment(
+            user_id=u.id,
+            survey_id=survey_id,
+            status="assigned",
+            trigger_reason=payload.trigger_reason[:80],
+        ))
+        created += 1
+    db.commit()
+    return {"ok": True, "assigned": created, "checked": len(users)}
+
+
+@app.get("/admin/research/surveys/{survey_id}/responses")
+def admin_research_survey_responses(
+    survey_id: int,
+    limit: int = Query(default=500, ge=1, le=5000),
+    db: Session = Depends(get_db),
+    _=Depends(verify_admin),
+):
+    survey = db.query(models.ResearchSurvey).filter(models.ResearchSurvey.id == survey_id).first()
+    if not survey:
+        raise HTTPException(status_code=404, detail="Survey not found")
+    rows = (
+        db.query(models.ResearchSurveyResponse)
+        .filter(models.ResearchSurveyResponse.survey_id == survey_id)
+        .order_by(models.ResearchSurveyResponse.submitted_at.desc())
+        .limit(limit)
+        .all()
+    )
+    return {
+        "survey_id": survey_id,
+        "responses": [
+            {
+                "id": r.id,
+                "assignment_id": r.assignment_id,
+                "user_id": r.user_id,
+                "question_id": r.question_id,
+                "answer": _json.loads(r.answer_json) if r.answer_json else None,
+                "submitted_at": r.submitted_at.isoformat() if r.submitted_at else None,
+            }
+            for r in rows
+        ],
     }
 
 

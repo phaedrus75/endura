@@ -259,6 +259,10 @@ class User(Base):
     # Founding member program
     eco_credits_multiplier = Column(Float, default=1.0, server_default="1.0")
 
+    # Research participation consent (for voluntary study-habit surveys)
+    research_consent = Column(Boolean, nullable=True)  # None = not asked yet
+    research_consent_at = Column(DateTime, nullable=True)
+
     # Soft-delete
     is_archived = Column(Boolean, default=False, server_default="0")
 
@@ -783,6 +787,73 @@ class ProductTestEvent(Base):
     message = Column(Text, nullable=True)
     payload_json = Column(Text, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+
+
+class ResearchSurvey(Base):
+    """Survey definition configured from admin dashboard."""
+    __tablename__ = "research_surveys"
+
+    id = Column(Integer, primary_key=True, index=True)
+    survey_key = Column(String(100), unique=True, nullable=False, index=True)
+    title = Column(String(160), nullable=False)
+    description = Column(Text, nullable=True)
+    intro_text = Column(Text, nullable=True)
+    thank_you_text = Column(Text, nullable=True)
+    trigger_type = Column(String(30), nullable=False, default="manual")  # manual|post_onboarding|periodic
+    trigger_days_after_signup = Column(Integer, nullable=True)
+    cooldown_days = Column(Integer, nullable=False, default=14)
+    is_active = Column(Boolean, nullable=False, default=True, server_default="1")
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+
+class ResearchSurveyQuestion(Base):
+    """Questions belonging to a survey."""
+    __tablename__ = "research_survey_questions"
+
+    id = Column(Integer, primary_key=True, index=True)
+    survey_id = Column(Integer, ForeignKey("research_surveys.id", ondelete="CASCADE"), nullable=False, index=True)
+    question_key = Column(String(80), nullable=False)
+    prompt = Column(Text, nullable=False)
+    question_type = Column(String(30), nullable=False)  # likert|single_choice|multi_choice|free_text|number
+    options_json = Column(Text, nullable=True)  # JSON array for choice question types
+    is_required = Column(Boolean, nullable=False, default=True, server_default="1")
+    sort_order = Column(Integer, nullable=False, default=0)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+
+class ResearchSurveyAssignment(Base):
+    """Assignment state per user per survey."""
+    __tablename__ = "research_survey_assignments"
+    __table_args__ = (
+        UniqueConstraint("user_id", "survey_id", name="uq_research_assignment_user_survey"),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    survey_id = Column(Integer, ForeignKey("research_surveys.id", ondelete="CASCADE"), nullable=False, index=True)
+    status = Column(String(30), nullable=False, default="assigned", index=True)  # assigned|shown|started|submitted|dismissed|snoozed
+    trigger_reason = Column(String(80), nullable=True)
+    assigned_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+    shown_at = Column(DateTime, nullable=True)
+    started_at = Column(DateTime, nullable=True)
+    submitted_at = Column(DateTime, nullable=True)
+    dismissed_at = Column(DateTime, nullable=True)
+    snoozed_until = Column(DateTime, nullable=True, index=True)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+
+class ResearchSurveyResponse(Base):
+    """One answer row per question in an assignment submission."""
+    __tablename__ = "research_survey_responses"
+
+    id = Column(Integer, primary_key=True, index=True)
+    assignment_id = Column(Integer, ForeignKey("research_survey_assignments.id", ondelete="CASCADE"), nullable=False, index=True)
+    survey_id = Column(Integer, ForeignKey("research_surveys.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    question_id = Column(Integer, ForeignKey("research_survey_questions.id", ondelete="CASCADE"), nullable=False, index=True)
+    answer_json = Column(Text, nullable=False)  # JSON scalar/array/object
+    submitted_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
 
 class School(Base):
     __tablename__ = "schools"

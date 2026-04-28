@@ -45,6 +45,8 @@ import ShopScreen from './screens/ShopScreen';
 import TakeActionScreen from './screens/TakeActionScreen';
 import ReactionOverlay from './components/ReactionOverlay';
 
+const ONBOARDING_AB_VARIANT_KEY = 'onboardingABVariant';
+
 const Stack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
 
@@ -185,11 +187,35 @@ function MainStackNavigator() {
 function AppNavigator() {
   const { isAuthenticated, isLoading, user } = useAuth();
   const [walkthroughSeen, setWalkthroughSeen] = useState<boolean | null>(null);
+  const [onboardingVariant, setOnboardingVariant] = useState<'v1' | 'v2' | null>(null);
 
   useEffect(() => {
     SecureStore.getItemAsync(WALKTHROUGH_SEEN_KEY)
       .then(v => setWalkthroughSeen(v === 'true'))
       .catch(() => setWalkthroughSeen(false));
+  }, []);
+
+  useEffect(() => {
+    let alive = true;
+    const assignVariant = async () => {
+      try {
+        const stored = await SecureStore.getItemAsync(ONBOARDING_AB_VARIANT_KEY);
+        if (stored === 'v1' || stored === 'v2') {
+          if (alive) setOnboardingVariant(stored);
+          Analytics.onboardingExperimentAssigned(stored, 'stored');
+          return;
+        }
+        const variant: 'v1' | 'v2' = Math.random() < 0.5 ? 'v1' : 'v2';
+        await SecureStore.setItemAsync(ONBOARDING_AB_VARIANT_KEY, variant);
+        if (alive) setOnboardingVariant(variant);
+        Analytics.onboardingExperimentAssigned(variant, 'new');
+      } catch {
+        // Safe fallback: keep the newest onboarding flow if storage fails.
+        if (alive) setOnboardingVariant('v2');
+      }
+    };
+    assignVariant();
+    return () => { alive = false; };
   }, []);
 
   useEffect(() => {
@@ -215,7 +241,7 @@ function AppNavigator() {
     }
   }, [user?.id, user?.username]);
   
-  if (isLoading || walkthroughSeen === null) {
+  if (isLoading || walkthroughSeen === null || onboardingVariant === null) {
     return (
       <View style={styles.loadingContainer}>
         <View style={styles.loadingIcon}>
@@ -232,16 +258,32 @@ function AppNavigator() {
       {!isAuthenticated ? (
         // First-time visitors see the feature walkthrough first, then Auth.
         // Returning visitors (walkthroughSeen=true) go straight to Auth.
-        walkthroughSeen ? (
-          <Stack.Screen name="Auth" component={AuthScreen} />
+        onboardingVariant === 'v1' || walkthroughSeen ? (
+          <Stack.Screen
+            name="Auth"
+            component={AuthScreen}
+            initialParams={{ onboardingVariant }}
+          />
         ) : (
           <>
-            <Stack.Screen name="Walkthrough" component={WalkthroughScreen} />
-            <Stack.Screen name="Auth" component={AuthScreen} />
+            <Stack.Screen
+              name="Walkthrough"
+              component={WalkthroughScreen}
+              initialParams={{ onboardingVariant }}
+            />
+            <Stack.Screen
+              name="Auth"
+              component={AuthScreen}
+              initialParams={{ onboardingVariant }}
+            />
           </>
         )
       ) : !user?.username ? (
-        <Stack.Screen name="Onboarding" component={OnboardingScreen} />
+        <Stack.Screen
+          name="Onboarding"
+          component={OnboardingScreen}
+          initialParams={{ onboardingVariant }}
+        />
       ) : (
         <Stack.Screen name="Main" component={MainStackNavigator} />
       )}
