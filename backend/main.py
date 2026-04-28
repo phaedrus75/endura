@@ -72,7 +72,8 @@ else:
     try:
         _insp = sa_inspect(engine)
         for _tbl in ["android_beta_signups", "email_templates", "email_logs",
-                     "push_templates", "push_logs", "test_runs"]:
+                     "push_templates", "push_logs", "test_runs",
+                     "product_tests", "product_test_events"]:
             if not _insp.has_table(_tbl):
                 Base.metadata.tables[_tbl].create(bind=engine)
                 print(f"Created missing table: {_tbl}")
@@ -7585,6 +7586,303 @@ def _persist_test_run(
         except Exception:
             pass
         return None
+
+
+class ProductTestCreate(BaseModel):
+    name: str = Field(..., min_length=3, max_length=160)
+    feature_key: str = Field(..., min_length=2, max_length=100)
+    hypothesis: Optional[str] = Field(default=None, max_length=4000)
+    success_metric: Optional[str] = Field(default=None, max_length=200)
+    guardrail_metric: Optional[str] = Field(default=None, max_length=200)
+    posthog_insight_url: Optional[str] = Field(default=None, max_length=500)
+    control_label: str = Field(default="v1", min_length=1, max_length=80)
+    challenger_label: str = Field(default="v2", min_length=1, max_length=80)
+
+
+class ProductTestUpdate(BaseModel):
+    name: Optional[str] = Field(default=None, min_length=3, max_length=160)
+    hypothesis: Optional[str] = Field(default=None, max_length=4000)
+    success_metric: Optional[str] = Field(default=None, max_length=200)
+    guardrail_metric: Optional[str] = Field(default=None, max_length=200)
+    posthog_insight_url: Optional[str] = Field(default=None, max_length=500)
+    control_label: Optional[str] = Field(default=None, min_length=1, max_length=80)
+    challenger_label: Optional[str] = Field(default=None, min_length=1, max_length=80)
+    status: Optional[str] = Field(default=None, pattern="^(draft|running|completed|winner_promoted|paused)$")
+    winner: Optional[str] = Field(default=None, pattern="^(control|challenger)$")
+    sample_control: Optional[int] = Field(default=None, ge=0, le=10_000_000)
+    sample_challenger: Optional[int] = Field(default=None, ge=0, le=10_000_000)
+    conversion_control: Optional[float] = Field(default=None, ge=0, le=100)
+    conversion_challenger: Optional[float] = Field(default=None, ge=0, le=100)
+    guardrail_control: Optional[float] = Field(default=None)
+    guardrail_challenger: Optional[float] = Field(default=None)
+    started_at: Optional[datetime] = None
+    ended_at: Optional[datetime] = None
+    note: Optional[str] = Field(default=None, max_length=2000)
+
+
+class ProductTestPromoteBody(BaseModel):
+    winner: str = Field(..., pattern="^(control|challenger)$")
+    note: Optional[str] = Field(default=None, max_length=2000)
+
+
+class ProductTestEventBody(BaseModel):
+    message: str = Field(..., min_length=1, max_length=2000)
+
+
+def _append_product_test_event(
+    db: Session,
+    test_id: int,
+    event_type: str,
+    message: Optional[str] = None,
+    payload: Optional[dict] = None,
+) -> None:
+    row = models.ProductTestEvent(
+        test_id=test_id,
+        event_type=event_type[:40],
+        message=(message or None),
+        payload_json=_json.dumps(payload) if payload else None,
+    )
+    db.add(row)
+
+
+def _serialize_product_test(test: models.ProductTest, events: list[models.ProductTestEvent] | None = None) -> dict:
+    out = {
+        "id": test.id,
+        "name": test.name,
+        "feature_key": test.feature_key,
+        "hypothesis": test.hypothesis,
+        "success_metric": test.success_metric,
+        "guardrail_metric": test.guardrail_metric,
+        "posthog_insight_url": test.posthog_insight_url,
+        "control_label": test.control_label,
+        "challenger_label": test.challenger_label,
+        "winner": test.winner,
+        "status": test.status,
+        "sample_control": test.sample_control,
+        "sample_challenger": test.sample_challenger,
+        "conversion_control": test.conversion_control,
+        "conversion_challenger": test.conversion_challenger,
+        "guardrail_control": test.guardrail_control,
+        "guardrail_challenger": test.guardrail_challenger,
+        "started_at": test.started_at.isoformat() if test.started_at else None,
+        "ended_at": test.ended_at.isoformat() if test.ended_at else None,
+        "promoted_at": test.promoted_at.isoformat() if test.promoted_at else None,
+        "created_at": test.created_at.isoformat() if test.created_at else None,
+        "updated_at": test.updated_at.isoformat() if test.updated_at else None,
+    }
+    if events is not None:
+        out["events"] = [
+            {
+                "id": e.id,
+                "event_type": e.event_type,
+                "message": e.message,
+                "payload": _json.loads(e.payload_json) if e.payload_json else None,
+                "created_at": e.created_at.isoformat() if e.created_at else None,
+            }
+            for e in events
+        ]
+    return out
+
+
+@app.get("/admin/product-tests")
+def admin_product_tests(
+    status: Optional[str] = Query(default=None, pattern="^(draft|running|completed|winner_promoted|paused)$"),
+    include_events: bool = Query(default=False),
+    limit: int = Query(default=100, ge=1, le=500),
+    db: Session = Depends(get_db),
+    _=Depends(verify_admin),
+):
+    q = db.query(models.ProductTest)
+    if status:
+        q = q.filter(models.ProductTest.status == status)
+    rows = q.order_by(models.ProductTest.created_at.desc()).limit(limit).all()
+    by_id = [r.id for r in rows]
+    events_map: dict[int, list] = {}
+    if by_id and include_events:
+        evs = (
+            db.query(models.ProductTestEvent)
+            .filter(models.ProductTestEvent.test_id.in_(by_id))
+            .order_by(models.ProductTestEvent.created_at.desc())
+            .all()
+        )
+        for e in evs:
+            events_map.setdefault(e.test_id, []).append(e)
+    return {
+        "tests": [
+            _serialize_product_test(r, events_map.get(r.id) if include_events else None)
+            for r in rows
+        ]
+    }
+
+
+@app.post("/admin/product-tests")
+def admin_create_product_test(
+    payload: ProductTestCreate,
+    db: Session = Depends(get_db),
+    _=Depends(verify_admin),
+):
+    key = payload.feature_key.strip()
+    existing = (
+        db.query(models.ProductTest)
+        .filter(models.ProductTest.feature_key == key)
+        .first()
+    )
+    if existing and existing.status in ("draft", "running"):
+        raise HTTPException(status_code=409, detail="An active test for this feature_key already exists")
+
+    row = models.ProductTest(
+        name=payload.name.strip(),
+        feature_key=key,
+        hypothesis=(payload.hypothesis or "").strip() or None,
+        success_metric=(payload.success_metric or "").strip() or None,
+        guardrail_metric=(payload.guardrail_metric or "").strip() or None,
+        posthog_insight_url=(payload.posthog_insight_url or "").strip() or None,
+        control_label=payload.control_label.strip(),
+        challenger_label=payload.challenger_label.strip(),
+        status="draft",
+    )
+    db.add(row)
+    db.flush()
+    _append_product_test_event(
+        db,
+        row.id,
+        "created",
+        message=f"Created test with control={row.control_label}, challenger={row.challenger_label}",
+    )
+    db.commit()
+    db.refresh(row)
+    return _serialize_product_test(row)
+
+
+@app.patch("/admin/product-tests/{test_id}")
+def admin_update_product_test(
+    test_id: int,
+    payload: ProductTestUpdate,
+    db: Session = Depends(get_db),
+    _=Depends(verify_admin),
+):
+    row = db.query(models.ProductTest).filter(models.ProductTest.id == test_id).first()
+    if not row:
+        raise HTTPException(status_code=404, detail="Product test not found")
+
+    before = {
+        "status": row.status,
+        "winner": row.winner,
+        "sample_control": row.sample_control,
+        "sample_challenger": row.sample_challenger,
+        "conversion_control": row.conversion_control,
+        "conversion_challenger": row.conversion_challenger,
+    }
+    updates = payload.model_dump(exclude_unset=True)
+    note = updates.pop("note", None)
+    for k, v in updates.items():
+        setattr(row, k, v)
+    if row.status == "running" and row.started_at is None:
+        row.started_at = datetime.utcnow()
+    if row.status in ("completed", "winner_promoted") and row.ended_at is None:
+        row.ended_at = datetime.utcnow()
+    if note:
+        _append_product_test_event(db, row.id, "note", message=note.strip())
+
+    after = {
+        "status": row.status,
+        "winner": row.winner,
+        "sample_control": row.sample_control,
+        "sample_challenger": row.sample_challenger,
+        "conversion_control": row.conversion_control,
+        "conversion_challenger": row.conversion_challenger,
+    }
+    if before != after:
+        _append_product_test_event(db, row.id, "updated", payload={"before": before, "after": after})
+    if before["status"] != after["status"]:
+        _append_product_test_event(db, row.id, "status_changed", message=f"{before['status']} → {after['status']}")
+    if before["winner"] != after["winner"] and after["winner"]:
+        _append_product_test_event(db, row.id, "winner_selected", message=f"Winner selected: {after['winner']}")
+
+    db.commit()
+    db.refresh(row)
+    return _serialize_product_test(row)
+
+
+@app.post("/admin/product-tests/{test_id}/promote-winner")
+def admin_promote_winner_to_control(
+    test_id: int,
+    payload: ProductTestPromoteBody,
+    db: Session = Depends(get_db),
+    _=Depends(verify_admin),
+):
+    row = db.query(models.ProductTest).filter(models.ProductTest.id == test_id).first()
+    if not row:
+        raise HTTPException(status_code=404, detail="Product test not found")
+
+    winner = payload.winner
+    row.winner = winner
+    row.status = "winner_promoted"
+    row.ended_at = row.ended_at or datetime.utcnow()
+    row.promoted_at = datetime.utcnow()
+    if winner == "challenger":
+        row.control_label = row.challenger_label
+    msg = (
+        f"Promoted {winner} to control."
+        + (f" {payload.note.strip()}" if payload.note else "")
+    )
+    _append_product_test_event(
+        db,
+        row.id,
+        "winner_promoted",
+        message=msg,
+        payload={"winner": winner, "new_control_label": row.control_label},
+    )
+    db.commit()
+    db.refresh(row)
+    return _serialize_product_test(row)
+
+
+@app.get("/admin/product-tests/{test_id}/events")
+def admin_product_test_events(
+    test_id: int,
+    limit: int = Query(default=200, ge=1, le=1000),
+    db: Session = Depends(get_db),
+    _=Depends(verify_admin),
+):
+    row = db.query(models.ProductTest).filter(models.ProductTest.id == test_id).first()
+    if not row:
+        raise HTTPException(status_code=404, detail="Product test not found")
+    events = (
+        db.query(models.ProductTestEvent)
+        .filter(models.ProductTestEvent.test_id == test_id)
+        .order_by(models.ProductTestEvent.created_at.desc())
+        .limit(limit)
+        .all()
+    )
+    return {
+        "test_id": test_id,
+        "events": [
+            {
+                "id": e.id,
+                "event_type": e.event_type,
+                "message": e.message,
+                "payload": _json.loads(e.payload_json) if e.payload_json else None,
+                "created_at": e.created_at.isoformat() if e.created_at else None,
+            }
+            for e in events
+        ],
+    }
+
+
+@app.post("/admin/product-tests/{test_id}/events")
+def admin_add_product_test_event(
+    test_id: int,
+    payload: ProductTestEventBody,
+    db: Session = Depends(get_db),
+    _=Depends(verify_admin),
+):
+    row = db.query(models.ProductTest).filter(models.ProductTest.id == test_id).first()
+    if not row:
+        raise HTTPException(status_code=404, detail="Product test not found")
+    _append_product_test_event(db, row.id, "note", message=payload.message.strip())
+    db.commit()
+    return {"ok": True}
 
 
 @app.post("/admin/run-tests")

@@ -120,6 +120,55 @@ class TestAdminPushTemplates:
         assert tmpl.body == "Updated body"
 
 
+class TestAdminProductTests:
+    def test_create_update_promote_product_test(self, client):
+        create = client.post(
+            "/admin/product-tests",
+            json={
+                "name": "Onboarding v1 vs v2",
+                "feature_key": "onboarding_ab_v2",
+                "control_label": "v1",
+                "challenger_label": "v2",
+                "hypothesis": "v2 improves onboarding completion",
+            },
+            headers=admin_headers(),
+        )
+        assert create.status_code == 200, create.text
+        test_id = create.json()["id"]
+
+        upd = client.patch(
+            f"/admin/product-tests/{test_id}",
+            json={
+                "status": "running",
+                "sample_control": 500,
+                "sample_challenger": 510,
+                "conversion_control": 41.5,
+                "conversion_challenger": 45.2,
+                "winner": "challenger",
+                "note": "Early look favors challenger",
+            },
+            headers=admin_headers(),
+        )
+        assert upd.status_code == 200
+        assert upd.json()["status"] == "running"
+        assert upd.json()["winner"] == "challenger"
+
+        promote = client.post(
+            f"/admin/product-tests/{test_id}/promote-winner",
+            json={"winner": "challenger", "note": "Ship v2"},
+            headers=admin_headers(),
+        )
+        assert promote.status_code == 200
+        assert promote.json()["status"] == "winner_promoted"
+
+        rows = client.get("/admin/product-tests?include_events=true", headers=admin_headers())
+        assert rows.status_code == 200
+        tests = rows.json().get("tests", [])
+        hit = next((t for t in tests if t["id"] == test_id), None)
+        assert hit is not None
+        assert hit["events"], "timeline events should exist"
+
+
 class TestAdminAuthRequired:
     """Spot-check that ALL admin routes require the key."""
     ADMIN_ROUTES = [

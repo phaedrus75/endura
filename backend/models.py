@@ -742,6 +742,48 @@ class TestRun(Base):
     raw_summary = Column(Text, nullable=True)   # short summary line for quick display
 
 
+class ProductTest(Base):
+    """Product experiment tracked from the admin dashboard."""
+    __tablename__ = "product_tests"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(160), nullable=False)
+    feature_key = Column(String(100), nullable=False, index=True)  # e.g. onboarding_ab
+    hypothesis = Column(Text, nullable=True)
+    success_metric = Column(String(200), nullable=True)             # e.g. onboarding_completed_rate
+    guardrail_metric = Column(String(200), nullable=True)           # e.g. d1_retention
+    posthog_insight_url = Column(String(500), nullable=True)
+
+    control_label = Column(String(80), nullable=False, default="v1")
+    challenger_label = Column(String(80), nullable=False, default="v2")
+    winner = Column(String(20), nullable=True)  # control | challenger
+    status = Column(String(30), nullable=False, default="draft", index=True)  # draft|running|completed|winner_promoted|paused
+
+    sample_control = Column(Integer, nullable=True)
+    sample_challenger = Column(Integer, nullable=True)
+    conversion_control = Column(Float, nullable=True)   # percentage (0-100)
+    conversion_challenger = Column(Float, nullable=True)
+    guardrail_control = Column(Float, nullable=True)
+    guardrail_challenger = Column(Float, nullable=True)
+
+    started_at = Column(DateTime, nullable=True, index=True)
+    ended_at = Column(DateTime, nullable=True, index=True)
+    promoted_at = Column(DateTime, nullable=True, index=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+
+class ProductTestEvent(Base):
+    """Timeline entries for product test lifecycle and analysis updates."""
+    __tablename__ = "product_test_events"
+
+    id = Column(Integer, primary_key=True, index=True)
+    test_id = Column(Integer, ForeignKey("product_tests.id", ondelete="CASCADE"), nullable=False, index=True)
+    event_type = Column(String(40), nullable=False, index=True)  # created|updated|status_changed|winner_selected|winner_promoted|note
+    message = Column(Text, nullable=True)
+    payload_json = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+
 class School(Base):
     __tablename__ = "schools"
 
