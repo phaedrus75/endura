@@ -1247,10 +1247,11 @@
                 </div>
                 <p style="color:var(--text-muted);font-size:13px;margin-top:0">
                     Track experiments over time and promote winners to control once results are clear.
+                    Use <code>feature_key</code> containing <code>onboarding_ab</code> to wire the in-app onboarding A/B — opening a test loads a <strong>funnel</strong> (cohort → username set → onboarding complete) by variant.
                 </p>
                 <div style="display:grid;grid-template-columns:2fr 1.4fr 1fr 1fr auto;gap:8px;margin-bottom:8px">
                     <input id="ptNewName" type="text" placeholder="Test name (e.g. Onboarding v1 vs v2)" style="padding:9px 12px;border:1px solid var(--border);border-radius:8px;font-size:13px">
-                    <input id="ptNewFeatureKey" type="text" placeholder="feature_key (e.g. onboarding_ab_v2)" style="padding:9px 12px;border:1px solid var(--border);border-radius:8px;font-size:13px">
+                    <input id="ptNewFeatureKey" type="text" placeholder="feature_key (must include onboarding_ab)" style="padding:9px 12px;border:1px solid var(--border);border-radius:8px;font-size:13px">
                     <input id="ptNewControl" type="text" value="v1" placeholder="control label" style="padding:9px 12px;border:1px solid var(--border);border-radius:8px;font-size:13px">
                     <input id="ptNewChallenger" type="text" value="v2" placeholder="challenger label" style="padding:9px 12px;border:1px solid var(--border);border-radius:8px;font-size:13px">
                     <button onclick="createProductTest()" style="padding:9px 14px;background:var(--forest);color:#fff;border:none;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer">Create</button>
@@ -4887,6 +4888,60 @@ function renderTestResults(data) {
 
 let _productTestsCache = [];
 
+function onProductTestDetailToggle(ev) {
+    const el = ev.currentTarget;
+    if (!el || !el.open) return;
+    const id = parseInt(el.getAttribute('data-pt-id'), 10);
+    if (id) loadProductTestFunnel(id);
+}
+
+function _renderFunnelArmCard(title, arm) {
+    return `
+        <div style="flex:1;min-width:150px;background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:10px 12px">
+            <div style="font-size:12px;font-weight:700;margin-bottom:8px;color:var(--text)">${escHtml(title)}</div>
+            <div style="font-size:11px;color:var(--text-muted);line-height:1.55">
+                In cohort: <strong style="color:var(--text)">${arm.cohort}</strong><br>
+                Username set: <strong style="color:var(--text)">${arm.username_set}</strong> (${arm.username_set_rate_pct}% of cohort)<br>
+                Onboarding complete: <strong style="color:var(--text)">${arm.onboarding_completed}</strong>
+                (${arm.completed_rate_pct_of_cohort}% of cohort, ${arm.completed_rate_pct_of_username_set}% of those who set username)
+            </div>
+        </div>`;
+}
+
+async function loadProductTestFunnel(testId) {
+    const wrap = document.getElementById('ptFunnelWrap_' + testId);
+    if (!wrap) return;
+    wrap.innerHTML = '<p style="font-size:12px;color:var(--text-muted);margin:0">Loading funnel…</p>';
+    try {
+        const data = await adminFetch('/admin/product-tests/' + testId + '/funnel');
+        const t = _productTestsCache.find(x => x.id === testId);
+        const ph = t && t.posthog_insight_url
+            ? `<p style="font-size:12px;margin:0 0 8px 0"><a href="${escHtml(t.posthog_insight_url)}" target="_blank" rel="noopener" style="color:var(--forest);font-weight:600">Open PostHog insight ↗</a></p>`
+            : '';
+        if (!data.supported) {
+            wrap.innerHTML = ph + '<p style="font-size:12px;color:var(--text-muted);margin:0">' + escHtml(data.message || 'Funnel not available for this feature_key.') + '</p>';
+            return;
+        }
+        const lift = data.completion_rate_lift_challenger_minus_control_pp;
+        const liftTxt = lift == null
+            ? '—'
+            : (lift > 0 ? '+' : '') + lift + ' pp (challenger vs control completion % of cohort)';
+        wrap.innerHTML = `
+            <div style="border:1px solid var(--border);border-radius:10px;padding:10px 12px;background:#f8faf8;margin-bottom:10px">
+                <div style="font-size:12px;font-weight:700;color:var(--text);margin-bottom:6px">Funnel outcome (server cohort)</div>
+                <p style="font-size:11px;color:var(--text-muted);margin:0 0 8px 0">${escHtml(data.window && data.window.note ? data.window.note : '')}</p>
+                ${ph}
+                <div style="display:flex;flex-wrap:wrap;gap:10px;margin-top:4px">
+                    ${_renderFunnelArmCard('Control (' + data.control_label + ')', data.control)}
+                    ${_renderFunnelArmCard('Challenger (' + data.challenger_label + ')', data.challenger)}
+                </div>
+                <p style="font-size:11px;color:var(--text-muted);margin:8px 0 0 0">Completion lift (challenger − control, percentage points): <strong style="color:var(--text)">${liftTxt === '—' ? '—' : escHtml(liftTxt)}</strong></p>
+            </div>`;
+    } catch (e) {
+        wrap.innerHTML = '<p style="font-size:12px;color:var(--red);margin:0">' + escHtml(e.message || e) + '</p>';
+    }
+}
+
 async function loadProductTests() {
     try {
         const data = await adminFetch('/admin/product-tests?include_events=true&limit=200');
@@ -4953,7 +5008,7 @@ function renderProductTests() {
         const sampleV = t.sample_challenger != null ? Number(t.sample_challenger).toLocaleString() : '—';
         const ev = t.events || [];
         return `
-            <details style="border:1px solid var(--border);border-radius:10px;padding:10px 12px;background:#fff">
+            <details data-pt-id="${t.id}" ontoggle="onProductTestDetailToggle(event)" style="border:1px solid var(--border);border-radius:10px;padding:10px 12px;background:#fff">
                 <summary style="cursor:pointer;display:flex;align-items:center;justify-content:space-between;gap:8px;list-style:none">
                     <div style="min-width:0">
                         <div style="font-size:14px;font-weight:700;color:var(--text)">${escHtml(t.name)}</div>
@@ -4966,6 +5021,7 @@ function renderProductTests() {
                     <span style="font-size:11px;font-weight:700;color:${statusColor};border:1px solid ${statusColor};padding:3px 8px;border-radius:999px;text-transform:uppercase;white-space:nowrap">${escHtml(t.status)}</span>
                 </summary>
                 <div style="margin-top:10px">
+                    <div id="ptFunnelWrap_${t.id}" style="margin-bottom:12px"></div>
                     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:8px;margin-bottom:10px">
                         <div style="font-size:12px;color:var(--text-muted)">Sample (control): <strong style="color:var(--text)">${sampleC}</strong></div>
                         <div style="font-size:12px;color:var(--text-muted)">Sample (challenger): <strong style="color:var(--text)">${sampleV}</strong></div>

@@ -23,6 +23,7 @@ import {
   setNavigationRef,
   clearBadgeCount,
 } from './services/pushNotifications';
+import { authAPI } from './services/api';
 
 initMonitoring();
 
@@ -185,7 +186,7 @@ function MainStackNavigator() {
 }
 
 function AppNavigator() {
-  const { isAuthenticated, isLoading, user } = useAuth();
+  const { isAuthenticated, isLoading, user, refreshUser } = useAuth();
   const [walkthroughSeen, setWalkthroughSeen] = useState<boolean | null>(null);
   const [onboardingVariant, setOnboardingVariant] = useState<'v1' | 'v2' | null>(null);
 
@@ -240,7 +241,20 @@ function AppNavigator() {
       clearSentryUser();
     }
   }, [user?.id, user?.username]);
-  
+
+  useEffect(() => {
+    if (!user || (onboardingVariant !== 'v1' && onboardingVariant !== 'v2')) {
+      return;
+    }
+    if (user.onboarding_ab_variant) {
+      return;
+    }
+    authAPI
+      .syncOnboardingAbVariant(onboardingVariant)
+      .then(() => refreshUser())
+      .catch(() => {});
+  }, [user?.id, user?.onboarding_ab_variant, onboardingVariant, refreshUser]);
+
   if (isLoading || walkthroughSeen === null || onboardingVariant === null) {
     return (
       <View style={styles.loadingContainer}>

@@ -151,6 +151,26 @@ class TestProtectedEndpoints:
         assert resp.status_code == 403
 
 
+class TestOnboardingABVariantSync:
+    def test_sync_sets_variant_once(self, client, db):
+        make_user(db, "abvar@test.com", "password123", "abvaruser")
+        h = jwt_headers("abvar@test.com")
+        r = client.post("/auth/onboarding-ab-variant", json={"variant": "v1"}, headers=h)
+        assert r.status_code == 200
+        assert r.json()["onboarding_ab_variant"] == "v1"
+        r2 = client.post("/auth/onboarding-ab-variant", json={"variant": "v2"}, headers=h)
+        assert r2.status_code == 200
+        assert r2.json()["onboarding_ab_variant"] == "v1"
+
+    def test_sync_rejects_invalid_variant(self, client, alice_headers):
+        r = client.post(
+            "/auth/onboarding-ab-variant",
+            json={"variant": "v3"},
+            headers=alice_headers,
+        )
+        assert r.status_code == 422
+
+
 class TestAdminAccess:
     def test_admin_endpoint_valid_key(self, client):
         """AUTH-12: Valid admin key → 200."""

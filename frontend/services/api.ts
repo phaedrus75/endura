@@ -27,6 +27,8 @@ export interface User {
   notif_friends_enabled?: boolean;
   notif_reminders_enabled?: boolean;
   notif_marketing_enabled?: boolean;
+  /** Sticky onboarding A/B arm (v1|v2), set once from device after login */
+  onboarding_ab_variant?: string | null;
 }
 
 export interface NotificationPrefs {
@@ -402,7 +404,14 @@ export const authAPI = {
   },
 
   getMe: () => apiFetch<User>('/auth/me'),
-  
+
+  /** Persist sticky v1/v2 once server-side for admin funnel reporting */
+  syncOnboardingAbVariant: (variant: 'v1' | 'v2') =>
+    apiFetch<User>('/auth/onboarding-ab-variant', {
+      method: 'POST',
+      body: JSON.stringify({ variant }),
+    }),
+
   setUsername: (username: string) =>
     apiFetch(`/user/username?username=${encodeURIComponent(username)}`, {
       method: 'POST',

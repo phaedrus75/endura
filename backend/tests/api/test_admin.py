@@ -168,6 +168,71 @@ class TestAdminProductTests:
         assert hit is not None
         assert hit["events"], "timeline events should exist"
 
+    def test_product_test_onboarding_funnel(self, client, db):
+        from datetime import datetime, timedelta
+
+        t_start = datetime.utcnow() - timedelta(days=14)
+        t_end = datetime.utcnow() + timedelta(days=1)
+
+        def _user(email: str, variant: str, *, username: bool, completed: bool):
+            uname = ("user_" + email.split("@")[0]) if username else None
+            u = make_user(db, email, "password123", uname, verified=True)
+            u.onboarding_ab_variant = variant
+            u.created_at = t_start + timedelta(hours=1)
+            if username:
+                u.username_set_at = datetime.utcnow()
+            else:
+                u.username = None
+                u.username_set_at = None
+            u.onboarding_completed_at = datetime.utcnow() if completed else None
+            db.commit()
+            return u
+
+        _user("fa@test.com", "v1", username=True, completed=True)
+        _user("fb@test.com", "v1", username=True, completed=False)
+        _user("fc@test.com", "v2", username=True, completed=True)
+        _user("fd@test.com", "v2", username=False, completed=False)
+
+        create = client.post(
+            "/admin/product-tests",
+            json={
+                "name": "Onboarding funnel",
+                "feature_key": "onboarding_ab_main",
+                "control_label": "v1",
+                "challenger_label": "v2",
+            },
+            headers=admin_headers(),
+        )
+        assert create.status_code == 200, create.text
+        test_id = create.json()["id"]
+        patch = client.patch(
+            f"/admin/product-tests/{test_id}",
+            json={"status": "running", "started_at": t_start.isoformat(), "ended_at": t_end.isoformat()},
+            headers=admin_headers(),
+        )
+        assert patch.status_code == 200, patch.text
+
+        funnel = client.get(f"/admin/product-tests/{test_id}/funnel", headers=admin_headers())
+        assert funnel.status_code == 200
+        data = funnel.json()
+        assert data["supported"] is True
+        assert data["control"]["cohort"] == 2
+        assert data["control"]["username_set"] == 2
+        assert data["control"]["onboarding_completed"] == 1
+        assert data["challenger"]["cohort"] == 2
+        assert data["challenger"]["onboarding_completed"] == 1
+
+        other = client.post(
+            "/admin/product-tests",
+            json={"name": "Other", "feature_key": "checkout_speed"},
+            headers=admin_headers(),
+        )
+        assert other.status_code == 200
+        oid = other.json()["id"]
+        nf = client.get(f"/admin/product-tests/{oid}/funnel", headers=admin_headers())
+        assert nf.status_code == 200
+        assert nf.json()["supported"] is False
+
 
 class TestAdminAuthRequired:
     """Spot-check that ALL admin routes require the key."""

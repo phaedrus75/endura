@@ -48,9 +48,14 @@ class UserResponse(BaseModel):
     notif_friends_enabled: bool = True
     notif_reminders_enabled: bool = True
     notif_marketing_enabled: bool = True
+    onboarding_ab_variant: Optional[str] = None
 
     class Config:
         from_attributes = True
+
+
+class OnboardingABVariantBody(BaseModel):
+    variant: str = Field(..., pattern="^(v1|v2)$")
 
 
 class UpdateProfileRequest(BaseModel):

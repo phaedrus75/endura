@@ -208,6 +208,8 @@ class User(Base):
     # Onboarding funnel timestamps
     username_set_at = Column(DateTime, nullable=True)
     onboarding_completed_at = Column(DateTime, nullable=True)
+    # Sticky A/B arm (v1|v2) synced from the app once; used for admin funnel stats
+    onboarding_ab_variant = Column(String(10), nullable=True, index=True)
     
     # Coin and streak tracking
     total_coins = Column(Integer, default=0)

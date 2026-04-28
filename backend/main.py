@@ -100,6 +100,26 @@ else:
                 _conn.execute(text("ALTER TABLE users ADD COLUMN research_consent_at TIMESTAMP"))
                 _conn.commit()
             print("Added research_consent_at column to users")
+        if "onboarding_ab_variant" not in _user_cols:
+            with engine.connect() as _conn:
+                _conn.execute(
+                    text(
+                        "ALTER TABLE users ADD COLUMN onboarding_ab_variant VARCHAR(10) NULL"
+                    )
+                )
+                _conn.commit()
+            print("Added onboarding_ab_variant column to users")
+            try:
+                with engine.connect() as _conn:
+                    _conn.execute(
+                        text(
+                            "CREATE INDEX IF NOT EXISTS ix_users_onboarding_ab_variant "
+                            "ON users (onboarding_ab_variant)"
+                        )
+                    )
+                    _conn.commit()
+            except Exception as _ixe:
+                print(f"Note: could not create ix_users_onboarding_ab_variant: {_ixe}")
         # Push notification metadata + per-category prefs (Alembic also handles
         # this; this block is a safety net for envs that haven't run migrations).
         _push_cols = {
@@ -1039,6 +1059,21 @@ def login(request: Request, user: schemas.UserLogin, db: Session = Depends(get_d
         expires_delta=timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     )
     return {"access_token": access_token, "token_type": "bearer"}
+
+
+@app.post("/auth/onboarding-ab-variant", response_model=schemas.UserResponse)
+def sync_onboarding_ab_variant(
+    body: schemas.OnboardingABVariantBody,
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Persist sticky onboarding A/B arm (v1|v2) once for funnel reporting."""
+    v = body.variant.strip()
+    if current_user.onboarding_ab_variant is None:
+        current_user.onboarding_ab_variant = v
+        db.commit()
+        db.refresh(current_user)
+    return current_user
 
 
 @app.get("/auth/me", response_model=schemas.UserResponse)
@@ -8272,6 +8307,99 @@ def admin_product_tests(
             _serialize_product_test(r, events_map.get(r.id) if include_events else None)
             for r in rows
         ]
+    }
+
+
+def _product_test_onboarding_funnel_supported(test: models.ProductTest) -> bool:
+    key = (test.feature_key or "").lower()
+    return "onboarding_ab" in key
+
+
+def _funnel_arm_counts(db: Session, test: models.ProductTest, variant: str) -> dict:
+    filters = [
+        models.User.onboarding_ab_variant == variant,
+    ]
+    if test.started_at:
+        filters.append(models.User.created_at >= test.started_at)
+    if test.ended_at:
+        filters.append(models.User.created_at <= test.ended_at)
+    andf = and_(*filters)
+    cohort = db.query(func.count(models.User.id)).filter(andf).scalar() or 0
+    with_username = (
+        db.query(func.count(models.User.id))
+        .filter(andf, models.User.username_set_at.isnot(None))
+        .scalar()
+        or 0
+    )
+    completed = (
+        db.query(func.count(models.User.id))
+        .filter(andf, models.User.onboarding_completed_at.isnot(None))
+        .scalar()
+        or 0
+    )
+
+    def _pct(num: int, den: int) -> float:
+        return round(100.0 * num / den, 2) if den else 0.0
+
+    return {
+        "cohort": cohort,
+        "username_set": with_username,
+        "onboarding_completed": completed,
+        "username_set_rate_pct": _pct(with_username, cohort),
+        "completed_rate_pct_of_cohort": _pct(completed, cohort),
+        "completed_rate_pct_of_username_set": _pct(completed, with_username),
+    }
+
+
+@app.get("/admin/product-tests/{test_id}/funnel")
+def admin_product_test_funnel(
+    test_id: int,
+    db: Session = Depends(get_db),
+    _=Depends(verify_admin),
+):
+    """
+    Onboarding A/B funnel by arm, using sticky users.onboarding_ab_variant.
+    Cohort is filtered by user.created_at within the test started_at/ended_at
+    window when those are set (proxy for signups during the experiment).
+    """
+    row = db.query(models.ProductTest).filter(models.ProductTest.id == test_id).first()
+    if not row:
+        raise HTTPException(status_code=404, detail="Product test not found")
+    if not _product_test_onboarding_funnel_supported(row):
+        return {
+            "supported": False,
+            "message": "Funnel results are available when feature_key contains onboarding_ab. "
+            "Arms must match users.onboarding_ab_variant (synced from the app as v1/v2).",
+            "test": {
+                "id": row.id,
+                "feature_key": row.feature_key,
+                "posthog_insight_url": row.posthog_insight_url,
+            },
+        }
+    ctl = (row.control_label or "v1").strip()
+    chl = (row.challenger_label or "v2").strip()
+    control = _funnel_arm_counts(db, row, ctl)
+    challenger = _funnel_arm_counts(db, row, chl)
+    lift = None
+    if control["cohort"] and challenger["cohort"]:
+        lift = round(
+            challenger["completed_rate_pct_of_cohort"] - control["completed_rate_pct_of_cohort"],
+            2,
+        )
+    return {
+        "supported": True,
+        "feature_key": row.feature_key,
+        "control_label": ctl,
+        "challenger_label": chl,
+        "window": {
+            "started_at": row.started_at.isoformat() if row.started_at else None,
+            "ended_at": row.ended_at.isoformat() if row.ended_at else None,
+            "note": "Cohort = users with onboarding_ab_variant matching an arm; "
+            "optional filter: account created_at within started_at/ended_at.",
+        },
+        "control": control,
+        "challenger": challenger,
+        "completion_rate_lift_challenger_minus_control_pp": lift,
     }
 
 
