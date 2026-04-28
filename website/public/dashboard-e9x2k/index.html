@@ -1246,8 +1246,8 @@
                     <button onclick="loadProductTests()" style="padding:8px 14px;background:var(--forest);color:#fff;border:none;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer">Refresh</button>
                 </div>
                 <p style="color:var(--text-muted);font-size:13px;margin-top:0">
-                    Track experiments over time and promote winners to control once results are clear.
-                    Use <code>feature_key</code> containing <code>onboarding_ab</code> to wire the in-app onboarding A/B — opening a test loads a <strong>funnel</strong> (cohort → username set → onboarding complete) by variant.
+                    <strong style="color:var(--text)">Where to see funnel results:</strong> stay on this <strong>Tests</strong> page, scroll <em>below</em> the green “Run Tests” regression section, then <strong>click a product test row</strong> (the name bar) to expand it — the funnel loads at the top of the panel.
+                    <code>feature_key</code> must include <code>onboarding_ab</code> for the server funnel (cohort → username set → onboarding complete). Otherwise you’ll see a short note and can still use PostHog link if set.
                 </p>
                 <div style="display:grid;grid-template-columns:2fr 1.4fr 1fr 1fr auto;gap:8px;margin-bottom:8px">
                     <input id="ptNewName" type="text" placeholder="Test name (e.g. Onboarding v1 vs v2)" style="padding:9px 12px;border:1px solid var(--border);border-radius:8px;font-size:13px">
@@ -5018,7 +5018,10 @@ function renderProductTests() {
                             challenger=<strong>${escHtml(t.challenger_label || 'v2')}</strong>
                         </div>
                     </div>
-                    <span style="font-size:11px;font-weight:700;color:${statusColor};border:1px solid ${statusColor};padding:3px 8px;border-radius:999px;text-transform:uppercase;white-space:nowrap">${escHtml(t.status)}</span>
+                    <div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px;flex-shrink:0">
+                        <span style="font-size:11px;font-weight:700;color:${statusColor};border:1px solid ${statusColor};padding:3px 8px;border-radius:999px;text-transform:uppercase;white-space:nowrap">${escHtml(t.status)}</span>
+                        <span style="font-size:10px;color:var(--text-muted);white-space:nowrap">Click row · funnel below</span>
+                    </div>
                 </summary>
                 <div style="margin-top:10px">
                     <div id="ptFunnelWrap_${t.id}" style="margin-bottom:12px"></div>
