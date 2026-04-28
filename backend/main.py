@@ -2128,7 +2128,9 @@ def get_friend_profile(
     friend = db.query(models.User).filter(models.User.id == friend_id).first()
     if not friend:
         raise HTTPException(status_code=404, detail="User not found")
-    animals_count = db.query(models.UserAnimal).filter(models.UserAnimal.user_id == friend.id).count()
+    animals_count = db.query(func.count(models.UserAnimal.id)).filter(
+        models.UserAnimal.user_id == friend.id
+    ).scalar() or 0
     friend_subject_objs = crud.get_user_subjects(db, friend.id)
     friend_subjects = [s.display_name for s in friend_subject_objs]
     return {

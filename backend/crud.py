@@ -1332,7 +1332,9 @@ def check_badges(db: Session, user_id: int, session_hour: int = None, session_mi
             if gap >= 7: capped_award("comeback_kid")
 
     # Animals
-    total_animals = db.query(models.UserAnimal).filter(models.UserAnimal.user_id == user_id).count()
+    total_animals = db.query(func.count(models.UserAnimal.id)).filter(
+        models.UserAnimal.user_id == user_id
+    ).scalar() or 0
     unique_animals = db.query(models.UserAnimal.animal_id).filter(
         models.UserAnimal.user_id == user_id
     ).distinct().count()
