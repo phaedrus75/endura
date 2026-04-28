@@ -8337,6 +8337,13 @@ def _funnel_arm_counts(db: Session, test: models.ProductTest, variant: str) -> d
         .scalar()
         or 0
     )
+    # Sessions are created when a timer run finishes; total_sessions is the denormalized count.
+    first_timer = (
+        db.query(func.count(models.User.id))
+        .filter(andf, func.coalesce(models.User.total_sessions, 0) > 0)
+        .scalar()
+        or 0
+    )
 
     def _pct(num: int, den: int) -> float:
         return round(100.0 * num / den, 2) if den else 0.0
@@ -8345,9 +8352,12 @@ def _funnel_arm_counts(db: Session, test: models.ProductTest, variant: str) -> d
         "cohort": cohort,
         "username_set": with_username,
         "onboarding_completed": completed,
+        "first_timer_session": first_timer,
         "username_set_rate_pct": _pct(with_username, cohort),
         "completed_rate_pct_of_cohort": _pct(completed, cohort),
         "completed_rate_pct_of_username_set": _pct(completed, with_username),
+        "first_timer_rate_pct_of_cohort": _pct(first_timer, cohort),
+        "first_timer_rate_pct_of_onboarding_completed": _pct(first_timer, completed),
     }
 
 
@@ -8361,6 +8371,9 @@ def admin_product_test_funnel(
     Onboarding A/B funnel by arm, using sticky users.onboarding_ab_variant.
     Cohort is filtered by user.created_at within the test started_at/ended_at
     window when those are set (proxy for signups during the experiment).
+    "First timer session" counts users with total_sessions >= 1 (a session row
+    is written when they complete a timer run — closest server proxy to
+    successful timer use after onboarding).
     """
     row = db.query(models.ProductTest).filter(models.ProductTest.id == test_id).first()
     if not row:
@@ -8381,9 +8394,14 @@ def admin_product_test_funnel(
     control = _funnel_arm_counts(db, row, ctl)
     challenger = _funnel_arm_counts(db, row, chl)
     lift = None
+    timer_lift = None
     if control["cohort"] and challenger["cohort"]:
         lift = round(
             challenger["completed_rate_pct_of_cohort"] - control["completed_rate_pct_of_cohort"],
+            2,
+        )
+        timer_lift = round(
+            challenger["first_timer_rate_pct_of_cohort"] - control["first_timer_rate_pct_of_cohort"],
             2,
         )
     return {
@@ -8395,11 +8413,13 @@ def admin_product_test_funnel(
             "started_at": row.started_at.isoformat() if row.started_at else None,
             "ended_at": row.ended_at.isoformat() if row.ended_at else None,
             "note": "Cohort = users with onboarding_ab_variant matching an arm; "
-            "optional filter: account created_at within started_at/ended_at.",
+            "optional filter: account created_at within started_at/ended_at. "
+            "First timer session = user has completed at least one timer run (total_sessions ≥ 1).",
         },
         "control": control,
         "challenger": challenger,
         "completion_rate_lift_challenger_minus_control_pp": lift,
+        "first_timer_rate_lift_challenger_minus_control_pp": timer_lift,
     }
 
 

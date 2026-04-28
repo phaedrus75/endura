@@ -174,7 +174,7 @@ class TestAdminProductTests:
         t_start = datetime.utcnow() - timedelta(days=14)
         t_end = datetime.utcnow() + timedelta(days=1)
 
-        def _user(email: str, variant: str, *, username: bool, completed: bool):
+        def _user(email: str, variant: str, *, username: bool, completed: bool, first_timer: bool = False):
             uname = ("user_" + email.split("@")[0]) if username else None
             u = make_user(db, email, "password123", uname, verified=True)
             u.onboarding_ab_variant = variant
@@ -185,12 +185,13 @@ class TestAdminProductTests:
                 u.username = None
                 u.username_set_at = None
             u.onboarding_completed_at = datetime.utcnow() if completed else None
+            u.total_sessions = 1 if first_timer else 0
             db.commit()
             return u
 
-        _user("fa@test.com", "v1", username=True, completed=True)
+        _user("fa@test.com", "v1", username=True, completed=True, first_timer=True)
         _user("fb@test.com", "v1", username=True, completed=False)
-        _user("fc@test.com", "v2", username=True, completed=True)
+        _user("fc@test.com", "v2", username=True, completed=True, first_timer=True)
         _user("fd@test.com", "v2", username=False, completed=False)
 
         create = client.post(
@@ -219,8 +220,11 @@ class TestAdminProductTests:
         assert data["control"]["cohort"] == 2
         assert data["control"]["username_set"] == 2
         assert data["control"]["onboarding_completed"] == 1
+        assert data["control"]["first_timer_session"] == 1
         assert data["challenger"]["cohort"] == 2
         assert data["challenger"]["onboarding_completed"] == 1
+        assert data["challenger"]["first_timer_session"] == 1
+        assert data["first_timer_rate_lift_challenger_minus_control_pp"] == 0.0
 
         other = client.post(
             "/admin/product-tests",
