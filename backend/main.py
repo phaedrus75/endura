@@ -468,14 +468,65 @@ def health(db: Session = Depends(get_db)):
 
 # ── Resend Webhook (open/click tracking) ─────────────────────────
 
+def _apply_resend_webhook_event(
+    db: Session,
+    *,
+    event_type: str,
+    event_data: dict,
+    email_id: str,
+) -> None:
+    """Apply one Resend event to ORM state. Caller must commit (and retry on transient DB errors)."""
+    log = db.query(models.EmailLog).filter(models.EmailLog.resend_message_id == email_id).first()
+    now = datetime.utcnow()
+
+    if event_type == "email.delivered":
+        if log:
+            log.delivered = True
+    elif event_type == "email.opened":
+        if log:
+            log.opened = True
+            if not log.opened_at:
+                log.opened_at = now
+    elif event_type == "email.clicked":
+        if log:
+            log.clicked = True
+            if not log.clicked_at:
+                log.clicked_at = now
+    elif event_type in ("email.bounced", "email.complained"):
+        # Mark the log row and suppress future sends to this address.
+        if log:
+            if event_type == "email.bounced":
+                log.bounced = True
+            else:
+                log.complained = True
+        # Suppress: archive users with this address so the cron never emails them again.
+        to_addrs = event_data.get("to", [])
+        if isinstance(to_addrs, str):
+            to_addrs = [to_addrs]
+        for addr in to_addrs:
+            addr = addr.strip().lower()
+            if addr:
+                logger.warning(f"Resend {event_type}: suppressing {addr}")
+                db.query(models.User).filter(func.lower(models.User.email) == addr).update(
+                    {"is_archived": True}, synchronize_session=False
+                )
+
+
 @app.post("/webhooks/resend")
-async def resend_webhook(request: Request, db: Session = Depends(get_db)):
+async def resend_webhook(request: Request):
     """Receive Resend webhook events for email delivery, open, click, bounce, and complaint tracking.
 
     Resend signs every webhook payload using Svix. When RESEND_WEBHOOK_SECRET is
     set, the signature is verified and any tampered/replayed payload returns 400.
     In development (no secret set) verification is skipped so local testing works.
+
+    Uses a short-lived DB session with retries: Railway internal DNS (`*.railway.internal`)
+    can briefly fail; returning 503 lets Resend redeliver the webhook.
     """
+    from sqlalchemy.exc import OperationalError
+    from database import SessionLocal
+    import time
+
     webhook_secret = os.getenv("RESEND_WEBHOOK_SECRET", "")
     body = await request.body()
 
@@ -502,47 +553,39 @@ async def resend_webhook(request: Request, db: Session = Depends(get_db)):
     if not email_id:
         return {"ok": True}
 
-    log = db.query(models.EmailLog).filter(models.EmailLog.resend_message_id == email_id).first()
+    last_err: Optional[Exception] = None
+    for attempt in range(3):
+        db = SessionLocal()
+        try:
+            _apply_resend_webhook_event(
+                db, event_type=event_type, event_data=event_data, email_id=email_id
+            )
+            db.commit()
+            return {"ok": True}
+        except OperationalError as e:
+            last_err = e
+            try:
+                db.rollback()
+            except Exception:
+                pass
+            logger.warning(
+                "Resend webhook DB OperationalError (attempt %s/3): %s",
+                attempt + 1,
+                e,
+            )
+        except Exception:
+            try:
+                db.rollback()
+            except Exception:
+                pass
+            raise
+        finally:
+            db.close()
+        if attempt < 2:
+            time.sleep(0.25 * (2 ** attempt))
 
-    now = datetime.utcnow()
-
-    if event_type == "email.delivered":
-        if log:
-            log.delivered = True
-    elif event_type == "email.opened":
-        if log:
-            log.opened = True
-            if not log.opened_at:
-                log.opened_at = now
-    elif event_type == "email.clicked":
-        if log:
-            log.clicked = True
-            if not log.clicked_at:
-                log.clicked_at = now
-    elif event_type in ("email.bounced", "email.complained"):
-        # Mark the log row and suppress future sends to this address.
-        if log:
-            if event_type == "email.bounced":
-                log.bounced = True
-            else:
-                log.complained = True
-        # Suppress: clear the email from all users with this address so the
-        # cron never tries to send to them again.
-        to_addrs = event_data.get("to", [])
-        if isinstance(to_addrs, str):
-            to_addrs = [to_addrs]
-        for addr in to_addrs:
-            addr = addr.strip().lower()
-            if addr:
-                logger.warning(f"Resend {event_type}: suppressing {addr}")
-                (db.query(models.User)
-                   .filter(func.lower(models.User.email) == addr)
-                   .update({"is_archived": True}, synchronize_session=False))
-
-    if log:
-        db.commit()
-
-    return {"ok": True}
+    logger.error("Resend webhook: DB unavailable after retries: %s", last_err)
+    raise HTTPException(status_code=503, detail="Database temporarily unavailable")
 
 
 # ============ Startup: Seed Animals ============
