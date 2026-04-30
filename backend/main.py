@@ -3583,6 +3583,51 @@ def public_geography(db: Session = Depends(get_db)):
     }
 
 
+def _env_str(name: str) -> Optional[str]:
+    raw = os.getenv(name)
+    if raw is None:
+        return None
+    s = str(raw).strip()
+    return s or None
+
+
+def _env_int_optional(name: str) -> Optional[int]:
+    raw = _env_str(name)
+    if raw is None:
+        return None
+    try:
+        return int(raw)
+    except ValueError:
+        return None
+
+
+@app.get("/public/client-config")
+def public_client_config():
+    """
+    Public mobile client flags (no auth). Used on app launch to require a
+    minimum store build — set via Railway env when you need everyone on a
+    newer binary (MOBILE_MIN_IOS_VERSION / MOBILE_MIN_IOS_BUILD, etc.).
+    """
+    ios_store_id = _env_str("MOBILE_IOS_APP_STORE_ID") or "6759482612"
+    default_ios_url = f"https://apps.apple.com/app/id{ios_store_id}"
+    default_android_url = (
+        "https://play.google.com/store/apps/details?id=com.endura.study"
+    )
+    return {
+        "ios": {
+            "min_version": _env_str("MOBILE_MIN_IOS_VERSION"),
+            "min_build": _env_int_optional("MOBILE_MIN_IOS_BUILD"),
+        },
+        "android": {
+            "min_version": _env_str("MOBILE_MIN_ANDROID_VERSION"),
+            "min_version_code": _env_int_optional("MOBILE_MIN_ANDROID_VERSION_CODE"),
+        },
+        "update_message": _env_str("MOBILE_UPDATE_MESSAGE"),
+        "ios_store_url": _env_str("MOBILE_IOS_STORE_URL") or default_ios_url,
+        "android_store_url": _env_str("MOBILE_ANDROID_STORE_URL") or default_android_url,
+    }
+
+
 @app.get("/admin/geography")
 def admin_geography(db: Session = Depends(get_db), _=Depends(verify_admin)):
     country_rows = (
@@ -8361,11 +8406,19 @@ def _product_test_onboarding_funnel_supported(test: models.ProductTest) -> bool:
 def _funnel_arm_counts(db: Session, test: models.ProductTest, variant: str) -> dict:
     filters = [
         models.User.onboarding_ab_variant == variant,
+        models.User.is_archived == False,
     ]
-    if test.started_at:
-        filters.append(models.User.created_at >= test.started_at)
-    if test.ended_at:
-        filters.append(models.User.created_at <= test.ended_at)
+    # Onboarding A/B arms are synced when users open a capable app build — often
+    # long after account creation. Filtering cohort by created_at inside
+    # started_at/ended_at therefore produced all-zero funnels the moment an
+    # admin set status=running (started_at := now). For onboarding_ab tests,
+    # cohort = everyone with that sticky variant (still excluding archived via
+    # no filter here; add if needed).
+    if not _product_test_onboarding_funnel_supported(test):
+        if test.started_at:
+            filters.append(models.User.created_at >= test.started_at)
+        if test.ended_at:
+            filters.append(models.User.created_at <= test.ended_at)
     andf = and_(*filters)
     cohort = db.query(func.count(models.User.id)).filter(andf).scalar() or 0
     with_username = (
@@ -8412,8 +8465,9 @@ def admin_product_test_funnel(
 ):
     """
     Onboarding A/B funnel by arm, using sticky users.onboarding_ab_variant.
-    Cohort is filtered by user.created_at within the test started_at/ended_at
-    window when those are set (proxy for signups during the experiment).
+    Cohort is all users whose onboarding_ab_variant matches an arm (signup-date
+    window is not applied — see _funnel_arm_counts). started_at/ended_at on the
+    test row are still returned for documentation / future use.
     "First timer session" counts users with total_sessions >= 1 (a session row
     is written when they complete a timer run — closest server proxy to
     successful timer use after onboarding).
@@ -8455,9 +8509,9 @@ def admin_product_test_funnel(
         "window": {
             "started_at": row.started_at.isoformat() if row.started_at else None,
             "ended_at": row.ended_at.isoformat() if row.ended_at else None,
-            "note": "Cohort = users with onboarding_ab_variant matching an arm; "
-            "optional filter: account created_at within started_at/ended_at. "
-            "First timer session = user has completed at least one timer run (total_sessions ≥ 1).",
+            "note": "Cohort = all users with onboarding_ab_variant matching control or challenger "
+            "(not restricted by account signup date — arms sync when users adopt the new app). "
+            "First timer session = total_sessions ≥ 1.",
         },
         "control": control,
         "challenger": challenger,

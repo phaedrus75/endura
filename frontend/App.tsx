@@ -5,6 +5,7 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { View, StyleSheet, ActivityIndicator, Platform, Animated } from 'react-native';
 import { Text } from './components/StyledText';
+import Constants from 'expo-constants';
 import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
@@ -45,8 +46,20 @@ import ProfileScreen from './screens/ProfileScreen';
 import ShopScreen from './screens/ShopScreen';
 import TakeActionScreen from './screens/TakeActionScreen';
 import ReactionOverlay from './components/ReactionOverlay';
+import ForceUpdateScreen from './components/ForceUpdateScreen';
+import {
+  fetchClientConfig,
+  shouldForceStoreUpdate,
+  type ClientConfigPayload,
+} from './services/clientConfig';
 
 const ONBOARDING_AB_VARIANT_KEY = 'onboardingABVariant';
+
+function skipStoreVersionGate(): boolean {
+  if (__DEV__) return true;
+  if (Constants.appOwnership === 'expo') return true;
+  return false;
+}
 
 const Stack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
@@ -314,6 +327,8 @@ function App() {
     DMSans_700Bold,
     DMSans_800ExtraBold,
   });
+  const [storeGate, setStoreGate] = useState<'pending' | 'ok' | 'force'>('pending');
+  const [storeGateConfig, setStoreGateConfig] = useState<ClientConfigPayload | null>(null);
 
   // Wire up notification tap → deep link routing once the navigation tree is
   // mounted. Cleanup on unmount keeps hot-reload sane in dev.
@@ -322,12 +337,43 @@ function App() {
     return () => unsubscribe();
   }, []);
 
-  if (!fontsLoaded) {
+  useEffect(() => {
+    if (!fontsLoaded) return;
+    if (skipStoreVersionGate()) {
+      setStoreGate('ok');
+      return;
+    }
+    let alive = true;
+    (async () => {
+      try {
+        const cfg = await fetchClientConfig();
+        if (!alive) return;
+        if (shouldForceStoreUpdate(cfg)) {
+          setStoreGateConfig(cfg);
+          setStoreGate('force');
+        } else {
+          setStoreGate('ok');
+        }
+      } catch {
+        if (!alive) return;
+        setStoreGate('ok');
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [fontsLoaded]);
+
+  if (!fontsLoaded || storeGate === 'pending') {
     return (
       <View style={styles.loadingContainer}>
         <ActivityIndicator size="large" color={colors.primary} />
       </View>
     );
+  }
+
+  if (storeGate === 'force' && storeGateConfig) {
+    return <ForceUpdateScreen config={storeGateConfig} />;
   }
 
   return (

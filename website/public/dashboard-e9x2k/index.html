@@ -1247,7 +1247,7 @@
                 </div>
                 <p style="color:var(--text-muted);font-size:13px;margin-top:0">
                     <strong style="color:var(--text)">Where to see funnel results:</strong> stay on this <strong>Tests</strong> page, scroll <em>below</em> the green “Run Tests” regression section, then <strong>click a product test row</strong> (the name bar) to expand it — the funnel loads at the top of the panel.
-                    <code>feature_key</code> must include <code>onboarding_ab</code> for the server funnel: cohort → username set → onboarding complete → <strong>first timer session</strong> (≥1 completed run logged; server records a session when a timer finishes). Otherwise you’ll see a short note and can still use PostHog link if set.
+                    <code>feature_key</code> must include <code>onboarding_ab</code> for the server funnel: cohort → username set → onboarding complete → <strong>first timer session</strong> (≥1 completed run logged; server records a session when a timer finishes). Cohort = every user with a synced <code>v1</code>/<code>v2</code> arm (not limited to signups after you click “running”). Add a PostHog insight URL below to show a link above the funnel.
                 </p>
                 <div style="display:grid;grid-template-columns:2fr 1.4fr 1fr 1fr auto;gap:8px;margin-bottom:8px">
                     <input id="ptNewName" type="text" placeholder="Test name (e.g. Onboarding v1 vs v2)" style="padding:9px 12px;border:1px solid var(--border);border-radius:8px;font-size:13px">
@@ -1256,7 +1256,8 @@
                     <input id="ptNewChallenger" type="text" value="v2" placeholder="challenger label" style="padding:9px 12px;border:1px solid var(--border);border-radius:8px;font-size:13px">
                     <button onclick="createProductTest()" style="padding:9px 14px;background:var(--forest);color:#fff;border:none;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer">Create</button>
                 </div>
-                <textarea id="ptNewHypothesis" rows="2" placeholder="Hypothesis (optional)" style="width:100%;padding:9px 12px;border:1px solid var(--border);border-radius:8px;font-size:13px;margin-bottom:10px;resize:vertical"></textarea>
+                <textarea id="ptNewHypothesis" rows="2" placeholder="Hypothesis (optional)" style="width:100%;padding:9px 12px;border:1px solid var(--border);border-radius:8px;font-size:13px;margin-bottom:8px;resize:vertical"></textarea>
+                <input id="ptNewPosthogUrl" type="url" inputmode="url" placeholder="PostHog insight URL (optional, e.g. saved chart link)" style="width:100%;padding:9px 12px;border:1px solid var(--border);border-radius:8px;font-size:13px;margin-bottom:10px" />
                 <div id="productTestsList" style="display:grid;gap:10px"></div>
             </div>
 
@@ -4969,6 +4970,7 @@ async function createProductTest() {
     const control = document.getElementById('ptNewControl').value.trim() || 'v1';
     const challenger = document.getElementById('ptNewChallenger').value.trim() || 'v2';
     const hypothesis = document.getElementById('ptNewHypothesis').value.trim();
+    const posthog_insight_url = document.getElementById('ptNewPosthogUrl').value.trim();
     if (!name || !featureKey) {
         alert('Name and feature_key are required');
         return;
@@ -4983,6 +4985,7 @@ async function createProductTest() {
                 control_label: control,
                 challenger_label: challenger,
                 hypothesis: hypothesis || null,
+                posthog_insight_url: posthog_insight_url || null,
             }),
         }).then(async (res) => {
             if (!res.ok) {
@@ -4994,6 +4997,7 @@ async function createProductTest() {
         document.getElementById('ptNewName').value = '';
         document.getElementById('ptNewFeatureKey').value = '';
         document.getElementById('ptNewHypothesis').value = '';
+        document.getElementById('ptNewPosthogUrl').value = '';
         loadProductTests();
     } catch (e) {
         alert('Create failed: ' + (e.message || e));
@@ -5034,6 +5038,10 @@ function renderProductTests() {
                     </div>
                 </summary>
                 <div style="margin-top:10px">
+                    <div style="margin-bottom:10px">
+                        <label style="font-size:11px;font-weight:600;color:var(--text-muted);display:block;margin-bottom:4px">PostHog insight URL</label>
+                        <input id="ptPh_${t.id}" type="url" inputmode="url" placeholder="https://…" value="${escHtml(t.posthog_insight_url || '')}" style="width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:8px;font-size:12px" />
+                    </div>
                     <div id="ptFunnelWrap_${t.id}" style="margin-bottom:12px"></div>
                     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:8px;margin-bottom:10px">
                         <div style="font-size:12px;color:var(--text-muted)">Sample (control): <strong style="color:var(--text)">${sampleC}</strong></div>
@@ -5087,6 +5095,8 @@ function _numOrNull(v) {
 }
 
 async function saveProductTest(id) {
+    const phEl = document.getElementById(`ptPh_${id}`);
+    const phVal = phEl ? phEl.value.trim() : '';
     const payload = {
         status: document.getElementById(`ptStatus_${id}`).value || undefined,
         winner: document.getElementById(`ptWinner_${id}`).value || null,
@@ -5094,6 +5104,7 @@ async function saveProductTest(id) {
         sample_challenger: _numOrNull(document.getElementById(`ptMetricSV_${id}`).value),
         conversion_control: _numOrNull(document.getElementById(`ptMetricCC_${id}`).value),
         conversion_challenger: _numOrNull(document.getElementById(`ptMetricCV_${id}`).value),
+        posthog_insight_url: phVal || null,
         note: document.getElementById(`ptNote_${id}`).value.trim() || undefined,
     };
     try {

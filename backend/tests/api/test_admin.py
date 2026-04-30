@@ -237,6 +237,41 @@ class TestAdminProductTests:
         assert nf.status_code == 200
         assert nf.json()["supported"] is False
 
+    def test_onboarding_funnel_includes_accounts_created_before_running(self, client, db):
+        """Flipping status to running sets started_at=now; cohort must still include older signups with a synced arm."""
+        from datetime import datetime, timedelta
+
+        old = datetime.utcnow() - timedelta(days=500)
+        u = make_user(db, "oldcohort@test.com", "password123", "oldcohort", verified=True)
+        u.onboarding_ab_variant = "v2"
+        u.created_at = old
+        u.username_set_at = datetime.utcnow()
+        u.onboarding_completed_at = datetime.utcnow()
+        u.total_sessions = 1
+        db.commit()
+
+        create = client.post(
+            "/admin/product-tests",
+            json={"name": "Onboarding window bug", "feature_key": "onboarding_ab_window"},
+            headers=admin_headers(),
+        )
+        assert create.status_code == 200
+        tid = create.json()["id"]
+        patch = client.patch(
+            f"/admin/product-tests/{tid}",
+            json={"status": "running"},
+            headers=admin_headers(),
+        )
+        assert patch.status_code == 200
+        assert patch.json().get("started_at") is not None
+
+        funnel = client.get(f"/admin/product-tests/{tid}/funnel", headers=admin_headers())
+        assert funnel.status_code == 200
+        data = funnel.json()
+        assert data["supported"] is True
+        assert data["challenger"]["cohort"] >= 1
+        assert data["challenger"]["first_timer_session"] >= 1
+
 
 class TestAdminAuthRequired:
     """Spot-check that ALL admin routes require the key."""
