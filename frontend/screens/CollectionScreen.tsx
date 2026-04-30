@@ -280,6 +280,15 @@ const getShopImage = (instanceId: string): any => {
   return SHOP_IMAGES[getBaseItemId(instanceId)];
 };
 
+/** Bundled PNG first; then API `image_url` when names drift from asset keys. */
+function resolveAnimalImageSource(userAnimal: UserAnimal): ImageSourcePropType | null {
+  const bundled = getAnimalImage(userAnimal.animal.name);
+  if (bundled) return bundled;
+  const url = userAnimal.animal.image_url?.trim();
+  if (url) return { uri: url };
+  return null;
+}
+
 const SHOP_IMAGES: Record<string, any> = {
   acc_tophat: require('../assets/shop/accessories/tophat.png'),
   acc_sunnies: require('../assets/shop/accessories/sunnies.png'),
@@ -469,6 +478,7 @@ export default function CollectionScreen() {
     setSanctuaryPage(0);
     await loadPurchases();
     await loadAssignments();
+    await loadData();
     setShowSanctuaryModal(true);
   };
 
@@ -661,7 +671,7 @@ export default function CollectionScreen() {
                   </View>
                   <View style={styles.sanctuaryAnimals}>
                     {myAnimals.slice(0, 6).map((userAnimal, index) => {
-                      const imageSource = getAnimalImage(userAnimal.animal.name);
+                      const imageSource = resolveAnimalImageSource(userAnimal);
                       const pos = previewPositions[index];
                       return (
                         <View
@@ -744,7 +754,7 @@ export default function CollectionScreen() {
         ) : (
           <View style={styles.grid}>
             {groupedAnimals.map(({ userAnimal, count }) => {
-              const imageSource = getAnimalImage(userAnimal.animal.name);
+              const imageSource = resolveAnimalImageSource(userAnimal);
               return (
                 <TouchableOpacity
                   key={userAnimal.animal.id}
@@ -809,17 +819,16 @@ export default function CollectionScreen() {
                   </View>
                   
                   <View style={styles.modalAnimalContainer}>
-                    {getAnimalImage(selectedAnimal.animal.name) ? (
-                      <Image 
-                        source={getAnimalImage(selectedAnimal.animal.name)} 
-                        style={styles.modalImage}
-                        resizeMode="contain"
-                      />
-                    ) : (
-                      <Text style={styles.modalEmoji}>
-                        {animalEmojis[selectedAnimal.animal.name] || '🦁'}
-                      </Text>
-                    )}
+                    {(() => {
+                      const src = resolveAnimalImageSource(selectedAnimal);
+                      return src ? (
+                        <Image source={src} style={styles.modalImage} resizeMode="contain" />
+                      ) : (
+                        <Text style={styles.modalEmoji}>
+                          {animalEmojis[selectedAnimal.animal.name] || '🦁'}
+                        </Text>
+                      );
+                    })()}
                   </View>
                   
                   <Text style={styles.modalTitle}>
@@ -910,7 +919,7 @@ export default function CollectionScreen() {
       {/* Full Sanctuary Modal */}
       <Modal visible={showSanctuaryModal} transparent animationType="fade">
         <TouchableOpacity style={styles.sanctuaryModalOverlay} activeOpacity={1} onPress={() => setShowSanctuaryModal(false)}>
-          <TouchableOpacity activeOpacity={1} style={styles.sanctuaryModalContent}>
+          <View style={styles.sanctuaryModalContent} onStartShouldSetResponder={() => true}>
             {/* Header */}
             <View
               style={[styles.sanctuaryModalHeader, { backgroundColor: '#FFFFFF' }]}
@@ -978,7 +987,7 @@ export default function CollectionScreen() {
                           {(() => {
                             const positions = generatePositions(currentPageAnimals.length, modalW, sceneH);
                             return currentPageAnimals.map((userAnimal, index) => {
-                              const imageSource = getAnimalImage(userAnimal.animal.name);
+                              const imageSource = resolveAnimalImageSource(userAnimal);
                               const pos = positions[index];
                               return (
                                 <View
@@ -1133,7 +1142,7 @@ export default function CollectionScreen() {
                 </LinearGradient>
               </TouchableOpacity>
             </View>
-          </TouchableOpacity>
+          </View>
         </TouchableOpacity>
       </Modal>
 
@@ -1160,7 +1169,7 @@ export default function CollectionScreen() {
             </Text>
             <ScrollView contentContainerStyle={{ padding: spacing.lg, paddingTop: 0 }}>
               {instancePickerAnimals.map((ua, idx) => {
-                const img = getAnimalImage(ua.animal.name);
+                const img = resolveAnimalImageSource(ua);
                 return (
                   <TouchableOpacity
                     key={ua.id}
@@ -1530,6 +1539,9 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
+    zIndex: 0,
+    overflow: 'hidden',
+    pointerEvents: 'none',
   },
   sanctuaryModalLottie: {
     width: '100%',
@@ -1537,6 +1549,7 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: '-70%' as any,
     left: 0,
+    zIndex: 0,
   },
   sanctuaryModalCloud1: {
     position: 'absolute',
@@ -1565,10 +1578,14 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
+    zIndex: 2,
+    elevation: 4,
+    pointerEvents: 'box-none',
   },
   sanctuaryModalAnimal: {
     position: 'absolute',
     alignItems: 'center',
+    zIndex: 2,
   },
   sanctuaryModalAnimalImg: {
     width: 74,
@@ -1598,6 +1615,7 @@ const styles = StyleSheet.create({
     right: 0,
     height: 8,
     backgroundColor: 'rgba(76, 145, 80, 0.12)',
+    zIndex: 3,
   },
   decorationRow: {
     position: 'absolute',

@@ -48,7 +48,7 @@ const TYPES: { id: FeedbackType; label: string; emoji: string; placeholder: stri
   { id: 'bug', label: 'Bug', emoji: '🐛', placeholder: "What's broken? Steps to reproduce help us fix it faster." },
   { id: 'feature', label: 'Idea', emoji: '💡', placeholder: 'What would make Endura better for you?' },
   { id: 'question', label: 'Question', emoji: '❓', placeholder: 'Ask us anything — we read everything.' },
-  { id: 'praise', label: 'Love', emoji: '💚', placeholder: 'Tell us what you love so we keep doing more of it.' },
+  { id: 'praise', label: 'Love', emoji: '🩷', placeholder: 'Tell us what you love so we keep doing more of it.' },
 ];
 
 type FeedbackView = 'inbox' | 'thread' | 'compose';
@@ -341,9 +341,15 @@ export default function FeedbackModal({ visible, onClose, screenContext, initial
                     style={[styles.typeChip, selected && styles.typeChipActive]}
                     onPress={() => setType(t.id)}
                     accessibilityState={{ selected }}
+                    accessibilityLabel={`${t.label}: ${t.emoji}`}
                   >
                     <Text style={styles.typeEmoji}>{t.emoji}</Text>
-                    <Text style={[styles.typeLabel, selected && styles.typeLabelActive]}>
+                    <Text
+                      style={[styles.typeLabel, selected && styles.typeLabelActive]}
+                      numberOfLines={1}
+                      adjustsFontSizeToFit
+                      minimumFontScale={0.85}
+                    >
                       {t.label}
                     </Text>
                   </TouchableOpacity>
@@ -606,15 +612,18 @@ const styles = StyleSheet.create({
   },
   typeRow: {
     flexDirection: 'row',
+    flexWrap: 'nowrap',
     gap: 8,
   },
   typeChip: {
     flex: 1,
-    flexDirection: 'row',
+    flexDirection: 'column',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 6,
-    paddingVertical: 12,
+    gap: 4,
+    paddingVertical: 10,
+    paddingHorizontal: 2,
+    minWidth: 0,
     borderRadius: 14,
     backgroundColor: '#F2F6F3',
     borderWidth: 1,
@@ -624,11 +633,18 @@ const styles = StyleSheet.create({
     backgroundColor: '#E1F0E5',
     borderColor: '#6B9B9B',
   },
-  typeEmoji: { fontSize: 18 },
+  typeEmoji: {
+    fontSize: 20,
+    lineHeight: 24,
+    textAlign: 'center',
+    includeFontPadding: false,
+  },
   typeLabel: {
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: '600',
     color: '#5A6B65',
+    textAlign: 'center',
+    width: '100%',
   },
   typeLabelActive: {
     color: '#2D3B36',

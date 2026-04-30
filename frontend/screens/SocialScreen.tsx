@@ -941,6 +941,9 @@ export default function SocialScreen() {
     <View style={styles.tabContent}>
       {/* Activity Feed */}
       <Text style={styles.feedSectionTitle}>📣 Friend Activity</Text>
+      <Text style={styles.feedSectionSubtitle}>
+        When you react to a hatch, your friend gets a notification so they know you’re cheering them on.
+      </Text>
       {hatchFeed.length === 0 ? (
         <View style={styles.emptyState}>
           <Text style={styles.emptyIcon}>🐣</Text>
@@ -2688,7 +2691,13 @@ const styles = StyleSheet.create({
   leaderboardMins: { fontSize: 13, fontWeight: '700', color: colors.textSecondary, width: 55, textAlign: 'right' },
 
   // Feed
-  feedSectionTitle: { fontSize: 15, fontWeight: '700', color: colors.textPrimary, marginBottom: spacing.sm },
+  feedSectionTitle: { fontSize: 15, fontWeight: '700', color: colors.textPrimary, marginBottom: 4 },
+  feedSectionSubtitle: {
+    fontSize: 12,
+    color: colors.textMuted,
+    lineHeight: 17,
+    marginBottom: spacing.sm,
+  },
   feedCard: {
     backgroundColor: colors.surface, borderRadius: borderRadius.lg,
     padding: spacing.md, marginBottom: spacing.sm, ...shadows.small,
