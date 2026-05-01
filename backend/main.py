@@ -24,6 +24,7 @@ import re
 import html
 import json as _json
 import logging
+import time
 import httpx
 from content_filter import contains_profanity
 
@@ -5641,23 +5642,117 @@ class PostHogQueryBody(BaseModel):
     query: str = Field(..., min_length=1, max_length=20000)
 
 
+# In-process TTL cache for the PostHog HogQL proxy.
+#
+# Why: every dashboard tab refresh fires 6+ HogQL queries; on PostHog's free
+# tier those occasionally timeout (504) which previously bubbled up as a
+# Sentry "Error" event because we raised HTTPException(502) → logged at
+# ERROR. Caching identical query text for ~5 min drastically cuts the call
+# volume, and the timeout handling below downgrades the failure mode.
+#
+# Cache is keyed on (query text, project_id) and stores either a successful
+# JSON payload or a "soft" failure marker. Successful payloads stay for
+# `_PH_CACHE_OK_TTL`; failures stay for a much shorter window so a transient
+# PostHog hiccup doesn't poison the dashboard for 5 minutes.
+_PH_CACHE_OK_TTL = 300.0   # seconds
+_PH_CACHE_FAIL_TTL = 30.0  # seconds
+_PH_CACHE_MAX_ENTRIES = 256
+_ph_query_cache: dict[tuple[str, int], tuple[float, dict]] = {}
+
+
+def _ph_cache_evict() -> None:
+    """Drop expired entries + cap the cache size. Called opportunistically."""
+    now = time.time()
+    expired = [k for k, (exp, _) in _ph_query_cache.items() if exp < now]
+    for k in expired:
+        _ph_query_cache.pop(k, None)
+    # Hard cap — drop the oldest entries if we somehow blew past the budget.
+    if len(_ph_query_cache) > _PH_CACHE_MAX_ENTRIES:
+        oldest = sorted(_ph_query_cache.items(), key=lambda kv: kv[1][0])[
+            : len(_ph_query_cache) - _PH_CACHE_MAX_ENTRIES
+        ]
+        for k, _ in oldest:
+            _ph_query_cache.pop(k, None)
+
+
 @app.post("/admin/posthog/query")
 async def admin_posthog_query(
     body: PostHogQueryBody,
     _=Depends(verify_admin),
 ):
-    """Proxy a HogQL query to PostHog. Key stays on the server."""
+    """Proxy a HogQL query to PostHog. Key stays on the server.
+
+    Responses are cached for ~5 minutes per identical query text so that
+    repeated dashboard refreshes don't repeatedly hammer PostHog (which
+    has a server-side execution-time cap and will 504 on heavy queries).
+
+    Upstream timeouts are returned as `{"error": "...", "timeout": true}`
+    with HTTP 200 so the dashboard can degrade gracefully rather than
+    blowing up — and so we don't log a Sentry "Error" for an upstream
+    rate-limit issue we can't fix from the backend.
+    """
     state = await _posthog_ensure_project()
     key = _posthog_key()
-    async with httpx.AsyncClient(timeout=30.0) as client:
-        r = await client.post(
-            f"{_POSTHOG_HOST}/api/projects/{state['project_id']}/query/",
-            headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
-            json={"query": {"kind": "HogQLQuery", "query": body.query}},
-        )
-        if r.status_code >= 400:
-            raise HTTPException(status_code=502, detail=f"PostHog query {r.status_code}: {r.text[:400]}")
-        return r.json()
+    cache_key = (body.query, int(state["project_id"]))
+
+    cached = _ph_query_cache.get(cache_key)
+    if cached and cached[0] > time.time():
+        return cached[1]
+
+    timeout_detail: str | None = None
+    try:
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            r = await client.post(
+                f"{_POSTHOG_HOST}/api/projects/{state['project_id']}/query/",
+                headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
+                json={"query": {"kind": "HogQLQuery", "query": body.query}},
+            )
+    except (httpx.ReadTimeout, httpx.ConnectTimeout, httpx.PoolTimeout) as e:
+        timeout_detail = f"PostHog request timed out at the proxy after 60s: {e.__class__.__name__}"
+    else:
+        if r.status_code == 504:
+            timeout_detail = (
+                f"PostHog 504: {r.text[:300]}".strip()
+                or "PostHog 504 with empty body"
+            )
+        elif r.status_code >= 400:
+            # Genuine 4xx/5xx (auth, schema, etc.) — still a real failure.
+            # Cache for a short window so the dashboard doesn't retry every
+            # paint, but log at WARNING (not ERROR) so Sentry doesn't fire.
+            err_payload = {
+                "error": f"PostHog {r.status_code}: {r.text[:400]}",
+                "status": r.status_code,
+                "timeout": False,
+            }
+            _ph_query_cache[cache_key] = (time.time() + _PH_CACHE_FAIL_TTL, err_payload)
+            _ph_cache_evict()
+            logger.warning(
+                f"PostHog HogQL query failed status={r.status_code} "
+                f"detail={r.text[:200]} query={body.query[:120]}"
+            )
+            raise HTTPException(status_code=502, detail=err_payload["error"])
+        else:
+            payload = r.json()
+            _ph_query_cache[cache_key] = (time.time() + _PH_CACHE_OK_TTL, payload)
+            _ph_cache_evict()
+            return payload
+
+    # Reached here only on a timeout (proxy or PostHog-side 504).
+    # Return a soft-fail payload at HTTP 200 so the client can render
+    # "—" for that KPI and keep going, and log at WARNING so we keep
+    # visibility without setting off Sentry alerts.
+    soft = {
+        "error": timeout_detail,
+        "timeout": True,
+        "results": [],
+    }
+    _ph_query_cache[cache_key] = (time.time() + _PH_CACHE_FAIL_TTL, soft)
+    _ph_cache_evict()
+    logger.warning(
+        f"PostHog HogQL query timed out — returning empty result. "
+        f"query={body.query[:200]}"
+    )
+    return soft
 
 
 @app.post("/admin/tips/backfill-views")

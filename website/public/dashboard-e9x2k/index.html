@@ -4673,6 +4673,9 @@ async function phQuery(sql) {
         try { const j = await res.json(); detail = j.detail || JSON.stringify(j); } catch (_) {}
         throw new Error(detail ? `${res.status}: ${detail}` : 'PostHog query failed: ' + res.status);
     }
+    // The backend now returns a soft-fail JSON `{ timeout: true, results: [] }`
+    // on PostHog 504s instead of bubbling them up as 502s. Callers can check
+    // `.timeout` on the result and degrade gracefully.
     return res.json();
 }
 
@@ -4698,27 +4701,48 @@ async function loadPostHogData() {
         const day30 = new Date(now); day30.setDate(day30.getDate() - 30);
         const fmt = d => d.toISOString().split('T')[0];
 
-        // Parallel queries
-        const [eventsToday, events7d, events30d, topEvents, recentEvents, persons] = await Promise.all([
+        // Use settled (not all) so a single PostHog timeout doesn't blank the panel.
+        // Identified-user count comes from `events` (cheap, time-bounded) instead
+        // of `SELECT count() FROM persons`, which scans the whole persons table
+        // and routinely hits PostHog's max execution time on free-tier projects.
+        const settled = await Promise.allSettled([
             phQuery(`SELECT count() FROM events WHERE timestamp > '${fmt(day1)}'`),
             phQuery(`SELECT count() FROM events WHERE timestamp > '${fmt(day7)}'`),
             phQuery(`SELECT count() FROM events WHERE timestamp > '${fmt(day30)}'`),
             phQuery(`SELECT event, count() as cnt FROM events WHERE timestamp > '${fmt(day7)}' AND event NOT LIKE '$%' GROUP BY event ORDER BY cnt DESC LIMIT 15`),
             phQuery(`SELECT timestamp, event, distinct_id, properties FROM events WHERE event NOT LIKE '$%' ORDER BY timestamp DESC LIMIT 50`),
-            phQuery(`SELECT count() FROM persons`),
+            phQuery(`SELECT count(DISTINCT distinct_id) FROM events WHERE timestamp > '${fmt(day30)}' AND distinct_id NOT IN ('anon','anonymous','')`),
         ]);
+        const pick = i => settled[i].status === 'fulfilled' ? settled[i].value : { __failed: true, error: settled[i].reason && settled[i].reason.message };
+        const eventsToday  = pick(0);
+        const events7d     = pick(1);
+        const events30d    = pick(2);
+        const topEvents    = pick(3);
+        const recentEvents = pick(4);
+        const persons      = pick(5);
 
-        document.getElementById('ph-events-today').textContent = formatNum(extractCount(eventsToday));
-        document.getElementById('ph-events-week').textContent = formatNum(extractCount(events7d));
-        document.getElementById('ph-events-total').textContent = formatNum(extractCount(events30d));
-        document.getElementById('ph-persons').textContent = formatNum(extractCount(persons));
+        document.getElementById('ph-events-today').textContent = displayCount(eventsToday);
+        document.getElementById('ph-events-week').textContent = displayCount(events7d);
+        document.getElementById('ph-events-total').textContent = displayCount(events30d);
+        document.getElementById('ph-persons').textContent = displayCount(persons);
 
-        renderTopEvents(topEvents);
-        renderRecentEvents(recentEvents);
+        if (!topEvents.__failed) renderTopEvents(topEvents);
+        if (!recentEvents.__failed) renderRecentEvents(recentEvents);
 
-        // DAU chart
-        const dauData = await phQuery(`SELECT toDate(timestamp) as day, count(DISTINCT distinct_id) as users FROM events WHERE timestamp > '${fmt(day30)}' GROUP BY day ORDER BY day`);
-        renderDauChart(dauData);
+        // Surface a friendly notice if any of the queries timed out upstream.
+        const timedOut = settled
+            .map((s, i) => ({ s, i }))
+            .filter(({ s }) => s.status === 'fulfilled' && s.value && s.value.timeout);
+        if (timedOut.length) {
+            showPhStatus(`Connected — but ${timedOut.length} PostHog query${timedOut.length > 1 ? 'ies' : ''} timed out (will retry on next refresh).`, 'var(--text-muted)');
+        }
+
+        try {
+            const dauData = await phQuery(`SELECT toDate(timestamp) as day, count(DISTINCT distinct_id) as users FROM events WHERE timestamp > '${fmt(day30)}' GROUP BY day ORDER BY day`);
+            if (!dauData.timeout) renderDauChart(dauData);
+        } catch (e) {
+            console.warn('PostHog DAU chart skipped:', e && e.message);
+        }
 
     } catch (e) {
         console.error('PostHog load failed', e);
@@ -4728,6 +4752,13 @@ async function loadPostHogData() {
 
 function extractCount(result) {
     try { return result.results[0][0]; } catch { return 0; }
+}
+
+// Render '—' for soft-failed / timed-out responses so a single PostHog
+// hiccup doesn't show "0" (which would look like real data).
+function displayCount(result) {
+    if (!result || result.__failed || result.timeout) return '—';
+    return formatNum(extractCount(result));
 }
 
 function formatNum(n) {
