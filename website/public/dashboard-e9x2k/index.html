@@ -446,7 +446,7 @@
             </div>
             <div class="chart-row">
                 <div class="chart-card"><h3><span data-chart-title="signups">Signups</span> <span class="chart-gran-label" style="color:var(--text-muted);font-weight:500">(Daily)</span></h3><canvas id="chartSignups"></canvas></div>
-                <div class="chart-card"><h3><span data-chart-title="dau">Active Users</span> <span class="chart-gran-label" style="color:var(--text-muted);font-weight:500">(Daily)</span></h3><canvas id="chartDAU"></canvas><div style="font-size:11px;color:var(--text-muted);margin-top:6px;line-height:1.5;text-align:center;display:flex;flex-wrap:wrap;justify-content:center;gap:6px 12px"><span><span style="display:inline-block;width:10px;height:10px;background:rgba(59,130,246,.7);border-radius:2px;margin-right:3px;vertical-align:middle"></span>app_opened (PH)</span><span><span style="display:inline-block;width:10px;height:10px;background:rgba(74,124,89,.7);border-radius:2px;margin-right:3px;vertical-align:middle"></span>Session started (DB)</span><span><span style="display:inline-block;width:10px;height:10px;background:rgba(245,158,11,.75);border-radius:2px;margin-right:3px;vertical-align:middle"></span>Any event (PH distinct)</span></div></div>
+                <div class="chart-card"><h3><span data-chart-title="dau">Active Users</span> <span class="chart-gran-label" style="color:var(--text-muted);font-weight:500">(Daily)</span></h3><canvas id="chartDAU"></canvas><div style="font-size:11px;color:var(--text-muted);margin-top:6px;line-height:1.5;text-align:center;display:flex;flex-wrap:wrap;justify-content:center;gap:6px 12px"><span><span style="display:inline-block;width:10px;height:10px;background:rgba(59,130,246,.7);border-radius:2px;margin-right:3px;vertical-align:middle"></span>app_opened (PH)</span><span><span style="display:inline-block;width:10px;height:10px;background:rgba(74,124,89,.7);border-radius:2px;margin-right:3px;vertical-align:middle"></span>Session started (DB)</span></div></div>
             </div>
             <div class="chart-row">
                 <div class="chart-card"><h3><span data-chart-title="timer">Timer Sessions</span> <span class="chart-gran-label" style="color:var(--text-muted);font-weight:500">(Daily)</span></h3><canvas id="chartTimerSessions"></canvas></div>
@@ -1970,7 +1970,7 @@ function formatUptime(seconds) {
 }
 
 // ----- Overview -----
-let overviewCache = null;          // { data, phDauData, phDauAnyData, phTipViewed }
+let overviewCache = null;          // { data, phDauData, phTipViewed }
 let overviewGranularity = 'daily'; // 'daily' | 'weekly'
 
 // Aggregate a [{date:'YYYY-MM-DD', <field>:n, ...}] series into ISO-week buckets
@@ -2034,7 +2034,7 @@ function setOverviewGranularity(gran) {
 
 function renderOverviewCharts() {
     if (!overviewCache) return;
-    const { data: d, phDauData, phDauAnyData, phTipViewed } = overviewCache;
+    const { data: d, phDauData, phTipViewed } = overviewCache;
     const weekly = overviewGranularity === 'weekly';
 
     const signups = weekly ? aggregateWeekly(d.daily_signups) : d.daily_signups;
@@ -2049,7 +2049,6 @@ function renderOverviewCharts() {
     const tipSaves = weekly ? aggregateWeekly(d.daily_tip_saves) : d.daily_tip_saves;
     const feedReactions = weekly ? aggregateWeekly(d.daily_feed_reactions) : d.daily_feed_reactions;
     const dauMap = weekly ? aggregateWeeklyMap(phDauData) : phDauData;
-    const dauAnyMap = weekly ? aggregateWeeklyMap(phDauAnyData) : phDauAnyData;
     const tipViewedMap = weekly ? aggregateWeeklyMap(phTipViewed) : phTipViewed;
 
     renderSignupsChart(signups);
@@ -2057,7 +2056,7 @@ function renderOverviewCharts() {
     renderStudyChart(sessions);
     renderSocialChart(friendships, groups);
     renderStudySetupChart(subjects, tasks);
-    renderDAUChart(dbDau, dauMap, dauAnyMap);
+    renderDAUChart(dbDau, dauMap);
     renderTipsChart(tipViews, tipLikes, tipSaves, tipViewedMap);
     renderReactionsChart(feedReactions);
 }
@@ -2268,25 +2267,19 @@ async function loadOverview() {
         // PostHog enrichment: DAU + tip events (collected as daily maps; aggregation happens in renderOverviewCharts)
         const dbDau = d.daily_active || [];
         let phDauData = null;
-        let phDauAnyData = null;
         let phTipViewed = null;
         try {
             if (phAvailable) {
                 if (dbDau.length > 0) {
                     const startDate = dbDau[0].date;
-                    const [dauResult, dauAnyResult, tipViewedResult, active7dResult] = await Promise.all([
+                    const [dauResult, tipViewedResult, active7dResult] = await Promise.all([
                         phQuery(`SELECT toDate(timestamp) as day, count(DISTINCT distinct_id) as users FROM events WHERE event = 'app_opened' AND timestamp >= '${startDate}' GROUP BY day ORDER BY day`),
-                        phQuery(`SELECT toDate(timestamp) as day, count(DISTINCT distinct_id) as users FROM events WHERE timestamp >= '${startDate}' GROUP BY day ORDER BY day`),
                         phQuery(`SELECT toDate(timestamp) as day, count() as cnt FROM events WHERE event = 'tip_viewed' AND timestamp >= '${startDate}' GROUP BY day ORDER BY day`),
                         phQuery(`SELECT count(DISTINCT distinct_id) FROM events WHERE event = 'app_opened' AND timestamp >= now() - INTERVAL 7 DAY`),
                     ]);
                     if (dauResult.results) {
                         phDauData = {};
                         for (const row of dauResult.results) phDauData[row[0]] = row[1];
-                    }
-                    if (dauAnyResult.results) {
-                        phDauAnyData = {};
-                        for (const row of dauAnyResult.results) phDauAnyData[row[0]] = row[1];
                     }
                     if (tipViewedResult.results) {
                         phTipViewed = {};
@@ -2310,7 +2303,7 @@ async function loadOverview() {
         }
         loadOnboardingFunnel().catch(() => {});
 
-        overviewCache = { data: d, phDauData, phDauAnyData, phTipViewed };
+        overviewCache = { data: d, phDauData, phTipViewed };
         renderOverviewCharts();
     } catch (e) {
         console.error('Overview load failed', e);
@@ -2360,7 +2353,7 @@ function renderSignupsChart(data) {
     });
 }
 
-function renderDAUChart(dbData, phAppOpenedMap, phAnyEventMap) {
+function renderDAUChart(dbData, phAppOpenedMap) {
     const ctx = document.getElementById('chartDAU').getContext('2d');
     if (dauChart) dauChart.destroy();
     const labels = dbData.map(d => d.date.slice(5));
@@ -2381,15 +2374,6 @@ function renderDAUChart(dbData, phAppOpenedMap, phAnyEventMap) {
         backgroundColor: 'rgba(74,124,89,.08)',
         fill: true, tension: .3, pointRadius: 2,
     });
-    if (phAnyEventMap) {
-        datasets.push({
-            label: 'Any event (PostHog)',
-            data: dbData.map(d => phAnyEventMap[d.date] || 0),
-            borderColor: 'rgba(245,158,11,.95)',
-            backgroundColor: 'rgba(245,158,11,.06)',
-            fill: true, tension: .3, pointRadius: 2,
-        });
-    }
     dauChart = new Chart(ctx, {
         type: 'line',
         data: { labels, datasets },
