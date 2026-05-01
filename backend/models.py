@@ -250,6 +250,14 @@ class User(Base):
     push_token = Column(String, nullable=True)
     push_token_updated_at = Column(DateTime, nullable=True)
     push_platform = Column(String(10), nullable=True)  # ios | android
+
+    # Latest app version observed for this user. Refreshed on every cold-start
+    # push-token registration so we can target update-prompt emails at users
+    # still on outdated builds. Falls back to whatever the FeedbackModal posts
+    # when the user submits feedback.
+    app_version = Column(String(20), nullable=True, index=True)
+    app_build = Column(String(20), nullable=True)
+    app_version_updated_at = Column(DateTime, nullable=True)
     notification_enabled = Column(Boolean, default=True)  # master switch
     notif_badges_enabled = Column(Boolean, default=True, server_default="1")
     notif_friends_enabled = Column(Boolean, default=True, server_default="1")

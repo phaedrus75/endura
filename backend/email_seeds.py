@@ -638,6 +638,78 @@ DEFAULT_EMAIL_TEMPLATES = [
 </div>""",
     },
     {
+        "template_key": "update_app",
+        "name": "Update Available — Drive App Update",
+        # Variables this template renders:
+        #   {name}            — display name (falls back to "there")
+        #   {current_version} — version the user is on (or "an older build")
+        #   {latest_version}  — newest store binary (e.g. 1.0.3)
+        # The platform-aware store CTA is rendered inline below: we surface
+        # both App Store and Play Store buttons because we don't always know
+        # which platform a user is on (no push token = no `push_platform`).
+        "subject": "A new version of Endura is ready for you, {name} 🌿",
+        "trigger_day": None,
+        "inactive_days": None,
+        "body_html": f"""<div style="font-family:'Segoe UI',sans-serif;max-width:520px;margin:0 auto;padding:40px 32px;background:#E7EFEA;border-radius:20px">
+    <h1 style="color:#4A7C59;margin:0 0 4px;font-size:26px">A fresher Endura is waiting</h1>
+    <p style="color:#6B9B7A;margin:0 0 24px;font-size:15px">Hey {{name}}, there's a new build of Endura on the store — and you'll feel the difference.</p>
+    {_animal_img("snow leopard")}
+    <div style="background:#fff;border-radius:16px;padding:24px;margin-bottom:20px">
+        <p style="color:#333;font-size:15px;line-height:1.7;margin:0 0 16px">
+            You're on <strong>v{{current_version}}</strong>. The latest version is <strong>v{{latest_version}}</strong>.
+            Updating takes about 30 seconds and gets you:
+        </p>
+        <table style="width:100%;border-collapse:collapse">
+            <tr>
+                <td style="padding:8px 12px;vertical-align:top;font-size:20px">🐾</td>
+                <td style="padding:8px 0;color:#333;font-size:14px;line-height:1.6">
+                    <strong>Glitch-proof egg hatching</strong> — if a timer finishes while the app is closed, your egg waits for you instead of disappearing.
+                </td>
+            </tr>
+            <tr>
+                <td style="padding:8px 12px;vertical-align:top;font-size:20px">🔔</td>
+                <td style="padding:8px 0;color:#333;font-size:14px;line-height:1.6">
+                    <strong>Timer-done notifications</strong> — get a ping the moment a study session ends, even with Endura in the background.
+                </td>
+            </tr>
+            <tr>
+                <td style="padding:8px 12px;vertical-align:top;font-size:20px">🏆</td>
+                <td style="padding:8px 0;color:#333;font-size:14px;line-height:1.6">
+                    <strong>Friends leaderboard, fixed</strong> — your friends and your own rank now show up in the correct order, every time.
+                </td>
+            </tr>
+            <tr>
+                <td style="padding:8px 12px;vertical-align:top;font-size:20px">💬</td>
+                <td style="padding:8px 0;color:#333;font-size:14px;line-height:1.6">
+                    <strong>One-tap feedback</strong> — a chat icon on Home lets you send bugs, ideas, or love (with screenshots) straight to the team.
+                </td>
+            </tr>
+        </table>
+    </div>
+    <div style="background:#fff;border-radius:16px;padding:18px 22px;margin-bottom:20px">
+        <p style="color:#333;font-size:14px;line-height:1.6;margin:0 0 10px"><strong>Why update?</strong> Older builds don't get the egg-hatch fix or the new notifications, and we can't help debug issues on out-of-date versions. The studying you've already done stays — your sanctuary, streak and badges all carry across.</p>
+    </div>
+    <div style="text-align:center;margin-bottom:8px">
+        <a href="https://apps.apple.com/app/endura-study-timer/id6759482612"
+           style="display:inline-block;background:#000;color:#fff;text-decoration:none;padding:12px 24px;border-radius:12px;font-size:14px;font-weight:600;margin:4px">
+             Update on App Store
+        </a>
+        <a href="https://play.google.com/store/apps/details?id=com.endura.study"
+           style="display:inline-block;background:#34A853;color:#fff;text-decoration:none;padding:12px 24px;border-radius:12px;font-size:14px;font-weight:600;margin:4px">
+             Update on Play Store
+        </a>
+    </div>
+    <p style="color:#999;font-size:11px;line-height:1.6;text-align:center;margin:14px 0 0">
+        On iOS: open the App Store, tap your profile photo, scroll to <em>Available Updates</em>, hit <strong>Update</strong> next to Endura.<br>
+        On Android: open the Play Store, search <strong>Endura</strong>, tap <strong>Update</strong>.
+    </p>
+    <p style="color:#999;font-size:12px;text-align:center;margin:16px 0 0">
+        Study smarter. Save wildlife. 🌍<br>
+        <a href="https://instagram.com/endura.eco" style="color:#6B9B7A;text-decoration:none">@endura.eco</a>
+    </p>
+</div>""",
+    },
+    {
         "template_key": "android_invite",
         "name": "Android Beta Invite",
         "subject": "You're in! Endura is ready on Android 🎉",

@@ -465,10 +465,28 @@ export const authAPI = {
 
 // Push notifications API
 export const pushAPI = {
-  registerToken: (token: string, platform: 'ios' | 'android') =>
-    apiFetch<{ ok: boolean; push_token_updated_at: string; platform: string }>(
+  registerToken: (
+    token: string,
+    platform: 'ios' | 'android',
+    meta?: { app_version?: string; app_build?: string }
+  ) =>
+    apiFetch<{
+      ok: boolean;
+      push_token_updated_at: string;
+      platform: string;
+      app_version?: string | null;
+      app_build?: string | null;
+    }>(
       '/users/me/push-token',
-      { method: 'PUT', body: JSON.stringify({ token, platform }) }
+      {
+        method: 'PUT',
+        body: JSON.stringify({
+          token,
+          platform,
+          ...(meta?.app_version ? { app_version: meta.app_version } : {}),
+          ...(meta?.app_build ? { app_build: meta.app_build } : {}),
+        }),
+      }
     ),
 
   removeToken: () =>

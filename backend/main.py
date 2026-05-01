@@ -129,6 +129,11 @@ else:
             "notif_friends_enabled": "BOOLEAN NOT NULL DEFAULT TRUE",
             "notif_reminders_enabled": "BOOLEAN NOT NULL DEFAULT TRUE",
             "notif_marketing_enabled": "BOOLEAN NOT NULL DEFAULT TRUE",
+            # Latest app version reported by the device on push-token register.
+            # Used by the update-prompt email cohort in the admin dashboard.
+            "app_version": "VARCHAR(20) NULL",
+            "app_build": "VARCHAR(20) NULL",
+            "app_version_updated_at": "TIMESTAMP NULL",
         }
         for _col, _ddl in _push_cols.items():
             if _col not in _user_cols:
@@ -136,6 +141,12 @@ else:
                     _conn.execute(text(f"ALTER TABLE users ADD COLUMN IF NOT EXISTS {_col} {_ddl}"))
                     _conn.commit()
                 print(f"Added {_col} column to users")
+        try:
+            with engine.connect() as _conn:
+                _conn.execute(text("CREATE INDEX IF NOT EXISTS ix_users_app_version ON users (app_version)"))
+                _conn.commit()
+        except Exception as _ixe:
+            print(f"Note: could not create ix_users_app_version: {_ixe}")
         if _insp.has_table("email_templates"):
             _et_cols = [c["name"] for c in _insp.get_columns("email_templates")]
             for _col, _ddl in {"min_sessions": "INTEGER NULL", "max_sessions": "INTEGER NULL", "min_streak": "INTEGER NULL", "max_streak": "INTEGER NULL"}.items():
@@ -3605,6 +3616,58 @@ def _env_int_optional(name: str) -> Optional[int]:
         return None
 
 
+# Latest store binary the admin wants users on. Used by the admin dashboard's
+# "outdated app version" cohort + the update-prompt email endpoint. Bumped via
+# Railway env on each new App Store / Play Store release so we don't have to
+# redeploy the backend just to ship a new prompt cohort.
+#
+# Defaults stay in sync with frontend/app.json so things still work locally.
+_FALLBACK_LATEST_APP_VERSION = "1.0.3"
+_FALLBACK_LATEST_IOS_BUILD = 24
+_FALLBACK_LATEST_ANDROID_VERSION_CODE = 10
+
+
+def latest_app_version() -> str:
+    return _env_str("LATEST_APP_VERSION") or _FALLBACK_LATEST_APP_VERSION
+
+
+def latest_ios_build() -> int:
+    return _env_int_optional("LATEST_IOS_BUILD") or _FALLBACK_LATEST_IOS_BUILD
+
+
+def latest_android_version_code() -> int:
+    return _env_int_optional("LATEST_ANDROID_VERSION_CODE") or _FALLBACK_LATEST_ANDROID_VERSION_CODE
+
+
+def _semver_tuple(v: Optional[str]) -> tuple[int, int, int]:
+    """Parse `1.2.3` (and tolerated junk like `1.2.3-beta`) → `(1, 2, 3)`.
+    Returns `(0, 0, 0)` for falsy/garbage input so comparisons treat
+    "unknown" as "very old" — which is exactly the behaviour we want when
+    deciding whether to nudge a user to update."""
+    if not v:
+        return (0, 0, 0)
+    head = str(v).strip().split("-")[0].split("+")[0]
+    parts = head.split(".")
+    nums: list[int] = []
+    for p in parts[:3]:
+        try:
+            nums.append(int(p))
+        except ValueError:
+            nums.append(0)
+    while len(nums) < 3:
+        nums.append(0)
+    return (nums[0], nums[1], nums[2])
+
+
+def is_app_version_outdated(app_version: Optional[str]) -> bool:
+    """True when this user's reported version is strictly older than the
+    current store binary. Users with no reported version are treated as
+    outdated — they're either pre-update or never registered a push token."""
+    if not app_version:
+        return True
+    return _semver_tuple(app_version) < _semver_tuple(latest_app_version())
+
+
 @app.get("/public/client-config")
 def public_client_config():
     """
@@ -3807,8 +3870,13 @@ def admin_users(
         ).filter(models.GroupMember.user_id.in_(user_ids)).group_by(models.GroupMember.user_id).all():
             groups_map[uid] = cnt
 
+    latest_v = latest_app_version()
     result = []
     for u in users:
+        u_version = getattr(u, "app_version", None)
+        u_build = getattr(u, "app_build", None)
+        u_platform = getattr(u, "push_platform", None)
+        u_version_at = getattr(u, "app_version_updated_at", None)
         result.append({
             "id": u.id,
             "email": u.email,
@@ -3830,9 +3898,14 @@ def admin_users(
             "created_at": u.created_at.isoformat() if u.created_at else None,
             "last_study_date": u.last_study_date.isoformat() if u.last_study_date else None,
             "is_archived": getattr(u, "is_archived", False) or False,
+            "app_version": u_version,
+            "app_build": u_build,
+            "app_platform": u_platform,
+            "app_version_updated_at": u_version_at.isoformat() if u_version_at else None,
+            "app_version_outdated": is_app_version_outdated(u_version) if u_version else None,
         })
 
-    return {"total": total, "users": result}
+    return {"total": total, "users": result, "latest_app_version": latest_v}
 
 
 @app.put("/admin/users/{user_id}")
@@ -3969,6 +4042,10 @@ def admin_user_detail(user_id: int, db: Session = Depends(get_db), _=Depends(ver
         "clicked_at": el.clicked_at.isoformat() if el.clicked_at else None,
     } for el in email_logs]
 
+    u_version = getattr(user, "app_version", None)
+    u_build = getattr(user, "app_build", None)
+    u_platform = getattr(user, "push_platform", None)
+    u_version_at = getattr(user, "app_version_updated_at", None)
     return {
         "id": user.id,
         "email": user.email,
@@ -3991,6 +4068,12 @@ def admin_user_detail(user_id: int, db: Session = Depends(get_db), _=Depends(ver
         "donations": donation_list,
         "email_logs": email_log_list,
         "is_archived": getattr(user, "is_archived", False) or False,
+        "app_version": u_version,
+        "app_build": u_build,
+        "app_platform": u_platform,
+        "app_version_updated_at": u_version_at.isoformat() if u_version_at else None,
+        "app_version_outdated": is_app_version_outdated(u_version) if u_version else None,
+        "latest_app_version": latest_app_version(),
     }
 
 
@@ -4624,6 +4707,12 @@ def submit_feedback(
         priority="medium",
     )
     db.add(fb)
+    # Mirror the reported app version onto the user too, so the admin
+    # dashboard can target update-prompt emails at users whose only signal is
+    # a feedback submission (no push token yet).
+    if current_user and payload.app_version:
+        current_user.app_version = payload.app_version[:20]
+        current_user.app_version_updated_at = datetime.utcnow()
     db.commit()
     db.refresh(fb)
     logger.info(
@@ -5884,13 +5973,391 @@ def admin_preview_email_template(template_key: str, db: Session = Depends(get_db
     if not tmpl:
         raise HTTPException(status_code=404, detail="Template not found")
     sample = {"name": "Alex", "total_minutes": "247", "animals_count": "5", "streak": "8",
-              "longest_streak": "12", "sessions": "18", "badges": "3"}
+              "longest_streak": "12", "sessions": "18", "badges": "3",
+              "current_version": "1.0.1", "latest_version": latest_app_version()}
     rendered_subject = tmpl.subject
     rendered_html = tmpl.body_html
     for key, val in sample.items():
         rendered_subject = rendered_subject.replace("{" + key + "}", val)
         rendered_html = rendered_html.replace("{" + key + "}", val)
     return {"subject": rendered_subject, "body_html": rendered_html}
+
+
+# ── Update-prompt Email (drives users on outdated builds to update) ──
+
+UPDATE_PROMPT_TEMPLATE_KEY = "update_app"
+# Don't re-prompt the same user more than once per N days. Picked so that a
+# fresh release can be re-promoted ~weekly without burning trust. Override via
+# `UPDATE_PROMPT_COOLDOWN_DAYS` env if you need a more aggressive cadence.
+UPDATE_PROMPT_DEFAULT_COOLDOWN_DAYS = 14
+
+
+def _update_prompt_cooldown_days() -> int:
+    return _env_int_optional("UPDATE_PROMPT_COOLDOWN_DAYS") or UPDATE_PROMPT_DEFAULT_COOLDOWN_DAYS
+
+
+def _build_update_prompt_cohort(db: Session) -> dict:
+    """Pick verified, non-archived users who are on an older binary than the
+    latest store version (or who have never reported a version at all). Skips
+    anyone already prompted in the last `cooldown_days` so nobody gets nagged
+    weekly. Returns a dict with the cohort and metadata for the UI."""
+    archived_filter = or_(models.User.is_archived == False, models.User.is_archived == None)  # noqa: E712
+    base_q = db.query(models.User).filter(
+        archived_filter,
+        models.User.email_verified == True,
+        models.User.email.isnot(None),
+        models.User.email != "",
+    )
+
+    latest_v = latest_app_version()
+    cooldown_days = _update_prompt_cooldown_days()
+    cooldown_cutoff = datetime.utcnow() - timedelta(days=cooldown_days)
+
+    # We can't filter by app_version in SQL here (the comparison is semver, not
+    # lexicographic), so eval in Python — the eligible cohort is small relative
+    # to total users and the loop is O(n) over verified accounts.
+    candidates = base_q.all()
+    eligible: list[dict] = []
+    skipped_recent = 0
+    skipped_uptodate = 0
+    skipped_unknown = 0  # users with no app_version at all
+
+    eligible_user_ids: list[int] = [u.id for u in candidates]
+    last_prompt_by_user: dict[int, datetime] = {}
+    if eligible_user_ids:
+        for uid, sent_at in (
+            db.query(models.EmailLog.user_id, func.max(models.EmailLog.sent_at))
+            .filter(
+                models.EmailLog.user_id.in_(eligible_user_ids),
+                models.EmailLog.template_key == UPDATE_PROMPT_TEMPLATE_KEY,
+            )
+            .group_by(models.EmailLog.user_id)
+            .all()
+        ):
+            if uid is not None and sent_at is not None:
+                last_prompt_by_user[uid] = sent_at
+
+    for u in candidates:
+        ver = (u.app_version or "").strip() or None
+        if ver and not is_app_version_outdated(ver):
+            skipped_uptodate += 1
+            continue
+        if not ver:
+            skipped_unknown += 1
+            # We still keep them in the cohort — "unknown" almost always means
+            # outdated (pre-tracking install) or never opened the latest build.
+        last = last_prompt_by_user.get(u.id)
+        if last and last > cooldown_cutoff:
+            skipped_recent += 1
+            continue
+        eligible.append({
+            "id": u.id,
+            "email": u.email,
+            "username": u.username,
+            "app_version": ver,
+            "app_platform": u.push_platform,
+            "app_version_updated_at": (
+                u.app_version_updated_at.isoformat() if u.app_version_updated_at else None
+            ),
+            "last_prompted_at": last.isoformat() if last else None,
+        })
+
+    return {
+        "template_key": UPDATE_PROMPT_TEMPLATE_KEY,
+        "latest_app_version": latest_v,
+        "cooldown_days": cooldown_days,
+        "total_eligible": len(eligible),
+        "skipped_uptodate": skipped_uptodate,
+        "skipped_recently_prompted": skipped_recent,
+        "unknown_version": skipped_unknown,
+        "users": eligible,
+    }
+
+
+@app.get("/admin/email-update-prompt/cohort")
+def admin_update_prompt_cohort(db: Session = Depends(get_db), _=Depends(verify_admin)):
+    """Preview the cohort that the update-prompt email would target right now."""
+    return _build_update_prompt_cohort(db)
+
+
+@app.post("/admin/users/backfill-app-version")
+async def admin_backfill_user_app_version(
+    db: Session = Depends(get_db), _=Depends(verify_admin)
+):
+    """One-shot backfill: pull each identified user's latest `$app_version` /
+    `$app_build` / `$os_name` from PostHog (auto-attached by the React Native
+    SDK on every event) and write them onto `users` so the dashboard lights up
+    before the next mobile build rolls out.
+
+    Why this works pre-1.0.4: the deployed app already calls `posthog.identify(userId)`
+    after login, and the SDK stamps `$app_version` on every captured event —
+    so PostHog has the data even though our backend doesn't yet receive it
+    on push-token register (that needs the next build).
+
+    Falls back to `user_feedback.app_version` for users without PostHog
+    activity (paranoia — same idempotent merge logic).
+
+    Idempotent: re-running it just re-applies the same latest values; we never
+    overwrite a `users.app_version_updated_at` that's already fresher than
+    what we'd write.
+    """
+    from sqlalchemy import desc
+
+    key = _posthog_key()
+    posthog_rows: list[tuple[str, str, str | None, str | None, datetime]] = []
+    posthog_error: str | None = None
+
+    if key:
+        try:
+            state = await _posthog_ensure_project()
+            # `argMax(prop, timestamp)` gives us the value of `prop` from the
+            # event with the largest timestamp — i.e. the user's latest reported
+            # app_version. We only group by `distinct_id` (the numeric user id
+            # we set via posthog.identify), so anonymous events get folded out.
+            hogql = """
+            SELECT
+                distinct_id,
+                argMax(properties.$app_version, timestamp) AS app_version,
+                argMax(properties.$app_build, timestamp) AS app_build,
+                argMax(properties.$os_name, timestamp) AS os_name,
+                max(timestamp) AS last_seen
+            FROM events
+            WHERE properties.$app_version IS NOT NULL
+              AND distinct_id IS NOT NULL
+              AND distinct_id NOT IN ('anon', 'anonymous', '')
+            GROUP BY distinct_id
+            """
+            async with httpx.AsyncClient(timeout=180.0) as client:
+                r = await client.post(
+                    f"{_POSTHOG_HOST}/api/projects/{state['project_id']}/query/",
+                    headers={
+                        "Authorization": f"Bearer {key}",
+                        "Content-Type": "application/json",
+                    },
+                    json={"query": {"kind": "HogQLQuery", "query": hogql}},
+                )
+                if r.status_code >= 400:
+                    posthog_error = f"PostHog query {r.status_code}: {r.text[:200]}"
+                else:
+                    raw_rows = r.json().get("results") or []
+                    for row in raw_rows:
+                        distinct_id, app_v, app_b, os_n, ts_raw = (
+                            row[0], row[1], row[2], row[3], row[4]
+                        )
+                        if not distinct_id or not app_v:
+                            continue
+                        # Same robust timestamp parsing used in the tip-views backfill.
+                        if isinstance(ts_raw, datetime):
+                            ts = ts_raw.replace(tzinfo=None) if ts_raw.tzinfo else ts_raw
+                        else:
+                            s = str(ts_raw)
+                            if s.endswith("Z"):
+                                s = s[:-1]
+                            if "+" in s:
+                                s = s.split("+", 1)[0]
+                            try:
+                                ts = datetime.fromisoformat(s)
+                            except ValueError:
+                                ts = datetime.fromisoformat(s.split(".")[0])
+                        posthog_rows.append(
+                            (str(distinct_id), str(app_v), app_b, os_n, ts)
+                        )
+        except HTTPException as e:
+            posthog_error = str(e.detail)
+        except Exception as e:  # network or parsing
+            posthog_error = f"PostHog backfill error: {e}"
+    else:
+        posthog_error = "POSTHOG_PERSONAL_API_KEY not set — skipping PostHog source"
+
+    # Roll PostHog rows up by user id, keeping the latest per user.
+    posthog_latest: dict[int, tuple[str, str | None, str | None, datetime]] = {}
+    skipped_anon = 0
+    for distinct_id, app_v, app_b, os_n, ts in posthog_rows:
+        try:
+            uid = int(distinct_id)
+        except ValueError:
+            skipped_anon += 1
+            continue
+        existing = posthog_latest.get(uid)
+        if existing is None or ts > existing[3]:
+            posthog_latest[uid] = (app_v, app_b, os_n, ts)
+
+    # Feedback fallback: latest feedback.app_version per user. Only used to
+    # fill gaps where PostHog had nothing for that user.
+    fb_rows = (
+        db.query(
+            models.UserFeedback.user_id,
+            models.UserFeedback.app_version,
+            models.UserFeedback.created_at,
+        )
+        .filter(
+            models.UserFeedback.user_id.isnot(None),
+            models.UserFeedback.app_version.isnot(None),
+            models.UserFeedback.app_version != "",
+        )
+        .order_by(models.UserFeedback.user_id, desc(models.UserFeedback.created_at))
+        .all()
+    )
+    feedback_latest: dict[int, tuple[str, datetime]] = {}
+    seen: set[int] = set()
+    for uid, ver, created_at in fb_rows:
+        if uid in seen:
+            continue
+        seen.add(uid)
+        feedback_latest[uid] = (ver, created_at or datetime.utcnow())
+
+    candidate_uids = set(posthog_latest.keys()) | set(feedback_latest.keys())
+    updated_from_posthog = 0
+    updated_from_feedback = 0
+    skipped_already_fresher = 0
+    skipped_no_user = 0
+
+    if candidate_uids:
+        users_by_id = {
+            u.id: u
+            for u in db.query(models.User).filter(models.User.id.in_(candidate_uids)).all()
+        }
+        for uid in candidate_uids:
+            user = users_by_id.get(uid)
+            if not user:
+                skipped_no_user += 1
+                continue
+            ph = posthog_latest.get(uid)
+            fb = feedback_latest.get(uid)
+            # Pick whichever source is fresher — but prefer PostHog when ties.
+            ver: str | None = None
+            build: str | None = None
+            platform: str | None = None
+            when: datetime | None = None
+            source = None
+            if ph and (not fb or ph[3] >= fb[1]):
+                ver, build, platform, when = ph
+                source = "posthog"
+            elif fb:
+                ver, when = fb
+                source = "feedback"
+
+            if not ver or not when:
+                continue
+            existing_when = user.app_version_updated_at
+            if existing_when and existing_when >= when:
+                skipped_already_fresher += 1
+                continue
+            user.app_version = ver[:20]
+            if build:
+                user.app_build = str(build)[:20]
+            if platform and not user.push_platform:
+                # PostHog reports `$os_name` like "iOS" / "Android"; normalise
+                # so it matches what the push-token endpoint stores.
+                p_lower = platform.lower()
+                if "ios" in p_lower:
+                    user.push_platform = "ios"
+                elif "android" in p_lower:
+                    user.push_platform = "android"
+            user.app_version_updated_at = when
+            if source == "posthog":
+                updated_from_posthog += 1
+            else:
+                updated_from_feedback += 1
+        db.commit()
+
+    return {
+        "posthog_users_with_app_version": len(posthog_latest),
+        "feedback_users_with_app_version": len(feedback_latest),
+        "users_updated_from_posthog": updated_from_posthog,
+        "users_updated_from_feedback": updated_from_feedback,
+        "skipped_already_fresher": skipped_already_fresher,
+        "skipped_user_missing": skipped_no_user,
+        "skipped_anonymous_distinct_ids": skipped_anon,
+        "latest_app_version": latest_app_version(),
+        "posthog_error": posthog_error,
+    }
+
+
+@app.post("/admin/email-update-prompt/send")
+def admin_send_update_prompt(
+    body: dict | None = None,
+    db: Session = Depends(get_db),
+    _=Depends(verify_admin),
+):
+    """Send the `update_app` template to every user on an outdated binary.
+
+    Body (all optional):
+        dry_run (bool): if true, don't send — return who would be emailed.
+        max_sends (int): cap on number of sends in this run.
+        include_unknown (bool, default true): include users with no reported
+            app version (pre-tracking installs) in the cohort.
+        user_ids (list[int]): if provided, skip cohort selection and only send
+            to these specific users (still respects template + cooldown).
+    """
+    import time
+
+    body = body or {}
+    dry_run = bool(body.get("dry_run", False))
+    include_unknown = bool(body.get("include_unknown", True))
+    max_sends = int(body.get("max_sends") or 0)
+    explicit_ids: list[int] = [int(x) for x in (body.get("user_ids") or []) if str(x).isdigit()]
+
+    resend_key = os.getenv("RESEND_API_KEY")
+    if not resend_key and not dry_run:
+        raise HTTPException(status_code=500, detail="RESEND_API_KEY not configured")
+
+    cohort = _build_update_prompt_cohort(db)
+    users_payload = cohort["users"]
+    if not include_unknown:
+        users_payload = [u for u in users_payload if u.get("app_version")]
+    if explicit_ids:
+        explicit_set = set(explicit_ids)
+        users_payload = [u for u in users_payload if u["id"] in explicit_set]
+
+    if max_sends and max_sends > 0:
+        users_payload = users_payload[:max_sends]
+
+    if dry_run:
+        return {
+            **cohort,
+            "dry_run": True,
+            "would_send": len(users_payload),
+            "users": users_payload,
+        }
+
+    latest_v = cohort["latest_app_version"]
+    send_interval = float(os.getenv("EMAIL_SEND_INTERVAL", "0.35"))
+    sent_count = 0
+    failed = 0
+
+    user_id_set = [u["id"] for u in users_payload]
+    user_objs = {u.id: u for u in db.query(models.User).filter(models.User.id.in_(user_id_set)).all()} if user_id_set else {}
+
+    for entry in users_payload:
+        user = user_objs.get(entry["id"])
+        if not user or not user.email:
+            failed += 1
+            continue
+        variables = {
+            "name": user.username or "there",
+            "current_version": entry.get("app_version") or "an older build",
+            "latest_version": latest_v,
+        }
+        try:
+            ok = _send_template_email(UPDATE_PROMPT_TEMPLATE_KEY, user.email, variables, db)
+        except Exception as e:
+            logger.error(f"update-prompt send failed user={user.id}: {e}")
+            ok = False
+        if ok:
+            sent_count += 1
+        else:
+            failed += 1
+        time.sleep(send_interval)
+
+    return {
+        "template_key": UPDATE_PROMPT_TEMPLATE_KEY,
+        "latest_app_version": latest_v,
+        "cooldown_days": cohort["cooldown_days"],
+        "attempted": len(users_payload),
+        "sent": sent_count,
+        "failed": failed,
+    }
 
 
 # ── Email Campaigns ───────────────────────────────────────────────
@@ -6411,6 +6878,10 @@ def _safe_send_push(template_key: str, user: models.User, db: Session, extra_var
 class PushTokenRegister(BaseModel):
     token: str = Field(..., min_length=10, max_length=200)
     platform: Optional[str] = Field(None, pattern="^(ios|android)$")
+    # Latest app version + native build the device is running. Optional for
+    # back-compat with older clients that haven't been updated yet.
+    app_version: Optional[str] = Field(None, max_length=20)
+    app_build: Optional[str] = Field(None, max_length=20)
 
 
 class NotificationPrefsUpdate(BaseModel):
@@ -6444,11 +6915,22 @@ def register_push_token(
     current_user.push_token_updated_at = datetime.utcnow()
     if body.platform:
         current_user.push_platform = body.platform
+    # Record the app version on every register so the admin dashboard always
+    # reflects the latest build the user actually launched. Strings are bounded
+    # by the schema (max_length=20) so no further sanitisation needed.
+    av = (body.app_version or "").strip() or None
+    ab = (body.app_build or "").strip() or None
+    if av or ab:
+        current_user.app_version = av
+        current_user.app_build = ab
+        current_user.app_version_updated_at = datetime.utcnow()
     db.commit()
     return {
         "ok": True,
         "push_token_updated_at": current_user.push_token_updated_at.isoformat(),
         "platform": current_user.push_platform,
+        "app_version": current_user.app_version,
+        "app_build": current_user.app_build,
     }
 
 

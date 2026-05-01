@@ -474,6 +474,19 @@
 
             <!-- Main: full user table -->
             <div class="user-content active" id="user-tab-main">
+                <div class="table-card" style="margin-bottom:20px;background:#fff8eb;border:1px solid #fde68a">
+                    <div style="display:flex;flex-wrap:wrap;align-items:center;gap:14px">
+                        <div style="font-size:24px">📲</div>
+                        <div style="flex:1;min-width:280px">
+                            <div style="font-size:14px;font-weight:700;color:#92400e;margin-bottom:4px">Drive users to the latest app version</div>
+                            <div id="updatePromptSummary" style="font-size:12px;color:#78350f;line-height:1.55">Backfill app versions from PostHog (works on the live 1.0.3 build), then preview the cohort of outdated users and send the <code>update_app</code> email.</div>
+                        </div>
+                        <button id="backfillAppVerBtn" onclick="backfillAppVersions()" style="padding:9px 16px;background:#fff;border:1px solid #d97706;color:#92400e;border-radius:10px;font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap" title="Pull latest $app_version from PostHog (auto-attached to every event) so the dashboard lights up before 1.0.4 ships. Falls back to feedback submissions for any gaps.">🔄 Backfill from PostHog</button>
+                        <button onclick="loadUpdatePromptCohort()" style="padding:9px 16px;background:#fff;border:1px solid #d97706;color:#92400e;border-radius:10px;font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap">🔍 Preview cohort</button>
+                        <button id="sendUpdatePromptBtn" onclick="sendUpdatePrompt()" disabled style="padding:9px 18px;background:#d97706;border:none;color:#fff;border-radius:10px;font-size:13px;font-weight:700;cursor:pointer;white-space:nowrap;opacity:.55">📧 Send Update Email</button>
+                    </div>
+                    <div id="updatePromptDetail" style="margin-top:12px;display:none"></div>
+                </div>
                 <div class="table-card">
                     <div class="table-toolbar" style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
                         <input type="text" id="userSearch" placeholder="Search by username or email..." style="flex:1;min-width:200px">
@@ -489,6 +502,11 @@
                         <select id="schoolFilter" onchange="applyUserFilters()" style="padding:10px 14px;border:1px solid var(--border);border-radius:10px;font-size:14px;min-width:160px">
                             <option value="">All Schools</option>
                         </select>
+                        <select id="appVersionFilter" onchange="applyUserFilters()" style="padding:10px 14px;border:1px solid var(--border);border-radius:10px;font-size:14px;min-width:170px" title="Filter users by reported app version">
+                            <option value="">All App Versions</option>
+                            <option value="__outdated__">⚠️ Outdated only</option>
+                            <option value="__unknown__">Unknown / no token</option>
+                        </select>
                         <button id="cleanupCountriesBtn" onclick="runCountryCleanup()" style="padding:10px 18px;background:var(--forest);color:#fff;border:none;border-radius:10px;font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap;transition:all .15s" onmouseover="this.style.opacity='0.9'" onmouseout="this.style.opacity='1'">🧹 Cleanup Countries</button>
                         <button id="auditSchoolsBtn" onclick="auditSchools()" style="padding:10px 18px;background:#64748b;color:#fff;border:none;border-radius:10px;font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap;transition:all .15s" onmouseover="this.style.opacity='0.9'" onmouseout="this.style.opacity='1'">🔍 Audit Schools</button>
                         <button id="cleanupSchoolsBtn" onclick="runSchoolCleanup()" style="padding:10px 18px;background:var(--forest);color:#fff;border:none;border-radius:10px;font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap;transition:all .15s" onmouseover="this.style.opacity='0.9'" onmouseout="this.style.opacity='1'">🏫 Cleanup Schools</button>
@@ -502,6 +520,7 @@
                                 <th data-sort="email_verified" style="text-align:center">Verified</th>
                                 <th data-sort="school">School</th>
                                 <th data-sort="country">Country</th>
+                                <th data-sort="app_version" title="App version reported on the user's last cold start (push token register)">App</th>
                                 <th data-sort="total_study_minutes" style="text-align:right">Study Mins</th>
                                 <th data-sort="current_streak" style="text-align:right">Streak</th>
                                 <th data-sort="current_coins" style="text-align:right">Coins</th>
@@ -2321,6 +2340,32 @@ function onUsersArchiveFilterChange(which) {
     loadUsers(document.getElementById('userSearch').value.trim());
 }
 
+// Latest store binary the backend considers current. Populated from the
+// /admin/users response so version comparisons & "outdated" badges always
+// match what update-prompt emails will target.
+let usersLatestAppVersion = null;
+
+function compareSemver(a, b) {
+    const parse = v => {
+        if (!v) return [0, 0, 0];
+        const head = String(v).trim().split('-')[0].split('+')[0];
+        const parts = head.split('.').map(p => parseInt(p, 10) || 0);
+        while (parts.length < 3) parts.push(0);
+        return parts.slice(0, 3);
+    };
+    const [a1,a2,a3] = parse(a);
+    const [b1,b2,b3] = parse(b);
+    if (a1 !== b1) return a1 - b1;
+    if (a2 !== b2) return a2 - b2;
+    return a3 - b3;
+}
+
+function isAppOutdated(version) {
+    if (!usersLatestAppVersion) return false;
+    if (!version) return true; // unknown counts as outdated
+    return compareSemver(version, usersLatestAppVersion) < 0;
+}
+
 async function loadUsers(search = '') {
     try {
         const af = usersArchivedFilterParam();
@@ -2330,14 +2375,34 @@ async function loadUsers(search = '') {
         params.set('limit', '25000');
         const d = await adminFetch('/admin/users?' + params.toString());
         usersData = d.users;
+        if (d.latest_app_version) usersLatestAppVersion = d.latest_app_version;
         populateFilterDropdowns();
+        populateAppVersionFilter();
     } catch (e) { console.error('Users load failed', e); }
     renderUsersTable();
+}
+
+function populateAppVersionFilter() {
+    const sel = document.getElementById('appVersionFilter');
+    if (!sel) return;
+    const prev = sel.value;
+    const versions = [...new Set(usersData.map(u => u.app_version).filter(Boolean))]
+        .sort((a, b) => compareSemver(b, a)); // newest first
+    const opts = ['<option value="">All App Versions</option>',
+                  '<option value="__outdated__">⚠️ Outdated only</option>',
+                  '<option value="__unknown__">Unknown / no token</option>'];
+    versions.forEach(v => {
+        const tag = usersLatestAppVersion && compareSemver(v, usersLatestAppVersion) >= 0 ? ' (latest)' : '';
+        opts.push(`<option value="${esc(v)}">v${esc(v)}${tag}</option>`);
+    });
+    sel.innerHTML = opts.join('');
+    sel.value = prev;
 }
 
 function getFilteredUsers() {
     const country = document.getElementById('countryFilter').value;
     const school = document.getElementById('schoolFilter').value;
+    const appV = document.getElementById('appVersionFilter')?.value || '';
     const hideEl = document.getElementById('usersHideArchived');
     const onlyEl = document.getElementById('usersArchivedOnly');
     const hideArchived = !!(hideEl && hideEl.checked);
@@ -2348,6 +2413,13 @@ function getFilteredUsers() {
         if (hideArchived && !archivedOnly && archived) return false;
         if (country && (u.country || '') !== country) return false;
         if (school && (u.school || '') !== school) return false;
+        if (appV === '__unknown__') {
+            if (u.app_version) return false;
+        } else if (appV === '__outdated__') {
+            if (!isAppOutdated(u.app_version)) return false;
+        } else if (appV) {
+            if ((u.app_version || '') !== appV) return false;
+        }
         return true;
     });
     const k = usersSortKey;
@@ -2359,6 +2431,14 @@ function getFilteredUsers() {
             bv = bv ? new Date(bv).getTime() : 0;
         } else if (k === 'email_verified') {
             av = av ? 1 : 0; bv = bv ? 1 : 0;
+        } else if (k === 'app_version') {
+            // Lexicographic sort breaks for semver (1.10.0 < 1.2.0). Sort by
+            // tuple. Empty/unknown sorts last in ascending order.
+            const aHas = !!av, bHas = !!bv;
+            if (!aHas && !bHas) return 0;
+            if (!aHas) return 1;
+            if (!bHas) return -1;
+            return compareSemver(av, bv) * dir;
         } else if (typeof av === 'string' || typeof bv === 'string') {
             av = (av || '').toString().toLowerCase();
             bv = (bv || '').toString().toLowerCase();
@@ -2377,7 +2457,7 @@ function setUsersSort(key) {
     } else {
         usersSortKey = key;
         // Numeric / date defaults to desc, text defaults to asc
-        const numericOrDate = ['total_study_minutes','current_streak','current_coins','animals_hatched','friend_count','group_count','total_donated','created_at','email_verified'];
+        const numericOrDate = ['total_study_minutes','current_streak','current_coins','animals_hatched','friend_count','group_count','total_donated','created_at','email_verified','app_version'];
         usersSortDir = numericOrDate.includes(key) ? 'desc' : 'asc';
     }
     usersPage = 1;
@@ -2406,11 +2486,24 @@ function renderUsersTable() {
     updateUsersSortIndicators();
 
     if (!total) {
-        body.innerHTML = '<tr><td colspan="14" class="empty">No users found</td></tr>';
+        body.innerHTML = '<tr><td colspan="15" class="empty">No users found</td></tr>';
         document.getElementById('usersPagination').innerHTML = '';
         return;
     }
-    body.innerHTML = pageUsers.map(u => `
+    body.innerHTML = pageUsers.map(u => {
+        const ver = u.app_version;
+        const outdated = ver ? isAppOutdated(ver) : false;
+        let appCell;
+        if (!ver) {
+            appCell = '<span style="color:var(--text-muted);font-size:12px" title="No push token registered yet — version unknown">—</span>';
+        } else {
+            const tip = `Reported on last cold start${u.app_version_updated_at ? ' · ' + new Date(u.app_version_updated_at).toLocaleString() : ''}${u.app_platform ? ' · ' + u.app_platform : ''}${outdated && usersLatestAppVersion ? ' · latest is v' + usersLatestAppVersion : ''}`;
+            const color = outdated ? '#b45309' : '#16a34a';
+            const bg = outdated ? '#fef3c7' : '#dcfce7';
+            const dot = outdated ? '⚠️' : '✓';
+            appCell = `<span title="${esc(tip)}" style="display:inline-block;font-size:11px;font-weight:600;color:${color};background:${bg};padding:2px 8px;border-radius:8px;font-variant-numeric:tabular-nums">${dot} v${esc(ver)}</span>`;
+        }
+        return `
         <tr style="cursor:pointer" onclick="showUserDetail(${u.id})">
             <td style="text-align:right;color:var(--text-muted);font-variant-numeric:tabular-nums" onclick="event.stopPropagation();navigator.clipboard.writeText('${u.id}');this.style.color='var(--forest)';setTimeout(()=>this.style.color='var(--text-muted)',800)" title="Click to copy">${u.id}</td>
             <td><strong>${esc(u.username || '—')}</strong>${u.is_archived ? ' <span style="background:#e74c3c;color:#fff;font-size:10px;padding:2px 6px;border-radius:4px;font-weight:600">ARCHIVED</span>' : ''}</td>
@@ -2418,6 +2511,7 @@ function renderUsersTable() {
             <td style="text-align:center" title="${u.email_verified ? 'Email verified' : 'Email NOT verified'}">${u.email_verified ? '<span style="color:#16a34a;font-weight:700">✓</span>' : '<span style="color:#dc2626">✗</span>'}</td>
             <td>${esc(u.school || '—')}</td>
             <td>${esc(u.country || '—')}</td>
+            <td>${appCell}</td>
             <td style="text-align:right">${(u.total_study_minutes||0).toLocaleString()}</td>
             <td style="text-align:right">${u.current_streak||0} 🔥</td>
             <td style="text-align:right">${(u.current_coins||0).toLocaleString()}</td>
@@ -2427,7 +2521,8 @@ function renderUsersTable() {
             <td style="text-align:right">${u.total_donated ? '$'+u.total_donated.toFixed(2) : '—'}</td>
             <td>${u.created_at ? new Date(u.created_at).toLocaleDateString() : '—'}</td>
         </tr>
-    `).join('');
+    `;
+    }).join('');
     renderUsersPagination(total, totalPages, start);
 }
 
@@ -2494,6 +2589,134 @@ function populateFilterDropdowns() {
 }
 
 function applyUserFilters() { usersPage = 1; renderUsersTable(); }
+
+// ----- Update-prompt email -----
+let _updatePromptCohort = null;
+
+async function backfillAppVersions() {
+    const btn = document.getElementById('backfillAppVerBtn');
+    const summary = document.getElementById('updatePromptSummary');
+    if (!confirm(
+        'Backfill users.app_version from PostHog?\n\n' +
+        '• Pulls each identified user\'s latest $app_version + $app_build (auto-attached by the React Native SDK).\n' +
+        '• Falls back to user_feedback.app_version for any gaps.\n' +
+        '• Idempotent — safe to re-run after each fresh release.\n\n' +
+        'Continue?'
+    )) return;
+    const original = btn.textContent;
+    btn.disabled = true; btn.textContent = '⏳ Querying PostHog…';
+    try {
+        const res = await fetch(API_URL + '/admin/users/backfill-app-version', {
+            method: 'POST',
+            headers: { 'X-Admin-Key': API_KEY, 'Content-Type': 'application/json' },
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail || 'Backfill failed');
+        const ph = data.users_updated_from_posthog || 0;
+        const fb = data.users_updated_from_feedback || 0;
+        const total = ph + fb;
+        let msg =
+            `Backfill complete.\n\n` +
+            `Updated ${total} user(s):\n` +
+            `  • ${ph} from PostHog\n` +
+            `  • ${fb} from feedback fallback\n\n` +
+            `PostHog had data for ${data.posthog_users_with_app_version} identified users.\n` +
+            `Skipped (already fresher): ${data.skipped_already_fresher}.`;
+        if (data.posthog_error) msg += `\n\n⚠️ PostHog note: ${data.posthog_error}`;
+        alert(msg);
+        summary.innerHTML = `Updated <strong>${total}</strong> user(s) from PostHog/feedback. Reload the table to see the new versions.`;
+        await loadUsers(document.getElementById('userSearch').value.trim());
+    } catch (e) {
+        alert('Backfill failed: ' + (e?.message || e));
+    } finally {
+        btn.disabled = false; btn.textContent = original;
+    }
+}
+
+async function loadUpdatePromptCohort() {
+    const summary = document.getElementById('updatePromptSummary');
+    const detail = document.getElementById('updatePromptDetail');
+    const btn = document.getElementById('sendUpdatePromptBtn');
+    summary.textContent = 'Loading cohort…';
+    detail.style.display = 'none';
+    btn.disabled = true;
+    btn.style.opacity = '0.55';
+    try {
+        const data = await adminFetch('/admin/email-update-prompt/cohort');
+        _updatePromptCohort = data;
+        const eligible = data.total_eligible || 0;
+        summary.innerHTML = `
+            <strong>${eligible.toLocaleString()}</strong> verified users would be emailed.
+            Latest store version: <strong>v${esc(data.latest_app_version || '?')}</strong>.
+            Cooldown: <strong>${data.cooldown_days}d</strong>
+            (${data.unknown_version} with unknown version, ${data.skipped_uptodate} already up-to-date, ${data.skipped_recently_prompted} prompted in the last ${data.cooldown_days}d).
+        `;
+        const sample = (data.users || []).slice(0, 8);
+        const more = Math.max(0, (data.users || []).length - sample.length);
+        detail.innerHTML = `
+            <div style="background:#fff;border:1px solid #fde68a;border-radius:10px;padding:12px;margin-top:6px">
+                <div style="font-size:12px;color:#92400e;font-weight:600;margin-bottom:8px">Preview (first ${sample.length} of ${(data.users || []).length})</div>
+                <table style="width:100%;border-collapse:collapse;font-size:12px">
+                    <thead><tr style="text-align:left;color:#78350f">
+                        <th style="padding:4px 6px">User</th><th style="padding:4px 6px">Email</th>
+                        <th style="padding:4px 6px">Version</th><th style="padding:4px 6px">Platform</th>
+                        <th style="padding:4px 6px">Last seen</th><th style="padding:4px 6px">Last prompted</th>
+                    </tr></thead>
+                    <tbody>${sample.map(u => `<tr style="border-top:1px solid #fef3c7">
+                        <td style="padding:6px">${esc(u.username || '—')}</td>
+                        <td style="padding:6px">${esc(u.email || '')}</td>
+                        <td style="padding:6px"><strong>${u.app_version ? 'v'+esc(u.app_version) : '<span style="color:#92400e">unknown</span>'}</strong></td>
+                        <td style="padding:6px">${esc(u.app_platform || '—')}</td>
+                        <td style="padding:6px">${u.app_version_updated_at ? timeAgo(u.app_version_updated_at) : '—'}</td>
+                        <td style="padding:6px">${u.last_prompted_at ? timeAgo(u.last_prompted_at) : 'never'}</td>
+                    </tr>`).join('')}</tbody>
+                </table>
+                ${more > 0 ? `<p style="margin:8px 0 0;font-size:11px;color:#78350f">…and ${more.toLocaleString()} more.</p>` : ''}
+            </div>`;
+        detail.style.display = 'block';
+        if (eligible > 0) {
+            btn.disabled = false;
+            btn.style.opacity = '1';
+        }
+    } catch (e) {
+        console.error('Update prompt cohort failed', e);
+        summary.textContent = 'Failed to load cohort: ' + (e?.message || e);
+    }
+}
+
+async function sendUpdatePrompt() {
+    if (!_updatePromptCohort) {
+        alert('Preview the cohort first.');
+        return;
+    }
+    const eligible = _updatePromptCohort.total_eligible || 0;
+    if (eligible <= 0) return;
+    const cooldown = _updatePromptCohort.cooldown_days;
+    const latest = _updatePromptCohort.latest_app_version;
+    if (!confirm(
+        `Send the "update_app" email to ${eligible.toLocaleString()} verified users on builds older than v${latest}?\n\n` +
+        `• Anyone prompted in the last ${cooldown} days is skipped automatically.\n` +
+        `• This kicks off immediately and takes ~${Math.ceil(eligible * 0.4 / 60)} min at Resend rate limits.\n\n` +
+        `Continue?`
+    )) return;
+    const btn = document.getElementById('sendUpdatePromptBtn');
+    btn.disabled = true; btn.style.opacity = '0.6'; btn.textContent = '⏳ Sending…';
+    try {
+        const res = await fetch(API_URL + '/admin/email-update-prompt/send', {
+            method: 'POST',
+            headers: { 'X-Admin-Key': API_KEY, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ include_unknown: true }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail || 'Send failed');
+        alert(`Update-prompt email sent.\n\nAttempted: ${data.attempted}\nSent: ${data.sent}\nFailed: ${data.failed}`);
+        await loadUpdatePromptCohort();
+    } catch (e) {
+        alert('Send failed: ' + (e?.message || e));
+    } finally {
+        btn.textContent = '📧 Send Update Email';
+    }
+}
 
 async function runCountryCleanup() {
     const btn = document.getElementById('cleanupCountriesBtn');
@@ -2684,6 +2907,31 @@ async function showUserDetail(id) {
                 <div class="detail-stat"><div class="val">${u.animals?.length||0}</div><div class="lbl">Animals</div></div>
             </div>
             <p style="font-size:12px;color:var(--text-muted);margin-bottom:4px">${u.school ? '🏫 ' + esc(u.school) + ' &bull; ' : ''}${u.city ? esc(u.city) + ', ' : ''}${u.country ? esc(u.country) + ' &bull; ' : ''}Joined ${u.created_at ? new Date(u.created_at).toLocaleDateString() : '—'} &bull; Last studied ${u.last_study_date ? timeAgo(u.last_study_date) : 'never'}</p>
+
+            <div class="detail-section" style="background:#f8faf9;border-radius:12px;padding:14px 16px;margin-bottom:16px">
+                <h4 style="margin-top:0;margin-bottom:10px;font-size:13px">📱 App Install</h4>
+                ${(() => {
+                    const ver = u.app_version;
+                    const latest = u.latest_app_version || usersLatestAppVersion;
+                    const outdated = u.app_version_outdated === true || (ver && latest && compareSemver(ver, latest) < 0);
+                    if (!ver) {
+                        return `<p style="margin:0;font-size:13px;color:var(--text-muted)">No app version reported yet — user hasn't registered a push token (or is on an older build that pre-dates this tracking).</p>
+                                ${latest ? `<p style="margin:6px 0 0;font-size:11px;color:var(--text-muted)">Latest store binary: <strong>v${esc(latest)}</strong></p>` : ''}`;
+                    }
+                    const badgeColor = outdated ? '#b45309' : '#16a34a';
+                    const badgeBg = outdated ? '#fef3c7' : '#dcfce7';
+                    const dot = outdated ? '⚠️ Outdated' : '✓ Up to date';
+                    return `
+                        <div style="display:flex;flex-wrap:wrap;gap:14px;align-items:center;font-size:13px">
+                            <div><span style="color:var(--text-muted)">Version:</span> <strong style="font-variant-numeric:tabular-nums">v${esc(ver)}</strong>${u.app_build ? ` <span style="color:var(--text-muted);font-size:11px">(build ${esc(u.app_build)})</span>` : ''}</div>
+                            ${u.app_platform ? `<div><span style="color:var(--text-muted)">Platform:</span> <strong>${esc(u.app_platform)}</strong></div>` : ''}
+                            ${latest ? `<div><span style="color:var(--text-muted)">Latest:</span> <strong>v${esc(latest)}</strong></div>` : ''}
+                            <span style="display:inline-block;font-size:11px;font-weight:700;color:${badgeColor};background:${badgeBg};padding:3px 10px;border-radius:8px">${dot}</span>
+                        </div>
+                        <p style="margin:8px 0 0;font-size:11px;color:var(--text-muted)">Last reported: ${u.app_version_updated_at ? new Date(u.app_version_updated_at).toLocaleString() : '—'}</p>
+                    `;
+                })()}
+            </div>
 
             ${u.animals?.length ? `<div class="detail-section"><h4>Animals (${u.animals.length})</h4>
                 <div style="display:flex;flex-wrap:wrap;gap:8px">${u.animals.map(a => `<span class="badge badge-green">${esc(a.name)}${a.nickname?' ('+esc(a.nickname)+')':''}</span>`).join('')}</div>

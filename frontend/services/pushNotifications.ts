@@ -22,6 +22,8 @@
  */
 import * as Notifications from 'expo-notifications';
 import * as Device from 'expo-device';
+import * as Application from 'expo-application';
+import Constants from 'expo-constants';
 import { Platform } from 'react-native';
 import { pushAPI } from './api';
 import { Sentry } from './monitoring';
@@ -115,8 +117,21 @@ export async function registerForPushNotifications(): Promise<string | null> {
 
   try {
     const platform = Platform.OS === 'ios' ? 'ios' : 'android';
-    await pushAPI.registerToken(token, platform);
-    if (__DEV__) console.log('Push token registered with backend:', token.slice(0, 24) + '…');
+    // Send the latest app version + native build with every register so the
+    // admin dashboard can see who is still on outdated binaries (and target
+    // update-prompt emails accordingly). Prefer `expo.version` over
+    // `nativeApplicationVersion` because the latter returns Expo Go's own
+    // version when developing — same gotcha the FeedbackModal documents.
+    const appVersion =
+      Constants.expoConfig?.version ||
+      Application.nativeApplicationVersion ||
+      undefined;
+    const appBuild = Application.nativeBuildVersion || undefined;
+    await pushAPI.registerToken(token, platform, {
+      app_version: appVersion,
+      app_build: appBuild,
+    });
+    if (__DEV__) console.log('Push token registered with backend:', token.slice(0, 24) + '…', { appVersion, appBuild });
     return token;
   } catch (e: any) {
     if (__DEV__) console.warn('Backend push registration failed:', e?.message || e);
