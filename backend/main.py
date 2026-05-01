@@ -148,6 +148,30 @@ else:
                 _conn.commit()
         except Exception as _ixe:
             print(f"Note: could not create ix_users_app_version: {_ixe}")
+        _oauth_cols = ("apple_id_sub", "google_id_sub")
+        for _oc in _oauth_cols:
+            if _oc not in _user_cols:
+                with engine.connect() as _conn:
+                    _conn.execute(text(f"ALTER TABLE users ADD COLUMN {_oc} VARCHAR(255) NULL"))
+                    _conn.commit()
+                print(f"Added {_oc} column to users")
+        try:
+            with engine.connect() as _conn:
+                _conn.execute(
+                    text(
+                        "CREATE UNIQUE INDEX IF NOT EXISTS ix_users_apple_id_sub "
+                        "ON users (apple_id_sub) WHERE apple_id_sub IS NOT NULL"
+                    )
+                )
+                _conn.execute(
+                    text(
+                        "CREATE UNIQUE INDEX IF NOT EXISTS ix_users_google_id_sub "
+                        "ON users (google_id_sub) WHERE google_id_sub IS NOT NULL"
+                    )
+                )
+                _conn.commit()
+        except Exception as _ixe:
+            print(f"Note: could not create OAuth unique indexes: {_ixe}")
         if _insp.has_table("email_templates"):
             _et_cols = [c["name"] for c in _insp.get_columns("email_templates")]
             for _col, _ddl in {"min_sessions": "INTEGER NULL", "max_sessions": "INTEGER NULL", "min_streak": "INTEGER NULL", "max_streak": "INTEGER NULL"}.items():

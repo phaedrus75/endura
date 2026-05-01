@@ -202,6 +202,9 @@ class User(Base):
     id = Column(Integer, primary_key=True, index=True)
     email = Column(String, unique=True, index=True)
     hashed_password = Column(String)
+    # Stable IdP subject from verified Sign in with Apple / Google tokens (merge by email when applicable).
+    apple_id_sub = Column(String(255), nullable=True, unique=True, index=True)
+    google_id_sub = Column(String(255), nullable=True, unique=True, index=True)
     username = Column(String, unique=True, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
