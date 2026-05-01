@@ -14,6 +14,11 @@ interface AuthContextType {
   setProfilePic: (uri: string | null) => Promise<void>;
   login: (email: string, password: string) => Promise<void>;
   register: (email: string, password: string) => Promise<void>;
+  /**
+   * Fetch the current user after a successful OAuth flow has stored a JWT.
+   * Used by SiWA / Google handlers to drop the user straight into the app.
+   */
+  hydrateAfterOAuth: () => Promise<void>;
   logout: () => Promise<void>;
   refreshUser: () => Promise<void>;
   checkAuth: () => Promise<void>;
@@ -104,6 +109,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     await authAPI.register(email, password);
   };
 
+  const hydrateAfterOAuth = async () => {
+    const userData = await authAPI.getMe();
+    setUser(userData);
+    await loadProfilePicForUser(userData);
+  };
+
   const logout = async () => {
     // Best-effort: tell the server to forget our push token so we don't keep
     // pushing to a logged-out device. Never blocks logout itself.
@@ -133,6 +144,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setProfilePic: handleSetProfilePic,
         login,
         register,
+        hydrateAfterOAuth,
         logout,
         refreshUser,
         checkAuth,

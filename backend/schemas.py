@@ -58,6 +58,19 @@ class OnboardingABVariantBody(BaseModel):
     variant: str = Field(..., pattern="^(v1|v2)$")
 
 
+class AppleSignInBody(BaseModel):
+    """Body posted by the iOS app after a successful Sign in with Apple call."""
+    identity_token: str = Field(..., min_length=10, max_length=8192)
+    # Apple only sends `email` on the FIRST sign-in; the client may still
+    # forward whatever Apple delivered so we can attach it on initial linking.
+    email: Optional[EmailStr] = None
+
+
+class GoogleSignInBody(BaseModel):
+    """Body posted after a successful Google ID token retrieval (iOS or Android)."""
+    id_token: str = Field(..., min_length=10, max_length=8192)
+
+
 class UpdateProfileRequest(BaseModel):
     school: Optional[str] = Field(None, max_length=200)
     city: Optional[str] = Field(None, max_length=100)

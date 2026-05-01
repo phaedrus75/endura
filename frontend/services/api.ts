@@ -376,7 +376,25 @@ export const authAPI = {
     await SecureStore.setItemAsync('authToken', data.access_token);
     return data;
   },
-  
+
+  loginWithApple: async (body: { identity_token: string; email?: string | null }) => {
+    const data = await apiFetch<{ access_token: string }>('/auth/apple', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    });
+    await SecureStore.setItemAsync('authToken', data.access_token);
+    return data;
+  },
+
+  loginWithGoogle: async (body: { id_token: string }) => {
+    const data = await apiFetch<{ access_token: string }>('/auth/google', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    });
+    await SecureStore.setItemAsync('authToken', data.access_token);
+    return data;
+  },
+
   logout: async () => {
     try {
       await apiFetch('/auth/logout', { method: 'POST' });

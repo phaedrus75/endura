@@ -23,6 +23,14 @@ import { useRoute } from '@react-navigation/native';
 import { useAuth } from '../contexts/AuthContext';
 import { authAPI } from '../services/api';
 import { Analytics } from '../services/analytics';
+import * as AppleAuthentication from 'expo-apple-authentication';
+import {
+  isAppleSignInAvailable,
+  signInWithApple,
+  useGoogleAuth,
+  submitGoogleIdToken,
+  isGoogleConfigured,
+} from '../services/oauthLogin';
 
 const { width } = Dimensions.get('window');
 
@@ -45,7 +53,11 @@ export default function AuthScreen() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const { login, register, checkAuth } = useAuth();
+  const { login, register, checkAuth, hydrateAfterOAuth } = useAuth();
+  const [appleAvailable, setAppleAvailable] = useState(false);
+  const [oauthLoading, setOauthLoading] = useState<null | 'apple' | 'google'>(null);
+  const googleConfigured = isGoogleConfigured();
+  const [, googleResponse, googlePrompt] = useGoogleAuth();
 
   // Email verification state
   const [showVerification, setShowVerification] = useState(false);
@@ -187,6 +199,69 @@ export default function AuthScreen() {
   }, [onboardingVariant]);
 
   useEffect(() => {
+    let cancelled = false;
+    isAppleSignInAvailable().then((ok) => {
+      if (!cancelled) setAppleAvailable(ok);
+    }).catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
+
+  useEffect(() => {
+    if (!googleResponse) return;
+    if (googleResponse.type !== 'success') {
+      if (googleResponse.type === 'error') {
+        setOauthLoading(null);
+        Alert.alert('Google sign-in failed', googleResponse.error?.message || 'Please try again or use email.');
+      } else if (googleResponse.type !== 'dismiss') {
+        setOauthLoading(null);
+      }
+      return;
+    }
+    const idToken = (googleResponse.params as any)?.id_token
+      || (googleResponse.authentication as any)?.idToken;
+    if (!idToken) {
+      setOauthLoading(null);
+      Alert.alert('Google sign-in failed', 'Google did not return an identity token.');
+      return;
+    }
+    (async () => {
+      try {
+        await submitGoogleIdToken(idToken);
+        await hydrateAfterOAuth();
+      } catch (e: any) {
+        Alert.alert('Sign-in failed', e?.message || 'Could not sign in with Google.');
+      } finally {
+        setOauthLoading(null);
+      }
+    })();
+  }, [googleResponse, hydrateAfterOAuth]);
+
+  const handleApple = async () => {
+    setOauthLoading('apple');
+    try {
+      await signInWithApple();
+      await hydrateAfterOAuth();
+    } catch (e: any) {
+      // ERR_CANCELED is the user backing out of the system sheet.
+      if (e?.code !== 'ERR_REQUEST_CANCELED' && e?.code !== 'ERR_CANCELED') {
+        Alert.alert('Sign-in failed', e?.message || 'Could not sign in with Apple.');
+      }
+    } finally {
+      setOauthLoading(null);
+    }
+  };
+
+  const handleGoogle = async () => {
+    setOauthLoading('google');
+    try {
+      await googlePrompt();
+    } catch (e: any) {
+      setOauthLoading(null);
+      Alert.alert('Sign-in failed', e?.message || 'Could not start Google sign-in.');
+    }
+  };
+
+  useEffect(() => {
     const clearOldData = async () => {
       try {
         await SecureStore.deleteItemAsync('authToken');
@@ -242,6 +317,46 @@ export default function AuthScreen() {
           </View>
 
           <View style={styles.buttonsContainer}>
+            {appleAvailable && (
+              <View style={{ marginBottom: spacing.md }}>
+                <AppleAuthentication.AppleAuthenticationButton
+                  buttonType={AppleAuthentication.AppleAuthenticationButtonType.CONTINUE}
+                  buttonStyle={AppleAuthentication.AppleAuthenticationButtonStyle.BLACK}
+                  cornerRadius={borderRadius.md}
+                  style={styles.appleButton}
+                  onPress={handleApple}
+                />
+                {oauthLoading === 'apple' && (
+                  <View style={styles.oauthSpinner}>
+                    <ActivityIndicator color={colors.textOnPrimary} />
+                  </View>
+                )}
+              </View>
+            )}
+
+            {googleConfigured && (
+              <TouchableOpacity
+                style={styles.googleButton}
+                onPress={handleGoogle}
+                disabled={oauthLoading !== null}
+                activeOpacity={0.85}
+              >
+                {oauthLoading === 'google' ? (
+                  <ActivityIndicator color="#3c4043" />
+                ) : (
+                  <Text style={styles.googleButtonText}>Continue with Google</Text>
+                )}
+              </TouchableOpacity>
+            )}
+
+            {(appleAvailable || googleConfigured) && (
+              <View style={styles.dividerRow}>
+                <View style={styles.dividerLine} />
+                <Text style={styles.dividerLabel}>or</Text>
+                <View style={styles.dividerLine} />
+              </View>
+            )}
+
             <TouchableOpacity
               style={styles.primaryButton}
               onPress={handleGetStarted}
@@ -855,5 +970,46 @@ const styles = StyleSheet.create({
     color: colors.primary,
     fontWeight: '600',
     textDecorationLine: 'underline',
+  },
+  appleButton: {
+    height: 48,
+    width: '100%',
+  },
+  oauthSpinner: {
+    position: 'absolute',
+    top: 0, bottom: 0, left: 0, right: 0,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  googleButton: {
+    height: 48,
+    borderRadius: borderRadius.md,
+    backgroundColor: '#fff',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: spacing.md,
+    borderWidth: 1,
+    borderColor: '#dadce0',
+    flexDirection: 'row',
+  },
+  googleButtonText: {
+    color: '#3c4043',
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  dividerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginVertical: spacing.sm,
+  },
+  dividerLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: colors.cardBorder,
+  },
+  dividerLabel: {
+    marginHorizontal: spacing.sm,
+    fontSize: 12,
+    color: colors.textMuted,
+    fontWeight: '600',
   },
 });

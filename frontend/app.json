@@ -21,6 +21,7 @@
       "supportsTablet": true,
       "bundleIdentifier": "com.endura.study",
       "buildNumber": "24",
+      "usesAppleSignIn": true,
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
         "NSCameraUsageDescription": "Endura uses your camera so you can take a profile photo or attach a screenshot when sending feedback to the team.",
@@ -51,6 +52,7 @@
       "expo-web-browser",
       "expo-localization",
       "expo-font",
+      "expo-apple-authentication",
       [
         "expo-notifications",
         {

@@ -1126,6 +1126,70 @@ def _send_welcome_email_delayed(email: str, username: str | None, delay_seconds:
     _send_welcome_email(email, username)
 
 
+def _issue_token_for_user(user: models.User) -> dict:
+    """Issue a JWT for a user. Mirrors what /auth/login + /auth/verify-email return."""
+    access_token = create_access_token(
+        data={"sub": user.email, "tv": user.token_version or 0},
+        expires_delta=timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES),
+    )
+    return {"access_token": access_token, "token_type": "bearer"}
+
+
+@app.post("/auth/apple", response_model=schemas.Token)
+@limiter.limit("20/minute")
+def auth_apple(
+    request: Request,
+    body: schemas.AppleSignInBody,
+    db: Session = Depends(get_db),
+):
+    """Sign in with Apple → verify the Apple identity token → merge or create user."""
+    from oauth_verify import verify_apple_id_token
+    from oauth_merge import resolve_oauth_user
+
+    claims = verify_apple_id_token(body.identity_token)
+    email = claims.get("email") or (body.email or None)
+    email_verified = bool(claims.get("email_verified"))
+    if email and not claims.get("email") and not email_verified:
+        # Apple only delivers `email` in the token on first sign-in; the client
+        # forwarded what its native bridge gave us. Treat that as Apple-attested
+        # only when the iOS native flow returned it on first login.
+        email_verified = True
+    user = resolve_oauth_user(
+        db,
+        provider="apple",
+        provider_sub=claims["sub"],
+        email=email,
+        idp_email_verified=email_verified,
+    )
+    if getattr(user, "is_archived", False):
+        raise HTTPException(status_code=403, detail="This account has been deactivated. Please contact support.")
+    return _issue_token_for_user(user)
+
+
+@app.post("/auth/google", response_model=schemas.Token)
+@limiter.limit("20/minute")
+def auth_google(
+    request: Request,
+    body: schemas.GoogleSignInBody,
+    db: Session = Depends(get_db),
+):
+    """Google Sign-In → verify the Google ID token → merge or create user."""
+    from oauth_verify import verify_google_id_token
+    from oauth_merge import resolve_oauth_user
+
+    claims = verify_google_id_token(body.id_token)
+    user = resolve_oauth_user(
+        db,
+        provider="google",
+        provider_sub=claims["sub"],
+        email=claims.get("email"),
+        idp_email_verified=bool(claims.get("email_verified")),
+    )
+    if getattr(user, "is_archived", False):
+        raise HTTPException(status_code=403, detail="This account has been deactivated. Please contact support.")
+    return _issue_token_for_user(user)
+
+
 @app.post("/auth/login", response_model=schemas.Token)
 @limiter.limit("10/minute")
 def login(request: Request, user: schemas.UserLogin, db: Session = Depends(get_db)):
