@@ -75,7 +75,8 @@ else:
                      "push_templates", "push_logs", "test_runs",
                      "product_tests", "product_test_events",
                      "research_surveys", "research_survey_questions",
-                     "research_survey_assignments", "research_survey_responses"]:
+                     "research_survey_assignments", "research_survey_responses",
+                     "school_display"]:
             if not _insp.has_table(_tbl):
                 Base.metadata.tables[_tbl].create(bind=engine)
                 print(f"Created missing table: {_tbl}")
@@ -3574,9 +3575,28 @@ def admin_overview(db: Session = Depends(get_db), _=Depends(verify_admin)):
     }
 
 
+def _school_name_key(name: Optional[str]) -> str:
+    return (name or "").strip().lower()
+
+
+# Default tier for any user-typed school we haven't explicitly classified yet.
+# 'tier3' keeps existing schools visible (in the bottom marquee row) so flipping
+# this feature on doesn't suddenly empty the website. The admin downgrades junk
+# entries to 'hidden' and promotes good ones to 'tier1' / 'tier2'.
+SCHOOL_DEFAULT_TIER = "tier3"
+SCHOOL_VALID_TIERS = ("hidden", "tier1", "tier2", "tier3")
+
+
 @app.get("/public/geography")
 def public_geography(db: Session = Depends(get_db)):
-    """Public-facing geography summary for the website."""
+    """Public-facing geography summary for the website.
+
+    Schools are joined against `school_display` and grouped by tier so the
+    marketing site can render one marquee row per tier. Anything tagged
+    'hidden' is omitted entirely. Unflagged schools fall through to
+    `SCHOOL_DEFAULT_TIER` so the page never goes blank just because we
+    haven't curated yet.
+    """
     country_rows = (
         db.query(models.User.country, func.count(models.User.id))
         .filter(models.User.country.isnot(None), models.User.country != "")
@@ -3590,11 +3610,32 @@ def public_geography(db: Session = Depends(get_db)):
         .distinct()
         .all()
     )
+
+    # Bulk-fetch tier overrides keyed on lowercased name so "Harvard" and
+    # "harvard" share the same flag without making the admin canonicalise.
+    flag_rows = db.query(models.SchoolDisplay).all()
+    tier_by_key: dict[str, str] = {f.name_key: f.tier for f in flag_rows}
+
+    schools_out = []
+    hidden_count = 0
+    for school, city, country in school_rows:
+        tier = tier_by_key.get(_school_name_key(school), SCHOOL_DEFAULT_TIER)
+        if tier == "hidden":
+            hidden_count += 1
+            continue
+        schools_out.append({
+            "school": school,
+            "city": city,
+            "country": country,
+            "tier": tier,
+        })
+
     return {
         "total_countries": len(country_rows),
-        "total_schools": len(school_rows),
+        "total_schools": len(schools_out),
+        "total_schools_hidden": hidden_count,
         "countries": [{"country": r[0], "users": r[1]} for r in country_rows],
-        "schools": [{"school": r[0], "city": r[1], "country": r[2]} for r in school_rows],
+        "schools": schools_out,
     }
 
 
@@ -3718,8 +3759,16 @@ def admin_geography(db: Session = Depends(get_db), _=Depends(verify_admin)):
         .order_by(func.count(models.User.id).desc())
         .all()
     )
+    flag_rows = db.query(models.SchoolDisplay).all()
+    tier_by_key: dict[str, str] = {f.name_key: f.tier for f in flag_rows}
     schools = [
-        {"school": r[0], "city": r[1], "country": r[2], "users": r[3]}
+        {
+            "school": r[0],
+            "city": r[1],
+            "country": r[2],
+            "users": r[3],
+            "tier": tier_by_key.get(_school_name_key(r[0]), SCHOOL_DEFAULT_TIER),
+        }
         for r in school_rows
     ]
 
@@ -3731,7 +3780,104 @@ def admin_geography(db: Session = Depends(get_db), _=Depends(verify_admin)):
         "total_schools": total_schools,
         "countries": countries,
         "schools": schools,
+        "default_tier": SCHOOL_DEFAULT_TIER,
+        "valid_tiers": list(SCHOOL_VALID_TIERS),
     }
+
+
+class SchoolTierUpdate(BaseModel):
+    school: str = Field(..., min_length=1, max_length=255)
+    tier: str = Field(..., pattern="^(hidden|tier1|tier2|tier3)$")
+    country: Optional[str] = Field(None, max_length=120)
+
+
+@app.put("/admin/schools/display")
+def admin_set_school_tier(
+    body: SchoolTierUpdate,
+    db: Session = Depends(get_db),
+    _=Depends(verify_admin),
+):
+    """Set the visibility tier for a single school name.
+
+    Idempotent upsert keyed on the lowercased trimmed name so all casing
+    variants of the same school share one row. The `school_name` column
+    is preserved so the admin sees the original spelling that was first
+    flagged. Returns the updated row.
+    """
+    name_clean = body.school.strip()
+    if not name_clean:
+        raise HTTPException(status_code=400, detail="School name cannot be blank")
+    key = name_clean.lower()
+
+    row = (
+        db.query(models.SchoolDisplay)
+        .filter(models.SchoolDisplay.name_key == key)
+        .first()
+    )
+    if row is None:
+        row = models.SchoolDisplay(
+            name_key=key,
+            school_name=name_clean,
+            country=(body.country or None),
+            tier=body.tier,
+        )
+        db.add(row)
+    else:
+        row.tier = body.tier
+        if body.country and not row.country:
+            row.country = body.country
+    db.commit()
+    db.refresh(row)
+    return {
+        "school_name": row.school_name,
+        "name_key": row.name_key,
+        "country": row.country,
+        "tier": row.tier,
+        "updated_at": row.updated_at.isoformat() if row.updated_at else None,
+    }
+
+
+@app.post("/admin/schools/display/bulk")
+def admin_bulk_set_school_tiers(
+    body: dict | None = None,
+    db: Session = Depends(get_db),
+    _=Depends(verify_admin),
+):
+    """Bulk-set tiers in one request. Body: `{"updates": [{"school": "...", "tier": "..."}]}`.
+
+    Useful for triaging the long tail of junk values in one go without
+    hammering the single-school endpoint. Skips invalid rows silently and
+    reports how many landed.
+    """
+    body = body or {}
+    updates = body.get("updates") or []
+    if not isinstance(updates, list):
+        raise HTTPException(status_code=400, detail="`updates` must be a list")
+    saved = 0
+    skipped = 0
+    for upd in updates:
+        if not isinstance(upd, dict):
+            skipped += 1
+            continue
+        school = (upd.get("school") or "").strip()
+        tier = (upd.get("tier") or "").strip()
+        if not school or tier not in SCHOOL_VALID_TIERS:
+            skipped += 1
+            continue
+        key = school.lower()
+        row = (
+            db.query(models.SchoolDisplay)
+            .filter(models.SchoolDisplay.name_key == key)
+            .first()
+        )
+        if row is None:
+            row = models.SchoolDisplay(name_key=key, school_name=school, tier=tier)
+            db.add(row)
+        else:
+            row.tier = tier
+        saved += 1
+    db.commit()
+    return {"saved": saved, "skipped": skipped}
 
 
 @app.get("/admin/subjects/audit")

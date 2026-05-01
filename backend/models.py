@@ -875,6 +875,33 @@ class School(Base):
     country = Column(String, nullable=False, index=True)
 
 
+class SchoolDisplay(Base):
+    """Per-school visibility/tier flag for the public marketing site.
+
+    The schools shown on endura.eco come from the free-form `users.school`
+    string (not the curated `schools` reference table), so we key on the
+    raw display name. `name_key` is `name.strip().lower()` and is the
+    UNIQUE column — variants like "Harvard" / "harvard" / " Harvard "
+    collapse to one flag without the admin having to canonicalise first.
+
+    `tier` values:
+        'hidden'  → don't show on endura.eco (used to suppress junk values)
+        'tier1'   → top row of the marquee on the website
+        'tier2'   → middle row
+        'tier3'   → bottom row (also the implicit default for unflagged
+                    schools so existing values stay visible until reviewed)
+    """
+    __tablename__ = "school_display"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name_key = Column(String(255), nullable=False, unique=True, index=True)
+    school_name = Column(String(255), nullable=False)
+    country = Column(String(120), nullable=True)
+    tier = Column(String(20), nullable=False, default="tier3", server_default="tier3", index=True)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    updated_by_user_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+
+
 class AppRank(Base):
     """Daily snapshot of App Store chart positions, sourced from AppFigures.
     One row per (date, country, category, subtype, device) tuple.

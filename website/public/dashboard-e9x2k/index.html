@@ -711,10 +711,34 @@
                     </div>
                 </div>
                 <div class="table-card">
-                    <h3>Schools &amp; Colleges</h3>
+                    <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:8px">
+                        <div>
+                            <h3 style="margin:0">Schools &amp; Colleges</h3>
+                            <p style="font-size:11px;color:var(--text-muted);margin:4px 0 0;line-height:1.5">
+                                The <strong>Tier</strong> dropdown drives the 3 marquee rows on endura.eco — Tier 1 = top row,
+                                Tier 2 = middle, Tier 3 = bottom (default for unflagged). Pick <strong>Don't show</strong> to
+                                hide nonsensical entries from the public site.
+                            </p>
+                        </div>
+                        <div style="display:flex;gap:8px;align-items:center">
+                            <input type="text" id="geoSchoolSearch" placeholder="Search schools…" style="padding:7px 12px;border:1px solid var(--border);border-radius:8px;font-size:12px;min-width:160px" oninput="renderSchoolTable(_geoSchoolsCache)">
+                            <select id="geoSchoolTierFilter" onchange="renderSchoolTable(_geoSchoolsCache)" style="padding:7px 12px;border:1px solid var(--border);border-radius:8px;font-size:12px">
+                                <option value="">All tiers</option>
+                                <option value="tier1">Tier 1</option>
+                                <option value="tier2">Tier 2</option>
+                                <option value="tier3">Tier 3</option>
+                                <option value="hidden">Hidden</option>
+                            </select>
+                        </div>
+                    </div>
                     <div style="overflow-x:auto">
                         <table>
-                            <thead><tr><th>School</th><th>Location</th><th>Users</th></tr></thead>
+                            <thead><tr>
+                                <th>School</th>
+                                <th>Location</th>
+                                <th style="text-align:right">Users</th>
+                                <th style="min-width:160px">Tier</th>
+                            </tr></thead>
                             <tbody id="geoSchoolBody"></tbody>
                         </table>
                     </div>
@@ -3690,16 +3714,102 @@ function renderCountryTable(countries) {
     }).join('');
 }
 
+// Cache so the search/tier filter inputs can re-render without re-fetching.
+let _geoSchoolsCache = [];
+const SCHOOL_TIER_LABELS = {
+    hidden: { label: "Don't show", color: '#dc2626', bg: '#fee2e2' },
+    tier1:  { label: 'Tier 1',     color: '#15803d', bg: '#dcfce7' },
+    tier2:  { label: 'Tier 2',     color: '#0369a1', bg: '#dbeafe' },
+    tier3:  { label: 'Tier 3',     color: '#92400e', bg: '#fef3c7' },
+};
+
 function renderSchoolTable(schools) {
+    _geoSchoolsCache = schools || [];
     const body = document.getElementById('geoSchoolBody');
-    if (!schools.length) { body.innerHTML = '<tr><td colspan="3" class="empty">No school data yet</td></tr>'; return; }
-    body.innerHTML = schools.map(s => `
-        <tr>
+    if (!_geoSchoolsCache.length) {
+        body.innerHTML = '<tr><td colspan="4" class="empty">No school data yet</td></tr>';
+        return;
+    }
+    const search = (document.getElementById('geoSchoolSearch')?.value || '').toLowerCase();
+    const tierFilter = document.getElementById('geoSchoolTierFilter')?.value || '';
+    const filtered = _geoSchoolsCache.filter(s => {
+        const tier = s.tier || 'tier3';
+        if (tierFilter && tier !== tierFilter) return false;
+        if (search) {
+            const hay = (s.school + ' ' + (s.city || '') + ' ' + (s.country || '')).toLowerCase();
+            if (!hay.includes(search)) return false;
+        }
+        return true;
+    });
+    if (!filtered.length) {
+        body.innerHTML = '<tr><td colspan="4" class="empty">No schools match this filter</td></tr>';
+        return;
+    }
+    body.innerHTML = filtered.map(s => {
+        const tier = s.tier || 'tier3';
+        const meta = SCHOOL_TIER_LABELS[tier] || SCHOOL_TIER_LABELS.tier3;
+        const opts = ['hidden','tier1','tier2','tier3'].map(t =>
+            `<option value="${t}" ${t===tier?'selected':''}>${SCHOOL_TIER_LABELS[t].label}</option>`
+        ).join('');
+        const safeSchool = (s.school || '').replace(/'/g, "\\'");
+        return `
+        <tr data-school-key="${esc((s.school || '').toLowerCase())}">
             <td><strong>${esc(s.school)}</strong></td>
             <td>${[s.city, s.country].filter(Boolean).map(esc).join(', ') || '—'}</td>
-            <td>${s.users}</td>
-        </tr>
-    `).join('');
+            <td style="text-align:right;font-variant-numeric:tabular-nums">${s.users}</td>
+            <td>
+                <div style="display:flex;align-items:center;gap:8px">
+                    <span style="font-size:11px;font-weight:700;padding:2px 8px;border-radius:8px;color:${meta.color};background:${meta.bg};white-space:nowrap" data-tier-pill>${meta.label}</span>
+                    <select onchange="updateSchoolTier('${safeSchool}', this.value, ${s.country ? `'${esc(s.country).replace(/'/g, "\\'")}'` : 'null'}, this)" style="flex:1;padding:5px 8px;border:1px solid var(--border);border-radius:6px;font-size:12px;background:#fff">
+                        ${opts}
+                    </select>
+                </div>
+            </td>
+        </tr>`;
+    }).join('');
+}
+
+async function updateSchoolTier(schoolName, tier, country, selectEl) {
+    const row = selectEl.closest('tr');
+    const pill = row?.querySelector('[data-tier-pill]');
+    const original = selectEl.dataset._prev;
+    selectEl.dataset._prev = tier;
+    if (pill) {
+        const meta = SCHOOL_TIER_LABELS[tier] || SCHOOL_TIER_LABELS.tier3;
+        pill.textContent = 'Saving…';
+        pill.style.color = '#666';
+        pill.style.background = '#f1f5f9';
+    }
+    try {
+        const res = await fetch(API_URL + '/admin/schools/display', {
+            method: 'PUT',
+            headers: { 'X-Admin-Key': API_KEY, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ school: schoolName, tier, country: country || null }),
+        });
+        if (!res.ok) {
+            const err = await res.json().catch(() => ({}));
+            throw new Error(err.detail || ('HTTP ' + res.status));
+        }
+        const cached = _geoSchoolsCache.find(s =>
+            (s.school || '').toLowerCase() === (schoolName || '').toLowerCase()
+        );
+        if (cached) cached.tier = tier;
+        if (pill) {
+            const meta = SCHOOL_TIER_LABELS[tier] || SCHOOL_TIER_LABELS.tier3;
+            pill.textContent = meta.label;
+            pill.style.color = meta.color;
+            pill.style.background = meta.bg;
+        }
+    } catch (e) {
+        alert('Failed to update tier: ' + (e?.message || e));
+        if (original) selectEl.value = original;
+        if (pill) {
+            const meta = SCHOOL_TIER_LABELS[selectEl.value] || SCHOOL_TIER_LABELS.tier3;
+            pill.textContent = meta.label;
+            pill.style.color = meta.color;
+            pill.style.background = meta.bg;
+        }
+    }
 }
 
 // ----- Activity -----

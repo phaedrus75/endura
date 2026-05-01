@@ -14,6 +14,10 @@ interface SchoolData {
   school: string;
   city: string | null;
   country: string | null;
+  /** Set by the admin from the Geography page on the dashboard.
+   *  'tier1' → top marquee row, 'tier2' → middle, 'tier3' → bottom.
+   *  'hidden' schools are filtered out server-side and never reach us. */
+  tier?: "tier1" | "tier2" | "tier3";
 }
 
 interface GeoData {
@@ -243,24 +247,37 @@ function SchoolChip({ school }: { school: SchoolData }) {
 }
 
 function SchoolMarqueeWall({ schools }: { schools: SchoolData[] }) {
-  const rows = [[] as SchoolData[], [] as SchoolData[], [] as SchoolData[]];
-  schools.forEach((s, i) => rows[i % 3].push(s));
+  // Each marquee row maps to a tier set by the admin in the dashboard
+  // (Geography → Schools & Colleges). Schools with no explicit tier come
+  // back from the API as 'tier3' (the default), so the bottom row stays
+  // populated even before any curation. 'hidden' is filtered out server-side.
+  const tier1 = schools.filter((s) => s.tier === "tier1");
+  const tier2 = schools.filter((s) => s.tier === "tier2");
+  const tier3 = schools.filter((s) => s.tier === "tier3" || !s.tier);
+  const rows: SchoolData[][] = [tier1, tier2, tier3];
 
   const speeds = [35, 45, 38];
   const directions = ["normal", "reverse", "normal"];
+
+  // Drop empty rows so we don't render a blank gap if a tier has zero schools.
+  const nonEmptyRows = rows
+    .map((row, idx) => ({ row, speed: speeds[idx], direction: directions[idx] }))
+    .filter(({ row }) => row.length > 0);
+
+  if (nonEmptyRows.length === 0) return null;
 
   return (
     <div className="relative overflow-hidden">
       <div className="absolute left-0 top-0 bottom-0 w-20 bg-gradient-to-r from-cream to-transparent z-10" />
       <div className="absolute right-0 top-0 bottom-0 w-20 bg-gradient-to-l from-cream to-transparent z-10" />
       <div className="flex flex-col gap-3">
-        {rows.map((row, ri) => (
+        {nonEmptyRows.map(({ row, speed, direction }, ri) => (
           <div
             key={ri}
             className="flex gap-3 whitespace-nowrap"
             style={{
-              animation: `marquee ${speeds[ri]}s linear infinite`,
-              animationDirection: directions[ri],
+              animation: `marquee ${speed}s linear infinite`,
+              animationDirection: direction,
             }}
           >
             {[...row, ...row].map((s, i) => (
