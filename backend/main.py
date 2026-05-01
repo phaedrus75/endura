@@ -2,7 +2,7 @@ from fastapi import FastAPI, Depends, HTTPException, status, Request, Header, Up
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
-from sqlalchemy import text, func, or_, and_
+from sqlalchemy import text, func, or_, and_, select
 from datetime import timedelta, datetime, date
 from typing import List, Optional
 from slowapi import Limiter, _rate_limit_exceeded_handler
@@ -3226,6 +3226,195 @@ def get_donation_leaderboard(
 
 # ============ Admin Dashboard API ============
 
+
+def _month_bounds_utc(key: str) -> tuple[datetime, datetime]:
+    parts = key.split("-")
+    if len(parts) != 2:
+        raise ValueError("month key must be YYYY-MM")
+    y, mo = int(parts[0]), int(parts[1])
+    if mo < 1 or mo > 12:
+        raise ValueError("invalid month")
+    start = datetime(y, mo, 1)
+    end = datetime(y + 1, 1, 1) if mo == 12 else datetime(y, mo + 1, 1)
+    return start, end
+
+
+def _week_bounds_utc(monday_key: str) -> tuple[datetime, datetime]:
+    d0 = date.fromisoformat(monday_key)
+    start = datetime(d0.year, d0.month, d0.day)
+    end = start + timedelta(days=7)
+    return start, end
+
+
+def _admin_funnel_cohort_subquery(db: Session, scope: str, key: str):
+    q = db.query(models.User.id).filter(models.User.is_archived == False)
+    if scope == "month":
+        start, end = _month_bounds_utc(key)
+        q = q.filter(models.User.created_at >= start, models.User.created_at < end)
+    elif scope == "week":
+        start, end = _week_bounds_utc(key)
+        q = q.filter(models.User.created_at >= start, models.User.created_at < end)
+    elif scope == "version":
+        if key == "_null_":
+            q = q.filter(models.User.app_version.is_(None))
+        else:
+            q = q.filter(models.User.app_version == key)
+    else:
+        raise ValueError("invalid scope for cohort subquery")
+    return q.subquery()
+
+
+def _engagement_funnel_from_user_subquery(db: Session, cohort_sq) -> dict:
+    """Lifecycle funnel for users in cohort_sq (column `id`, non-archived)."""
+    cid = cohort_sq.c.id
+    in_cohort = models.StudySession.user_id.in_(select(cid))
+
+    signed_up = db.query(func.count()).select_from(cohort_sq).scalar() or 0
+    verified_users = db.query(func.count(models.User.id)).filter(
+        models.User.id.in_(select(cid)),
+        models.User.email_verified == True,
+    ).scalar() or 0
+
+    started_timer = db.query(func.count(func.distinct(models.StudySession.user_id))).filter(
+        in_cohort,
+    ).scalar() or 0
+    completed_timer = db.query(func.count(func.distinct(models.StudySession.user_id))).filter(
+        models.StudySession.duration_minutes > 0,
+        in_cohort,
+    ).scalar() or 0
+    hatched_animal = db.query(func.count(func.distinct(models.UserAnimal.user_id))).filter(
+        models.UserAnimal.user_id.in_(select(cid)),
+    ).scalar() or 0
+    earned_badge = db.query(func.count(func.distinct(models.UserBadge.user_id))).filter(
+        models.UserBadge.user_id.in_(select(cid)),
+    ).scalar() or 0
+    added_friend = db.query(func.count(func.distinct(models.Friendship.user_id))).filter(
+        models.Friendship.status == "accepted",
+        models.Friendship.user_id.in_(select(cid)),
+    ).scalar() or 0
+    joined_group = db.query(func.count(func.distinct(models.GroupMember.user_id))).filter(
+        models.GroupMember.user_id.in_(select(cid)),
+    ).scalar() or 0
+    bought_shop = db.query(func.count(func.distinct(models.UserPurchase.user_id))).filter(
+        models.UserPurchase.user_id.in_(select(cid)),
+    ).scalar() or 0
+    completed_3_timers = (
+        db.query(models.StudySession.user_id)
+        .filter(models.StudySession.duration_minutes > 0, in_cohort)
+        .group_by(models.StudySession.user_id)
+        .having(func.count(models.StudySession.id) >= 3)
+        .count()
+    )
+    earned_3_badges = (
+        db.query(models.UserBadge.user_id)
+        .filter(models.UserBadge.user_id.in_(select(cid)))
+        .group_by(models.UserBadge.user_id)
+        .having(func.count(models.UserBadge.id) >= 3)
+        .count()
+    )
+    added_3_friends = (
+        db.query(models.Friendship.user_id)
+        .filter(
+            models.Friendship.status == "accepted",
+            models.Friendship.user_id.in_(select(cid)),
+        )
+        .group_by(models.Friendship.user_id)
+        .having(func.count(models.Friendship.id) >= 3)
+        .count()
+    )
+
+    return {
+        "signed_up": signed_up,
+        "verified_email": verified_users,
+        "started_timer": started_timer,
+        "completed_timer": completed_timer,
+        "completed_3_timers": completed_3_timers,
+        "hatched_animal": hatched_animal,
+        "earned_badge": earned_badge,
+        "added_friend": added_friend,
+        "added_3_friends": added_3_friends,
+        "joined_group": joined_group,
+        "bought_shop": bought_shop,
+        "earned_3_badges": earned_3_badges,
+    }
+
+
+@app.get("/admin/funnel/segments")
+def admin_funnel_segments(db: Session = Depends(get_db), _=Depends(verify_admin)):
+    """Picker metadata for cohort-scoped engagement funnel (Overview)."""
+    now = datetime.utcnow()
+    months: list[dict] = []
+    y, m = now.year, now.month
+    for _ in range(3):
+        months.append({"key": f"{y:04d}-{m:02d}", "label": date(y, m, 1).strftime("%b %Y")})
+        m -= 1
+        if m < 1:
+            m = 12
+            y -= 1
+    months.reverse()
+
+    today = now.date()
+    this_monday = today - timedelta(days=today.weekday())
+    weeks: list[dict] = []
+    for i in range(4, -1, -1):
+        mon = this_monday - timedelta(weeks=i)
+        sun = mon + timedelta(days=6)
+        weeks.append({
+            "key": mon.isoformat(),
+            "label": f"{mon.strftime('%b')} {mon.day}–{sun.day}, {sun.year}",
+        })
+
+    vrows = (
+        db.query(models.User.app_version, func.count(models.User.id))
+        .filter(models.User.is_archived == False)
+        .group_by(models.User.app_version)
+        .order_by(func.count(models.User.id).desc())
+        .limit(12)
+        .all()
+    )
+    versions = []
+    for av, n in vrows:
+        k = "_null_" if av is None else str(av)
+        lab = "Unknown" if av is None else str(av)
+        versions.append({"key": k, "label": lab, "n": int(n)})
+
+    return {"months": months, "weeks": weeks, "versions": versions}
+
+
+@app.get("/admin/funnel")
+def admin_funnel_cohort(
+    scope: str = Query("all", pattern="^(all|month|week|version)$"),
+    key: Optional[str] = Query(None, max_length=64),
+    db: Session = Depends(get_db),
+    _=Depends(verify_admin),
+):
+    """Engagement funnel for signup month/week cohorts or current app_version slice."""
+    if scope != "all" and (not key or not key.strip()):
+        raise HTTPException(status_code=400, detail="key is required when scope is month, week, or version")
+    key = (key or "").strip()
+    if scope == "month":
+        try:
+            _month_bounds_utc(key)
+        except Exception:
+            raise HTTPException(status_code=400, detail="month key must be YYYY-MM")
+    elif scope == "week":
+        try:
+            _week_bounds_utc(key)
+        except Exception:
+            raise HTTPException(status_code=400, detail="week key must be YYYY-MM-DD (UTC Monday)")
+    elif scope == "version":
+        if not key:
+            raise HTTPException(status_code=400, detail="version key required")
+
+    if scope == "all":
+        cohort_sq = db.query(models.User.id).filter(models.User.is_archived == False).subquery()
+    else:
+        cohort_sq = _admin_funnel_cohort_subquery(db, scope, key)
+
+    funnel = _engagement_funnel_from_user_subquery(db, cohort_sq)
+    return {"scope": scope, "key": key or None, "funnel": funnel}
+
+
 @app.get("/admin/overview")
 def admin_overview(db: Session = Depends(get_db), _=Depends(verify_admin)):
     now = datetime.utcnow()
@@ -3280,68 +3469,10 @@ def admin_overview(db: Session = Depends(get_db), _=Depends(verify_admin)):
         real_donated = total_donated
         real_donation_count = total_donation_count
 
-    # User funnel (excluding archived users)
+    # User funnel (excluding archived users) — shared with GET /admin/funnel
     real_users = total_users - archived_users
-    funnel_user_filter = models.User.is_archived == False
-    verified_users = db.query(func.count(models.User.id)).filter(
-        funnel_user_filter, models.User.email_verified == True
-    ).scalar() or 0
-    if archived_ids:
-        started_timer = db.query(func.count(func.distinct(models.StudySession.user_id))).filter(
-            models.StudySession.user_id.notin_(archived_ids)
-        ).scalar() or 0
-        completed_timer = db.query(func.count(func.distinct(models.StudySession.user_id))).filter(
-            models.StudySession.duration_minutes > 0,
-            models.StudySession.user_id.notin_(archived_ids),
-        ).scalar() or 0
-        hatched_animal = db.query(func.count(func.distinct(models.UserAnimal.user_id))).filter(
-            models.UserAnimal.user_id.notin_(archived_ids)
-        ).scalar() or 0
-        earned_badge = db.query(func.count(func.distinct(models.UserBadge.user_id))).filter(
-            models.UserBadge.user_id.notin_(archived_ids)
-        ).scalar() or 0
-        added_friend = db.query(func.count(func.distinct(models.Friendship.user_id))).filter(
-            models.Friendship.status == "accepted",
-            models.Friendship.user_id.notin_(archived_ids),
-        ).scalar() or 0
-        joined_group = db.query(func.count(func.distinct(models.GroupMember.user_id))).filter(
-            models.GroupMember.user_id.notin_(archived_ids)
-        ).scalar() or 0
-        bought_shop = db.query(func.count(func.distinct(models.UserPurchase.user_id))).filter(
-            models.UserPurchase.user_id.notin_(archived_ids)
-        ).scalar() or 0
-        completed_3_timers = db.query(models.StudySession.user_id).filter(
-            models.StudySession.duration_minutes > 0,
-            models.StudySession.user_id.notin_(archived_ids),
-        ).group_by(models.StudySession.user_id).having(func.count(models.StudySession.id) >= 3).count()
-        earned_3_badges = db.query(models.UserBadge.user_id).filter(
-            models.UserBadge.user_id.notin_(archived_ids)
-        ).group_by(models.UserBadge.user_id).having(func.count(models.UserBadge.id) >= 3).count()
-        added_3_friends = db.query(models.Friendship.user_id).filter(
-            models.Friendship.status == "accepted",
-            models.Friendship.user_id.notin_(archived_ids),
-        ).group_by(models.Friendship.user_id).having(func.count(models.Friendship.id) >= 3).count()
-    else:
-        started_timer = db.query(func.count(func.distinct(models.StudySession.user_id))).scalar() or 0
-        completed_timer = db.query(func.count(func.distinct(models.StudySession.user_id))).filter(
-            models.StudySession.duration_minutes > 0
-        ).scalar() or 0
-        hatched_animal = db.query(func.count(func.distinct(models.UserAnimal.user_id))).scalar() or 0
-        earned_badge = db.query(func.count(func.distinct(models.UserBadge.user_id))).scalar() or 0
-        added_friend = db.query(func.count(func.distinct(models.Friendship.user_id))).filter(
-            models.Friendship.status == "accepted"
-        ).scalar() or 0
-        joined_group = db.query(func.count(func.distinct(models.GroupMember.user_id))).scalar() or 0
-        bought_shop = db.query(func.count(func.distinct(models.UserPurchase.user_id))).scalar() or 0
-        completed_3_timers = db.query(models.StudySession.user_id).filter(
-            models.StudySession.duration_minutes > 0
-        ).group_by(models.StudySession.user_id).having(func.count(models.StudySession.id) >= 3).count()
-        earned_3_badges = db.query(models.UserBadge.user_id).group_by(
-            models.UserBadge.user_id
-        ).having(func.count(models.UserBadge.id) >= 3).count()
-        added_3_friends = db.query(models.Friendship.user_id).filter(
-            models.Friendship.status == "accepted"
-        ).group_by(models.Friendship.user_id).having(func.count(models.Friendship.id) >= 3).count()
+    cohort_all = db.query(models.User.id).filter(models.User.is_archived == False).subquery()
+    funnel = _engagement_funnel_from_user_subquery(db, cohort_all)
 
     # ---- Engagement totals (social + study artifacts + tips) ----
     def _exclude_archived(q, user_col):
@@ -3558,20 +3689,7 @@ def admin_overview(db: Session = Depends(get_db), _=Depends(verify_admin)):
         "daily_tip_likes": daily_tip_likes,
         "daily_tip_saves": daily_tip_saves,
         "daily_feed_reactions": daily_feed_reactions,
-        "funnel": {
-            "signed_up": real_users,
-            "verified_email": verified_users,
-            "started_timer": started_timer,
-            "completed_timer": completed_timer,
-            "completed_3_timers": completed_3_timers,
-            "hatched_animal": hatched_animal,
-            "earned_badge": earned_badge,
-            "added_friend": added_friend,
-            "added_3_friends": added_3_friends,
-            "joined_group": joined_group,
-            "bought_shop": bought_shop,
-            "earned_3_badges": earned_3_badges,
-        },
+        "funnel": funnel,
     }
 
 

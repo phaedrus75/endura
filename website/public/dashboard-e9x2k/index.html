@@ -358,6 +358,13 @@
             font-size: 11px; color: var(--red); font-weight: 600;
             margin-left: 4px;
         }
+        .funnel-pill {
+            padding: 6px 12px; border: 1px solid var(--border); border-radius: 999px;
+            font-size: 12px; font-weight: 600; cursor: pointer; background: var(--card);
+            color: var(--text-muted); transition: all .15s;
+        }
+        .funnel-pill:hover { border-color: var(--forest); color: var(--text); }
+        .funnel-pill.active { background: var(--forest); color: #fff; border-color: var(--forest); }
     </style>
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js" crossorigin="anonymous"></script>
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin="anonymous"></script>
@@ -456,8 +463,24 @@
 
             <!-- User Funnel -->
             <div class="table-card" style="margin-bottom:28px">
-                <h3 style="margin-bottom:20px">User Funnel</h3>
+                <h3 style="margin-bottom:8px">User funnel</h3>
+                <p style="font-size:12px;color:var(--text-muted);margin:0 0 12px;line-height:1.5">
+                    Engagement funnel from the database. <strong>Month/week</strong> = users who <em>signed up</em> in that window (UTC). <strong>Version</strong> = users whose <em>current</em> reported app build matches (from profile telemetry).
+                </p>
+                <div id="funnelKindPills" style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:8px">
+                    <button type="button" class="funnel-pill active" data-funnel-kind="all">All users</button>
+                    <button type="button" class="funnel-pill" data-funnel-kind="month">Signup month</button>
+                    <button type="button" class="funnel-pill" data-funnel-kind="week">Signup week</button>
+                    <button type="button" class="funnel-pill" data-funnel-kind="version">App version</button>
+                </div>
+                <div id="funnelSubPills" style="display:none;flex-wrap:wrap;gap:6px;margin-bottom:14px"></div>
                 <div id="funnelChart" style="display:flex;flex-direction:column;gap:6px"></div>
+                <h4 style="margin:24px 0 8px;font-size:15px;color:var(--text)">Onboarding screens (PostHog)</h4>
+                <p style="font-size:12px;color:var(--text-muted);margin:0 0 10px;line-height:1.5">
+                    Nested reach over the last 120 days: each step counts distinct users who fired <strong>this</strong> event and <strong>all prior</strong> steps in the list (not necessarily same session order). Requires PostHog query proxy.
+                </p>
+                <div id="onboardingFunnelStatus" style="font-size:12px;color:var(--text-muted);margin-bottom:8px"></div>
+                <div id="onboardingFunnelChart" style="display:flex;flex-direction:column;gap:6px"></div>
             </div>
         </div>
 
@@ -1682,6 +1705,7 @@ function enterDashboard() {
     document.getElementById('shell').classList.add('active');
     document.getElementById('statusDot').className = 'status-dot ok';
     document.getElementById('statusText').textContent = 'Connected';
+    wireFunnelCohortControlsOnce();
     // Kick off silent PostHog status check; Overview uses phAvailable to decide whether to fetch PH overlays
     checkPostHogStatus().finally(() => loadOverview());
 }
@@ -2038,9 +2062,173 @@ function renderOverviewCharts() {
     renderReactionsChart(feedReactions);
 }
 
+let funnelCohortMeta = null;
+let funnelUI = { kind: 'all', key: null };
+
+function wireFunnelCohortControlsOnce() {
+    const wrap = document.getElementById('funnelKindPills');
+    if (!wrap || wrap.dataset.wired) return;
+    wrap.dataset.wired = '1';
+    wrap.addEventListener('click', (ev) => {
+        const btn = ev.target.closest('[data-funnel-kind]');
+        if (!btn) return;
+        const kind = btn.dataset.funnelKind;
+        funnelUI.kind = kind;
+        funnelUI.key = null;
+        wrap.querySelectorAll('.funnel-pill').forEach(b => b.classList.toggle('active', b === btn));
+        const sub = document.getElementById('funnelSubPills');
+        if (kind === 'all') {
+            sub.style.display = 'none';
+            sub.innerHTML = '';
+            loadFunnelFromApi();
+        } else {
+            renderFunnelSubPills(kind);
+        }
+    });
+    document.getElementById('funnelSubPills').addEventListener('click', (ev) => {
+        const b = ev.target.closest('[data-funnel-sub-key]');
+        if (!b) return;
+        funnelUI.key = decodeURIComponent(b.getAttribute('data-funnel-sub-key') || '');
+        b.parentElement.querySelectorAll('.funnel-pill').forEach(x => x.classList.remove('active'));
+        b.classList.add('active');
+        loadFunnelFromApi();
+    });
+}
+
+function renderFunnelSubPills(kind) {
+    const sub = document.getElementById('funnelSubPills');
+    if (!funnelCohortMeta) {
+        sub.style.display = 'flex';
+        sub.innerHTML = '<span style="font-size:12px;color:var(--text-muted)">Loading cohort pickers…</span>';
+        adminFetch('/admin/funnel/segments').then((meta) => {
+            funnelCohortMeta = meta;
+            renderFunnelSubPills(kind);
+        }).catch(() => {
+            sub.innerHTML = '<span style="font-size:12px;color:var(--red)">Could not load segments</span>';
+        });
+        return;
+    }
+    const list = kind === 'month' ? funnelCohortMeta.months : kind === 'week' ? funnelCohortMeta.weeks : funnelCohortMeta.versions;
+    if (!list || !list.length) {
+        sub.style.display = 'flex';
+        sub.innerHTML = '<span style="font-size:12px;color:var(--text-muted)">No segments</span>';
+        return;
+    }
+    sub.style.display = 'flex';
+    sub.innerHTML = list.map((item) => {
+        const extra = item.n != null ? ` (${Number(item.n).toLocaleString()})` : '';
+        const k = encodeURIComponent(item.key);
+        return `<button type="button" class="funnel-pill" data-funnel-sub-key="${k}">${esc(item.label + extra)}</button>`;
+    }).join('');
+    const buttons = sub.querySelectorAll('[data-funnel-sub-key]');
+    const last = buttons[buttons.length - 1];
+    if (last) {
+        funnelUI.key = decodeURIComponent(last.getAttribute('data-funnel-sub-key'));
+        buttons.forEach(x => x.classList.remove('active'));
+        last.classList.add('active');
+    }
+    loadFunnelFromApi();
+}
+
+async function loadFunnelFromApi() {
+    let path = '/admin/funnel?scope=all';
+    if (funnelUI.kind !== 'all') {
+        path = '/admin/funnel?scope=' + encodeURIComponent(funnelUI.kind) + '&key=' + encodeURIComponent(funnelUI.key || '');
+    }
+    try {
+        const d = await adminFetch(path);
+        if (d.funnel) renderFunnel(d.funnel);
+    } catch (e) {
+        const el = document.getElementById('funnelChart');
+        if (el) el.innerHTML = '<p style="color:var(--red);font-size:13px">' + esc(e.message || String(e)) + '</p>';
+    }
+}
+
+function renderFunnelStepsInto(containerEl, steps) {
+    const max = steps[0].value || 1;
+    containerEl.innerHTML = steps.map((s, i) => {
+        const pct = max > 0 ? (s.value / max * 100) : 0;
+        const convRate = i === 0 ? '100%' : (max > 0 ? (s.value / max * 100).toFixed(1) + '%' : '0%');
+        const dropoff = i > 0 ? steps[i - 1].value - s.value : 0;
+        const dropPct = i > 0 && steps[i - 1].value > 0 ? ((dropoff / steps[i - 1].value) * 100).toFixed(0) : 0;
+        return `<div class="funnel-row">
+            <div class="funnel-label">${s.label}</div>
+            <div class="funnel-bar-wrap">
+                <div class="funnel-bar" style="width:${Math.max(pct, 3)}%;background:${s.color}">
+                    <span class="funnel-bar-val">${s.value.toLocaleString()}</span>
+                </div>
+            </div>
+            <div class="funnel-pct">${convRate}${i > 0 && dropoff > 0 ? `<span class="funnel-drop">↓${dropPct}%</span>` : ''}</div>
+        </div>`;
+    }).join('');
+}
+
+async function loadOnboardingFunnel() {
+    const status = document.getElementById('onboardingFunnelStatus');
+    const chart = document.getElementById('onboardingFunnelChart');
+    if (!status || !chart) return;
+    if (!phAvailable) {
+        status.textContent = 'PostHog not connected — open Tests → PostHog or set POSTHOG_PERSONAL_API_KEY on the API.';
+        chart.innerHTML = '';
+        return;
+    }
+    status.textContent = 'Loading onboarding funnel…';
+    chart.innerHTML = '';
+    const sql = `SELECT
+  countIf(inner.h0) AS c0,
+  countIf(inner.h0 AND inner.h1) AS c1,
+  countIf(inner.h0 AND inner.h1 AND inner.h2) AS c2,
+  countIf(inner.h0 AND inner.h1 AND inner.h2 AND inner.h3) AS c3,
+  countIf(inner.h0 AND inner.h1 AND inner.h2 AND inner.h3 AND inner.h4) AS c4,
+  countIf(inner.h0 AND inner.h1 AND inner.h2 AND inner.h3 AND inner.h4 AND inner.h5) AS c5,
+  countIf(inner.h0 AND inner.h1 AND inner.h2 AND inner.h3 AND inner.h4 AND inner.h5 AND inner.h6) AS c6,
+  countIf(inner.h0 AND inner.h1 AND inner.h2 AND inner.h3 AND inner.h4 AND inner.h5 AND inner.h6 AND inner.h7) AS c7
+FROM (
+  SELECT
+    distinct_id,
+    max(if(event = 'onboarding_experiment_assigned', 1, 0)) AS h0,
+    max(if(event = 'onboarding_auth_viewed', 1, 0)) AS h1,
+    max(if(event = 'onboarding_started', 1, 0)) AS h2,
+    max(if(event IN ('onboarding_walkthrough_completed', 'onboarding_walkthrough_skipped'), 1, 0)) AS h3,
+    max(if(event = 'onboarding_profile_viewed', 1, 0)) AS h4,
+    max(if(event = 'onboarding_profile_submitted', 1, 0)) AS h5,
+    max(if(event = 'onboarding_subjects_viewed', 1, 0)) AS h6,
+    max(if(event = 'onboarding_completed', 1, 0)) AS h7
+  FROM events
+  WHERE timestamp >= now() - INTERVAL 120 DAY
+  GROUP BY distinct_id
+) AS inner`;
+    try {
+        const r = await phQuery(sql);
+        const row = r.results && r.results[0];
+        if (!row) throw new Error('empty PostHog result');
+        const vals = row.map((v) => Number(v) || 0);
+        const colors = ['#4A7C59', '#3d8b6e', '#2e9980', '#2980b9', '#1d6fa5', '#8b5cf6', '#7c3aed', '#059669'];
+        const steps = [
+            { label: '🧪 A/B variant assigned', value: vals[0], color: colors[0] },
+            { label: '🔐 Auth screen viewed', value: vals[1], color: colors[1] },
+            { label: '📖 Walkthrough started', value: vals[2], color: colors[2] },
+            { label: '✓ Walkthrough done / skipped', value: vals[3], color: colors[3] },
+            { label: '👤 Profile screen viewed', value: vals[4], color: colors[4] },
+            { label: '💾 Profile submitted', value: vals[5], color: colors[5] },
+            { label: '📚 Subjects screen viewed', value: vals[6], color: colors[6] },
+            { label: '🎉 Onboarding completed', value: vals[7], color: colors[7] },
+        ];
+        renderFunnelStepsInto(chart, steps);
+        status.textContent = '';
+    } catch (e) {
+        status.textContent = '';
+        chart.innerHTML = '<p style="color:var(--red);font-size:13px">' + esc(e.message || String(e)) + '</p>';
+    }
+}
+
 async function loadOverview() {
     try {
-        const d = await adminFetch('/admin/overview');
+        const [d, seg] = await Promise.all([
+            adminFetch('/admin/overview'),
+            adminFetch('/admin/funnel/segments').catch(() => null),
+        ]);
+        funnelCohortMeta = seg;
         document.getElementById('k-users').textContent = d.real_users;
         document.getElementById('k-users-sub').textContent = `+${d.signups_7d} this week` + (d.archived_users ? ` (${d.archived_users} archived)` : '');
         document.getElementById('k-active').textContent = d.active_users_7d;
@@ -2075,7 +2263,7 @@ async function loadOverview() {
             `<span style="margin:0 5px;color:var(--text-muted)">·</span>` +
             `+${d.tip_saves_7d || 0} saved`;
 
-        if (d.funnel) renderFunnel(d.funnel);
+        if (funnelUI.kind === 'all' && d.funnel) renderFunnel(d.funnel);
 
         // PostHog enrichment: DAU + tip events (collected as daily maps; aggregation happens in renderOverviewCharts)
         const dbDau = d.daily_active || [];
@@ -2117,6 +2305,11 @@ async function loadOverview() {
             }
         } catch (e) { console.warn('PostHog enrichment failed', e); }
 
+        if (funnelUI.kind !== 'all' && funnelUI.key) {
+            await loadFunnelFromApi();
+        }
+        loadOnboardingFunnel().catch(() => {});
+
         overviewCache = { data: d, phDauData, phDauAnyData, phTipViewed };
         renderOverviewCharts();
     } catch (e) {
@@ -2126,36 +2319,20 @@ async function loadOverview() {
 
 function renderFunnel(f) {
     const steps = [
-        { label: 'Signed Up',       value: f.signed_up       || 0, icon: '👥', color: '#4A7C59' },
-        { label: 'Verified Email',   value: f.verified_email  || 0, icon: '✉️', color: '#3d8b6e' },
-        { label: 'Started Timer',    value: f.started_timer   || 0, icon: '▶️', color: '#2e9980' },
-        { label: 'Completed Timer',    value: f.completed_timer    || 0, icon: '✅', color: '#2980b9' },
-        { label: 'Completed 3+ Timers', value: f.completed_3_timers || 0, icon: '⏱️', color: '#1d6fa5' },
-        { label: 'Hatched Animal',      value: f.hatched_animal     || 0, icon: '🐣', color: '#3b82f6' },
-        { label: 'Earned Badge',       value: f.earned_badge      || 0, icon: '🏅', color: '#8b5cf6' },
-        { label: 'Earned 3+ Badges',  value: f.earned_3_badges  || 0, icon: '🥇', color: '#7c3aed' },
-        { label: 'Added Friend',      value: f.added_friend     || 0, icon: '🤝', color: '#e67e22' },
-        { label: 'Added 3+ Friends',  value: f.added_3_friends  || 0, icon: '👫', color: '#d35400' },
-        { label: 'Joined Group',      value: f.joined_group     || 0, icon: '👥', color: '#e74c3c' },
-        { label: 'Bought from Shop',  value: f.bought_shop      || 0, icon: '🛍️', color: '#f59e0b' },
+        { label: '👥 Signed Up', value: f.signed_up || 0, color: '#4A7C59' },
+        { label: '✉️ Verified Email', value: f.verified_email || 0, color: '#3d8b6e' },
+        { label: '▶️ Started Timer', value: f.started_timer || 0, color: '#2e9980' },
+        { label: '✅ Completed Timer', value: f.completed_timer || 0, color: '#2980b9' },
+        { label: '⏱️ Completed 3+ Timers', value: f.completed_3_timers || 0, color: '#1d6fa5' },
+        { label: '🐣 Hatched Animal', value: f.hatched_animal || 0, color: '#3b82f6' },
+        { label: '🏅 Earned Badge', value: f.earned_badge || 0, color: '#8b5cf6' },
+        { label: '🥇 Earned 3+ Badges', value: f.earned_3_badges || 0, color: '#7c3aed' },
+        { label: '🤝 Added Friend', value: f.added_friend || 0, color: '#e67e22' },
+        { label: '👫 Added 3+ Friends', value: f.added_3_friends || 0, color: '#d35400' },
+        { label: '👥 Joined Group', value: f.joined_group || 0, color: '#e74c3c' },
+        { label: '🛍️ Bought from Shop', value: f.bought_shop || 0, color: '#f59e0b' },
     ];
-    const max = steps[0].value || 1;
-    const container = document.getElementById('funnelChart');
-    container.innerHTML = steps.map((s, i) => {
-        const pct = max > 0 ? (s.value / max * 100) : 0;
-        const convRate = i === 0 ? '100%' : (max > 0 ? (s.value / max * 100).toFixed(1) + '%' : '0%');
-        const dropoff = i > 0 ? steps[i-1].value - s.value : 0;
-        const dropPct = i > 0 && steps[i-1].value > 0 ? ((dropoff / steps[i-1].value) * 100).toFixed(0) : 0;
-        return `<div class="funnel-row">
-            <div class="funnel-label">${s.icon} ${s.label}</div>
-            <div class="funnel-bar-wrap">
-                <div class="funnel-bar" style="width:${Math.max(pct, 3)}%;background:${s.color}">
-                    <span class="funnel-bar-val">${s.value.toLocaleString()}</span>
-                </div>
-            </div>
-            <div class="funnel-pct">${convRate}${i > 0 && dropoff > 0 ? `<span class="funnel-drop">↓${dropPct}%</span>` : ''}</div>
-        </div>`;
-    }).join('');
+    renderFunnelStepsInto(document.getElementById('funnelChart'), steps);
 }
 
 function renderSignupsChart(data) {

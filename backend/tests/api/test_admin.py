@@ -6,6 +6,27 @@ import pytest
 from tests.conftest import make_user, admin_headers, jwt_headers
 
 
+class TestAdminFunnelCohort:
+    def test_funnel_segments(self, client):
+        r = client.get("/admin/funnel/segments", headers=admin_headers())
+        assert r.status_code == 200
+        j = r.json()
+        assert "months" in j and "weeks" in j and "versions" in j
+        assert len(j["months"]) == 3
+        assert len(j["weeks"]) == 5
+
+    def test_funnel_all_matches_overview_shape(self, client):
+        ov = client.get("/admin/overview", headers=admin_headers()).json()
+        fn = client.get("/admin/funnel?scope=all", headers=admin_headers()).json()
+        assert fn["scope"] == "all"
+        for k in ("signed_up", "verified_email", "started_timer", "bought_shop"):
+            assert ov["funnel"][k] == fn["funnel"][k]
+
+    def test_funnel_month_requires_key(self, client):
+        r = client.get("/admin/funnel?scope=month", headers=admin_headers())
+        assert r.status_code == 400
+
+
 class TestAdminOverview:
     def test_overview_returns_kpis(self, client):
         """ADMIN-01: GET /admin/overview returns KPI fields."""
@@ -277,6 +298,8 @@ class TestAdminAuthRequired:
     """Spot-check that ALL admin routes require the key."""
     ADMIN_ROUTES = [
         ("GET", "/admin/overview"),
+        ("GET", "/admin/funnel?scope=all"),
+        ("GET", "/admin/funnel/segments"),
         ("GET", "/admin/users"),
         ("GET", "/admin/feedback"),
         ("GET", "/admin/push/templates"),
