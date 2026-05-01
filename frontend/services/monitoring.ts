@@ -1,7 +1,9 @@
 import * as Sentry from '@sentry/react-native';
 import Constants from 'expo-constants';
+import * as SecureStore from 'expo-secure-store';
 
 const SENTRY_DSN = (Constants.expoConfig?.extra?.sentryDsn as string | undefined) || process.env.EXPO_PUBLIC_SENTRY_DSN || '';
+const BOOT_PING_KEY = 'sentryBootPingSent';
 
 /**
  * Initialise Sentry for crash + JS error reporting.
@@ -39,6 +41,20 @@ export function initMonitoring() {
       return event;
     },
   });
+
+  // One info event per install so Sentry Issues is not stuck on "waiting for first
+  // error" when the app is healthy. Fingerprint collapses all into one issue.
+  SecureStore.getItemAsync(BOOT_PING_KEY)
+    .then((v) => {
+      if (v === '1') return;
+      return SecureStore.setItemAsync(BOOT_PING_KEY, '1').then(() => {
+        Sentry.captureMessage('Sentry mobile bootstrap (connectivity check)', {
+          level: 'info',
+          fingerprint: ['endura-sentry-bootstrap-ping'],
+        });
+      });
+    })
+    .catch(() => {});
 }
 
 export function identifySentryUser(userId: number | string, username?: string | null) {
