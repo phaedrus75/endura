@@ -1030,21 +1030,28 @@ def _send_template_email(template_key: str, to_email: str, variables: dict, db: 
         import resend
         resend.api_key = resend_key
         # Retry up to 3 times on per-second rate limit with exponential backoff.
+        result = None
         for attempt in range(3):
             try:
                 result = resend.Emails.send({
                     "from": resend_from, "to": [to_email], "subject": subject, "html": body,
                 })
                 break
-            except _resend_exc.RateLimitError as rle:
+            except _resend_exc.RateLimitError:
                 if attempt == 2:
-                    raise  # exhausted retries — propagate so cron can abort
+                    logger.error(
+                        f"Resend rate limit exhausted for '{template_key}' → {to_email} "
+                        f"after 3 attempts (stay under ~5 req/s; use EMAIL_SEND_INTERVAL on bulk sends)."
+                    )
+                    return False
                 wait = 1.0 * (attempt + 1)
                 logger.warning(
                     f"Resend per-second rate limit hit for '{template_key}' → {to_email}. "
                     f"Retrying in {wait}s (attempt {attempt + 1}/3)"
                 )
                 time.sleep(wait)
+        if result is None:
+            return False
         resend_id = result.get("id") if isinstance(result, dict) else getattr(result, "id", None)
         user = db.query(models.User).filter(models.User.email == to_email).first()
         log = models.EmailLog(
@@ -1058,9 +1065,6 @@ def _send_template_email(template_key: str, to_email: str, variables: dict, db: 
         db.commit()
         logger.info(f"Template '{template_key}' email sent to {to_email} (resend_id={resend_id})")
         return True
-    except _resend_exc.RateLimitError:
-        # Re-raise so callers (the cron) can abort the whole batch cleanly.
-        raise
     except Exception as e:
         logger.error(f"Failed to send '{template_key}' email to {to_email}: {e}")
         return False
@@ -6075,6 +6079,8 @@ def admin_campaign_metrics(db: Session = Depends(get_db), _=Depends(verify_admin
 @app.post("/admin/campaign-send/{cohort_key}")
 def admin_campaign_send(cohort_key: str, db: Session = Depends(get_db), _=Depends(verify_admin)):
     """Send the next eligible campaign drip per user (day-gated, in order)."""
+    import time
+
     if cohort_key not in CAMPAIGN_COHORTS:
         raise HTTPException(status_code=400, detail=f"Unknown cohort: {cohort_key}")
 
@@ -6130,6 +6136,9 @@ def admin_campaign_send(cohort_key: str, db: Session = Depends(get_db), _=Depend
     else:
         users = []
 
+    # Resend ~5 req/s — space bulk admin sends (same default as onboarding email cron).
+    send_interval = float(os.getenv("EMAIL_SEND_INTERVAL", "0.35"))
+
     now = datetime.utcnow()
     sent_count = 0
     skipped = 0
@@ -6177,11 +6186,13 @@ def admin_campaign_send(cohort_key: str, db: Session = Depends(get_db), _=Depend
             "sessions": str(user.total_sessions or 0),
             "badges": str(badges_by_user.get(user.id, 0)),
         }
-        if _send_template_email(template_key, user.email, variables, db):
+        ok = _send_template_email(template_key, user.email, variables, db)
+        if ok:
             sent_count += 1
             sent_by_template[template_key] = sent_by_template.get(template_key, 0) + 1
         else:
             failed += 1
+        time.sleep(send_interval)
 
     return {
         "cohort": cohort_key,
@@ -6250,11 +6261,14 @@ def _send_android_invite_email(email: str, db: Session | None = None) -> bool:
 @app.post("/admin/onboarding-emails")
 def run_onboarding_emails(db: Session = Depends(get_db), _=Depends(verify_admin)):
     """Trigger onboarding emails for users at key milestones. Run daily via cron."""
+    import time
+
     import resend.exceptions as _resend_exc
     resend_key = os.getenv("RESEND_API_KEY")
     if not resend_key:
         return {"error": "RESEND_API_KEY not set"}
 
+    send_interval = float(os.getenv("EMAIL_SEND_INTERVAL", "0.35"))
     daily_cap = int(os.getenv("DAILY_EMAIL_CAP", "10000"))
     now = datetime.utcnow()
     sent = {"day3": 0, "day7": 0, "day14": 0, "day30": 0, "reengagement": 0}
@@ -6323,7 +6337,9 @@ def run_onboarding_emails(db: Session = Depends(get_db), _=Depends(verify_admin)
                             sent[label] += 1
                         total_sent += 1
                         sent_keys.add(tkey)
+                        time.sleep(send_interval)
                         break
+                    time.sleep(send_interval)
 
             if reengagement_templates and last_active_days is not None and days_since_signup > 3:
                 matched = _match_reengagement(reengagement_templates, user, last_active_days, sent_keys)
@@ -6331,6 +6347,7 @@ def run_onboarding_emails(db: Session = Depends(get_db), _=Depends(verify_admin)
                     if _send_template_email(matched.template_key, user.email, variables, db):
                         sent["reengagement"] += 1
                         total_sent += 1
+                    time.sleep(send_interval)
 
         except _resend_exc.RateLimitError:
             stopped_early = "Resend RateLimitError — daily quota exhausted"
