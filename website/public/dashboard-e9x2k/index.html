@@ -4710,7 +4710,7 @@ async function loadPostHogData() {
             phQuery(`SELECT count() FROM events WHERE timestamp > '${fmt(day7)}'`),
             phQuery(`SELECT count() FROM events WHERE timestamp > '${fmt(day30)}'`),
             phQuery(`SELECT event, count() as cnt FROM events WHERE timestamp > '${fmt(day7)}' AND event NOT LIKE '$%' GROUP BY event ORDER BY cnt DESC LIMIT 15`),
-            phQuery(`SELECT timestamp, event, distinct_id, properties FROM events WHERE event NOT LIKE '$%' ORDER BY timestamp DESC LIMIT 50`),
+            phQuery(`SELECT timestamp, event, distinct_id, properties FROM events WHERE timestamp > now() - INTERVAL 7 DAY AND event NOT LIKE '$%' ORDER BY timestamp DESC LIMIT 50`),
             phQuery(`SELECT count(DISTINCT distinct_id) FROM events WHERE timestamp > '${fmt(day30)}' AND distinct_id NOT IN ('anon','anonymous','')`),
         ]);
         const pick = i => settled[i].status === 'fulfilled' ? settled[i].value : { __failed: true, error: settled[i].reason && settled[i].reason.message };

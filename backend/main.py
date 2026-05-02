@@ -5774,10 +5774,23 @@ async def admin_posthog_query(
     except (httpx.ReadTimeout, httpx.ConnectTimeout, httpx.PoolTimeout) as e:
         timeout_detail = f"PostHog request timed out at the proxy after 60s: {e.__class__.__name__}"
     else:
-        if r.status_code == 504:
+        body_text = r.text or ""
+        # PostHog signals a ClickHouse executor timeout in two ways:
+        #   1) HTTP 504 with an empty/text body
+        #   2) HTTP 400 (occasionally 500) with a JSON body whose `detail`
+        #      contains "max execution time" — this is the common shape on
+        #      the free tier when a HogQL query is just too heavy.
+        # Treat both as a soft "query budget exceeded" so the dashboard can
+        # render `—` for the affected KPI and Sentry doesn't see them as
+        # actionable backend errors.
+        is_query_timeout = (
+            r.status_code == 504
+            or (r.status_code >= 400 and "max execution time" in body_text.lower())
+        )
+        if is_query_timeout:
             timeout_detail = (
-                f"PostHog 504: {r.text[:300]}".strip()
-                or "PostHog 504 with empty body"
+                f"PostHog {r.status_code}: {body_text[:300]}".strip()
+                or f"PostHog {r.status_code} with empty body"
             )
         elif r.status_code >= 400:
             # Genuine 4xx/5xx (auth, schema, etc.) — still a real failure.
