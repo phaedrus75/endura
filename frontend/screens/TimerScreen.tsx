@@ -28,7 +28,22 @@ import { sessionsAPI, animalsAPI, subjectsAPI, BadgeInfo, Subject } from '../ser
 import { useAuth } from '../contexts/AuthContext';
 import { getAnimalImage } from '../assets/animals';
 import { Analytics } from '../services/analytics';
+import { Sentry } from '../services/monitoring';
 import { scheduleLocalNotification, cancelLocalNotification } from '../services/pushNotifications';
+
+// Defensive Sentry breadcrumb helper. Sentry.addBreadcrumb is no-op when the
+// SDK isn't initialised (no DSN in dev), but wrap in try/catch in case the
+// shape ever changes.
+const timerBreadcrumb = (message: string, data?: Record<string, any>) => {
+  try {
+    Sentry.addBreadcrumb({
+      category: 'timer',
+      level: 'info',
+      message,
+      data,
+    });
+  } catch {}
+};
 
 // AsyncStorage keys for resilient timer state.
 //
@@ -59,6 +74,10 @@ type ActiveTimerState = {
   subjectName: string | null;
   notificationId: string | null;
   useTestTimer: boolean;
+  // Server-side row id from POST /sessions/start. Optional for backwards
+  // compat: state persisted by older builds won't have it, so callers must
+  // fall back to the legacy POST /sessions path when this is null.
+  sessionId?: number | null;
 };
 
 type PendingHatchState = {
@@ -474,12 +493,40 @@ export default function TimerScreen() {
         let earnedBadges: BadgeInfo[] = [];
         let saveOk = false;
         try {
-          const result: any = await sessionsAPI.completeSession(
-            active.selectedMinutes,
-            undefined,
-            active.animalName || undefined,
-            active.subjectId || undefined,
-          );
+          let result: any = null;
+          // Prefer completing the row created by POST /sessions/start. Fall
+          // back to legacy create when the id is missing (older client state)
+          // or when the server says it's gone/already complete.
+          if (active.sessionId) {
+            try {
+              result = await sessionsAPI.completeSessionById(
+                active.sessionId,
+                active.selectedMinutes,
+                undefined,
+                active.animalName || undefined,
+                active.subjectId || undefined,
+              );
+            } catch (idErr: any) {
+              if (idErr?.status && [404, 409, 410].includes(idErr.status)) {
+                timerBreadcrumb('recover:fallback-to-legacy', { sessionId: active.sessionId, status: idErr.status });
+                result = await sessionsAPI.completeSession(
+                  active.selectedMinutes,
+                  undefined,
+                  active.animalName || undefined,
+                  active.subjectId || undefined,
+                );
+              } else {
+                throw idErr;
+              }
+            }
+          } else {
+            result = await sessionsAPI.completeSession(
+              active.selectedMinutes,
+              undefined,
+              active.animalName || undefined,
+              active.subjectId || undefined,
+            );
+          }
           saveOk = true;
           if (result && typeof result === 'object') {
             const sessionCoins = result?.session?.coins_earned;
@@ -490,11 +537,14 @@ export default function TimerScreen() {
           }
           setHatchedAnimalInfo(prev => prev ? { ...prev, ecoCredits: finalCoins } : prev);
           if (earnedBadges.length > 0) setNewBadges(earnedBadges);
+          timerBreadcrumb('recover:complete', { sessionId: active.sessionId, minutes: active.selectedMinutes });
         } catch (err) {
           // Server save failed (probably offline). Keep `active` around so
           // we'll retry the next time the app opens — better one duplicate
           // session than silently losing the user's work.
           if (__DEV__) console.warn('Recovered session save failed:', err);
+          Sentry.captureException(err);
+          timerBreadcrumb('recover:save-failed', { sessionId: active.sessionId });
           setSessionSaveError(true);
         }
 
@@ -536,9 +586,18 @@ export default function TimerScreen() {
 
   // Handle app going to background during timer
   // Pause and warn when user starts to leave; timer catches up on return
+  //
+  // Only react to a true `'background'` transition, not `'inactive'`. iOS
+  // briefly enters 'inactive' during incidental events the user did not
+  // intend as "leaving the app" — pulling down Notification Center, the
+  // app-switcher peek, accepting a system permission prompt, an incoming
+  // call banner, etc. Treating those as "user is leaving" caused the
+  // 💀 YOUR EGG WILL DIE alert to fire spuriously, and a single accidental
+  // tap on "Abandon Egg" silently lost the user's session (the bug
+  // reported on user_id=2).
   useEffect(() => {
     const subscription = AppState.addEventListener('change', nextAppState => {
-      if (isRunningRef.current && appState.current === 'active' && (nextAppState === 'inactive' || nextAppState === 'background')) {
+      if (isRunningRef.current && appState.current === 'active' && nextAppState === 'background') {
         if (!backgroundTimestamp.current) {
           backgroundTimestamp.current = Date.now();
         }
@@ -547,7 +606,7 @@ export default function TimerScreen() {
         }
       }
 
-      if (isRunningRef.current && appState.current.match(/inactive|background/) && nextAppState === 'active') {
+      if (isRunningRef.current && appState.current === 'background' && nextAppState === 'active') {
         if (backgroundTimestamp.current) {
           const elapsedSeconds = Math.floor((Date.now() - backgroundTimestamp.current) / 1000);
           backgroundTimestamp.current = null;
@@ -622,6 +681,14 @@ export default function TimerScreen() {
           style: 'destructive',
           onPress: async () => {
             const dying = ENDANGERED_ANIMALS.find(a => a.id === selectedAnimalId)?.name || 'Your animal';
+            const elapsedMinutes = Math.max(
+              0,
+              Math.floor(((selectedMinutes * TIME_MULTIPLIER) - timeLeftRef.current) / TIME_MULTIPLIER),
+            );
+            // Make abandonment observable. Without this PostHog only sees a
+            // session_started with no completion — i.e. the silent timer-
+            // disappearance bug reported on user_id=2.
+            Analytics.sessionAbandoned(elapsedMinutes);
             if (intervalRef.current) clearInterval(intervalRef.current);
             isRunningRef.current = false;
             setIsRunning(false);
@@ -632,13 +699,24 @@ export default function TimerScreen() {
             setShowEggDeathModal(true);
             Vibration.vibrate([0, 300, 100, 300]);
             // The egg died — drop persisted state and silence the OS reminder.
+            // Capture the persisted session id for the breadcrumb before we
+            // clear it; the row stays in the DB with completed_at=NULL so it
+            // surfaces as "incomplete" on the admin dashboard.
+            let abandonedSessionId: number | null = null;
             try {
               const activeRaw = await AsyncStorage.getItem(ACTIVE_TIMER_KEY(user?.id));
               if (activeRaw) {
                 const active: ActiveTimerState = JSON.parse(activeRaw);
+                abandonedSessionId = active.sessionId ?? null;
                 await cancelLocalNotification(active.notificationId);
               }
             } catch {}
+            timerBreadcrumb('abandon', {
+              sessionId: abandonedSessionId,
+              elapsedMinutes,
+              selectedMinutes,
+              animal: dying,
+            });
             await clearActiveTimer();
             await clearPendingHatch();
             if (onConfirm) onConfirm();
@@ -708,11 +786,13 @@ export default function TimerScreen() {
 
     // Cancel the OS reminder we scheduled at start — the user is already here.
     let scheduledNotificationId: string | null = null;
+    let storedSessionId: number | null = null;
     try {
       const activeRaw = await AsyncStorage.getItem(ACTIVE_TIMER_KEY(user?.id));
       if (activeRaw) {
         const active: ActiveTimerState = JSON.parse(activeRaw);
         scheduledNotificationId = active.notificationId || null;
+        storedSessionId = active.sessionId ?? null;
       }
     } catch {}
     await cancelLocalNotification(scheduledNotificationId);
@@ -720,37 +800,77 @@ export default function TimerScreen() {
     let finalCoins = estimatedCoins;
     let earnedBadges: BadgeInfo[] = [];
     let saveOk = false;
-    try {
-      const result: any = await sessionsAPI.completeSession(
-        selectedMinutes,
-        undefined,
-        localAnimal?.name,
-        selectedSubject?.id || undefined
-      );
-      saveOk = true;
-      if (result && typeof result === 'object') {
-        const sessionCoins = result?.session?.coins_earned;
-        const directCoins = result?.coins_earned;
-        if (sessionCoins !== undefined && sessionCoins !== null) {
-          finalCoins = sessionCoins;
-          setHatchedAnimalInfo(prev => prev ? { ...prev, ecoCredits: sessionCoins } : prev);
-        } else if (directCoins !== undefined && directCoins !== null) {
-          finalCoins = directCoins;
-          setHatchedAnimalInfo(prev => prev ? { ...prev, ecoCredits: directCoins } : prev);
-        }
-        if (Array.isArray(result?.new_badges) && result.new_badges.length > 0) {
-          earnedBadges = result.new_badges;
-          setNewBadges(result.new_badges);
-        }
+
+    // New path: finalise the row created by POST /sessions/start. The legacy
+    // POST /sessions path remains the fallback when (a) we have no session
+    // id (older client state, or start call failed) or (b) the row no longer
+    // exists / is already complete (404/409/410 from the server).
+    const applyResult = (result: any) => {
+      if (!result || typeof result !== 'object') return;
+      const sessionCoins = result?.session?.coins_earned;
+      const directCoins = result?.coins_earned;
+      if (sessionCoins != null) {
+        finalCoins = sessionCoins;
+        setHatchedAnimalInfo(prev => (prev ? { ...prev, ecoCredits: sessionCoins } : prev));
+      } else if (directCoins != null) {
+        finalCoins = directCoins;
+        setHatchedAnimalInfo(prev => (prev ? { ...prev, ecoCredits: directCoins } : prev));
       }
+      if (Array.isArray(result?.new_badges) && result.new_badges.length > 0) {
+        earnedBadges = result.new_badges;
+        setNewBadges(result.new_badges);
+      }
+    };
+
+    try {
+      let result: any = null;
+      if (storedSessionId) {
+        try {
+          result = await sessionsAPI.completeSessionById(
+            storedSessionId,
+            selectedMinutes,
+            undefined,
+            localAnimal?.name,
+            selectedSubject?.id || undefined,
+          );
+        } catch (idErr: any) {
+          // 404/409/410 → row gone or already complete → fall back to legacy
+          // create. Network errors fall through to the outer catch below.
+          const status = idErr?.status;
+          if (status && [404, 409, 410].includes(status)) {
+            timerBreadcrumb('complete:fallback-to-legacy', { storedSessionId, status });
+            result = await sessionsAPI.completeSession(
+              selectedMinutes,
+              undefined,
+              localAnimal?.name,
+              selectedSubject?.id || undefined,
+            );
+          } else {
+            throw idErr;
+          }
+        }
+      } else {
+        result = await sessionsAPI.completeSession(
+          selectedMinutes,
+          undefined,
+          localAnimal?.name,
+          selectedSubject?.id || undefined,
+        );
+      }
+      saveOk = true;
+      applyResult(result);
+      timerBreadcrumb('complete', { sessionId: storedSessionId, minutes: selectedMinutes });
     } catch (error: any) {
       if (__DEV__) console.warn('Session save failed (celebration still showing):', error?.message || error);
+      Sentry.captureException(error);
       try {
         const retry: any = await sessionsAPI.completeSession(selectedMinutes, undefined, localAnimal?.name, undefined);
         saveOk = true;
-        if (retry?.session?.coins_earned != null) finalCoins = retry.session.coins_earned;
-        else if (retry?.coins_earned != null) finalCoins = retry.coins_earned;
-      } catch (_retryErr) {
+        applyResult(retry);
+        timerBreadcrumb('complete:retry-ok', { sessionId: storedSessionId });
+      } catch (retryErr) {
+        Sentry.captureException(retryErr);
+        timerBreadcrumb('complete:retry-failed', { sessionId: storedSessionId });
         setSessionSaveError(true);
       }
     }
@@ -878,6 +998,28 @@ export default function TimerScreen() {
       },
     );
 
+    // Record the *intent* to study on the server. If this fails (offline,
+    // 500, etc.) the timer still starts — we just lose admin visibility for
+    // this session. Better to show a working timer than block the user.
+    let sessionId: number | null = null;
+    try {
+      const startResp = await sessionsAPI.startSession(
+        selectedMinutes,
+        localAnimal?.name,
+        selectedSubject?.id || undefined,
+      );
+      sessionId = startResp?.session_id ?? null;
+    } catch (err) {
+      if (__DEV__) console.warn('startSession failed; falling back to complete-only path:', err);
+      Sentry.captureException(err);
+    }
+    timerBreadcrumb('start', {
+      sessionId,
+      minutes: selectedMinutes,
+      subject: selectedSubject?.display_name,
+      animal: localAnimal?.name,
+    });
+
     await persistActiveTimer({
       startedAt: Date.now(),
       durationSec,
@@ -888,6 +1030,7 @@ export default function TimerScreen() {
       subjectName: selectedSubject?.display_name || null,
       notificationId,
       useTestTimer: !!user?.use_test_timer,
+      sessionId,
     });
 
     setIsRunning(true);

@@ -148,6 +148,31 @@ class StudySessionCreate(BaseModel):
     subject_id: Optional[int] = None
 
 
+class StudySessionStartRequest(BaseModel):
+    """Client tells the server they're *about to* start a focus session.
+
+    We persist the row with completed_at=NULL so abandoned/silently-dropped
+    timers are visible in the admin dashboard and survive client-side bugs.
+    """
+    duration_minutes: int = Field(..., ge=1, le=480)
+    animal_name: Optional[str] = Field(None, max_length=100)
+    subject_id: Optional[int] = None
+
+
+class StudySessionStartResponse(BaseModel):
+    session_id: int
+    started_at: datetime
+
+
+class StudySessionCompleteRequest(BaseModel):
+    """Finalise a previously-started session by id. Mirrors StudySessionCreate
+    so the same finalisation logic (coins, streaks, hatch, badges) runs."""
+    task_id: Optional[int] = None
+    duration_minutes: int = Field(..., ge=1, le=480)
+    animal_name: Optional[str] = Field(None, max_length=100)
+    subject_id: Optional[int] = None
+
+
 class StudySessionResponse(BaseModel):
     id: int
     task_id: Optional[int]

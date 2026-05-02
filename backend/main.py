@@ -1870,6 +1870,167 @@ def complete_study_session(
         raise HTTPException(status_code=500, detail="Failed to create session")
 
 
+@app.post("/sessions/start", response_model=schemas.StudySessionStartResponse)
+@limiter.limit("30/hour")
+def start_study_session_endpoint(
+    request: Request,
+    payload: schemas.StudySessionStartRequest,
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Record that a focus session has started. The row stays
+    completed_at=NULL until the client finishes the timer, so abandoned
+    or silently-killed timers remain visible in the admin dashboard.
+
+    Idempotency note: deliberately not idempotent — if the user genuinely
+    starts two timers in a row we want both rows. The 30/h rate limit
+    protects against runaway retries.
+    """
+    try:
+        # Resolve subject_id if provided (silently drop invalid ids — same
+        # tolerance as POST /sessions).
+        subject_id = payload.subject_id
+        if subject_id is not None:
+            subj_exists = db.query(models.Subject).filter(
+                models.Subject.id == subject_id
+            ).first()
+            if not subj_exists:
+                subject_id = None
+
+        animal_name = payload.animal_name
+        if animal_name:
+            valid_animal = db.query(models.Animal).filter(models.Animal.name == animal_name).first()
+            if not valid_animal:
+                animal_name = None
+
+        session = crud.start_study_session(
+            db,
+            current_user.id,
+            payload.duration_minutes,
+            animal_name=animal_name,
+            subject_id=subject_id,
+        )
+        return {"session_id": session.id, "started_at": session.started_at}
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Session start failed for user {current_user.id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to start session")
+
+
+@app.post("/sessions/{session_id}/complete", response_model=schemas.StudySessionWithHatchResponse)
+@limiter.limit("30/hour")
+def complete_study_session_by_id_endpoint(
+    request: Request,
+    session_id: int,
+    payload: schemas.StudySessionCompleteRequest,
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Finalise a session previously created by POST /sessions/start.
+
+    Returns 404 if the session doesn't exist for this user, 409 if it's
+    already completed (prevents double-credit on retries). Otherwise applies
+    the same coins/streak/hatch/badge logic as POST /sessions.
+    """
+    try:
+        # Daily cap enforcement, same rule as POST /sessions
+        today_start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+        daily_minutes = db.query(func.coalesce(func.sum(models.StudySession.duration_minutes), 0)).filter(
+            models.StudySession.user_id == current_user.id,
+            models.StudySession.completed_at >= today_start,
+        ).scalar()
+        if daily_minutes + payload.duration_minutes > 720:
+            raise HTTPException(status_code=400, detail="Daily study cap of 12 hours reached")
+
+        animal_name = payload.animal_name
+        if animal_name:
+            valid_animal = db.query(models.Animal).filter(models.Animal.name == animal_name).first()
+            if not valid_animal:
+                animal_name = None
+
+        task_id = payload.task_id
+        if task_id is not None:
+            task_exists = db.query(models.Task).filter(
+                models.Task.id == task_id,
+                models.Task.user_id == current_user.id,
+            ).first()
+            if not task_exists:
+                task_id = None
+
+        # Probe the row first so we can return a precise 404/409 instead of a
+        # generic "fall back to legacy" response.
+        existing = db.query(models.StudySession).filter(
+            models.StudySession.id == session_id,
+            models.StudySession.user_id == current_user.id,
+        ).first()
+        if not existing:
+            raise HTTPException(status_code=404, detail="Session not found")
+        if existing.completed_at is not None:
+            raise HTTPException(status_code=409, detail="Session already completed")
+
+        study_session, hatched_animal = crud.complete_study_session_by_id(
+            db,
+            session_id=session_id,
+            user_id=current_user.id,
+            duration_minutes=payload.duration_minutes,
+            task_id=task_id,
+            animal_name=animal_name,
+            subject_id=payload.subject_id,
+        )
+        if not study_session:
+            # Race or model invariant violated — caller can retry against the
+            # legacy POST /sessions to avoid losing the user's reward.
+            raise HTTPException(status_code=410, detail="Session no longer completable")
+
+        session_hour = study_session.completed_at.hour if study_session.completed_at else None
+        new_badges = crud.check_badges(
+            db, current_user.id,
+            session_hour=session_hour,
+            session_minutes=payload.duration_minutes,
+        )
+        try:
+            crud.create_session_event(
+                db, current_user.id, payload.duration_minutes,
+                hatched_animal.name if hatched_animal else None,
+            )
+        except Exception:
+            pass
+        try:
+            if new_badges:
+                first_badge = new_badges[0]
+                badge_def = crud.BADGE_MAP.get(first_badge) or {}
+                _safe_send_push(
+                    "push_badge_earned", current_user, db,
+                    extra_vars={
+                        "badge_name": badge_def.get("name", "a new badge"),
+                        "badge_emoji": badge_def.get("emoji", "🏅"),
+                    },
+                )
+        except Exception as _e:
+            logger.error(f"Badge push hook failed: {_e}")
+
+        return {
+            "session": {
+                "id": study_session.id,
+                "task_id": study_session.task_id,
+                "duration_minutes": study_session.duration_minutes,
+                "coins_earned": study_session.coins_earned,
+                "subject": study_session.subject.display_name if study_session.subject else None,
+                "subject_id": study_session.subject_id,
+                "started_at": study_session.started_at,
+                "completed_at": study_session.completed_at,
+            },
+            "hatched_animal": hatched_animal,
+            "new_badges": [crud.BADGE_MAP[bid] for bid in new_badges if bid in crud.BADGE_MAP],
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Session complete-by-id failed for user {current_user.id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to complete session")
+
+
 @app.get("/sessions", response_model=List[schemas.StudySessionResponse])
 def get_sessions(
     limit: int = Query(default=50, ge=1, le=200),
@@ -4506,6 +4667,61 @@ def admin_sessions(
         })
 
     return {"total": total, "sessions": result}
+
+
+@app.get("/admin/sessions/incomplete")
+def admin_sessions_incomplete(
+    hours: int = 168,
+    limit: int = 100,
+    db: Session = Depends(get_db),
+    _=Depends(verify_admin),
+):
+    """List sessions that were started but never completed.
+
+    A row stays here forever (no GC) until the client either calls
+    /sessions/{id}/complete or — explicitly — we add an abandon endpoint.
+    `started_at + duration_minutes < now` is treated as "stale": the timer
+    should already have fired, so this is almost certainly an abandoned or
+    silently-killed session and not a still-running one.
+
+    Use this to chase silent timer-loss bugs. Filters by hours since
+    started_at to keep the response reasonable on long-lived databases.
+    """
+    cutoff = datetime.utcnow() - timedelta(hours=max(1, hours))
+    q = db.query(models.StudySession).filter(
+        models.StudySession.completed_at.is_(None),
+        models.StudySession.started_at >= cutoff,
+    ).order_by(models.StudySession.started_at.desc())
+    total = q.count()
+    rows = q.limit(min(max(limit, 1), 500)).all()
+    now = datetime.utcnow()
+
+    result = []
+    stale_count = 0
+    for s in rows:
+        u = db.query(models.User).filter(models.User.id == s.user_id).first()
+        elapsed_seconds = int((now - s.started_at).total_seconds()) if s.started_at else 0
+        is_stale = elapsed_seconds > (s.duration_minutes or 0) * 60
+        if is_stale:
+            stale_count += 1
+        result.append({
+            "id": s.id,
+            "user_id": s.user_id,
+            "username": (u.username or u.email) if u else None,
+            "duration_minutes": s.duration_minutes,
+            "subject": s.subject.display_name if s.subject else None,
+            "subject_id": s.subject_id,
+            "started_at": s.started_at.isoformat() if s.started_at else None,
+            "elapsed_seconds": elapsed_seconds,
+            "is_stale": is_stale,
+        })
+
+    return {
+        "total": total,
+        "stale_count": stale_count,
+        "hours": hours,
+        "sessions": result,
+    }
 
 
 # ============ Admin App Store Rankings (via AppFigures) ============

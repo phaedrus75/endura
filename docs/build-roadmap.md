@@ -1,7 +1,7 @@
 # Endura — Build Roadmap
 
 > **Editable working doc.** Tick, cut, reorder, add notes.  
-> **Last updated:** 28 April 2026 — full pass: current deploy **v1.0.3 iOS build 25**, shipped vs remaining.
+> **Last updated:** 2 May 2026 — added post-launch (build 25) shipped list + queued **Build 26** scope (auth friction reduction + timer-loss fixes).
 
 ---
 
@@ -9,9 +9,11 @@
 
 | Channel | Version | Build / code | Notes |
 |--------|---------|----------------|-------|
-| **iOS (TestFlight / App Store pipeline)** | **1.0.3** | **25** (deployed) | Canonical build number lives in **App Store Connect** when using EAS `appVersionSource: "remote"` + `autoIncrement`. |
+| **iOS (TestFlight / App Store pipeline)** | **1.0.3** | **25** (deployed; users still on this) | Canonical build number lives in **App Store Connect** when using EAS `appVersionSource: "remote"` + `autoIncrement`. |
 | **Repo `frontend/app.json`** | 1.0.3 | `ios.buildNumber` **24** | May trail ASC by one between submits; bump before a build if you rely on local display only. |
 | **Android** | 1.0.3 | `versionCode` **10** | Not every release cycle ships Android; Play track may differ. |
+| **Backend (Railway)** | rolling | post-25 | Auto-deploys from `main`. Several user-invisible improvements landed since the build-25 cut — see *Shipped after build 25* below. |
+| **Admin dashboard / website (Vercel)** | rolling | post-25 | Auto-deploys from `main`. New panels landed without an app build. |
 
 **EAS / release hygiene (current):**
 
@@ -23,7 +25,9 @@
 - `docs/push-notifications.md` — push architecture, admin, local timer notification.
 - `docs/release-notes/v1.0.3.md` — user-facing TestFlight notes for the big 1.0.3 drop (build ~21 era).
 - `docs/onboarding-friction-analysis.md`, `docs/onboarding-lifecycle.md` — strategy.
-- `docs/research.md` — research surveys / consent (if present in your tree).
+- `docs/research.md` — research surveys / consent.
+- `backend/oauth_verify.py`, `backend/oauth_merge.py` — server-side ID-token verification + merge-by-email logic for Sign in with Apple / Google.
+- `scaffolding/` — drop-in starter pack for new apps (FastAPI + Expo + Vercel admin shell, mirroring Endura's architecture). Untracked artifact.
 
 ---
 
@@ -85,6 +89,51 @@ Everything below is **live in repo and/or production** unless marked *verify onl
 
 ---
 
+## Shipped after the build 25 launch (28 Apr → 2 May 2026)
+
+These changes are live on Railway / Vercel **without** needing an app build, *unless* explicitly noted "needs app build to take effect". The TestFlight / App Store binary in users' hands is still build 25 — anything client-side queues for the next cut (see **Build 26** below).
+
+### Auth — friction reduction
+
+- [x] **Sign in with Apple + Sign in with Google** — server-side ID-token verification (JWKS), POST `/auth/apple` and `/auth/google` endpoints, OAuth → existing-account merge by verified email (`backend/oauth_verify.py`, `backend/oauth_merge.py`, Alembic `x1y2z3a45b26_add_oauth_provider_subs`). **Backend ready; needs app build to expose the buttons.**
+- [x] Per-user app version tracking + `update_app` email pipeline driven from PostHog `$app_version`; admin Users tab shows outdated cohort and one-click backfill.
+
+### Admin dashboard / analytics
+
+- [x] **Cohort-scoped user funnel** — pills for All / Signup month / Signup week / App version, with sub-pills generated from the new `/admin/funnel/segments` endpoint.
+- [x] **PostHog onboarding funnel** — 8-step nested-reach waterfall over the last 120 days (assigned → auth viewed → started → walkthrough → profile → subjects → completed).
+- [x] First-timer-session step in the product-test funnel (onboarding A/B view).
+- [x] Onboarding funnel cohort + PostHog URL fix.
+- [x] **PostHog query proxy resilience** — HogQL "max execution time" responses (sometimes 4xx, sometimes 504) now treated as soft timeouts: returned to client as `timeout: true` and logged as `WARNING`, no longer paged via Sentry. Recent-events query bounded to last 7 days to keep ClickHouse happy.
+- [x] **⚠️ Sessions started but not completed panel** (Overview page) — surfaces silent timer-loss bugs from the new server-side handshake (see Build 26). Empty until users update.
+
+### Marketing site
+
+- [x] Per-school visibility tier drives the marquee rows on `endura.eco` (top-tier schools surfaced first).
+
+### Reliability / ops
+
+- [x] **Sentry mobile bootstrap ping** — one-time `captureMessage` per install so the Issues panel isn't stuck on "waiting for first event" right after a fresh install.
+- [x] Resend webhook handler retries on transient DB / DNS failures.
+- [x] Email campaign throttle to **5 rps** (Resend limit) so admin broadcast does not 429.
+
+### Reference docs / scaffolding
+
+- [x] `docs/research.md` — research surveys / consent reference (added 30 Apr).
+- [x] **`scaffolding/`** — drop-in starter pack mirroring Endura's architecture (FastAPI + Expo + Vercel admin shell + reference docs + Alembic + tests). Untracked in git until you opt in; live in working tree only.
+
+### Timer-loss bug — backend + dashboard portion (this commit)
+
+> User-reported **silent timer disappearance** on `user_id=2`: a 25-min timer ran in background, app reopened, timer gone with no notification or session row. PostHog had `session_started` with no completion or abandon event.
+
+- [x] **Backend handshake**: `POST /sessions/start` (creates a row with `completed_at=NULL`) + `POST /sessions/{id}/complete` (finalises by id with same coins/streak/hatch/badge logic). Legacy `POST /sessions` preserved for older clients.
+- [x] **Admin endpoint**: `GET /admin/sessions/incomplete?hours=...` lists rows still `completed_at=NULL`, flags `is_stale` when `started_at + duration_minutes < now`.
+- [x] **Dashboard panel**: pills (incomplete / stale / window) + table (user · duration · subject · started · elapsed · status), wired into Overview load.
+- [x] Backend regression tests (9 new in `tests/api/test_sessions.py`, 242 / 242 green) + frontend api tests (13 / 13 green) + `apiFetch` now attaches `err.status` so callers can branch on 404 / 409 / 410.
+- [ ] **Client portion (queued for Build 26)** — see below.
+
+---
+
 ## Verify in production (*not* code todos)
 
 Quick checks when you have time — does not block roadmap.
@@ -96,6 +145,45 @@ Quick checks when you have time — does not block roadmap.
 ---
 
 ## Remaining — product backlog (not shipped)
+
+### Build 26 — Auth friction + timer-loss fixes (next iOS cut)
+
+**Theme:** "Two-tap sign-up + never silently lose a study session." All backend + admin work for these landed in **Shipped after the build 25 launch** above; this build is purely the app-side switches that flip them on for users.
+
+**Track A — Auth (Sign in with Apple / Google)**
+
+- [ ] Wire `expo-apple-authentication` + `expo-auth-session` (Google) into the Auth screen; primary CTA = Apple, secondary = Google, fallback = email/password.
+- [ ] Frontend calls `POST /auth/apple` / `/auth/google` with the platform-issued ID token and stores the returned JWT.
+- [ ] Smoke test the email-merge path: existing email-account user signs in via Apple → backend merges via verified email and bumps `apple_id_sub`.
+
+**Track B — Timer disappearance fix (4 fixes; all branches done in repo, awaiting build)**
+
+- [ ] **Fix 1** — `Analytics.sessionAbandoned(elapsedMinutes)` from the *Abandon Egg* path in `showExitWarning` so PostHog stops seeing `session_started` with no terminal event.
+- [ ] **Fix 2** — `AppState` listener reacts only to a true `'background'` transition, not iOS's incidental `'inactive'` (Notification Center swipe, app-switcher peek, system permission prompt, incoming-call banner). Removes the spurious "💀 YOUR EGG WILL DIE" alert that was leading to accidental "Abandon Egg" taps.
+- [ ] **Fix 3** — `Sentry.addBreadcrumb({category: 'timer'})` at start / complete / fallback / retry / recover / abandon, plus `Sentry.captureException` on save failures. Gives us a full breadcrumb trail next time anyone reports a vanished timer.
+- [ ] **Fix 4 (client)** — `confirmSubjectAndStart` calls `sessionsAPI.startSession()` on press of *Start*, persists `sessionId` in `ActiveTimerState`. `handleTimerComplete` and the recovery effect prefer `sessionsAPI.completeSessionById(...)`, falling back to legacy `completeSession` when the start row is missing / 404 / 409 / 410. Once shipped, the *⚠️ Sessions started but not completed* dashboard panel starts populating.
+
+**Build commands** (per `.cursor/rules/eas-builds.mdc`, the user runs these — I do not):
+
+```bash
+cd /Users/munshi/Downloads/endura-v-2/frontend
+npx eas-cli build --platform ios --profile production
+# When verified on TestFlight, then submit:
+npx eas-cli submit --platform ios --latest
+```
+
+**Pre-build checklist**
+
+- [ ] Bump `frontend/app.json` `ios.buildNumber` if relying on local display only (EAS `autoIncrement` will set the canonical number in ASC).
+- [ ] Confirm `.env` / `expo.extra.sentryDsn` populated so the new breadcrumbs land in Sentry.
+- [ ] Smoke `expo-apple-authentication` capabilities still valid (re-run `eas credentials` if anything regressed).
+
+**Release-notes draft** — *bullet points to expand later*
+
+- "Sign in with Apple / Google" (one-tap signup; merges with existing email accounts).
+- "Your timer can no longer silently disappear" — covers fixes 1–4 in user terms.
+
+---
 
 ### Build 16 — proposed scope (still open)
 

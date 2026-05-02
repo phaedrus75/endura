@@ -114,6 +114,50 @@ describe('sessionsAPI', () => {
 
     await expect(sessionsAPI.getSessions()).rejects.toThrow();
   });
+
+  test('startSession() POSTs to /sessions/start with payload', async () => {
+    mockFetch.mockReturnValue(mockOk({ session_id: 42, started_at: '2026-05-02T12:00:00Z' }));
+
+    const resp = await sessionsAPI.startSession(25, 'Panda', 3);
+    const [url, options] = mockFetch.mock.calls[0];
+    const body = JSON.parse(options.body);
+    expect(url).toContain('/sessions/start');
+    expect(options.method).toBe('POST');
+    expect(body.duration_minutes).toBe(25);
+    expect(body.animal_name).toBe('Panda');
+    expect(body.subject_id).toBe(3);
+    expect(resp.session_id).toBe(42);
+  });
+
+  test('completeSessionById() targets /sessions/{id}/complete', async () => {
+    mockFetch.mockReturnValue(mockOk({
+      session: { id: 42, duration_minutes: 25, coins_earned: 30 },
+      new_badges: [],
+    }));
+
+    await sessionsAPI.completeSessionById(42, 25, undefined, 'Panda', 3);
+    const [url, options] = mockFetch.mock.calls[0];
+    const body = JSON.parse(options.body);
+    expect(url).toContain('/sessions/42/complete');
+    expect(options.method).toBe('POST');
+    expect(body.duration_minutes).toBe(25);
+    expect(body.animal_name).toBe('Panda');
+    expect(body.subject_id).toBe(3);
+  });
+
+  test('apiFetch attaches HTTP status to error so callers can branch', async () => {
+    mockFetch.mockReturnValue(mockErr({ detail: 'Session not found' }, 404));
+
+    let caught: any = null;
+    try {
+      await sessionsAPI.completeSessionById(999, 25);
+    } catch (e) {
+      caught = e;
+    }
+    expect(caught).toBeTruthy();
+    expect(caught.status).toBe(404);
+    expect(caught.message).toBe('Session not found');
+  });
 });
 
 describe('pushAPI', () => {

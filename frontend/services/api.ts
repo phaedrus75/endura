@@ -326,14 +326,21 @@ async function apiFetch<T>(
       }
 
       if (response.status >= 500) {
-        throw new Error('Something went wrong. Please try again later.');
+        const err: any = new Error('Something went wrong. Please try again later.');
+        err.status = response.status;
+        throw err;
       }
 
       const error = await response.json().catch(() => ({ detail: 'An error occurred' }));
       const detail = Array.isArray(error.detail)
         ? error.detail.map((e: any) => e.msg || JSON.stringify(e)).join('; ')
         : error.detail || `HTTP ${response.status}`;
-      throw new Error(detail);
+      const err: any = new Error(detail);
+      // Attach the HTTP status so callers can branch on 404/409/410 etc. (e.g.
+      // the timer falling back to legacy POST /sessions when the start row is
+      // gone). Backwards compatible — old callers can still treat as Error.
+      err.status = response.status;
+      throw err;
     }
     
     return response.json();
@@ -664,13 +671,41 @@ export const tasksAPI = {
 };
 
 // Study Sessions API
+//
+// Two flows:
+//   1. Legacy `completeSession(...)` -> POST /sessions
+//      Creates and finalises in one shot. Still wired up because older app
+//      builds in production rely on it and we use it as a fallback when the
+//      new handshake races/fails.
+//   2. Two-step `startSession(...)` -> POST /sessions/start, then
+//      `completeSessionById(id, ...)` -> POST /sessions/{id}/complete
+//      Recording the *intent* to study at start time means abandoned timers
+//      stay visible (completed_at IS NULL) for support and dashboards.
 export const sessionsAPI = {
   completeSession: (duration_minutes: number, task_id?: number, animal_name?: string, subject_id?: number) =>
     apiFetch<StudySessionWithHatchAndBadges>('/sessions', {
       method: 'POST',
       body: JSON.stringify({ duration_minutes, task_id, animal_name, subject_id }),
     }),
-  
+
+  startSession: (duration_minutes: number, animal_name?: string, subject_id?: number) =>
+    apiFetch<{ session_id: number; started_at: string }>('/sessions/start', {
+      method: 'POST',
+      body: JSON.stringify({ duration_minutes, animal_name, subject_id }),
+    }),
+
+  completeSessionById: (
+    session_id: number,
+    duration_minutes: number,
+    task_id?: number,
+    animal_name?: string,
+    subject_id?: number,
+  ) =>
+    apiFetch<StudySessionWithHatchAndBadges>(`/sessions/${session_id}/complete`, {
+      method: 'POST',
+      body: JSON.stringify({ duration_minutes, task_id, animal_name, subject_id }),
+    }),
+
   getSessions: (limit = 50) =>
     apiFetch<StudySession[]>(`/sessions?limit=${limit}`),
 };

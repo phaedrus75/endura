@@ -117,9 +117,9 @@ def delete_task(db: Session, task_id: int, user_id: int) -> bool:
 
 # ============ Study Session CRUD ============
 
-def create_study_session(db: Session, user_id: int, duration_minutes: int, task_id: int = None, animal_name: str = None, subject_id: int = None) -> tuple:
-    user = db.query(models.User).filter(models.User.id == user_id).first()
-
+def _calc_session_coins(duration_minutes: int, user) -> int:
+    """Coin formula: base minutes + 25/50-min bonuses, multiplied by any
+    eco-credits multiplier the user has earned."""
     coins = duration_minutes
     if duration_minutes >= 25:
         coins += 5
@@ -128,24 +128,34 @@ def create_study_session(db: Session, user_id: int, duration_minutes: int, task_
     multiplier = getattr(user, "eco_credits_multiplier", None) or 1.0
     if multiplier > 1.0:
         coins = int(coins * multiplier)
-    
-    session = models.StudySession(
-        user_id=user_id,
-        task_id=task_id,
-        duration_minutes=duration_minutes,
-        coins_earned=coins,
-        subject_id=subject_id,
-        completed_at=datetime.utcnow()
-    )
-    db.add(session)
-    
-    # Update user stats
+    return coins
+
+
+def _finalize_session(db: Session, session: models.StudySession, user, duration_minutes: int, animal_name: str = None) -> tuple:
+    """Apply the side-effects of completing a study session: coins, totals,
+    streak update, optional auto-hatch. Mutates `session` and `user` in place
+    and commits.
+
+    Shared by both:
+      - `create_study_session`: legacy path that creates+completes in one shot
+        (POST /sessions, used by older app builds and as a fallback)
+      - `complete_study_session_by_id`: new path that completes a previously
+        started row (POST /sessions/{id}/complete) so abandoned sessions stay
+        visible with completed_at IS NULL.
+    """
+    coins = _calc_session_coins(duration_minutes, user)
+
+    session.duration_minutes = duration_minutes
+    session.coins_earned = coins
+    session.completed_at = datetime.utcnow()
+
+    # User stats
     user.total_coins += coins
     user.current_coins += coins
     user.total_study_minutes += duration_minutes
     user.total_sessions += 1
-    
-    # Update streak
+
+    # Streak
     today = datetime.utcnow().date()
     if user.last_study_date:
         last_date = user.last_study_date.date()
@@ -155,44 +165,112 @@ def create_study_session(db: Session, user_id: int, duration_minutes: int, task_
             user.current_streak = 1
     else:
         user.current_streak = 1
-    
     user.last_study_date = datetime.utcnow()
     if user.current_streak > user.longest_streak:
         user.longest_streak = user.current_streak
-    
-    # AUTO-HATCH: Hatch the specific animal selected by the user
+
+    # Auto-hatch the user's selected animal
     hatched_animal = None
     if animal_name:
-        # Find or create the animal in the database
         animal = db.query(models.Animal).filter(models.Animal.name == animal_name).first()
         if not animal:
-            # Create the animal if it doesn't exist
             animal = models.Animal(
                 name=animal_name,
                 species=f"{animal_name} species",
                 rarity="common",
                 conservation_status="Endangered",
-                description=f"A beautiful {animal_name}"
+                description=f"A beautiful {animal_name}",
             )
             db.add(animal)
-            db.flush()  # Get the ID
-        
-        user_animal = models.UserAnimal(
-            user_id=user_id,
-            animal_id=animal.id
-        )
-        db.add(user_animal)
-        
+            db.flush()
+        db.add(models.UserAnimal(user_id=user.id, animal_id=animal.id))
         hatched_animal = animal
-    
+
     db.commit()
     db.refresh(session)
     return session, hatched_animal
 
 
+def create_study_session(db: Session, user_id: int, duration_minutes: int, task_id: int = None, animal_name: str = None, subject_id: int = None) -> tuple:
+    """Legacy path: create a study_sessions row that is already completed.
+
+    Still used by `POST /sessions` (older clients and as a fallback when the
+    new start/complete handshake fails). New clients should call
+    `start_study_session` + `complete_study_session_by_id` instead so that
+    abandoned timers stay observable.
+    """
+    user = db.query(models.User).filter(models.User.id == user_id).first()
+
+    session = models.StudySession(
+        user_id=user_id,
+        task_id=task_id,
+        duration_minutes=duration_minutes,
+        coins_earned=0,  # set by _finalize_session
+        subject_id=subject_id,
+    )
+    db.add(session)
+    db.flush()
+    return _finalize_session(db, session, user, duration_minutes, animal_name)
+
+
+def start_study_session(db: Session, user_id: int, duration_minutes: int, animal_name: str = None, subject_id: int = None) -> models.StudySession:
+    """Persist the *intent* to study: started_at=now, completed_at=NULL.
+
+    A session row that stays completed_at=NULL beyond its duration is
+    treated as abandoned and surfaced in the admin dashboard."""
+    session = models.StudySession(
+        user_id=user_id,
+        duration_minutes=duration_minutes,
+        coins_earned=0,
+        subject_id=subject_id,
+        started_at=datetime.utcnow(),
+        completed_at=None,
+    )
+    db.add(session)
+    db.commit()
+    db.refresh(session)
+    return session
+
+
+def complete_study_session_by_id(
+    db: Session,
+    session_id: int,
+    user_id: int,
+    duration_minutes: int,
+    task_id: int = None,
+    animal_name: str = None,
+    subject_id: int = None,
+) -> tuple:
+    """Finalise a previously-started session.
+
+    Returns (session, hatched_animal) on success. Returns (None, None) if the
+    session doesn't exist, doesn't belong to this user, or is already complete
+    — caller is responsible for falling back to the legacy create path.
+    """
+    session = db.query(models.StudySession).filter(
+        models.StudySession.id == session_id,
+        models.StudySession.user_id == user_id,
+    ).first()
+    if not session:
+        return None, None
+    if session.completed_at is not None:
+        # Already completed — refuse to double-credit.
+        return None, None
+    user = db.query(models.User).filter(models.User.id == user_id).first()
+    if task_id is not None:
+        session.task_id = task_id
+    if subject_id is not None:
+        session.subject_id = subject_id
+    return _finalize_session(db, session, user, duration_minutes, animal_name)
+
+
 def get_user_sessions(db: Session, user_id: int, limit: int = 50) -> List[models.StudySession]:
+    # Only completed sessions show up in the user's own history. Incomplete
+    # rows (started but never finished) are deliberately hidden from end users
+    # and only visible to admins via /admin/sessions/incomplete.
     return db.query(models.StudySession).filter(
-        models.StudySession.user_id == user_id
+        models.StudySession.user_id == user_id,
+        models.StudySession.completed_at.isnot(None),
     ).order_by(models.StudySession.completed_at.desc()).limit(limit).all()
 
 

@@ -66,6 +66,91 @@ class TestSessionEndpoint:
         assert len(resp.json()) == 1
 
 
+class TestSessionStartCompleteHandshake:
+    """Tests for the new POST /sessions/start + /sessions/{id}/complete pair.
+
+    The handshake exists so abandoned timers stay visible in the admin
+    dashboard (started_at set, completed_at NULL).
+    """
+
+    def test_start_creates_incomplete_row(self, client, alice, alice_headers, db):
+        import models
+        resp = client.post("/sessions/start", json={"duration_minutes": 25}, headers=alice_headers)
+        assert resp.status_code == 200, resp.text
+        sid = resp.json()["session_id"]
+        row = db.query(models.StudySession).filter_by(id=sid).first()
+        assert row is not None
+        assert row.user_id == alice.id
+        assert row.completed_at is None
+        assert row.coins_earned == 0
+        assert row.duration_minutes == 25
+
+    def test_start_does_not_award_coins(self, client, alice, alice_headers, db):
+        before = alice.total_coins
+        client.post("/sessions/start", json={"duration_minutes": 25}, headers=alice_headers)
+        db.refresh(alice)
+        assert alice.total_coins == before
+
+    def test_complete_finalises_started_session(self, client, alice, alice_headers, db):
+        import models
+        sid = client.post("/sessions/start", json={"duration_minutes": 25}, headers=alice_headers).json()["session_id"]
+        resp = client.post(f"/sessions/{sid}/complete", json={"duration_minutes": 25}, headers=alice_headers)
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert body["session"]["id"] == sid
+        assert body["session"]["coins_earned"] > 0
+        row = db.query(models.StudySession).filter_by(id=sid).first()
+        assert row.completed_at is not None
+        assert row.coins_earned > 0
+        # No duplicate row was created
+        assert db.query(models.StudySession).filter_by(user_id=alice.id).count() == 1
+
+    def test_complete_unknown_id_returns_404(self, client, alice_headers):
+        resp = client.post("/sessions/999999/complete", json={"duration_minutes": 25}, headers=alice_headers)
+        assert resp.status_code == 404
+
+    def test_complete_other_users_session_returns_404(self, client, alice_headers, db):
+        from tests.conftest import make_user, jwt_headers
+        make_user(db, "bob@example.com", "password123", "bob")
+        bob_headers = jwt_headers("bob@example.com")
+        sid = client.post("/sessions/start", json={"duration_minutes": 25}, headers=bob_headers).json()["session_id"]
+        resp = client.post(f"/sessions/{sid}/complete", json={"duration_minutes": 25}, headers=alice_headers)
+        assert resp.status_code == 404
+
+    def test_complete_twice_returns_409(self, client, alice_headers):
+        sid = client.post("/sessions/start", json={"duration_minutes": 25}, headers=alice_headers).json()["session_id"]
+        first = client.post(f"/sessions/{sid}/complete", json={"duration_minutes": 25}, headers=alice_headers)
+        assert first.status_code == 200
+        second = client.post(f"/sessions/{sid}/complete", json={"duration_minutes": 25}, headers=alice_headers)
+        assert second.status_code == 409
+
+    def test_started_only_session_excluded_from_user_history(self, client, alice_headers):
+        client.post("/sessions/start", json={"duration_minutes": 25}, headers=alice_headers)
+        history = client.get("/sessions", headers=alice_headers)
+        assert history.status_code == 200
+        # Incomplete sessions must not leak into the user-facing history list
+        assert history.json() == []
+
+    def test_admin_incomplete_lists_started_session(self, client, alice, alice_headers):
+        import os
+        client.post("/sessions/start", json={"duration_minutes": 25}, headers=alice_headers)
+        admin_key = os.environ.get("ADMIN_API_KEY", "dev-only-admin-key")
+        resp = client.get("/admin/sessions/incomplete", headers={"X-Admin-Key": admin_key})
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["total"] >= 1
+        assert any(s["user_id"] == alice.id for s in body["sessions"])
+
+    def test_admin_incomplete_excludes_completed(self, client, alice_headers):
+        import os
+        sid = client.post("/sessions/start", json={"duration_minutes": 25}, headers=alice_headers).json()["session_id"]
+        client.post(f"/sessions/{sid}/complete", json={"duration_minutes": 25}, headers=alice_headers)
+        admin_key = os.environ.get("ADMIN_API_KEY", "dev-only-admin-key")
+        resp = client.get("/admin/sessions/incomplete", headers={"X-Admin-Key": admin_key})
+        assert resp.status_code == 200
+        assert all(s["id"] != sid for s in resp.json()["sessions"])
+
+
 class TestEggEndpoints:
     def test_get_egg_returns_progress(self, client, alice, alice_headers):
         """GAME-11: GET /egg returns progress fields."""
