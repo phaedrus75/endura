@@ -319,6 +319,12 @@ class StudySession(Base):
     subject_id = Column(Integer, ForeignKey("subjects.id"), nullable=True)
     started_at = Column(DateTime, default=datetime.utcnow)
     completed_at = Column(DateTime, nullable=True)
+    # Set when the row was finalised by the server-side reaper (Gap 2 fix)
+    # rather than by an explicit /sessions/{id}/complete from the client.
+    # Used to (a) distinguish auto-credited sessions in the admin dashboard
+    # and (b) avoid sending duplicate "you finished a session!" pushes if the
+    # user's app eventually catches up and posts its own completion.
+    auto_completed_at = Column(DateTime, nullable=True, index=True)
     
     user = relationship("User", back_populates="study_sessions")
     task = relationship("Task")

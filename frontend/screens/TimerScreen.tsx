@@ -537,6 +537,13 @@ export default function TimerScreen() {
           }
           setHatchedAnimalInfo(prev => prev ? { ...prev, ecoCredits: finalCoins } : prev);
           if (earnedBadges.length > 0) setNewBadges(earnedBadges);
+          // Fire the same analytics events the in-foreground completion path
+          // fires. Without this, sessions recovered after the JS context was
+          // killed look like silent drop-offs in PostHog (session_started with
+          // no completed event) even though the user got their reward — the
+          // single biggest reason the dashboard overstates the bug rate.
+          Analytics.sessionCompleted(active.selectedMinutes, finalCoins, active.subjectName || undefined);
+          Analytics.eggHatched(hatchedName, localAnimal?.status || 'Unknown');
           timerBreadcrumb('recover:complete', { sessionId: active.sessionId, minutes: active.selectedMinutes });
         } catch (err) {
           // Server save failed (probably offline). Keep `active` around so
@@ -888,14 +895,21 @@ export default function TimerScreen() {
         badges: earnedBadges,
       });
     } else {
-      // Save failed — keep `active` so the recovery effect retries next launch.
-      await persistPendingHatch({
-        animalEmoji: hatchedEmoji,
-        animalName: hatchedName,
-        ecoCredits: finalCoins,
-        sessionSaveError: true,
-        badges: [],
-      });
+      // Save failed (online retry exhausted). Deliberately do NOT call
+      // persistPendingHatch here — the recovery effect on next launch reads
+      // PENDING_HATCH_KEY first and, when set, calls clearActiveTimer().
+      // That would silently drop the user's earned session.
+      //
+      // By leaving `active` alone the next launch's recovery effect falls
+      // through to the "active timer is past its end" branch and retries
+      // completeSessionById against the server. The user will see the
+      // celebration *next launch* once the network recovers, with their
+      // coins/streak intact. The downside is they don't see the celebration
+      // this launch — acceptable trade-off vs. losing the session entirely.
+      timerBreadcrumb('complete:save-failed-keeping-active', { sessionId: storedSessionId });
+      // Surface the failure in the UI so the user knows something is up,
+      // but no persisted celebration state.
+      setSessionSaveError(true);
     }
 
     try { await refreshUser(); } catch (_) {}
@@ -976,8 +990,12 @@ export default function TimerScreen() {
       return;
     }
     setShowSubjectModal(false);
-    Analytics.sessionStarted(selectedMinutes, selectedSubject?.display_name || '');
 
+    // NB: Analytics.sessionStarted fires AFTER persistActiveTimer below.
+    // Firing it here (before the awaits) would log a `session_started` event
+    // that has no recoverable state, so a user who backgrounds the app in the
+    // ~200-500ms between this point and persistActiveTimer would show up as
+    // a "silent loss" in PostHog even though the timer never actually started.
     const durationSec = selectedMinutes * TIME_MULTIPLIER;
     const localAnimal = ENDANGERED_ANIMALS.find(a => a.id === selectedAnimalId);
 
@@ -1032,6 +1050,13 @@ export default function TimerScreen() {
       useTestTimer: !!user?.use_test_timer,
       sessionId,
     });
+
+    // Now that state is durably persisted on disk and (best-effort) on the
+    // server, log session_started. If the JS context is killed between here
+    // and the user returning, the recovery effect on next launch will replay
+    // both the start state AND eventually fire session_completed, so the
+    // PostHog funnel stays consistent.
+    Analytics.sessionStarted(selectedMinutes, selectedSubject?.display_name || '');
 
     setIsRunning(true);
     setIsPaused(false);

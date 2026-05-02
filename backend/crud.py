@@ -274,6 +274,120 @@ def get_user_sessions(db: Session, user_id: int, limit: int = 50) -> List[models
     ).order_by(models.StudySession.completed_at.desc()).limit(limit).all()
 
 
+def reap_stale_sessions(
+    db: Session,
+    grace_minutes: int = 30,
+    max_age_hours: int = 168,
+    limit: int = 500,
+) -> dict:
+    """Auto-complete sessions that were started but never finished by the
+    client (Gap 2 fix).
+
+    Without this, a user who starts a 25-minute timer, focuses for 25 minutes,
+    and then never reopens the app gets zero coins / no streak credit — the
+    `study_sessions` row sits with `completed_at IS NULL` forever and the user
+    is silently punished for doing the work. The reaper finds those rows and
+    finalises them as if the client had called /sessions/{id}/complete.
+
+    Selection criteria — a row is "reapable" iff:
+      * `completed_at IS NULL`           (not yet finalised)
+      * `auto_completed_at IS NULL`      (we didn't already reap it)
+      * `started_at + duration_minutes + grace_minutes < now()`
+        (timer's expected end is past, plus a grace window so we don't race
+        a slow client that's about to POST /complete)
+      * `started_at > now() - max_age_hours`
+        (don't retroactively credit ancient rows; if a row has sat for a week
+        it's almost certainly a test/dev artefact or an account that's gone)
+
+    Awards coins, updates streak, hatches the configured animal — exactly the
+    same side effects as a real /complete call — by reusing _finalize_session.
+    Marks the row with `auto_completed_at` so admins can tell auto-credited
+    sessions apart and so the reaper is idempotent (won't re-process).
+
+    Returns a dict with counts so the caller (cron / admin endpoint) can log
+    or render the result.
+    """
+    now = datetime.utcnow()
+    horizon_oldest = now - timedelta(hours=max_age_hours)
+
+    candidates: List[models.StudySession] = (
+        db.query(models.StudySession)
+        .filter(
+            models.StudySession.completed_at.is_(None),
+            models.StudySession.auto_completed_at.is_(None),
+            models.StudySession.started_at >= horizon_oldest,
+        )
+        .order_by(models.StudySession.started_at.asc())
+        .limit(max(1, min(limit, 5000)))
+        .all()
+    )
+
+    reaped = 0
+    skipped_too_recent = 0
+    skipped_other = 0
+    coins_awarded = 0
+    user_ids_reaped: set[int] = set()
+
+    for session in candidates:
+        # `started_at + duration + grace` must be in the past.
+        if session.started_at is None or session.duration_minutes is None:
+            skipped_other += 1
+            continue
+        expected_end = session.started_at + timedelta(minutes=session.duration_minutes)
+        if expected_end + timedelta(minutes=grace_minutes) > now:
+            skipped_too_recent += 1
+            continue
+
+        user = (
+            db.query(models.User)
+            .filter(models.User.id == session.user_id)
+            .first()
+        )
+        if not user:
+            # Orphaned row — user was deleted. Mark it so we skip next time.
+            session.auto_completed_at = now
+            db.commit()
+            skipped_other += 1
+            continue
+
+        # Deliberately do NOT auto-hatch an animal during reap. The user
+        # didn't get to pick which endangered animal they wanted to hatch in
+        # this session (the choice happens client-side at /sessions/start
+        # time but isn't persisted to the row), so picking arbitrarily would
+        # rob them of the choice. They still get coins + streak — the egg
+        # animation can run next time they actually open the app.
+        animal_name = None
+
+        try:
+            finalised, _hatched = _finalize_session(
+                db, session, user, session.duration_minutes, animal_name
+            )
+            # Stamp the reap marker AFTER _finalize_session commits so we
+            # don't race a real /complete that might land between flush and
+            # commit. The marker write is idempotent.
+            finalised.auto_completed_at = datetime.utcnow()
+            db.commit()
+            reaped += 1
+            coins_awarded += finalised.coins_earned or 0
+            user_ids_reaped.add(user.id)
+        except Exception as e:
+            db.rollback()
+            import logging
+            logging.getLogger(__name__).error(
+                f"Reaper failed on session_id={session.id}: {e}", exc_info=True
+            )
+            skipped_other += 1
+
+    return {
+        "considered": len(candidates),
+        "reaped": reaped,
+        "skipped_too_recent": skipped_too_recent,
+        "skipped_other": skipped_other,
+        "coins_awarded": coins_awarded,
+        "users_credited": len(user_ids_reaped),
+    }
+
+
 # ============ Animal CRUD ============
 
 def get_all_animals(db: Session) -> List[models.Animal]:

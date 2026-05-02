@@ -181,6 +181,27 @@ else:
                         _conn.execute(text(f"ALTER TABLE email_templates ADD COLUMN IF NOT EXISTS {_col} {_ddl}"))
                         _conn.commit()
                     print(f"Added {_col} column to email_templates")
+        # Reaper-safety net: study_sessions.auto_completed_at (Gap 2 fix).
+        # Alembic migration y2z3a4b56c27 also adds this; the safety net keeps
+        # the app boot-clean on environments that haven't run alembic yet.
+        if _insp.has_table("study_sessions"):
+            _ss_cols = [c["name"] for c in _insp.get_columns("study_sessions")]
+            if "auto_completed_at" not in _ss_cols:
+                with engine.connect() as _conn:
+                    _conn.execute(text(
+                        "ALTER TABLE study_sessions ADD COLUMN IF NOT EXISTS auto_completed_at TIMESTAMP NULL"
+                    ))
+                    _conn.commit()
+                print("Added auto_completed_at column to study_sessions")
+                try:
+                    with engine.connect() as _conn:
+                        _conn.execute(text(
+                            "CREATE INDEX IF NOT EXISTS ix_study_sessions_auto_completed_at "
+                            "ON study_sessions (auto_completed_at)"
+                        ))
+                        _conn.commit()
+                except Exception as _ixe:
+                    print(f"Note: could not create ix_study_sessions_auto_completed_at: {_ixe}")
     except Exception as e:
         print(f"Warning: Could not check/create tables: {e}")
 
@@ -400,6 +421,29 @@ def _cron_sync_app_ranks():
         _db.close()
 
 
+def _cron_reap_stale_sessions():
+    """Every 15 minutes — auto-complete sessions that the client never closed.
+
+    See crud.reap_stale_sessions docstring for the selection rules. Logged
+    at INFO level so we get visibility without spamming Sentry.
+    """
+    from database import SessionLocal
+    _db = SessionLocal()
+    try:
+        result = crud.reap_stale_sessions(_db)
+        if result.get("reaped", 0) > 0:
+            logger.info(
+                f"Cron reap_stale_sessions: reaped={result['reaped']} "
+                f"users_credited={result['users_credited']} "
+                f"coins_awarded={result['coins_awarded']} "
+                f"considered={result['considered']}"
+            )
+    except Exception as e:
+        logger.error(f"Cron reap_stale_sessions failed: {e}", exc_info=True)
+    finally:
+        _db.close()
+
+
 @app.on_event("startup")
 def start_scheduler():
     try:
@@ -425,8 +469,17 @@ def start_scheduler():
         # exact same minute. Push at 10:00 UTC = early morning in LATAM, lunchtime
         # in Europe, evening in Asia — covers the bulk of the user base.
         scheduler.add_job(_cron_lifecycle_pushes, "cron", hour=10, minute=0, id="lifecycle_pushes")
+        # Stale session reaper every 15 min. Cheap query (only scans rows
+        # with completed_at IS NULL AND auto_completed_at IS NULL, indexed),
+        # so safe to run frequently. Tighter cadence = less time between a
+        # user finishing their study and seeing their coins next launch.
+        scheduler.add_job(_cron_reap_stale_sessions, "interval", minutes=15, id="reap_stale_sessions")
         scheduler.start()
-        print("✅ Scheduler started: onboarding emails 08:00 UTC, lifecycle pushes 10:00 UTC, app_ranks sync 04:00 + 16:00 UTC (misfire_grace=1h)")
+        print(
+            "✅ Scheduler started: onboarding emails 08:00 UTC, lifecycle pushes 10:00 UTC, "
+            "app_ranks sync 04:00 + 16:00 UTC, stale session reaper every 15 min "
+            "(misfire_grace=1h)"
+        )
     except Exception as e:
         print(f"❌ Failed to start scheduler: {e}")
 
@@ -4714,6 +4767,10 @@ def admin_sessions_incomplete(
             "started_at": s.started_at.isoformat() if s.started_at else None,
             "elapsed_seconds": elapsed_seconds,
             "is_stale": is_stale,
+            # auto_completed_at is always None on this endpoint (it filters
+            # for completed_at IS NULL only), but include it for symmetry
+            # with the user-detail / sessions list views the dashboard renders.
+            "auto_completed_at": getattr(s, "auto_completed_at", None) and s.auto_completed_at.isoformat(),
         })
 
     return {
@@ -4722,6 +4779,39 @@ def admin_sessions_incomplete(
         "hours": hours,
         "sessions": result,
     }
+
+
+class ReapStaleSessionsRequest(BaseModel):
+    grace_minutes: int = Field(30, ge=0, le=1440)
+    max_age_hours: int = Field(168, ge=1, le=8760)
+    limit: int = Field(500, ge=1, le=5000)
+
+
+@app.post("/admin/sessions/reap-stale")
+def admin_reap_stale_sessions(
+    body: ReapStaleSessionsRequest,
+    db: Session = Depends(get_db),
+    _=Depends(verify_admin),
+):
+    """Auto-complete stale incomplete sessions (Gap 2 fix).
+
+    Finds rows where the timer's expected end is well in the past but the
+    client never POSTed /complete (user closed the app, never came back).
+    Awards coins/streak as if they had completed normally so we honour the
+    work the user actually did. Marks each row with `auto_completed_at` so
+    we don't double-credit.
+
+    Safe to call repeatedly (idempotent on the same set of rows). Intended
+    to be called by a cron / external scheduler every 15-60 min, but can
+    also be triggered manually from the admin dashboard for one-shot
+    catch-up runs.
+    """
+    return crud.reap_stale_sessions(
+        db,
+        grace_minutes=body.grace_minutes,
+        max_age_hours=body.max_age_hours,
+        limit=body.limit,
+    )
 
 
 # ============ Admin App Store Rankings (via AppFigures) ============
