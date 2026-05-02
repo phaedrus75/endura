@@ -23,14 +23,13 @@ import { useRoute } from '@react-navigation/native';
 import { useAuth } from '../contexts/AuthContext';
 import { authAPI } from '../services/api';
 import { Analytics } from '../services/analytics';
-import * as AppleAuthentication from 'expo-apple-authentication';
-import {
-  isAppleSignInAvailable,
-  signInWithApple,
-  useGoogleAuth,
-  submitGoogleIdToken,
-  isGoogleConfigured,
-} from '../services/oauthLogin';
+// Sign in with Apple + Google is intentionally not wired into this screen
+// in 1.0.5. Backend (`/auth/apple`, `/auth/google`), DB (`apple_id_sub`,
+// `google_id_sub`), and the frontend client (`services/oauthLogin.ts`) are
+// all in place — only the UI is gated. Re-enable per `docs/oauth-setup.md`
+// once Apple Developer + Google Cloud client IDs are provisioned and
+// smoke-tested. The 1.0.4 / build 27 crash was caused by calling
+// `Google.useIdTokenAuthRequest` with no client IDs configured.
 
 const { width } = Dimensions.get('window');
 
@@ -53,11 +52,7 @@ export default function AuthScreen() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const { login, register, checkAuth, hydrateAfterOAuth } = useAuth();
-  const [appleAvailable, setAppleAvailable] = useState(false);
-  const [oauthLoading, setOauthLoading] = useState<null | 'apple' | 'google'>(null);
-  const googleConfigured = isGoogleConfigured();
-  const [, googleResponse, googlePrompt] = useGoogleAuth();
+  const { login, register, checkAuth } = useAuth();
 
   // Email verification state
   const [showVerification, setShowVerification] = useState(false);
@@ -199,69 +194,6 @@ export default function AuthScreen() {
   }, [onboardingVariant]);
 
   useEffect(() => {
-    let cancelled = false;
-    isAppleSignInAvailable().then((ok) => {
-      if (!cancelled) setAppleAvailable(ok);
-    }).catch(() => {});
-    return () => { cancelled = true; };
-  }, []);
-
-  useEffect(() => {
-    if (!googleResponse) return;
-    if (googleResponse.type !== 'success') {
-      if (googleResponse.type === 'error') {
-        setOauthLoading(null);
-        Alert.alert('Google sign-in failed', googleResponse.error?.message || 'Please try again or use email.');
-      } else if (googleResponse.type !== 'dismiss') {
-        setOauthLoading(null);
-      }
-      return;
-    }
-    const idToken = (googleResponse.params as any)?.id_token
-      || (googleResponse.authentication as any)?.idToken;
-    if (!idToken) {
-      setOauthLoading(null);
-      Alert.alert('Google sign-in failed', 'Google did not return an identity token.');
-      return;
-    }
-    (async () => {
-      try {
-        await submitGoogleIdToken(idToken);
-        await hydrateAfterOAuth();
-      } catch (e: any) {
-        Alert.alert('Sign-in failed', e?.message || 'Could not sign in with Google.');
-      } finally {
-        setOauthLoading(null);
-      }
-    })();
-  }, [googleResponse, hydrateAfterOAuth]);
-
-  const handleApple = async () => {
-    setOauthLoading('apple');
-    try {
-      await signInWithApple();
-      await hydrateAfterOAuth();
-    } catch (e: any) {
-      // ERR_CANCELED is the user backing out of the system sheet.
-      if (e?.code !== 'ERR_REQUEST_CANCELED' && e?.code !== 'ERR_CANCELED') {
-        Alert.alert('Sign-in failed', e?.message || 'Could not sign in with Apple.');
-      }
-    } finally {
-      setOauthLoading(null);
-    }
-  };
-
-  const handleGoogle = async () => {
-    setOauthLoading('google');
-    try {
-      await googlePrompt();
-    } catch (e: any) {
-      setOauthLoading(null);
-      Alert.alert('Sign-in failed', e?.message || 'Could not start Google sign-in.');
-    }
-  };
-
-  useEffect(() => {
     const clearOldData = async () => {
       try {
         await SecureStore.deleteItemAsync('authToken');
@@ -317,46 +249,6 @@ export default function AuthScreen() {
           </View>
 
           <View style={styles.buttonsContainer}>
-            {appleAvailable && (
-              <View style={{ marginBottom: spacing.md }}>
-                <AppleAuthentication.AppleAuthenticationButton
-                  buttonType={AppleAuthentication.AppleAuthenticationButtonType.CONTINUE}
-                  buttonStyle={AppleAuthentication.AppleAuthenticationButtonStyle.BLACK}
-                  cornerRadius={borderRadius.md}
-                  style={styles.appleButton}
-                  onPress={handleApple}
-                />
-                {oauthLoading === 'apple' && (
-                  <View style={styles.oauthSpinner}>
-                    <ActivityIndicator color={colors.textOnPrimary} />
-                  </View>
-                )}
-              </View>
-            )}
-
-            {googleConfigured && (
-              <TouchableOpacity
-                style={styles.googleButton}
-                onPress={handleGoogle}
-                disabled={oauthLoading !== null}
-                activeOpacity={0.85}
-              >
-                {oauthLoading === 'google' ? (
-                  <ActivityIndicator color="#3c4043" />
-                ) : (
-                  <Text style={styles.googleButtonText}>Continue with Google</Text>
-                )}
-              </TouchableOpacity>
-            )}
-
-            {(appleAvailable || googleConfigured) && (
-              <View style={styles.dividerRow}>
-                <View style={styles.dividerLine} />
-                <Text style={styles.dividerLabel}>or</Text>
-                <View style={styles.dividerLine} />
-              </View>
-            )}
-
             <TouchableOpacity
               style={styles.primaryButton}
               onPress={handleGetStarted}

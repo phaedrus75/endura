@@ -1,7 +1,7 @@
 # Endura — Build Roadmap
 
 > **Editable working doc.** Tick, cut, reorder, add notes.  
-> **Last updated:** 2 May 2026 — added post-launch (build 25) shipped list + queued **Build 26** scope (auth friction reduction + timer-loss fixes).
+> **Last updated:** 3 May 2026 — **Build 28 (1.0.5) cut as timer-fixes-only.** Sign in with Apple + Google **deferred** out of this release after build 27 (1.0.4) crashed `AuthScreen` on TestFlight (no Google client IDs configured → `useIdTokenAuthRequest` threw on render). OAuth UI re-introduction tracked under "Deferred — needs configuration" below; full setup playbook in `docs/oauth-setup.md`.
 
 ---
 
@@ -9,9 +9,9 @@
 
 | Channel | Version | Build / code | Notes |
 |--------|---------|----------------|-------|
-| **iOS (TestFlight / App Store pipeline)** | **1.0.3** | **25** (deployed; users still on this) | Canonical build number lives in **App Store Connect** when using EAS `appVersionSource: "remote"` + `autoIncrement`. |
-| **Repo `frontend/app.json`** | 1.0.3 | `ios.buildNumber` **24** | May trail ASC by one between submits; bump before a build if you rely on local display only. |
-| **Android** | 1.0.3 | `versionCode` **10** | Not every release cycle ships Android; Play track may differ. |
+| **iOS (TestFlight / App Store pipeline)** | **1.0.3** | **25** (deployed; users still on this) — **1.0.5 / build 28 queued** | Canonical build number lives in **App Store Connect** when using EAS `appVersionSource: "remote"` + `autoIncrement`. **1.0.4 / build 27 was cut and uploaded but never promoted** — TestFlight crashed `AuthScreen` (see top-of-file note). |
+| **Repo `frontend/app.json`** | 1.0.5 | `ios.buildNumber` **26** (placeholder; EAS sets canonical) | Bump before a build if you rely on local display only. |
+| **Android** | 1.0.5 | `versionCode` **12** | Not every release cycle ships Android; Play track may differ. |
 | **Backend (Railway)** | rolling | post-25 | Auto-deploys from `main`. Several user-invisible improvements landed since the build-25 cut — see *Shipped after build 25* below. |
 | **Admin dashboard / website (Vercel)** | rolling | post-25 | Auto-deploys from `main`. New panels landed without an app build. |
 
@@ -24,9 +24,11 @@
 
 - `docs/push-notifications.md` — push architecture, admin, local timer notification.
 - `docs/release-notes/v1.0.3.md` — user-facing TestFlight notes for the big 1.0.3 drop (build ~21 era).
+- `docs/release-notes/v1.0.5.md` — current cut: timer/session reaper fixes only.
 - `docs/onboarding-friction-analysis.md`, `docs/onboarding-lifecycle.md` — strategy.
 - `docs/research.md` — research surveys / consent.
-- `backend/oauth_verify.py`, `backend/oauth_merge.py` — server-side ID-token verification + merge-by-email logic for Sign in with Apple / Google.
+- `docs/oauth-setup.md` — **full step-by-step** to configure Apple Developer + Google Cloud + Railway env + frontend `app.json` so Sign in with Apple / Google can be re-enabled in a future build.
+- `backend/oauth_verify.py`, `backend/oauth_merge.py` — server-side ID-token verification + merge-by-email logic for Sign in with Apple / Google (already shipped; just needs the UI + provider config to go live).
 - `scaffolding/` — drop-in starter pack for new apps (FastAPI + Expo + Vercel admin shell, mirroring Endura's architecture). Untracked artifact.
 
 ---
@@ -95,7 +97,8 @@ These changes are live on Railway / Vercel **without** needing an app build, *un
 
 ### Auth — friction reduction
 
-- [x] **Sign in with Apple + Sign in with Google** — server-side ID-token verification (JWKS), POST `/auth/apple` and `/auth/google` endpoints, OAuth → existing-account merge by verified email (`backend/oauth_verify.py`, `backend/oauth_merge.py`, Alembic `x1y2z3a45b26_add_oauth_provider_subs`). **Backend ready; needs app build to expose the buttons.**
+- [x] **Sign in with Apple + Sign in with Google — backend** — server-side ID-token verification (JWKS), POST `/auth/apple` and `/auth/google` endpoints, OAuth → existing-account merge by verified email (`backend/oauth_verify.py`, `backend/oauth_merge.py`, Alembic `x1y2z3a45b26_add_oauth_provider_subs`). **Live on Railway, fully tested (251/251 backend tests green).**
+- [~] **Sign in with Apple + Google — UI** — wired in `AuthScreen.tsx` between 28 Apr–2 May, then **removed from 1.0.5 (build 28)** after build 27 (1.0.4) crashed on first render: `Google.useIdTokenAuthRequest({ iosClientId: undefined, ... })` throws when no client IDs are configured. Re-enable per `docs/oauth-setup.md` once provider configuration is complete. Tracked under **Deferred — OAuth UI re-enable** below.
 - [x] Per-user app version tracking + `update_app` email pipeline driven from PostHog `$app_version`; admin Users tab shows outdated cohort and one-click backfill.
 
 ### Admin dashboard / analytics
@@ -146,42 +149,62 @@ Quick checks when you have time — does not block roadmap.
 
 ## Remaining — product backlog (not shipped)
 
-### Build 26 — Auth friction + timer-loss fixes (next iOS cut)
+### Build 28 (1.0.5) — Timer-loss fixes only (shipping now)
 
-**Theme:** "Two-tap sign-up + never silently lose a study session." All backend + admin work for these landed in **Shipped after the build 25 launch** above; this build is purely the app-side switches that flip them on for users.
+**Theme:** "Never silently lose a study session." OAuth UI deferred — see lane below.
 
-**Track A — Auth (Sign in with Apple / Google)**
+**Track A — Timer disappearance fix (shipped in this cut)**
 
-- [ ] Wire `expo-apple-authentication` + `expo-auth-session` (Google) into the Auth screen; primary CTA = Apple, secondary = Google, fallback = email/password.
-- [ ] Frontend calls `POST /auth/apple` / `/auth/google` with the platform-issued ID token and stores the returned JWT.
-- [ ] Smoke test the email-merge path: existing email-account user signs in via Apple → backend merges via verified email and bumps `apple_id_sub`.
+- [x] **Fix 1** — `Analytics.sessionAbandoned(elapsedMinutes)` from the *Abandon Egg* path so PostHog stops seeing `session_started` with no terminal event.
+- [x] **Fix 2** — `AppState` listener reacts only to a true `'background'` transition, not iOS's incidental `'inactive'`. Removes the spurious "💀 YOUR EGG WILL DIE" alert that was leading to accidental "Abandon Egg" taps.
+- [x] **Fix 3** — `Sentry.addBreadcrumb({category: 'timer'})` at start / complete / fallback / retry / recover / abandon, plus `Sentry.captureException` on save failures.
+- [x] **Fix 4 (client)** — `confirmSubjectAndStart` calls `sessionsAPI.startSession()` on press of *Start*, persists `sessionId` in `ActiveTimerState`. `handleTimerComplete` and the recovery effect prefer `sessionsAPI.completeSessionById(...)`, falling back to legacy `completeSession` when the start row is missing / 404 / 409 / 410. The *⚠️ Sessions started but not completed* dashboard panel will start populating once users update.
 
-**Track B — Timer disappearance fix (4 fixes; all branches done in repo, awaiting build)**
+**Track B — Audit gaps closed (post-Fix-1–4, identified in 2 May session)**
 
-- [ ] **Fix 1** — `Analytics.sessionAbandoned(elapsedMinutes)` from the *Abandon Egg* path in `showExitWarning` so PostHog stops seeing `session_started` with no terminal event.
-- [ ] **Fix 2** — `AppState` listener reacts only to a true `'background'` transition, not iOS's incidental `'inactive'` (Notification Center swipe, app-switcher peek, system permission prompt, incoming-call banner). Removes the spurious "💀 YOUR EGG WILL DIE" alert that was leading to accidental "Abandon Egg" taps.
-- [ ] **Fix 3** — `Sentry.addBreadcrumb({category: 'timer'})` at start / complete / fallback / retry / recover / abandon, plus `Sentry.captureException` on save failures. Gives us a full breadcrumb trail next time anyone reports a vanished timer.
-- [ ] **Fix 4 (client)** — `confirmSubjectAndStart` calls `sessionsAPI.startSession()` on press of *Start*, persists `sessionId` in `ActiveTimerState`. `handleTimerComplete` and the recovery effect prefer `sessionsAPI.completeSessionById(...)`, falling back to legacy `completeSession` when the start row is missing / 404 / 409 / 410. Once shipped, the *⚠️ Sessions started but not completed* dashboard panel starts populating.
+- [x] **Gap 1** — Recovery path now fires `Analytics.sessionCompleted` and `Analytics.eggHatched` so PostHog accurately credits sessions finalised after a JS-context kill.
+- [x] **Gap 2** — Server-side reaper (`crud.reap_stale_sessions`, APScheduler every 15 min, `POST /admin/sessions/reap-stale` for manual catch-up). Auto-credits sessions for users who never reopen the app at all. Marked with new `study_sessions.auto_completed_at` column (Alembic `y2z3a4b56c27`).
+- [x] **Gap 3** — Recovery on save-failure no longer drops the session: `pendingHatch` is *not* persisted on a failed save, so the recovery effect retries `completeSessionById` on next launch with `active` state intact.
+- [x] **Gap 4** — `Analytics.sessionStarted` now fires *after* `persistActiveTimer` succeeds, eliminating false-positive started-but-never-completed funnel rows when the app is killed in the millisecond gap between Start press and state being durable.
+- [x] 18 new backend tests in `tests/api/test_sessions.py` + `tests/api/test_session_failure_modes.py`. **251/251 backend + 13/13 frontend tests green.**
+
+**Track C — OAuth UI rollback (this cut)**
+
+- [x] Removed Apple + Google buttons, hooks, effects, and handlers from `AuthScreen.tsx`. Backend, DB, `oauthLogin.ts`, and `expo-apple-authentication` plugin/config left intact for trivial re-enable later.
+- [x] Skipped 1.0.4 → 1.0.5 (since 1.0.4 was already accepted by App Store Connect for build 27).
 
 **Build commands** (per `.cursor/rules/eas-builds.mdc`, the user runs these — I do not):
 
 ```bash
 cd /Users/munshi/Downloads/endura-v-2/frontend
-npx eas-cli build --platform ios --profile production
-# When verified on TestFlight, then submit:
-npx eas-cli submit --platform ios --latest
+npx eas-cli build --platform ios --profile production --auto-submit
+npx eas-cli build --platform android --profile production --auto-submit
 ```
 
 **Pre-build checklist**
 
-- [ ] Bump `frontend/app.json` `ios.buildNumber` if relying on local display only (EAS `autoIncrement` will set the canonical number in ASC).
-- [ ] Confirm `.env` / `expo.extra.sentryDsn` populated so the new breadcrumbs land in Sentry.
-- [ ] Smoke `expo-apple-authentication` capabilities still valid (re-run `eas credentials` if anything regressed).
+- [x] `expo.version` bumped to `1.0.5`.
+- [x] `android.versionCode` bumped to `12`.
+- [x] iOS `buildNumber` will be auto-incremented by EAS (`appVersionSource: "remote"`).
+- [x] Sentry DSN intact.
+- [x] No new native modules in this cut → no provisioning regen needed.
 
-**Release-notes draft** — *bullet points to expand later*
+**Release-notes draft** — see `docs/release-notes/v1.0.5.md` for the full text.
 
-- "Sign in with Apple / Google" (one-tap signup; merges with existing email accounts).
-- "Your timer can no longer silently disappear" — covers fixes 1–4 in user terms.
+---
+
+### Deferred — OAuth UI re-enable (future build, no fixed slot)
+
+**What's left to do** (per `docs/oauth-setup.md`):
+
+- [ ] **Apple Developer Portal** — tick "Sign in with Apple" capability on App ID `com.endura.study`; regenerate iOS provisioning profile via `eas credentials` (or just kick a new build and let EAS regenerate).
+- [ ] **Google Cloud Console** — new project (or existing) → OAuth consent screen → 3 OAuth client IDs (iOS + Android with EAS upload-key SHA-1 + Web).
+- [ ] **`frontend/app.json`** — add `extra.googleIosClientId`, `googleAndroidClientId`, `googleWebClientId`, plus `ios.infoPlist.CFBundleURLTypes` with the reversed iOS client ID.
+- [ ] **Railway env (backend)** — `APPLE_AUDIENCES=com.endura.study` (optional; default), `GOOGLE_AUDIENCES=<3 client IDs comma-separated>` (required — verifier returns 503 without it).
+- [ ] **`AuthScreen.tsx`** — re-add the imports / hook / effects / buttons that were removed in Build 28. Diff is preserved in commit history; the unused styles (`appleButton`, `oauthSpinner`, `googleButton`, `googleButtonText`, `dividerRow`, `dividerLine`, `dividerLabel`) were left in `StyleSheet.create` precisely to make this trivial.
+- [ ] **Smoke test on TestFlight** — Apple sign-in (new + repeat sign-in returns same user), Google sign-in (new + repeat), email-merge path (Apple + same-email Google → both subs attached to one user row).
+
+**Why deferred:** Build 27 (1.0.4) shipped with the OAuth UI but no provider config and crashed on `AuthScreen` mount. The fix is to do the provider config end-to-end *before* re-introducing the UI, not to ship UI that depends on infra that isn't there yet.
 
 ---
 
