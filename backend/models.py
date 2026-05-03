@@ -918,8 +918,9 @@ class SchoolDisplay(Base):
 
 
 class AppRank(Base):
-    """Daily snapshot of App Store chart positions, sourced from AppFigures.
-    One row per (date, country, category, subtype, device) tuple.
+    """Daily snapshot of App Store chart positions, sourced from Apple's
+    public iTunes RSS marketing feeds. One row per (date, country,
+    category, subtype, device) tuple.
     """
     __tablename__ = "app_ranks"
     __table_args__ = (

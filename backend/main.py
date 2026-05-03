@@ -406,31 +406,27 @@ def _cron_run_onboarding_emails():
 
 
 def _cron_sync_app_ranks():
-    """Twice daily — fetches recent ranks from AppFigures and upserts.
+    """Twice daily — snapshots Apple App Store rank from the public iTunes
+    RSS feeds and upserts into ``app_ranks``.
 
-    Records the result in _appfigures_state so /admin/appfigures-debug can
-    show the user when the cron last ran and what it did.
+    Records the result in ``_apple_rss_state`` so /admin/apple-rss-debug
+    can show the user when the cron last ran and what it did. No external
+    auth required — Apple's marketing RSS is open.
     """
     started_at = datetime.utcnow()
-    _appfigures_state["last_cron_started_at"] = started_at.isoformat()
-    if not os.environ.get("APPFIGURES_PAT", "").strip():
-        msg = "APPFIGURES_PAT not set, skipping"
-        logger.info(f"Cron app_ranks: {msg}")
-        _appfigures_state["last_cron_finished_at"] = datetime.utcnow().isoformat()
-        _appfigures_state["last_cron_result"] = {"status": "skipped", "reason": msg}
-        return
+    _apple_rss_state["last_cron_started_at"] = started_at.isoformat()
     from database import SessionLocal
     _db = SessionLocal()
     try:
         today = datetime.utcnow().date()
-        result = _sync_app_ranks(today - timedelta(days=2), today, _db)
+        result = _sync_app_ranks(today - timedelta(days=1), today, _db)
         logger.info(f"Cron app_ranks: {result}")
-        _appfigures_state["last_cron_finished_at"] = datetime.utcnow().isoformat()
-        _appfigures_state["last_cron_result"] = {"status": "ok", **(result if isinstance(result, dict) else {"raw": str(result)})}
+        _apple_rss_state["last_cron_finished_at"] = datetime.utcnow().isoformat()
+        _apple_rss_state["last_cron_result"] = {"status": "ok", **(result if isinstance(result, dict) else {"raw": str(result)})}
     except Exception as e:
         logger.error(f"Cron app_ranks: failed: {e}", exc_info=True)
-        _appfigures_state["last_cron_finished_at"] = datetime.utcnow().isoformat()
-        _appfigures_state["last_cron_result"] = {"status": "error", "error": str(e)}
+        _apple_rss_state["last_cron_finished_at"] = datetime.utcnow().isoformat()
+        _apple_rss_state["last_cron_result"] = {"status": "error", "error": str(e)}
     finally:
         _db.close()
 
@@ -472,10 +468,10 @@ def start_scheduler():
             job_defaults={"misfire_grace_time": 3600, "coalesce": True},
         )
         scheduler.add_job(_cron_run_onboarding_emails, "cron", hour=8, minute=0, id="onboarding_emails")
-        # AppFigures sync runs twice daily (04:00 + 16:00 UTC).
-        # AppFigures publishes daily snapshots end-of-day, but the second run
-        # catches any late updates or recovers if the morning run was missed
-        # (e.g. Railway deploy at the wrong minute).
+        # Apple iTunes RSS sync runs twice daily (04:00 + 16:00 UTC). Apple
+        # refreshes the marketing RSS feed roughly every few hours, so the
+        # second run captures intraday movement and recovers if the morning
+        # run was missed (e.g. Railway deploy at the wrong minute).
         scheduler.add_job(_cron_sync_app_ranks, "cron", hour=4, minute=0, id="sync_app_ranks_am")
         scheduler.add_job(_cron_sync_app_ranks, "cron", hour=16, minute=0, id="sync_app_ranks_pm")
         # Lifecycle push notifications run a couple hours after the email cron
@@ -5019,21 +5015,29 @@ def admin_reap_stale_sessions(
     )
 
 
-# ============ Admin App Store Rankings (via AppFigures) ============
+# ============ Admin App Store Rankings (via Apple iTunes RSS) ============
+#
+# We pull rank data straight from Apple's free, public, no-auth iTunes RSS
+# marketing feeds (services/apple_rss.py). They expose the *current* chart
+# snapshot only — no historical data, so the cron has to run at least once
+# a day to keep the time series populated. delta is derived in Python from
+# the previous day's stored row.
 
-_APPFIGURES_BASE = "https://api.appfigures.com/v2"
-_appfigures_state: dict = {
-    "product_id": None,
-    "product_name": None,
-    "product_icon": None,
-    "rankings_payload": None,
-    "rankings_fetched_at": None,
+# Cache resolved iTunes app id + per-cron metadata so the diagnostics
+# endpoint can show health without hammering Apple.
+_apple_rss_state: dict = {
+    "last_cron_started_at": None,
+    "last_cron_finished_at": None,
+    "last_cron_result": None,
+    "last_on_demand_sync": None,
 }
-_APPFIGURES_CACHE_TTL_SECONDS = 3600  # 1h — AppFigures rankings update daily
 
-# Largest set of countries that's still polite to query in one shot.
-# Semicolon-separated per AppFigures spec.
-_APPFIGURES_COUNTRIES = ";".join([
+# Endura's iTunes app id. Override via APPLE_APP_ID env var if we ever need
+# to point at a sibling app or a sandbox build.
+_RSS_APP_ID_DEFAULT = "6759482612"
+# Largest set of countries that's polite to query in one snapshot. Each
+# country = one HTTP call per genre × subtype.
+_RSS_COUNTRIES: list[str] = [
     "US", "GB", "CA", "AU", "NZ", "IE",
     "IN", "LK", "BD", "PK", "NP", "BT", "MV",
     "PH", "SG", "MY", "ID", "TH", "VN", "HK", "TW", "JP", "KR", "MO",
@@ -5043,191 +5047,67 @@ _APPFIGURES_COUNTRIES = ";".join([
     "BR", "MX", "AR", "CL", "CO", "PE", "UY", "EC", "VE", "GT", "CR", "PA", "DO",
     "AE", "SA", "IL", "QA", "KW", "BH", "OM", "JO", "LB",
     "MN", "KZ", "UZ", "KG", "TJ", "AZ", "GE", "AM",
-])
+]
+# (genre_id, human-readable category name). Endura primarily charts in
+# Education; Productivity catches the few storefronts where study apps
+# cross-list. Both are top-free only — we're not a paid app.
+_RSS_GENRES: list[tuple[int, str]] = [
+    (6017, "Education"),
+    (6007, "Productivity"),
+]
+_RSS_SUBTYPE = "free"
+_RSS_DEVICE = "iphone"  # iTunes RSS top charts are iPhone-only.
+_RSS_STORE = "apple"
+_RSS_LIMIT = 200  # Apple's hard cap; covers anything a small app could chart at.
 
 
-def _appfigures_headers() -> dict:
-    pat = os.environ.get("APPFIGURES_PAT", "").strip()
-    if not pat:
-        raise HTTPException(
-            status_code=503,
-            detail="APPFIGURES_PAT env var not configured on backend",
-        )
-    return {"Authorization": f"Bearer {pat}", "Accept": "application/json"}
+def _resolve_apple_app_id() -> str:
+    return os.environ.get("APPLE_APP_ID", "").strip() or _RSS_APP_ID_DEFAULT
 
 
-def _appfigures_get(path: str, params: Optional[dict] = None):
-    headers = _appfigures_headers()
-    url = f"{_APPFIGURES_BASE}{path}"
-    try:
-        with httpx.Client(timeout=30.0) as client:
-            r = client.get(url, headers=headers, params=params or {})
-    except httpx.HTTPError as e:
-        raise HTTPException(status_code=502, detail=f"AppFigures network error: {e}")
-    if r.status_code >= 400:
-        body = (r.text or "").strip()[:300]
-        raise HTTPException(
-            status_code=502,
-            detail=f"AppFigures {r.status_code} on {path}: {body or '(empty body)'}",
-        )
-    return r.json()
+@app.get("/admin/apple-rss-debug")
+def admin_apple_rss_debug(_=Depends(verify_admin)):
+    """Diagnostics — pokes the Apple RSS endpoint for a couple of countries
+    and reports cron health. No auth required by Apple, so this just
+    surfaces network issues + the current snapshot for sanity checks."""
+    from services import apple_rss
 
-
-@app.get("/admin/appfigures-debug")
-def admin_appfigures_debug(_=Depends(verify_admin)):
-    """Diagnostics — calls AppFigures and reports what's failing without
-    masking the response body. Safe to remove after rankings work."""
-    out = {
-        "pat_set": bool(os.environ.get("APPFIGURES_PAT", "").strip()),
-        "pat_prefix": (os.environ.get("APPFIGURES_PAT", "") or "")[:6],
-        "pat_length": len((os.environ.get("APPFIGURES_PAT", "") or "").strip()),
-        "appstore_id_set": bool(os.environ.get("APPFIGURES_APPSTORE_ID", "").strip()),
-        "appstore_id_value": os.environ.get("APPFIGURES_APPSTORE_ID", "").strip() or None,
-        "product_id_set": bool(os.environ.get("APPFIGURES_PRODUCT_ID", "").strip()),
-        # Cron health: when did the scheduled sync last run, and what happened?
+    out: dict = {
+        "app_id": _resolve_apple_app_id(),
+        "countries_tracked": len(_RSS_COUNTRIES),
+        "genres_tracked": [name for _gid, name in _RSS_GENRES],
         "cron": {
             "schedule_utc": ["04:00", "16:00"],
-            "last_started_at": _appfigures_state.get("last_cron_started_at"),
-            "last_finished_at": _appfigures_state.get("last_cron_finished_at"),
-            "last_result": _appfigures_state.get("last_cron_result"),
+            "last_started_at": _apple_rss_state.get("last_cron_started_at"),
+            "last_finished_at": _apple_rss_state.get("last_cron_finished_at"),
+            "last_result": _apple_rss_state.get("last_cron_result"),
             "last_on_demand_sync": (
-                _appfigures_state["last_on_demand_sync"].isoformat()
-                if isinstance(_appfigures_state.get("last_on_demand_sync"), datetime)
-                else _appfigures_state.get("last_on_demand_sync")
+                _apple_rss_state["last_on_demand_sync"].isoformat()
+                if isinstance(_apple_rss_state.get("last_on_demand_sync"), datetime)
+                else _apple_rss_state.get("last_on_demand_sync")
             ),
         },
-        "tests": [],
+        "probes": [],
     }
-    if not out["pat_set"]:
-        out["error"] = "APPFIGURES_PAT not set"
-        return out
-    headers = {"Authorization": f"Bearer {os.environ['APPFIGURES_PAT'].strip()}", "Accept": "application/json"}
-    test_paths = [
-        "/products/mine",
-        f"/products/apple/{os.environ.get('APPFIGURES_APPSTORE_ID', '').strip() or '6759482612'}",
-        f"/products/search/@iTunesId={os.environ.get('APPFIGURES_APPSTORE_ID', '').strip() or '6759482612'}",
-    ]
-    for path in test_paths:
-        try:
-            with httpx.Client(timeout=15.0) as c:
-                r = c.get(f"{_APPFIGURES_BASE}{path}", headers=headers)
-            out["tests"].append({
-                "path": path,
-                "status": r.status_code,
-                "body_preview": (r.text or "")[:400],
-            })
-        except Exception as e:
-            out["tests"].append({"path": path, "error": str(e)})
+    target_id = _resolve_apple_app_id()
+    for country in ("US", "GB"):
+        for genre_id, label in _RSS_GENRES:
+            try:
+                entries = apple_rss.fetch_chart(
+                    country, genre_id=genre_id, subtype=_RSS_SUBTYPE, limit=_RSS_LIMIT,
+                )
+                hit = apple_rss.find_app_rank(entries, target_id)
+                out["probes"].append({
+                    "country": country,
+                    "category": label,
+                    "chart_size": len(entries),
+                    "rank": hit.rank if hit else None,
+                })
+            except Exception as e:
+                out["probes"].append({
+                    "country": country, "category": label, "error": str(e),
+                })
     return out
-
-
-def _resolve_appfigures_product():
-    """Find the iOS product in the AppFigures account. Cached for the process lifetime.
-    Resolution order:
-      1. APPFIGURES_PRODUCT_ID env var (skip all lookups)
-      2. APPFIGURES_APPSTORE_ID env var → resolve via /v2/products/apple/<id>
-         (only needs public:read scope)
-      3. /products/mine (needs account:read scope)
-    """
-    if _appfigures_state["product_id"]:
-        return _appfigures_state["product_id"]
-
-    override = os.environ.get("APPFIGURES_PRODUCT_ID", "").strip()
-    if override:
-        try:
-            _appfigures_state["product_id"] = int(override)
-        except ValueError:
-            _appfigures_state["product_id"] = override
-        _appfigures_state["product_name"] = "(set via APPFIGURES_PRODUCT_ID)"
-        return _appfigures_state["product_id"]
-
-    appstore_id = os.environ.get("APPFIGURES_APPSTORE_ID", "").strip()
-    if appstore_id:
-        try:
-            p = _appfigures_get(f"/products/apple/{appstore_id}")
-            if isinstance(p, dict) and p.get("id"):
-                _appfigures_state["product_id"] = p["id"]
-                _appfigures_state["product_name"] = p.get("name")
-                _appfigures_state["product_icon"] = p.get("icon")
-                return _appfigures_state["product_id"]
-        except HTTPException as e:
-            raise HTTPException(
-                status_code=502,
-                detail=(
-                    f"Could not resolve App Store ID {appstore_id} via AppFigures "
-                    f"({e.detail}). Verify the ID matches the iOS app in AppFigures."
-                ),
-            )
-
-    try:
-        data = _appfigures_get("/products/mine")
-    except HTTPException as e:
-        # Most likely a scope issue — re-raise with a more actionable message.
-        raise HTTPException(
-            status_code=502,
-            detail=(
-                f"Could not list AppFigures products ({e.detail}). "
-                "Either grant the PAT 'account:read' scope, OR set "
-                "APPFIGURES_PRODUCT_ID env var to the iOS product id directly."
-            ),
-        )
-    # /products/mine returns either a list or a dict keyed by id, depending on account.
-    items = data.values() if isinstance(data, dict) else data
-    candidates = []
-    for p in items:
-        if not isinstance(p, dict):
-            continue
-        store = (p.get("store") or "").lower()
-        store_id = (p.get("store_id") or "").lower()
-        # iOS products on AppFigures use store names like "apple", "apple_ios", "ios", "ios_universal"
-        if (("apple" in store and "mac" not in store) or "ios" in store
-                or "apple" in store_id or "ios" in store_id):
-            candidates.append(p)
-    if not candidates:
-        # Fall back to first product so we at least see something
-        all_products = [p for p in items if isinstance(p, dict)]
-        if all_products:
-            candidates = [all_products[0]]
-    if not candidates:
-        raise HTTPException(status_code=404, detail="No products found in AppFigures account")
-    p = candidates[0]
-    _appfigures_state["product_id"] = p.get("id")
-    _appfigures_state["product_name"] = p.get("name")
-    _appfigures_state["product_icon"] = p.get("icon")
-    return _appfigures_state["product_id"]
-
-
-def _appfigures_fetch_ranks(start_date: date, end_date: date) -> tuple[dict, list[str]]:
-    """Fetch raw ranks from AppFigures with country auto-pruning.
-    Returns (raw_response, pruned_country_codes).
-    Uses daily granularity (AppFigures end-of-day snapshots).
-    """
-    import re as _re
-    product_id = _resolve_appfigures_product()
-    countries = _APPFIGURES_COUNTRIES.split(";")
-    pruned: list[str] = []
-    raw = None
-    for _ in range(25):
-        try:
-            raw = _appfigures_get(
-                f"/ranks/{product_id}/daily/{start_date.isoformat()}/{end_date.isoformat()}",
-                # filter=1000 captures the full chart (AppFigures max).
-                params={"countries": ";".join(countries), "filter": 1000, "tz": "utc"},
-            )
-            break
-        except HTTPException as e:
-            m = _re.search(r"country (\w+) is not available", str(e.detail))
-            if not m:
-                raise
-            bad = m.group(1).upper()
-            if bad in countries:
-                countries.remove(bad)
-                pruned.append(bad)
-            else:
-                raise
-    if raw is None:
-        raise HTTPException(status_code=502, detail=f"Too many unsupported countries (pruned {pruned})")
-    return raw, pruned
 
 
 @app.post("/admin/app-rankings/manual-insert")
@@ -5242,9 +5122,10 @@ def admin_app_rankings_manual_insert(
     db: Session = Depends(get_db),
     _=Depends(verify_admin),
 ):
-    """Manually upsert a single rank row when AppFigures' daily granularity
-    misses an intraday peak. Idempotent — re-running with same key updates
-    in place."""
+    """Manually upsert a single rank row when the RSS snapshot misses an
+    intraday peak (Apple's feed only refreshes every few hours, so a
+    short-lived position can fall between syncs). Idempotent — re-running
+    with the same key updates in place."""
     try:
         slot_date = datetime.fromisoformat(rank_date)
     except ValueError:
@@ -5293,79 +5174,122 @@ def admin_app_rankings_manual_insert(
 
 
 def _sync_app_ranks(start_date: date, end_date: date, db: Session) -> dict:
-    """Fetch ranks from AppFigures for a date range and upsert into app_ranks.
-    Idempotent: re-running for the same date range overwrites existing rows
-    via the (rank_date, country, category_name, subtype, device) unique slot.
-    """
-    raw, pruned = _appfigures_fetch_ranks(start_date, end_date)
-    dates_iso = raw.get("dates", []) or []
-    parsed_dates: list[Optional[datetime]] = []
-    for d in dates_iso:
-        try:
-            parsed_dates.append(datetime.fromisoformat(d.replace("Z", "")))
-        except Exception:
-            parsed_dates.append(None)
+    """Snapshot today's App Store chart positions from Apple's iTunes RSS
+    feeds and upsert into ``app_ranks``. Idempotent on the
+    (rank_date, country, category_name, subtype, device) unique slot.
 
-    inserted = updated = skipped = 0
-    for series in raw.get("data", []) or []:
-        country = series.get("country")
-        cat = series.get("category") or {}
-        category_name = cat.get("name")
-        subtype = cat.get("subtype")
-        device = cat.get("device")
-        store = cat.get("store")
-        if not (country and category_name and subtype):
-            continue
-        positions = series.get("positions") or []
-        deltas = series.get("deltas") or []
-        for i, pos in enumerate(positions):
-            if pos is None:
-                skipped += 1
-                continue
-            slot_date = parsed_dates[i] if i < len(parsed_dates) else None
-            if slot_date is None:
-                skipped += 1
-                continue
-            delta = deltas[i] if i < len(deltas) else None
-            existing = (
-                db.query(models.AppRank)
-                .filter(
-                    models.AppRank.rank_date == slot_date,
-                    models.AppRank.country == country,
-                    models.AppRank.category_name == category_name,
-                    models.AppRank.subtype == subtype,
-                    models.AppRank.device == device,
-                )
-                .first()
+    Apple RSS only exposes the *current* chart, so ``start_date`` /
+    ``end_date`` are accepted for signature compatibility with the old
+    AppFigures code path but are otherwise ignored — we always write a
+    single row per (country × genre) keyed to today (UTC midnight). Daily
+    cadence comes from the cron, which runs twice a day.
+    """
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+    from services import apple_rss
+
+    del start_date, end_date  # no historical data — see docstring
+    today_dt = datetime.combine(datetime.utcnow().date(), datetime.min.time())
+    yesterday_dt = today_dt - timedelta(days=1)
+    target_id = _resolve_apple_app_id()
+
+    # Build the work queue: every (country × genre) is one chart fetch.
+    jobs: list[tuple[str, int, str]] = [
+        (country, genre_id, category_name)
+        for country in _RSS_COUNTRIES
+        for genre_id, category_name in _RSS_GENRES
+    ]
+
+    # Apple is happy to take many concurrent requests — 8 in flight keeps
+    # the full ~160-call sweep under ~6 seconds without being abusive.
+    chart_results: dict[tuple[str, str], Optional[apple_rss.ChartEntry]] = {}
+    fetch_errors: list[dict] = []
+    chart_sizes: dict[tuple[str, str], int] = {}
+
+    def _one(country: str, genre_id: int, category_name: str):
+        try:
+            entries = apple_rss.fetch_chart(
+                country, genre_id=genre_id, subtype=_RSS_SUBTYPE, limit=_RSS_LIMIT,
             )
-            if existing:
-                if existing.position != pos or existing.delta != delta:
-                    existing.position = pos
-                    existing.delta = delta
-                    existing.fetched_at = datetime.utcnow()
-                    updated += 1
-                else:
-                    skipped += 1
+        except Exception as e:
+            return (country, category_name, None, 0, str(e))
+        hit = apple_rss.find_app_rank(entries, target_id)
+        return (country, category_name, hit, len(entries), None)
+
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        futures = [pool.submit(_one, c, g, n) for c, g, n in jobs]
+        for fut in as_completed(futures):
+            country, category_name, hit, size, err = fut.result()
+            chart_sizes[(country, category_name)] = size
+            if err:
+                fetch_errors.append({"country": country, "category": category_name, "error": err})
+                continue
+            chart_results[(country, category_name)] = hit
+
+    inserted = updated = skipped = off_chart = 0
+    for (country, category_name), hit in chart_results.items():
+        if hit is None:
+            # Off-chart in this country/category for today. We don't write a
+            # row — the absence is the signal. Skip counters track the work.
+            off_chart += 1
+            continue
+
+        # Pull yesterday's row (if any) so we can compute delta. Negative
+        # delta = improved rank (climbed the chart), matching the
+        # AppFigures convention the dashboard already renders.
+        prev = (
+            db.query(models.AppRank)
+            .filter(
+                models.AppRank.rank_date == yesterday_dt,
+                models.AppRank.country == country,
+                models.AppRank.category_name == category_name,
+                models.AppRank.subtype == _RSS_SUBTYPE,
+                models.AppRank.device == _RSS_DEVICE,
+            )
+            .first()
+        )
+        delta = (hit.rank - prev.position) if (prev and prev.position) else None
+
+        existing = (
+            db.query(models.AppRank)
+            .filter(
+                models.AppRank.rank_date == today_dt,
+                models.AppRank.country == country,
+                models.AppRank.category_name == category_name,
+                models.AppRank.subtype == _RSS_SUBTYPE,
+                models.AppRank.device == _RSS_DEVICE,
+            )
+            .first()
+        )
+        if existing:
+            if existing.position != hit.rank or existing.delta != delta:
+                existing.position = hit.rank
+                existing.delta = delta
+                existing.fetched_at = datetime.utcnow()
+                updated += 1
             else:
-                db.add(models.AppRank(
-                    rank_date=slot_date,
-                    country=country,
-                    category_name=category_name,
-                    subtype=subtype,
-                    device=device,
-                    store=store,
-                    position=pos,
-                    delta=delta,
-                    fetched_at=datetime.utcnow(),
-                ))
-                inserted += 1
+                skipped += 1
+        else:
+            db.add(models.AppRank(
+                rank_date=today_dt,
+                country=country,
+                category_name=category_name,
+                subtype=_RSS_SUBTYPE,
+                device=_RSS_DEVICE,
+                store=_RSS_STORE,
+                position=hit.rank,
+                delta=delta,
+                fetched_at=datetime.utcnow(),
+            ))
+            inserted += 1
     db.commit()
     return {
         "inserted": inserted,
         "updated": updated,
         "skipped": skipped,
-        "pruned_countries": pruned,
-        "window": {"start": start_date.isoformat(), "end": end_date.isoformat()},
+        "off_chart": off_chart,
+        "fetch_errors": fetch_errors[:20],  # cap the payload — full list logged
+        "snapshot_date": today_dt.date().isoformat(),
+        "app_id": target_id,
     }
 
 
@@ -5419,24 +5343,24 @@ def _aggregate_ranks_from_db(rows: list[models.AppRank], window_days: int) -> di
 @app.get("/admin/app-rankings")
 def admin_app_rankings(
     window_days: int = Query(default=7, ge=1, le=365, description="Lookback window in days"),
-    sync: bool = Query(default=False, description="Sync today's data from AppFigures before reading"),
+    sync: bool = Query(default=False, description="Snapshot today's chart from Apple's iTunes RSS before reading"),
     db: Session = Depends(get_db),
     _=Depends(verify_admin),
 ):
     """App Store chart positions, served from app_ranks table.
-    Daily cron syncs yesterday's data at 04:00 UTC. Pass sync=true to fetch
-    today's snapshot on demand (rate-limited to once every 5 minutes)."""
+    Cron snapshots Apple's RSS feeds at 04:00 + 16:00 UTC. Pass sync=true
+    to grab today's snapshot on demand (rate-limited to once every 5 min)."""
     sync_result = None
     if sync:
         # Light rate limit: don't allow on-demand sync more than every 5 min
         now = datetime.utcnow()
-        last = _appfigures_state.get("last_on_demand_sync")
+        last = _apple_rss_state.get("last_on_demand_sync")
         if last and (now - last).total_seconds() < 300:
             sync_result = {"skipped": "rate-limited", "last_sync_seconds_ago": int((now - last).total_seconds())}
         else:
             today = datetime.utcnow().date()
             sync_result = _sync_app_ranks(today - timedelta(days=1), today, db)
-            _appfigures_state["last_on_demand_sync"] = now
+            _apple_rss_state["last_on_demand_sync"] = now
 
     cutoff = datetime.utcnow() - timedelta(days=window_days)
     rows = db.query(models.AppRank).filter(models.AppRank.rank_date >= cutoff).all()
@@ -5445,9 +5369,7 @@ def admin_app_rankings(
     # Find the most recent fetched_at across the rows for "data freshness"
     latest_fetch = max((r.fetched_at for r in rows), default=None)
     payload.update({
-        "product_id": _appfigures_state.get("product_id"),
-        "product_name": _appfigures_state.get("product_name"),
-        "product_icon": _appfigures_state.get("product_icon"),
+        "app_id": _resolve_apple_app_id(),
         "data_source": "database",
         "last_synced_at": latest_fetch.isoformat() if latest_fetch else None,
         "fetched_at": datetime.utcnow().isoformat(),
@@ -6482,8 +6404,10 @@ def admin_app_rankings_sync(
     db: Session = Depends(get_db),
     _=Depends(verify_admin),
 ):
-    """Manually trigger a sync from AppFigures into app_ranks.
-    Use days=90 for a one-shot backfill if the script approach isn't convenient.
+    """Manually trigger a snapshot of Apple's iTunes RSS chart into app_ranks.
+    Apple RSS only exposes today's chart, so ``days`` is accepted for API
+    compatibility with the old AppFigures sync but is otherwise ignored —
+    each call writes one row per (country × genre) tagged to today.
     """
     today = datetime.utcnow().date()
     return _sync_app_ranks(today - timedelta(days=days), today, db)

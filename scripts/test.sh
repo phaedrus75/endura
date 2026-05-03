@@ -68,7 +68,6 @@ export ADMIN_API_KEY="test-admin-key"
 export RESEND_API_KEY="test-resend-key"
 export EVERY_ORG_WEBHOOK_TOKEN="test-webhook-token"
 export POSTHOG_PERSONAL_API_KEY="test-posthog-key"
-export APPFIGURES_PAT="test-appfigures-key"
 export SENTRY_DSN=""
 
 if $PY -m pytest tests/ \

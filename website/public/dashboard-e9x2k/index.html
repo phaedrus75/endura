@@ -871,11 +871,11 @@
             </div>
         </div>
 
-        <!-- App Store Rankings (AppFigures) -->
+        <!-- App Store Rankings (Apple iTunes RSS) -->
         <div class="page" id="page-rankings">
             <h1 class="page-title">App Store Rankings</h1>
             <p style="font-size:13px;color:var(--text-muted);margin:0 0 16px">
-                App Store chart positions per country, stored in our DB and synced daily from AppFigures at 04:00 UTC.
+                App Store chart positions per country, stored in our DB and snapshotted from Apple's iTunes RSS feeds at 04:00 + 16:00 UTC.
                 Click any row to see its rank trajectory over time.
                 Shows <b>peak rank</b> in the chosen window alongside current rank. Lower number = better.
             </p>
@@ -4339,7 +4339,7 @@ async function loadActivity() {
     } catch (e) { console.error('Activity load failed', e); }
 }
 
-// ----- App Store Rankings (AppFigures) -----
+// ----- App Store Rankings (Apple iTunes RSS) -----
 let rankingsData = [];
 
 const COUNTRY_NAMES = {
@@ -4370,7 +4370,7 @@ async function loadRankings(triggerSync = false) {
     const status = document.getElementById('rankingsStatus');
     const body = document.getElementById('rankingsBody');
     const days = parseInt(document.getElementById('rankWindow')?.value || '7', 10);
-    status.textContent = triggerSync ? 'Syncing from AppFigures…' : 'Loading from database…';
+    status.textContent = triggerSync ? 'Snapshotting from Apple RSS…' : 'Loading from database…';
     body.innerHTML = '<tr><td colspan="8" class="empty">Loading…</td></tr>';
 
     document.getElementById('r-best-label').textContent = `Peak Rank (${days}d)`;

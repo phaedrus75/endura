@@ -185,7 +185,7 @@ Endura doesn't build everything from scratch. Here's what we rent from other com
 | **Resend** | Sends transactional emails (verification, onboarding) | Hitting Gmail/Apple inboxes reliably is a specialty |
 | **PostHog** | Product analytics (events, funnels, heatmaps) | Same reason — specialty tool |
 | **Every.org** | Processes donations to WWF | Avoids PCI compliance, handles tax receipts |
-| **AppFigures** | Reports our App Store chart position | Official Apple/Google APIs are clunky |
+| **Apple iTunes RSS** | Reports our App Store chart position | Free, public, no auth — official Apple feed used by every ASO tool |
 | **Stripe** (via Every.org) | Processes payment cards | PCI compliance; we never see card numbers |
 
 ## How we see what users are doing
@@ -229,8 +229,7 @@ backend/
 ├── alembic/          # Database migration history (13 versioned files)
 ├── scripts/          # One-off maintenance scripts (backfills, rebuilds)
 │   ├── backfill_tip_views.py     # Hydrate tip_views from PostHog history
-│   ├── backfill_tip_saves.py     # Hydrate tip_saves when Phase 1 launched
-│   └── backfill_app_ranks.py     # Import historical AppFigures data
+│   └── backfill_tip_saves.py     # Hydrate tip_saves when Phase 1 launched
 └── requirements.txt  # Python dependencies
 ```
 
@@ -249,7 +248,7 @@ The backend runs an in-process scheduler that wakes up daily:
 
 | Time (UTC) | Job | What it does |
 |---|---|---|
-| 04:00 | `_cron_sync_app_ranks` | Pulls yesterday + today's App Store chart position from AppFigures, upserts into `app_ranks` |
+| 04:00 + 16:00 | `_cron_sync_app_ranks` | Snapshots today's App Store chart position from Apple's iTunes RSS feeds (Education + Productivity, top-free) across ~80 countries, upserts into `app_ranks`. delta computed from yesterday's row |
 | 08:00 | `_cron_run_onboarding_emails` | Loops over users at key milestones (email verified, day 1 inactive, etc.) and sends the right template via Resend |
 | 10:00 | `_cron_lifecycle_pushes` | Sends the day-1/2/3/7/14 onboarding pushes + 3-day and 7-day re-engagement pushes via Expo. Dedup'd through `push_logs.template_key` so each template only fires once per user |
 
@@ -386,7 +385,7 @@ Lives at `website/public/dashboard-e9x2k/index.html` (served as a static file by
 - **Feedback** — triage UI for user bug reports + feature requests (KPIs, filters, detail modal with status/priority)
 - **Tips** — tip library with engagement metrics
 - **Email Templates** — edit + preview the transactional email sequence
-- **Charts** — App Store rankings timeline (from AppFigures)
+- **Charts** — App Store rankings timeline (from Apple iTunes RSS feeds)
 - **Founding Members** — audit the first-100 program
 
 **Auth:** the dashboard calls the backend with an `X-Admin-Key` header. The key is entered once on login and kept in the page's JS closure — **not** in `localStorage` anymore.
@@ -466,12 +465,14 @@ This pattern (encoding user identity in an external partner's reference field) l
 - Categories + per-user opt-outs: `notif_badges_enabled`, `notif_friends_enabled`, `notif_reminders_enabled`, `notif_marketing_enabled` (master switch is `notification_enabled`)
 - Full reference: `docs/push-notifications.md`
 
-### AppFigures (App Store rankings)
+### Apple iTunes RSS (App Store rankings)
 
-- Personal Access Token: `APPFIGURES_PAT`
-- Daily cron at 04:00 UTC pulls yesterday + today's chart positions for our 12 category/country slots
-- Stored in `app_ranks` table (one row per `(date, country, category, subtype, device)` tuple)
-- Admin dashboard charts show rankings over time
+- No auth required — Apple's marketing RSS is public (`itunes.apple.com/{country}/rss/topfreeapplications/limit=200/genre={id}/json`)
+- Cron at 04:00 + 16:00 UTC snapshots Endura's position in Education (6017) + Productivity (6007) top-free charts across ~80 countries
+- Snapshot only (Apple RSS doesn't expose history) — delta is computed in Python from yesterday's stored row
+- Stored in `app_ranks` table (one row per `(date, country, category, subtype, device)` tuple) — same schema as the old AppFigures path so the dashboard didn't need to change
+- Off-chart slots are not written; absence in the table = not in the top 200
+- Optional `APPLE_APP_ID` env var overrides the default iTunes app id (`6759482612`)
 
 ## Infrastructure + environment variables
 
@@ -484,7 +485,7 @@ This pattern (encoding user identity in an external partner's reference field) l
 | `ADMIN_API_KEY` | Gate on admin routes (`X-Admin-Key` header check) |
 | `POSTHOG_PERSONAL_API_KEY` | For HogQL queries from admin dashboard |
 | `RESEND_API_KEY` | Transactional email |
-| `APPFIGURES_PAT` | App Store rankings |
+| `APPLE_APP_ID` *(optional)* | Override the iTunes app id used for RSS rank lookups (defaults to `6759482612`) |
 | `EVERY_ORG_WEBHOOK_TOKEN` | Validates donation webhook signatures |
 
 ### Mobile app (`frontend/`)
@@ -527,7 +528,7 @@ This pattern (encoding user identity in an external partner's reference field) l
 - **APScheduler cron jobs** (onboarding emails, app_ranks sync, lifecycle pushes)
 - **Resend integration** (transactional email + open/click tracking webhook)
 - **Expo Push integration** (lifecycle + event-driven push notifications, batched send, dead-token cleanup, admin broadcast tools)
-- **AppFigures integration** (daily App Store rankings)
+- **Apple iTunes RSS integration** (twice-daily App Store rankings, free + no auth — replaced AppFigures)
 - **PostHog backend proxy** (personal API key never touches the browser)
 - **Admin dashboard** (single-file HTML, 10 pages, ~5,000 lines of JS — with the new Push tab)
 - **Content filter** for user-generated content

@@ -11,7 +11,6 @@ os.environ["ADMIN_API_KEY"] = "test-admin-key"
 os.environ["RESEND_API_KEY"] = "test-resend-key"
 os.environ["EVERY_ORG_WEBHOOK_TOKEN"] = "test-webhook-token"
 os.environ["POSTHOG_PERSONAL_API_KEY"] = "test-posthog-key"
-os.environ["APPFIGURES_PAT"] = "test-appfigures-key"
 os.environ["SENTRY_DSN"] = ""  # disable Sentry in tests
 
 import pytest

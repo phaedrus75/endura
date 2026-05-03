@@ -119,6 +119,7 @@ These changes are live on Railway / Vercel **without** needing an app build, *un
 - [x] **Sentry mobile bootstrap ping** — one-time `captureMessage` per install so the Issues panel isn't stuck on "waiting for first event" right after a fresh install.
 - [x] Resend webhook handler retries on transient DB / DNS failures.
 - [x] Email campaign throttle to **5 rps** (Resend limit) so admin broadcast does not 429.
+- [x] **App Store rank tracking → Apple iTunes RSS** (replaces AppFigures). Free, public, no-auth (`itunes.apple.com/{country}/rss/topfreeapplications/limit=200/genre={id}/json`). New `backend/services/apple_rss.py` module with full unit-test coverage; cron at 04:00 + 16:00 UTC snapshots Education (6017) + Productivity (6007) top-free across ~80 countries; delta computed from yesterday's stored row. `app_ranks` table + dashboard UI unchanged. Dropped `APPFIGURES_PAT` / `APPFIGURES_APPSTORE_ID` / `APPFIGURES_PRODUCT_ID` env vars and the AppFigures backfill script. Optional `APPLE_APP_ID` env override (default `6759482612`).
 
 ### Reference docs / scaffolding
 
@@ -242,9 +243,9 @@ npx eas-cli build --platform android --profile production --auto-submit
 - [ ] Ack / status emails (Resend/Postmark) — optional.
 - [ ] Public `/roadmap` voting page — optional.
 
-**Track E — AppFigures reviews**
+**Track E — App Store reviews**
 
-- [ ] Deferred: pull reviews, admin surfacing, 1★ triage.
+- [ ] Deferred: pull reviews, admin surfacing, 1★ triage. (Apple's iTunes RSS gives top-rated/most-recent reviews on a per-country basis — same free no-auth endpoint family we use for rankings; can layer on later.)
 
 #### Build 16 — Track C recap cards (design detail; all unchecked)
 
