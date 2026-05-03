@@ -30,6 +30,7 @@ import { getAnimalImage } from '../assets/animals';
 import { Analytics } from '../services/analytics';
 import { Sentry } from '../services/monitoring';
 import { scheduleLocalNotification, cancelLocalNotification } from '../services/pushNotifications';
+import { handleAppStateChange } from '../utils/timerAppState';
 
 // Defensive Sentry breadcrumb helper. Sentry.addBreadcrumb is no-op when the
 // SDK isn't initialised (no DSN in dev), but wrap in try/catch in case the
@@ -591,47 +592,28 @@ export default function TimerScreen() {
     return () => backHandler.remove();
   }, [isRunning]);
 
-  // Handle app going to background during timer
-  // Pause and warn when user starts to leave; timer catches up on return
-  //
-  // Only react to a true `'background'` transition, not `'inactive'`. iOS
-  // briefly enters 'inactive' during incidental events the user did not
-  // intend as "leaving the app" — pulling down Notification Center, the
-  // app-switcher peek, accepting a system permission prompt, an incoming
-  // call banner, etc. Treating those as "user is leaving" caused the
-  // 💀 YOUR EGG WILL DIE alert to fire spuriously, and a single accidental
-  // tap on "Abandon Egg" silently lost the user's session (the bug
-  // reported on user_id=2).
+  // Handle app going to background during timer. Pure transition logic
+  // lives in `utils/timerAppState.handleAppStateChange` so it can be unit
+  // tested without rendering this whole screen — see that file for the
+  // contract and the lock-screen-path bug history (build 32 regression).
   useEffect(() => {
     const subscription = AppState.addEventListener('change', nextAppState => {
-      if (isRunningRef.current && appState.current === 'active' && nextAppState === 'background') {
-        if (!backgroundTimestamp.current) {
-          backgroundTimestamp.current = Date.now();
-        }
-        if (!isPausedRef.current) {
-          warnOnReturnRef.current = true;
-        }
-      }
-
-      if (isRunningRef.current && appState.current === 'background' && nextAppState === 'active') {
-        if (backgroundTimestamp.current) {
-          const elapsedSeconds = Math.floor((Date.now() - backgroundTimestamp.current) / 1000);
-          backgroundTimestamp.current = null;
-          const newTimeLeft = Math.max(0, timeLeftRef.current - elapsedSeconds);
-          setTimeLeft(newTimeLeft);
-          if (newTimeLeft <= 0) {
-            warnOnReturnRef.current = false;
-            handleTimerComplete();
-          } else if (warnOnReturnRef.current) {
-            warnOnReturnRef.current = false;
-            showExitWarning();
-          }
-        } else if (warnOnReturnRef.current) {
-          warnOnReturnRef.current = false;
-          showExitWarning();
-        }
-      }
-
+      handleAppStateChange(
+        nextAppState,
+        {
+          isRunning: isRunningRef,
+          isPaused: isPausedRef,
+          backgroundTimestamp,
+          warnOnReturn: warnOnReturnRef,
+          timeLeft: timeLeftRef,
+        },
+        {
+          setTimeLeft,
+          onComplete: handleTimerComplete,
+          onWarn: showExitWarning,
+          now: Date.now,
+        },
+      );
       appState.current = nextAppState;
     });
 
