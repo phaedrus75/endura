@@ -100,6 +100,199 @@ class TestAdminOverview:
         assert summed_daily == 4
         assert summed_daily > weekly_bucket["count"]  # the bug we're fixing
 
+    def test_cohorts_retention_weekly_dedupe_and_periods(self, client, db):
+        """
+        /admin/cohorts/retention?granularity=weekly:
+        - cohort = users grouped by signup ISO-Monday
+        - period N = N weeks after that Monday
+        - active in period = ≥1 study session in that 7-day window
+        - retention[0] = "instant activation"; we verify the math end to end.
+        """
+        from datetime import datetime, timedelta
+        import models
+
+        now = datetime.utcnow()
+        # Anchor 21 days ago, back off to that week's Monday so we have
+        # 3 full weeks of subsequent activity to bucket retention into.
+        anchor = (now - timedelta(days=21)).replace(hour=12, minute=0, second=0, microsecond=0)
+        signup_monday = anchor - timedelta(days=anchor.weekday())
+
+        # 3 users in the same signup cohort
+        u_kept = make_user(db, email="ret_kept@example.com", username="retkept")
+        u_one_off = make_user(db, email="ret_oneoff@example.com", username="retoneoff")
+        u_lurker = make_user(db, email="ret_lurker@example.com", username="retlurker")
+        for u in (u_kept, u_one_off, u_lurker):
+            u.created_at = signup_monday + timedelta(hours=2)
+        db.commit()
+
+        # u_kept: studies in week 0, week 1, week 2 (full retention)
+        # u_one_off: studies in week 0 only (drops off)
+        # u_lurker: never studies (instant churn)
+        for w in (0, 1, 2):
+            db.add(models.StudySession(
+                user_id=u_kept.id, duration_minutes=25, coins_earned=10,
+                started_at=signup_monday + timedelta(days=7 * w + 1, hours=10),
+                completed_at=signup_monday + timedelta(days=7 * w + 1, hours=10, minutes=25),
+            ))
+        db.add(models.StudySession(
+            user_id=u_one_off.id, duration_minutes=25, coins_earned=10,
+            started_at=signup_monday + timedelta(days=2, hours=11),
+            completed_at=signup_monday + timedelta(days=2, hours=11, minutes=25),
+        ))
+        # Also: a session by u_kept on days 1 AND 4 of week 0 — must still
+        # count as 1 active for week 0 (dedupe inside a period).
+        db.add(models.StudySession(
+            user_id=u_kept.id, duration_minutes=25, coins_earned=10,
+            started_at=signup_monday + timedelta(days=4, hours=10),
+            completed_at=signup_monday + timedelta(days=4, hours=10, minutes=25),
+        ))
+        db.commit()
+
+        resp = client.get(
+            "/admin/cohorts/retention?granularity=weekly",
+            headers=admin_headers(),
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["granularity"] == "weekly"
+        assert data["period_label"] == "Week"
+        assert data["period_days"] == 7
+
+        cohort_key = signup_monday.strftime("%Y-%m-%d")
+        cohort = next((c for c in data["cohorts"] if c["cohort_date"] == cohort_key), None)
+        assert cohort is not None, f"missing cohort for {cohort_key}: {data['cohorts']}"
+        assert cohort["size"] == 3
+
+        # Period 0: u_kept + u_one_off active = 2/3 = 66.7%
+        # Period 1: u_kept only = 1/3 = 33.3%
+        # Period 2: u_kept only = 1/3 = 33.3%
+        by_period = {r["period"]: r for r in cohort["retention"]}
+        assert by_period[0]["active"] == 2 and by_period[0]["pct"] == 66.7
+        assert by_period[1]["active"] == 1 and by_period[1]["pct"] == 33.3
+        assert by_period[2]["active"] == 1 and by_period[2]["pct"] == 33.3
+
+    def test_cohorts_retention_omits_future_periods(self, client, db):
+        """
+        A cohort that only just signed up should have its retention curve
+        truncated — we don't want "0% retention week 5" showing for a cohort
+        that's only existed for a day. Otherwise the chart shows misleading
+        cliffs for the newest cohort.
+        """
+        from datetime import datetime, timedelta
+        import models
+
+        now = datetime.utcnow()
+        # Anchor in this week's Monday
+        this_monday = (now - timedelta(days=now.weekday())).replace(
+            hour=0, minute=0, second=0, microsecond=0,
+        )
+        u = make_user(db, email="future@example.com", username="future")
+        u.created_at = this_monday + timedelta(hours=1)
+        db.commit()
+        db.add(models.StudySession(
+            user_id=u.id, duration_minutes=25, coins_earned=10,
+            started_at=this_monday + timedelta(hours=2),
+            completed_at=this_monday + timedelta(hours=2, minutes=25),
+        ))
+        db.commit()
+
+        data = client.get(
+            "/admin/cohorts/retention?granularity=weekly",
+            headers=admin_headers(),
+        ).json()
+        cohort = next(
+            (c for c in data["cohorts"] if c["cohort_date"] == this_monday.strftime("%Y-%m-%d")),
+            None,
+        )
+        assert cohort is not None
+        # Only period 0 (current week) should be present — no future weeks.
+        periods = [r["period"] for r in cohort["retention"]]
+        assert periods == [0]
+
+    def test_cohorts_retention_daily_granularity(self, client, db):
+        """Daily granularity produces day-by-day cohorts and 1-day periods."""
+        from datetime import datetime, timedelta
+        import models
+
+        now = datetime.utcnow()
+        signup_day = (now - timedelta(days=5)).replace(
+            hour=10, minute=0, second=0, microsecond=0,
+        )
+        u = make_user(db, email="dayret@example.com", username="dayret")
+        u.created_at = signup_day
+        db.commit()
+        # Active on signup day, day +2, day +3
+        for offset in (0, 2, 3):
+            db.add(models.StudySession(
+                user_id=u.id, duration_minutes=25, coins_earned=10,
+                started_at=signup_day + timedelta(days=offset, hours=2),
+                completed_at=signup_day + timedelta(days=offset, hours=2, minutes=25),
+            ))
+        db.commit()
+
+        data = client.get(
+            "/admin/cohorts/retention?granularity=daily",
+            headers=admin_headers(),
+        ).json()
+        assert data["granularity"] == "daily"
+        assert data["period_label"] == "Day"
+        assert data["period_days"] == 1
+
+        cohort = next(
+            (c for c in data["cohorts"] if c["cohort_date"] == signup_day.strftime("%Y-%m-%d")),
+            None,
+        )
+        assert cohort is not None
+        assert cohort["size"] == 1
+        by_period = {r["period"]: r["active"] for r in cohort["retention"]}
+        assert by_period[0] == 1  # day 0 active
+        assert by_period[1] == 0  # day 1 silent
+        assert by_period[2] == 1  # day 2 active
+        assert by_period[3] == 1  # day 3 active
+
+    def test_cohorts_retention_excludes_archived(self, client, db):
+        """Archived users must not inflate cohort size or retention."""
+        from datetime import datetime, timedelta
+        import models
+
+        now = datetime.utcnow()
+        anchor = (now - timedelta(days=14)).replace(hour=12, minute=0, second=0, microsecond=0)
+        signup_monday = anchor - timedelta(days=anchor.weekday())
+
+        live = make_user(db, email="live_user@example.com", username="liveuser")
+        archived = make_user(db, email="arch_user@example.com", username="archuser")
+        live.created_at = signup_monday + timedelta(hours=1)
+        archived.created_at = signup_monday + timedelta(hours=2)
+        archived.is_archived = True
+        db.commit()
+        for u in (live, archived):
+            db.add(models.StudySession(
+                user_id=u.id, duration_minutes=25, coins_earned=10,
+                started_at=signup_monday + timedelta(days=1, hours=10),
+                completed_at=signup_monday + timedelta(days=1, hours=10, minutes=25),
+            ))
+        db.commit()
+
+        data = client.get(
+            "/admin/cohorts/retention?granularity=weekly",
+            headers=admin_headers(),
+        ).json()
+        cohort = next(
+            (c for c in data["cohorts"] if c["cohort_date"] == signup_monday.strftime("%Y-%m-%d")),
+            None,
+        )
+        assert cohort is not None
+        assert cohort["size"] == 1  # archived user excluded
+        assert cohort["retention"][0]["active"] == 1
+        assert cohort["retention"][0]["pct"] == 100.0
+
+    def test_cohorts_retention_rejects_bad_granularity(self, client):
+        resp = client.get(
+            "/admin/cohorts/retention?granularity=hourly",
+            headers=admin_headers(),
+        )
+        assert resp.status_code == 400
+
     def test_overview_weekly_active_buckets_by_iso_monday(self, client, db):
         """A session on a Sunday belongs to that week's Monday bucket."""
         from datetime import datetime, timedelta

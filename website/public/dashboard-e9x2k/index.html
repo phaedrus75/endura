@@ -483,6 +483,26 @@
                 <div id="onboardingFunnelChart" style="display:flex;flex-direction:column;gap:6px"></div>
             </div>
 
+            <!-- Cohort retention curves -->
+            <div class="table-card" style="margin-bottom:28px">
+                <div style="display:flex;flex-wrap:wrap;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:6px">
+                    <div>
+                        <h3 style="margin:0 0 4px">Cohort retention</h3>
+                        <p style="font-size:12px;color:var(--text-muted);margin:0;line-height:1.5;max-width:780px">
+                            Each line is a signup cohort. Y axis = % of cohort who completed <strong>≥1 study session</strong> in that period (UTC, archived users excluded). <strong>Period 0</strong> is the cohort's own signup window — it's the "instant activation" rate, not 100%. Subsequent periods are the retention curve. Future periods are omitted (so a cohort that signed up yesterday only shows period 0).
+                        </p>
+                    </div>
+                    <div style="display:flex;gap:6px;align-items:center">
+                        <div id="retentionGranularity" role="tablist" aria-label="Retention granularity" style="display:inline-flex;background:#f1f5f9;border:1px solid var(--border);border-radius:10px;padding:3px;gap:2px">
+                            <button type="button" class="ret-gran-btn" data-ret-gran="daily" onclick="setRetentionGranularity('daily')" style="padding:7px 16px;border:none;background:transparent;color:var(--text-muted);border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;transition:all .15s">Daily</button>
+                            <button type="button" class="ret-gran-btn active" data-ret-gran="weekly" onclick="setRetentionGranularity('weekly')" style="padding:7px 16px;border:none;background:var(--forest);color:#fff;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;transition:all .15s">Weekly</button>
+                        </div>
+                    </div>
+                </div>
+                <div id="retentionStatus" style="font-size:12px;color:var(--text-muted);margin:10px 0 6px"></div>
+                <div style="position:relative;height:340px"><canvas id="chartRetention"></canvas></div>
+            </div>
+
             <!-- Incomplete sessions: started but never completed (silent timer-loss bugs land here) -->
             <div class="table-card" style="margin-bottom:28px">
                 <div style="display:flex;flex-wrap:wrap;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:6px">
@@ -2321,6 +2341,120 @@ async function loadIncompleteSessions() {
     }
 }
 
+// ----- Cohort retention -----
+let retentionGranularity = 'weekly';  // 'daily' | 'weekly'
+let retentionChart = null;
+
+function setRetentionGranularity(gran) {
+    if (gran !== 'daily' && gran !== 'weekly') return;
+    if (retentionGranularity === gran) return;
+    retentionGranularity = gran;
+    document.querySelectorAll('#retentionGranularity .ret-gran-btn').forEach(btn => {
+        const active = btn.dataset.retGran === gran;
+        btn.classList.toggle('active', active);
+        btn.style.background = active ? 'var(--forest)' : 'transparent';
+        btn.style.color = active ? '#fff' : 'var(--text-muted)';
+    });
+    loadCohortRetention().catch(() => {});
+}
+
+async function loadCohortRetention() {
+    const statusEl = document.getElementById('retentionStatus');
+    const canvas = document.getElementById('chartRetention');
+    if (!canvas) return;
+    if (statusEl) statusEl.textContent = 'Loading…';
+    try {
+        const d = await adminFetch(`/admin/cohorts/retention?granularity=${retentionGranularity}`);
+        renderRetentionChart(d);
+        if (statusEl) {
+            const totalUsers = (d.cohorts || []).reduce((a, c) => a + (c.size || 0), 0);
+            statusEl.textContent =
+                `${(d.cohorts || []).length} ${d.granularity} cohorts · ${totalUsers.toLocaleString()} users`;
+        }
+    } catch (e) {
+        if (statusEl) statusEl.textContent = 'Failed to load: ' + (e.message || String(e));
+    }
+}
+
+function renderRetentionChart(payload) {
+    const ctx = document.getElementById('chartRetention').getContext('2d');
+    if (retentionChart) { retentionChart.destroy(); retentionChart = null; }
+    const cohorts = payload.cohorts || [];
+    if (cohorts.length === 0) {
+        ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
+        return;
+    }
+    const periodLabel = payload.period_label || 'Period';
+    const maxPeriod = cohorts.reduce((m, c) => Math.max(m, ...(c.retention || []).map(r => r.period)), 0);
+    const labels = Array.from({ length: maxPeriod + 1 }, (_, i) => `${periodLabel} ${i}`);
+
+    // Color: older cohorts = lighter / desaturated, newest = bold forest green.
+    // cohorts is oldest-first; index 0 is oldest, last is newest.
+    const n = cohorts.length;
+    const baseHue = 145;  // forest green hue
+    const datasets = cohorts.map((c, idx) => {
+        const t = n === 1 ? 1 : idx / (n - 1);                      // 0..1, newer = 1
+        const lightness = 70 - 30 * t;                              // older = lighter (70%), newer = darker (40%)
+        const saturation = 25 + 50 * t;                             // older = washed out, newer = vivid
+        const alpha = 0.45 + 0.55 * t;                              // older = faint, newer = solid
+        const color = `hsla(${baseHue}, ${saturation}%, ${lightness}%, ${alpha})`;
+        const isNewest = idx === n - 1;
+        const data = labels.map((_, p) => {
+            const row = (c.retention || []).find(r => r.period === p);
+            return row ? row.pct : null; // null = future period (not plotted)
+        });
+        return {
+            label: `${c.cohort_date} (n=${c.size})`,
+            data,
+            borderColor: color,
+            backgroundColor: color,
+            borderWidth: isNewest ? 2.5 : 1.5,
+            tension: 0.25,
+            spanGaps: false,
+            pointRadius: isNewest ? 3 : 2,
+            pointHoverRadius: 5,
+        };
+    });
+
+    retentionChart = new Chart(ctx, {
+        type: 'line',
+        data: { labels, datasets },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            interaction: { mode: 'nearest', intersect: false },
+            plugins: {
+                legend: {
+                    position: 'right',
+                    labels: { boxWidth: 12, font: { size: 11 }, padding: 8 },
+                },
+                tooltip: {
+                    callbacks: {
+                        label: (ctx) => {
+                            const cohort = cohorts[ctx.datasetIndex];
+                            const row = (cohort.retention || []).find(r => r.period === ctx.dataIndex);
+                            if (!row) return `${cohort.cohort_date}: —`;
+                            return `${cohort.cohort_date}: ${row.pct}% (${row.active}/${cohort.size})`;
+                        },
+                    },
+                },
+            },
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    suggestedMax: 100,
+                    ticks: { callback: (v) => v + '%', font: { size: 11 } },
+                    title: { display: true, text: '% of cohort active', font: { size: 11 } },
+                },
+                x: {
+                    grid: { display: false },
+                    ticks: { font: { size: 11 } },
+                },
+            },
+        },
+    });
+}
+
 async function loadOverview() {
     try {
         const [d, seg] = await Promise.all([
@@ -2411,6 +2545,7 @@ async function loadOverview() {
         }
         loadOnboardingFunnel().catch(() => {});
         loadIncompleteSessions().catch(() => {});
+        loadCohortRetention().catch(() => {});
 
         overviewCache = { data: d, phDauData, phWeeklyDauData, phTipViewed };
         renderOverviewCharts();

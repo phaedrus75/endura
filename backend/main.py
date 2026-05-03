@@ -4030,6 +4030,141 @@ def admin_overview(db: Session = Depends(get_db), _=Depends(verify_admin)):
     }
 
 
+@app.get("/admin/cohorts/retention")
+def admin_cohorts_retention(
+    granularity: str = "weekly",
+    cohorts: int = 0,
+    periods: int = 0,
+    db: Session = Depends(get_db),
+    _=Depends(verify_admin),
+):
+    """
+    Cohort retention curves.
+
+    Groups users by signup bucket (day or ISO-week-Monday) and reports
+    what % of each cohort was active (= completed >=1 study session) in
+    each subsequent bucket.
+
+    Period 0 = the cohort's own signup bucket — by construction includes
+    only users who actually studied within that bucket, so it's <= 100%.
+    Use period_0_pct as the "instant activation" rate; later periods are
+    the retention curve proper.
+
+    Query params:
+      granularity = 'daily' | 'weekly' (default 'weekly')
+      cohorts     = number of most-recent cohorts to include
+                    (default: 14 daily, 8 weekly)
+      periods     = number of periods to compute per cohort
+                    (default: 14 daily, 8 weekly)
+
+    Excludes archived users so the % isn't dragged down by test accounts.
+    """
+    from collections import defaultdict
+
+    granularity = (granularity or "weekly").lower()
+    if granularity not in ("daily", "weekly"):
+        raise HTTPException(status_code=400, detail="granularity must be 'daily' or 'weekly'")
+
+    if granularity == "daily":
+        cohort_count = cohorts if cohorts > 0 else 14
+        period_count = periods if periods > 0 else 14
+        period_days = 1
+    else:
+        cohort_count = cohorts if cohorts > 0 else 8
+        period_count = periods if periods > 0 else 8
+        period_days = 7
+
+    now = datetime.utcnow()
+    today = now.date()
+
+    def _bucket_start(d: date) -> date:
+        if granularity == "weekly":
+            return d - timedelta(days=d.weekday())  # Monday
+        return d
+
+    earliest_cohort = _bucket_start(today) - timedelta(days=period_days * (cohort_count - 1))
+    earliest_dt = datetime.combine(earliest_cohort, datetime.min.time())
+
+    # Pull users + their (active) sessions in two queries; bucket in Python.
+    user_rows = db.query(
+        models.User.id,
+        models.User.created_at,
+    ).filter(
+        models.User.is_archived == False,  # noqa: E712
+        models.User.created_at >= earliest_dt,
+    ).all()
+
+    cohort_to_users: dict = defaultdict(set)
+    user_to_cohort: dict = {}
+    for uid, created_at in user_rows:
+        if created_at is None:
+            continue
+        bucket = _bucket_start(created_at.date())
+        cohort_to_users[bucket].add(uid)
+        user_to_cohort[uid] = bucket
+
+    if not user_to_cohort:
+        return {
+            "granularity": granularity,
+            "period_label": "Day" if granularity == "daily" else "Week",
+            "period_days": period_days,
+            "cohorts": [],
+        }
+
+    user_ids = list(user_to_cohort.keys())
+    sess_rows = db.query(
+        models.StudySession.user_id,
+        models.StudySession.started_at,
+    ).filter(
+        models.StudySession.user_id.in_(user_ids),
+        models.StudySession.started_at >= earliest_dt,
+    ).all()
+
+    # active_in_bucket[(user_id, bucket_date)] = True
+    user_active_buckets: dict = defaultdict(set)
+    for uid, started_at in sess_rows:
+        if started_at is None:
+            continue
+        bucket = _bucket_start(started_at.date())
+        user_active_buckets[uid].add(bucket)
+
+    # For each cohort, walk forward `period_count` buckets and count uniques
+    out = []
+    for cohort_bucket in sorted(cohort_to_users.keys(), reverse=True)[:cohort_count]:
+        members = cohort_to_users[cohort_bucket]
+        size = len(members)
+        if size == 0:
+            continue
+        retention = []
+        for p in range(period_count):
+            target = cohort_bucket + timedelta(days=period_days * p)
+            # Only emit periods that have already (mostly) completed.
+            # Otherwise a today-cohort would show "0% retention" for periods
+            # that haven't elapsed yet, which would be misleading on the chart.
+            if target > today:
+                break
+            active = sum(1 for uid in members if target in user_active_buckets.get(uid, ()))
+            retention.append({
+                "period": p,
+                "active": active,
+                "pct": round(100.0 * active / size, 1),
+            })
+        out.append({
+            "cohort_date": cohort_bucket.strftime("%Y-%m-%d"),
+            "size": size,
+            "retention": retention,
+        })
+
+    out.reverse()  # oldest cohort first → chart legend reads chronologically
+
+    return {
+        "granularity": granularity,
+        "period_label": "Day" if granularity == "daily" else "Week",
+        "period_days": period_days,
+        "cohorts": out,
+    }
+
+
 def _school_name_key(name: Optional[str]) -> str:
     return (name or "").strip().lower()
 
