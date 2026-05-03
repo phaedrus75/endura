@@ -15,6 +15,7 @@ import {
   Switch,
   Linking,
   ActivityIndicator,
+  DevSettings,
 } from 'react-native';
 import { Text, TextInput } from '../components/StyledText';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -22,7 +23,10 @@ import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { LinearGradient as ExpoLinearGradient } from 'expo-linear-gradient';
 import Svg, { Circle, Rect, G, Text as SvgText, Path, Defs, LinearGradient, Stop } from 'react-native-svg';
 import * as ImagePicker from 'expo-image-picker';
+import * as SecureStore from 'expo-secure-store';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { ensurePermission } from '../utils/permissions';
+import { WALKTHROUGH_SEEN_KEY } from './WalkthroughScreen';
 import { colors, shadows, spacing, borderRadius } from '../theme/colors';
 import Avatar from '../components/Avatar';
 import SwipeDismiss, { DragHandle } from '../components/SwipeDismiss';
@@ -426,6 +430,47 @@ export default function ProfileScreen() {
     ]);
   };
 
+  // Dev-only escape hatch for testing onboarding flows. expo-secure-store is
+  // iOS-Keychain-backed and survives reinstalls, so the only way to see the
+  // walkthrough on a previously-tagged device (without nuking device settings)
+  // is to wipe these keys explicitly. Gated by __DEV__ — this entire button
+  // is tree-shaken out of production builds.
+  const handleResetOnboarding = () => {
+    Alert.alert(
+      'Reset onboarding state',
+      'Wipe stored variant, walkthrough flag, and active timer state, then sign out. Used to re-test the v2 walkthrough on a device that has already seen it.\n\nDev-only — does not affect server-side data.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Wipe & sign out',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              const uid = user?.id ?? 'anon';
+              await Promise.allSettled([
+                SecureStore.deleteItemAsync('authToken'),
+                SecureStore.deleteItemAsync(WALKTHROUGH_SEEN_KEY),
+                SecureStore.deleteItemAsync('onboardingABVariant'),
+                AsyncStorage.removeItem(`timer:active:${uid}`),
+                AsyncStorage.removeItem(`timer:hatch:${uid}`),
+              ]);
+              await logout();
+              // walkthroughSeen and stored-variant are read once at App.tsx
+              // mount; full JS reload is the only way to re-trigger that
+              // effect, so the next render lands on the walkthrough/auth
+              // path with the wiped state.
+              if (typeof DevSettings?.reload === 'function') {
+                DevSettings.reload();
+              }
+            } catch (e: any) {
+              Alert.alert('Reset failed', e?.message || String(e));
+            }
+          },
+        },
+      ],
+    );
+  };
+
   const handleDeleteAccount = () => {
     Alert.alert(
       'Delete Account',
@@ -686,6 +731,14 @@ export default function ProfileScreen() {
         <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
           <Text style={styles.logoutText}>Logout</Text>
         </TouchableOpacity>
+
+        {/* Dev-only: reset onboarding state for re-testing the walkthrough.
+            Tree-shaken from production builds via __DEV__ guard. */}
+        {__DEV__ && (
+          <TouchableOpacity style={styles.devResetButton} onPress={handleResetOnboarding}>
+            <Text style={styles.devResetText}>Reset onboarding (dev)</Text>
+          </TouchableOpacity>
+        )}
 
         {/* Delete Account */}
         <TouchableOpacity style={styles.deleteAccountButton} onPress={handleDeleteAccount}>
@@ -1334,6 +1387,21 @@ const styles = StyleSheet.create({
     color: colors.error,
     fontWeight: '600',
     fontSize: 16,
+  },
+  devResetButton: {
+    backgroundColor: 'transparent',
+    borderRadius: borderRadius.md,
+    padding: spacing.sm,
+    alignItems: 'center',
+    marginBottom: spacing.md,
+    borderWidth: 1,
+    borderColor: colors.textSecondary,
+    borderStyle: 'dashed',
+  },
+  devResetText: {
+    color: colors.textSecondary,
+    fontWeight: '500',
+    fontSize: 13,
   },
   deleteAccountButton: {
     backgroundColor: colors.error + '15',
