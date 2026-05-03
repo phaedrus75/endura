@@ -1,7 +1,21 @@
 import * as SecureStore from 'expo-secure-store';
+import * as Application from 'expo-application';
+import Constants from 'expo-constants';
 
 // Use local development server
 export const API_URL = 'https://web-production-34028.up.railway.app';
+
+// Read once at module load — both come from the binary and don't change at
+// runtime. Sent as X-App-Version / X-App-Build headers on every authenticated
+// request so the backend can land them on the user row regardless of whether
+// the user granted push permission. (The previous design only captured these
+// during push registration, which silently dropped any user who declined push
+// — about half of iOS in practice.)
+const APP_VERSION_HEADER =
+  Constants.expoConfig?.version ||
+  Application.nativeApplicationVersion ||
+  '';
+const APP_BUILD_HEADER = Application.nativeBuildVersion || '';
 
 
 // Types
@@ -304,9 +318,11 @@ async function apiFetch<T>(
   
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
+    ...(APP_VERSION_HEADER ? { 'X-App-Version': APP_VERSION_HEADER } : {}),
+    ...(APP_BUILD_HEADER   ? { 'X-App-Build':   APP_BUILD_HEADER   } : {}),
     ...(options.headers as Record<string, string> | undefined),
   };
-  
+
   if (token) {
     headers['Authorization'] = `Bearer ${token}`;
   }

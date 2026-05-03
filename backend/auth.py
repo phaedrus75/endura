@@ -4,7 +4,7 @@ import jwt
 from jwt.exceptions import PyJWTError as JWTError
 import bcrypt
 import logging
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.orm import Session
 from database import get_db
@@ -54,7 +54,51 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -
     return encoded_jwt
 
 
+def _capture_app_version_from_headers(
+    request: Request, user: models.User, db: Session
+) -> None:
+    """Opportunistically update `users.app_version` / `users.app_build` from
+    the X-App-Version / X-App-Build request headers sent by the mobile app.
+
+    Why this exists: previously these columns were only written via push
+    registration, so any user who declined the push permission prompt had
+    NULL forever. With this hook every authenticated call refreshes the
+    binary version, so the admin "outdated" cohort and update-prompt email
+    pipeline see ~all users, not just the ones who said yes to push.
+
+    Only writes when the value differs from what's stored, to avoid hot-row
+    contention on every API call. Failures are swallowed — telemetry must
+    never break a real request.
+    """
+    try:
+        version = request.headers.get("x-app-version")
+        build = request.headers.get("x-app-build")
+        if not version and not build:
+            return
+
+        version = version[:20].strip() if version else None
+        build = build[:20].strip() if build else None
+
+        changed = False
+        if version and version != getattr(user, "app_version", None):
+            user.app_version = version
+            user.app_version_updated_at = datetime.utcnow()
+            changed = True
+        if build and build != getattr(user, "app_build", None):
+            user.app_build = build
+            changed = True
+        if changed:
+            db.commit()
+    except Exception as exc:
+        logger.warning("capture_app_version failed: %s", exc)
+        try:
+            db.rollback()
+        except Exception:
+            pass
+
+
 def get_current_user(
+    request: Request,
     credentials: HTTPAuthorizationCredentials = Depends(security),
     db: Session = Depends(get_db)
 ) -> models.User:
@@ -90,10 +134,12 @@ def get_current_user(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="This account has been deactivated. Please contact support.",
         )
+    _capture_app_version_from_headers(request, user, db)
     return user
 
 
 def get_optional_user(
+    request: Request,
     credentials: Optional[HTTPAuthorizationCredentials] = Depends(HTTPBearer(auto_error=False)),
     db: Session = Depends(get_db)
 ) -> Optional[models.User]:
@@ -112,6 +158,7 @@ def get_optional_user(
         token_ver = payload.get("tv", 0)
         if (user.token_version or 0) != token_ver:
             return None
+        _capture_app_version_from_headers(request, user, db)
         return user
     except JWTError:
         return None
