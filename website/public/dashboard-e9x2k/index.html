@@ -2342,6 +2342,10 @@ async function loadIncompleteSessions() {
 }
 
 // ----- Cohort retention -----
+// Anchor the chart to the week of the App Store launch (2026-04-15 → ISO
+// Monday 2026-04-13) so pre-launch test accounts and dev-only signups don't
+// distort the curves. Bump this if the relevant launch date ever changes.
+const RETENTION_START_DATE = '2026-04-13';
 let retentionGranularity = 'weekly';  // 'daily' | 'weekly'
 let retentionChart = null;
 
@@ -2364,12 +2368,15 @@ async function loadCohortRetention() {
     if (!canvas) return;
     if (statusEl) statusEl.textContent = 'Loading…';
     try {
-        const d = await adminFetch(`/admin/cohorts/retention?granularity=${retentionGranularity}`);
+        const d = await adminFetch(
+            `/admin/cohorts/retention?granularity=${retentionGranularity}&start_date=${RETENTION_START_DATE}`
+        );
         renderRetentionChart(d);
         if (statusEl) {
             const totalUsers = (d.cohorts || []).reduce((a, c) => a + (c.size || 0), 0);
+            const since = d.start_date ? ` (since ${d.start_date})` : '';
             statusEl.textContent =
-                `${(d.cohorts || []).length} ${d.granularity} cohorts · ${totalUsers.toLocaleString()} users`;
+                `${(d.cohorts || []).length} ${d.granularity} cohorts · ${totalUsers.toLocaleString()} users${since}`;
         }
     } catch (e) {
         if (statusEl) statusEl.textContent = 'Failed to load: ' + (e.message || String(e));

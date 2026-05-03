@@ -4035,6 +4035,7 @@ def admin_cohorts_retention(
     granularity: str = "weekly",
     cohorts: int = 0,
     periods: int = 0,
+    start_date: Optional[str] = None,
     db: Session = Depends(get_db),
     _=Depends(verify_admin),
 ):
@@ -4053,9 +4054,14 @@ def admin_cohorts_retention(
     Query params:
       granularity = 'daily' | 'weekly' (default 'weekly')
       cohorts     = number of most-recent cohorts to include
-                    (default: 14 daily, 8 weekly)
+                    (default: 14 daily, 8 weekly; ignored when start_date is set)
       periods     = number of periods to compute per cohort
-                    (default: 14 daily, 8 weekly)
+                    (default: 14 daily, 8 weekly; auto-extended when
+                    start_date pushes the floor further back than that)
+      start_date  = 'YYYY-MM-DD'. When set, includes every cohort whose
+                    signup bucket >= start_date (floored to the same
+                    granularity). Use this to exclude pre-launch / test
+                    cohorts so the chart starts at your actual launch.
 
     Excludes archived users so the % isn't dragged down by test accounts.
     """
@@ -4082,8 +4088,24 @@ def admin_cohorts_retention(
             return d - timedelta(days=d.weekday())  # Monday
         return d
 
-    earliest_cohort = _bucket_start(today) - timedelta(days=period_days * (cohort_count - 1))
-    earliest_dt = datetime.combine(earliest_cohort, datetime.min.time())
+    cohort_floor_bucket: Optional[date] = None
+    if start_date:
+        try:
+            parsed_start = datetime.strptime(start_date, "%Y-%m-%d").date()
+        except ValueError:
+            raise HTTPException(
+                status_code=400,
+                detail="start_date must be 'YYYY-MM-DD'",
+            )
+        cohort_floor_bucket = _bucket_start(parsed_start)
+        earliest_dt = datetime.combine(cohort_floor_bucket, datetime.min.time())
+        # Auto-extend periods to span from the floor to today, so the
+        # oldest cohort doesn't render with an artificially short curve.
+        span_periods = (today - cohort_floor_bucket).days // period_days + 1
+        period_count = max(period_count, span_periods)
+    else:
+        earliest_cohort = _bucket_start(today) - timedelta(days=period_days * (cohort_count - 1))
+        earliest_dt = datetime.combine(earliest_cohort, datetime.min.time())
 
     # Pull users + their (active) sessions in two queries; bucket in Python.
     user_rows = db.query(
@@ -4128,9 +4150,20 @@ def admin_cohorts_retention(
         bucket = _bucket_start(started_at.date())
         user_active_buckets[uid].add(bucket)
 
+    # Pick which cohorts to render. With a floor we include everything from
+    # that date onwards (data is small, so no count cap needed). Without a
+    # floor we keep the legacy behaviour of "most-recent N".
+    if cohort_floor_bucket is not None:
+        cohort_keys = sorted(
+            b for b in cohort_to_users.keys() if b >= cohort_floor_bucket
+        )
+    else:
+        cohort_keys = sorted(cohort_to_users.keys(), reverse=True)[:cohort_count]
+        cohort_keys.sort()
+
     # For each cohort, walk forward `period_count` buckets and count uniques
     out = []
-    for cohort_bucket in sorted(cohort_to_users.keys(), reverse=True)[:cohort_count]:
+    for cohort_bucket in cohort_keys:
         members = cohort_to_users[cohort_bucket]
         size = len(members)
         if size == 0:
@@ -4155,12 +4188,15 @@ def admin_cohorts_retention(
             "retention": retention,
         })
 
-    out.reverse()  # oldest cohort first → chart legend reads chronologically
+    # `cohort_keys` is already chronological (oldest → newest), so legend
+    # reads in signup order and the bold "newest cohort" styling lands on
+    # the freshest data.
 
     return {
         "granularity": granularity,
         "period_label": "Day" if granularity == "daily" else "Week",
         "period_days": period_days,
+        "start_date": cohort_floor_bucket.strftime("%Y-%m-%d") if cohort_floor_bucket else None,
         "cohorts": out,
     }
 

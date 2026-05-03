@@ -293,6 +293,99 @@ class TestAdminOverview:
         )
         assert resp.status_code == 400
 
+    def test_cohorts_retention_start_date_excludes_pre_launch_cohorts(self, client, db):
+        """
+        start_date must drop any cohort whose signup bucket is before the
+        floor (floored to the same granularity). Use case: the user app
+        launched on Apr 15 → set start_date=Apr 13 to exclude internal
+        test accounts that signed up before then.
+        """
+        from datetime import datetime, timedelta
+        import models
+
+        now = datetime.utcnow()
+        # Anchor "launch week" 14 days ago so the floor is well in the past.
+        anchor = (now - timedelta(days=14)).replace(hour=12, minute=0, second=0, microsecond=0)
+        launch_monday = anchor - timedelta(days=anchor.weekday())
+        pre_launch_monday = launch_monday - timedelta(days=14)
+
+        pre = make_user(db, email="pre@example.com", username="prelaunch")
+        post = make_user(db, email="post@example.com", username="postlaunch")
+        pre.created_at = pre_launch_monday + timedelta(hours=2)
+        post.created_at = launch_monday + timedelta(hours=2)
+        db.commit()
+        # Both users study, so both *would* show up if we didn't filter
+        for u, monday in ((pre, pre_launch_monday), (post, launch_monday)):
+            db.add(models.StudySession(
+                user_id=u.id, duration_minutes=25, coins_earned=10,
+                started_at=monday + timedelta(days=1, hours=10),
+                completed_at=monday + timedelta(days=1, hours=10, minutes=25),
+            ))
+        db.commit()
+
+        # No floor: both cohorts present
+        unfiltered = client.get(
+            "/admin/cohorts/retention?granularity=weekly",
+            headers=admin_headers(),
+        ).json()
+        unfiltered_dates = {c["cohort_date"] for c in unfiltered["cohorts"]}
+        assert pre_launch_monday.strftime("%Y-%m-%d") in unfiltered_dates
+        assert launch_monday.strftime("%Y-%m-%d") in unfiltered_dates
+
+        # With floor at launch_monday: pre-launch cohort dropped
+        floor_str = launch_monday.strftime("%Y-%m-%d")
+        filtered = client.get(
+            f"/admin/cohorts/retention?granularity=weekly&start_date={floor_str}",
+            headers=admin_headers(),
+        ).json()
+        assert filtered["start_date"] == floor_str
+        filtered_dates = {c["cohort_date"] for c in filtered["cohorts"]}
+        assert pre_launch_monday.strftime("%Y-%m-%d") not in filtered_dates
+        assert launch_monday.strftime("%Y-%m-%d") in filtered_dates
+
+    def test_cohorts_retention_start_date_floors_to_bucket(self, client, db):
+        """
+        A start_date that lands mid-week should floor to that week's
+        Monday — matching how cohorts themselves are bucketed. Ensures
+        a user can pass '2026-04-15' (the actual launch day) and still
+        get the Apr-13-Monday cohort included.
+        """
+        from datetime import datetime, timedelta
+        import models
+
+        now = datetime.utcnow()
+        anchor = (now - timedelta(days=10)).replace(hour=12, minute=0, second=0, microsecond=0)
+        monday = anchor - timedelta(days=anchor.weekday())
+        midweek = monday + timedelta(days=2)  # Wed of that same week
+
+        u = make_user(db, email="floor@example.com", username="floor")
+        u.created_at = monday + timedelta(hours=3)  # Monday signup
+        db.commit()
+        db.add(models.StudySession(
+            user_id=u.id, duration_minutes=25, coins_earned=10,
+            started_at=monday + timedelta(hours=4),
+            completed_at=monday + timedelta(hours=4, minutes=25),
+        ))
+        db.commit()
+
+        # Pass the Wednesday — floors to Monday → cohort still included
+        midweek_str = midweek.strftime("%Y-%m-%d")
+        data = client.get(
+            f"/admin/cohorts/retention?granularity=weekly&start_date={midweek_str}",
+            headers=admin_headers(),
+        ).json()
+        # API echoes the floored value, not the raw input
+        assert data["start_date"] == monday.strftime("%Y-%m-%d")
+        cohort_dates = {c["cohort_date"] for c in data["cohorts"]}
+        assert monday.strftime("%Y-%m-%d") in cohort_dates
+
+    def test_cohorts_retention_start_date_rejects_bad_format(self, client):
+        resp = client.get(
+            "/admin/cohorts/retention?granularity=weekly&start_date=not-a-date",
+            headers=admin_headers(),
+        )
+        assert resp.status_code == 400
+
     def test_overview_weekly_active_buckets_by_iso_monday(self, client, db):
         """A session on a Sunday belongs to that week's Monday bucket."""
         from datetime import datetime, timedelta
