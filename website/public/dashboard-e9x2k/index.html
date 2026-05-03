@@ -2057,12 +2057,17 @@ function setOverviewGranularity(gran) {
 
 function renderOverviewCharts() {
     if (!overviewCache) return;
-    const { data: d, phDauData, phTipViewed } = overviewCache;
+    const { data: d, phDauData, phWeeklyDauData, phTipViewed } = overviewCache;
     const weekly = overviewGranularity === 'weekly';
 
     const signups = weekly ? aggregateWeekly(d.daily_signups) : d.daily_signups;
     const sessions = weekly ? aggregateWeekly(d.daily_sessions, ['sessions', 'minutes']) : d.daily_sessions;
-    const dbDau = weekly ? aggregateWeekly(d.daily_active || []) : (d.daily_active || []);
+    // Active Users: weekly comes from server-side `weekly_active` (true distinct
+    // users per ISO week). Falls back to summed-daily-uniques only if absent
+    // (older deploys, no PostHog access). Daily uses the existing daily series.
+    const dbDau = weekly
+        ? (d.weekly_active && d.weekly_active.length ? d.weekly_active : aggregateWeekly(d.daily_active || []))
+        : (d.daily_active || []);
     const friendships = weekly ? aggregateWeekly(d.daily_friendships) : d.daily_friendships;
     const groups = weekly ? aggregateWeekly(d.daily_groups_created) : d.daily_groups_created;
     const subjects = weekly ? aggregateWeekly(d.daily_user_subjects) : d.daily_user_subjects;
@@ -2071,7 +2076,11 @@ function renderOverviewCharts() {
     const tipLikes = weekly ? aggregateWeekly(d.daily_tip_likes) : d.daily_tip_likes;
     const tipSaves = weekly ? aggregateWeekly(d.daily_tip_saves) : d.daily_tip_saves;
     const feedReactions = weekly ? aggregateWeekly(d.daily_feed_reactions) : d.daily_feed_reactions;
-    const dauMap = weekly ? aggregateWeeklyMap(phDauData) : phDauData;
+    // Same logic for the PH line: prefer server-correct toMonday-grouped
+    // distinct-uniques map; fall back to summed daily uniques if PH didn't return.
+    const dauMap = weekly
+        ? (phWeeklyDauData || aggregateWeeklyMap(phDauData))
+        : phDauData;
     const tipViewedMap = weekly ? aggregateWeeklyMap(phTipViewed) : phTipViewed;
 
     renderSignupsChart(signups);
@@ -2358,19 +2367,27 @@ async function loadOverview() {
         // PostHog enrichment: DAU + tip events (collected as daily maps; aggregation happens in renderOverviewCharts)
         const dbDau = d.daily_active || [];
         let phDauData = null;
+        let phWeeklyDauData = null; // server-correct weekly distinct uniques (Monday-keyed)
         let phTipViewed = null;
         try {
             if (phAvailable) {
                 if (dbDau.length > 0) {
                     const startDate = dbDau[0].date;
-                    const [dauResult, tipViewedResult, active7dResult] = await Promise.all([
+                    const [dauResult, weeklyDauResult, tipViewedResult, active7dResult] = await Promise.all([
                         phQuery(`SELECT toDate(timestamp) as day, count(DISTINCT distinct_id) as users FROM events WHERE event = 'app_opened' AND timestamp >= '${startDate}' GROUP BY day ORDER BY day`),
+                        // True Weekly Active Users: dedupe per user across each ISO week (toMonday → Mon-anchored).
+                        // Without this we'd sum the daily-uniques line above, which double-counts users active on multiple days.
+                        phQuery(`SELECT toMonday(timestamp) as week, count(DISTINCT distinct_id) as users FROM events WHERE event = 'app_opened' AND timestamp >= '${startDate}' GROUP BY week ORDER BY week`),
                         phQuery(`SELECT toDate(timestamp) as day, count() as cnt FROM events WHERE event = 'tip_viewed' AND timestamp >= '${startDate}' GROUP BY day ORDER BY day`),
                         phQuery(`SELECT count(DISTINCT distinct_id) FROM events WHERE event = 'app_opened' AND timestamp >= now() - INTERVAL 7 DAY`),
                     ]);
                     if (dauResult.results) {
                         phDauData = {};
                         for (const row of dauResult.results) phDauData[row[0]] = row[1];
+                    }
+                    if (weeklyDauResult.results) {
+                        phWeeklyDauData = {};
+                        for (const row of weeklyDauResult.results) phWeeklyDauData[row[0]] = row[1];
                     }
                     if (tipViewedResult.results) {
                         phTipViewed = {};
@@ -2395,7 +2412,7 @@ async function loadOverview() {
         loadOnboardingFunnel().catch(() => {});
         loadIncompleteSessions().catch(() => {});
 
-        overviewCache = { data: d, phDauData, phTipViewed };
+        overviewCache = { data: d, phDauData, phWeeklyDauData, phTipViewed };
         renderOverviewCharts();
     } catch (e) {
         console.error('Overview load failed', e);

@@ -44,6 +44,90 @@ class TestAdminOverview:
         resp = client.get("/admin/overview", headers={"x-admin-key": "wrong"})
         assert resp.status_code == 403
 
+    def test_overview_weekly_active_dedupes_users_within_week(self, client, db):
+        """
+        weekly_active must count each user once per ISO week, even if they
+        completed sessions on multiple days. This is the bug-fix that the
+        old "sum daily uniques" dashboard aggregator silently produced.
+        """
+        from datetime import datetime, timedelta
+        import models
+
+        # Pick a Monday well after April 1 (the overview window's floor)
+        # and well before "now" so it doesn't drift past today's date.
+        now = datetime.utcnow()
+        # Anchor 14 days ago, then walk back to that week's Monday
+        anchor = (now - timedelta(days=14)).replace(hour=12, minute=0, second=0, microsecond=0)
+        monday = anchor - timedelta(days=anchor.weekday())  # Monday of that week
+
+        u1 = make_user(db, email="wau1@example.com", username="wau1")
+        u2 = make_user(db, email="wau2@example.com", username="wau2")
+
+        # u1 studies Mon, Tue, Wed of the same week → still 1 unique that week
+        for offset in (0, 1, 2):
+            db.add(models.StudySession(
+                user_id=u1.id, duration_minutes=25, coins_earned=10,
+                started_at=monday + timedelta(days=offset, hours=1),
+                completed_at=monday + timedelta(days=offset, hours=1, minutes=25),
+            ))
+        # u2 studies once that same week
+        db.add(models.StudySession(
+            user_id=u2.id, duration_minutes=25, coins_earned=10,
+            started_at=monday + timedelta(days=3, hours=2),
+            completed_at=monday + timedelta(days=3, hours=2, minutes=25),
+        ))
+        db.commit()
+
+        resp = client.get("/admin/overview", headers=admin_headers())
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "weekly_active" in data
+        assert "daily_active" in data
+
+        monday_key = monday.strftime("%Y-%m-%d")
+        weekly_bucket = next(
+            (w for w in data["weekly_active"] if w["date"] == monday_key),
+            None,
+        )
+        assert weekly_bucket is not None, f"no weekly_active row for {monday_key}"
+        # Two distinct users active that week (u1 ×3 days + u2 ×1 day → 2 uniques)
+        assert weekly_bucket["count"] == 2
+
+        # And critically: SUM of that week's daily_active rows would be 4,
+        # which is exactly the over-count the chart was showing before the fix.
+        week_dates = {(monday + timedelta(days=i)).strftime("%Y-%m-%d") for i in range(7)}
+        summed_daily = sum(d["count"] for d in data["daily_active"] if d["date"] in week_dates)
+        assert summed_daily == 4
+        assert summed_daily > weekly_bucket["count"]  # the bug we're fixing
+
+    def test_overview_weekly_active_buckets_by_iso_monday(self, client, db):
+        """A session on a Sunday belongs to that week's Monday bucket."""
+        from datetime import datetime, timedelta
+        import models
+
+        now = datetime.utcnow()
+        anchor = (now - timedelta(days=10)).replace(hour=12, minute=0, second=0, microsecond=0)
+        monday = anchor - timedelta(days=anchor.weekday())
+        sunday = monday + timedelta(days=6)
+
+        u = make_user(db, email="sun@example.com", username="sun")
+        sunday_evening = sunday.replace(hour=20, minute=0)  # 20:00 still on Sunday
+        db.add(models.StudySession(
+            user_id=u.id, duration_minutes=25, coins_earned=10,
+            started_at=sunday_evening,
+            completed_at=sunday_evening + timedelta(minutes=25),
+        ))
+        db.commit()
+
+        data = client.get("/admin/overview", headers=admin_headers()).json()
+        monday_key = monday.strftime("%Y-%m-%d")
+        bucket = next((w for w in data["weekly_active"] if w["date"] == monday_key), None)
+        assert bucket is not None, (
+            f"no weekly_active row for {monday_key} (sunday session at {sunday_evening}); "
+            f"got {data['weekly_active']}"
+        )
+        assert bucket["count"] >= 1
+
 
 class TestAdminUsers:
     def test_users_list_returns_paginated(self, client, alice):

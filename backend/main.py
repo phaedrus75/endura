@@ -3962,6 +3962,25 @@ def admin_overview(db: Session = Depends(get_db), _=Depends(verify_admin)):
         models.FeedReaction.created_at, models.FeedReaction.user_id,
     )))
 
+    # Weekly Active Users (DB) — distinct user_ids per ISO-Monday since apr1.
+    # Computed server-side because the dashboard's old "sum daily uniques into
+    # weekly buckets" approach over-counts users active on multiple days.
+    # Fetch once, bucket in Python (portable across Postgres + SQLite).
+    sess_rows = db.query(
+        models.StudySession.user_id,
+        models.StudySession.started_at,
+    ).filter(models.StudySession.started_at >= apr1).all()
+    weekly_users: dict = {}
+    for user_id, started_at in sess_rows:
+        if started_at is None or user_id is None:
+            continue
+        monday = started_at.date() - timedelta(days=started_at.weekday())
+        weekly_users.setdefault(monday, set()).add(user_id)
+    weekly_active = [
+        {"date": monday.strftime("%Y-%m-%d"), "count": len(users)}
+        for monday, users in sorted(weekly_users.items())
+    ]
+
     return {
         "total_users": total_users,
         "archived_users": archived_users,
@@ -3981,6 +4000,7 @@ def admin_overview(db: Session = Depends(get_db), _=Depends(verify_admin)):
         "real_donation_count": real_donation_count,
         "daily_signups": daily_signups,
         "daily_active": daily_active,
+        "weekly_active": weekly_active,
         "daily_sessions": daily_sessions,
         "total_friendships": total_friendships,
         "friendships_7d": friendships_7d,
