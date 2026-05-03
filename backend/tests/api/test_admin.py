@@ -293,6 +293,93 @@ class TestAdminProductTests:
         assert data["challenger"]["cohort"] >= 1
         assert data["challenger"]["first_timer_session"] >= 1
 
+    def test_onboarding_funnel_cohort_started_at_filters_pre_experiment_users(self, client, db):
+        """cohort_started_at should EXCLUDE pre-experiment signups that got
+        tagged with a variant only after upgrading. This is the contamination
+        bug we hit in production: 23-30 pre-May-1 users tagged with v1/v2
+        on app upgrade were inflating the dashboard cohort and diluting the
+        funnel rates compared to the clean A/B test SQL."""
+        from datetime import datetime, timedelta
+
+        # Pre-experiment user: signed up 90 days ago, got tagged with v2 when
+        # they upgraded the app last week. Should NOT be in the cohort once
+        # cohort_started_at is set to ~30 days ago.
+        pre = make_user(db, "pre_exp@test.com", "password123", "pre_exp", verified=True)
+        pre.onboarding_ab_variant = "v2"
+        pre.created_at = datetime.utcnow() - timedelta(days=90)
+        pre.username_set_at = pre.created_at
+        pre.total_sessions = 5
+        db.commit()
+
+        # Post-experiment user: signed up 5 days ago, genuinely experienced v2
+        # at signup. Should be the only one counted with cohort_started_at set.
+        post = make_user(db, "post_exp@test.com", "password123", "post_exp", verified=True)
+        post.onboarding_ab_variant = "v2"
+        post.created_at = datetime.utcnow() - timedelta(days=5)
+        post.username_set_at = post.created_at
+        post.onboarding_completed_at = post.created_at
+        post.total_sessions = 1
+        db.commit()
+
+        create = client.post(
+            "/admin/product-tests",
+            json={"name": "Cohort floor test", "feature_key": "onboarding_ab_floor"},
+            headers=admin_headers(),
+        )
+        assert create.status_code == 200
+        tid = create.json()["id"]
+
+        # First check: WITHOUT cohort_started_at, both users count (the bug).
+        funnel = client.get(f"/admin/product-tests/{tid}/funnel", headers=admin_headers()).json()
+        assert funnel["challenger"]["cohort"] == 2
+        assert funnel["challenger"]["first_timer_session"] == 2
+        # Pre-experiment user has no onboarding_completed_at — denominator
+        # gets inflated, completion rate drops from 100% to 50%.
+        assert funnel["challenger"]["completed_rate_pct_of_cohort"] == 50.0
+
+        # Now set cohort_started_at = 30 days ago. Pre-experiment user
+        # (90 days ago) drops out; post-experiment user (5 days ago) stays.
+        cohort_floor = (datetime.utcnow() - timedelta(days=30)).isoformat()
+        patch = client.patch(
+            f"/admin/product-tests/{tid}",
+            json={"cohort_started_at": cohort_floor},
+            headers=admin_headers(),
+        )
+        assert patch.status_code == 200, patch.text
+        assert patch.json()["cohort_started_at"] is not None
+
+        # Second check: WITH cohort_started_at, only post-experiment user counts.
+        clean = client.get(f"/admin/product-tests/{tid}/funnel", headers=admin_headers()).json()
+        assert clean["window"]["cohort_started_at"] is not None
+        assert clean["challenger"]["cohort"] == 1
+        assert clean["challenger"]["first_timer_session"] == 1
+        # Honest completion rate now: 100% (1/1), not 50% (1/2).
+        assert clean["challenger"]["completed_rate_pct_of_cohort"] == 100.0
+
+    def test_cohort_started_at_persists_through_serializer(self, client, db):
+        """The new field must round-trip: PATCH it, GET it back, see it in JSON."""
+        from datetime import datetime, timedelta
+
+        create = client.post(
+            "/admin/product-tests",
+            json={"name": "Serializer round-trip", "feature_key": "onboarding_ab_serial"},
+            headers=admin_headers(),
+        )
+        tid = create.json()["id"]
+        # The serializer should include the field as None on a fresh row.
+        assert "cohort_started_at" in create.json()
+        assert create.json()["cohort_started_at"] is None
+
+        floor = (datetime.utcnow() - timedelta(days=2)).replace(microsecond=0).isoformat()
+        patched = client.patch(
+            f"/admin/product-tests/{tid}",
+            json={"cohort_started_at": floor},
+            headers=admin_headers(),
+        ).json()
+        assert patched["cohort_started_at"] is not None
+        # Drop microseconds for safe equality across DBs
+        assert patched["cohort_started_at"].startswith(floor[:19])
+
 
 class TestAdminAuthRequired:
     """Spot-check that ALL admin routes require the key."""

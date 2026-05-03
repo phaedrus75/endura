@@ -202,6 +202,20 @@ else:
                         _conn.commit()
                 except Exception as _ixe:
                     print(f"Note: could not create ix_study_sessions_auto_completed_at: {_ixe}")
+        # product_tests.cohort_started_at (alembic z3a4b5c67d28).
+        # Safety net so the funnel cohort fix works even on envs that haven't
+        # run migrations yet — the column is read by _funnel_arm_counts to
+        # filter out pre-experiment signups that got tagged with a variant
+        # only after upgrading to the new build.
+        if _insp.has_table("product_tests"):
+            _pt_cols = [c["name"] for c in _insp.get_columns("product_tests")]
+            if "cohort_started_at" not in _pt_cols:
+                with engine.connect() as _conn:
+                    _conn.execute(text(
+                        "ALTER TABLE product_tests ADD COLUMN IF NOT EXISTS cohort_started_at TIMESTAMP NULL"
+                    ))
+                    _conn.commit()
+                print("Added cohort_started_at column to product_tests")
     except Exception as e:
         print(f"Warning: Could not check/create tables: {e}")
 
@@ -9565,6 +9579,7 @@ class ProductTestUpdate(BaseModel):
     guardrail_challenger: Optional[float] = Field(default=None)
     started_at: Optional[datetime] = None
     ended_at: Optional[datetime] = None
+    cohort_started_at: Optional[datetime] = None
     note: Optional[str] = Field(default=None, max_length=2000)
 
 
@@ -9614,6 +9629,7 @@ def _serialize_product_test(test: models.ProductTest, events: list[models.Produc
         "guardrail_challenger": test.guardrail_challenger,
         "started_at": test.started_at.isoformat() if test.started_at else None,
         "ended_at": test.ended_at.isoformat() if test.ended_at else None,
+        "cohort_started_at": test.cohort_started_at.isoformat() if test.cohort_started_at else None,
         "promoted_at": test.promoted_at.isoformat() if test.promoted_at else None,
         "created_at": test.created_at.isoformat() if test.created_at else None,
         "updated_at": test.updated_at.isoformat() if test.updated_at else None,
@@ -9673,13 +9689,22 @@ def _funnel_arm_counts(db: Session, test: models.ProductTest, variant: str) -> d
         models.User.onboarding_ab_variant == variant,
         models.User.is_archived == False,
     ]
-    # Onboarding A/B arms are synced when users open a capable app build — often
-    # long after account creation. Filtering cohort by created_at inside
-    # started_at/ended_at therefore produced all-zero funnels the moment an
-    # admin set status=running (started_at := now). For onboarding_ab tests,
-    # cohort = everyone with that sticky variant (still excluding archived via
-    # no filter here; add if needed).
-    if not _product_test_onboarding_funnel_supported(test):
+    # Cohort floor priority:
+    #   1. cohort_started_at (manually set "experiment first reached prod" date)
+    #      — preferred for onboarding A/B because variants get synced to
+    #        pre-experiment users when they upgrade, contaminating the cohort.
+    #   2. started_at (auto-set when admin flips to running) — fine for tests
+    #      that gate cohort by signup date, but historically zeroed onboarding
+    #      A/B funnels because admins clicked "running" weeks after ship.
+    # The previous behaviour bypassed date filtering entirely for onboarding_ab,
+    # which produced contaminated cohorts mixing signup-time and post-upgrade
+    # variant assignments. cohort_started_at gives admins the explicit knob.
+    cohort_floor = test.cohort_started_at
+    if cohort_floor is not None:
+        filters.append(models.User.created_at >= cohort_floor)
+        if test.ended_at:
+            filters.append(models.User.created_at <= test.ended_at)
+    elif not _product_test_onboarding_funnel_supported(test):
         if test.started_at:
             filters.append(models.User.created_at >= test.started_at)
         if test.ended_at:
@@ -9766,6 +9791,21 @@ def admin_product_test_funnel(
             challenger["first_timer_rate_pct_of_cohort"] - control["first_timer_rate_pct_of_cohort"],
             2,
         )
+    if row.cohort_started_at:
+        note = (
+            f"Cohort = users with onboarding_ab_variant set AND signed up on or after "
+            f"{row.cohort_started_at.date().isoformat()} (cohort_started_at). This filters out "
+            f"pre-experiment users who got tagged with a variant only after upgrading the app. "
+            f"First timer session = total_sessions ≥ 1."
+        )
+    else:
+        note = (
+            "Cohort = all users with onboarding_ab_variant matching control or challenger "
+            "(no signup-date filter — set cohort_started_at on the test to clean this up). "
+            "This view includes pre-experiment users who got tagged on app upgrade, which "
+            "inflates the denominator for stages where they couldn't act (e.g. onboarding_complete). "
+            "First timer session = total_sessions ≥ 1."
+        )
     return {
         "supported": True,
         "feature_key": row.feature_key,
@@ -9774,9 +9814,8 @@ def admin_product_test_funnel(
         "window": {
             "started_at": row.started_at.isoformat() if row.started_at else None,
             "ended_at": row.ended_at.isoformat() if row.ended_at else None,
-            "note": "Cohort = all users with onboarding_ab_variant matching control or challenger "
-            "(not restricted by account signup date — arms sync when users adopt the new app). "
-            "First timer session = total_sessions ≥ 1.",
+            "cohort_started_at": row.cohort_started_at.isoformat() if row.cohort_started_at else None,
+            "note": note,
         },
         "control": control,
         "challenger": challenger,

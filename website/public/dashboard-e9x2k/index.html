@@ -1336,7 +1336,7 @@
                 </div>
                 <p style="color:var(--text-muted);font-size:13px;margin-top:0">
                     <strong style="color:var(--text)">Where to see funnel results:</strong> stay on this <strong>Tests</strong> page, scroll <em>below</em> the green “Run Tests” regression section, then <strong>click a product test row</strong> (the name bar) to expand it — the funnel loads at the top of the panel.
-                    <code>feature_key</code> must include <code>onboarding_ab</code> for the server funnel: cohort → username set → onboarding complete → <strong>first timer session</strong> (≥1 completed run logged; server records a session when a timer finishes). Cohort = every user with a synced <code>v1</code>/<code>v2</code> arm (not limited to signups after you click “running”). Add a PostHog insight URL below to show a link above the funnel.
+                    <code>feature_key</code> must include <code>onboarding_ab</code> for the server funnel: cohort → username set → onboarding complete → <strong>first timer session</strong> (≥1 completed run logged; server records a session when a timer finishes). <strong>Set <code>cohort_started_at</code></strong> on each test (date input inside the panel) to the date the variant first reached production users — without it, the cohort includes pre-experiment users who got tagged on app upgrade and the funnel rates are diluted. Add a PostHog insight URL below to show a link above the funnel.
                 </p>
                 <div style="display:grid;grid-template-columns:2fr 1.4fr 1fr 1fr auto;gap:8px;margin-bottom:8px">
                     <input id="ptNewName" type="text" placeholder="Test name (e.g. Onboarding v1 vs v2)" style="padding:9px 12px;border:1px solid var(--border);border-radius:8px;font-size:13px">
@@ -5696,9 +5696,15 @@ function renderProductTests() {
                     </div>
                 </summary>
                 <div style="margin-top:10px">
-                    <div style="margin-bottom:10px">
-                        <label style="font-size:11px;font-weight:600;color:var(--text-muted);display:block;margin-bottom:4px">PostHog insight URL</label>
-                        <input id="ptPh_${t.id}" type="url" inputmode="url" placeholder="https://…" value="${escHtml(t.posthog_insight_url || '')}" style="width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:8px;font-size:12px" />
+                    <div style="display:grid;grid-template-columns:2fr 1fr;gap:8px;margin-bottom:10px">
+                        <div>
+                            <label style="font-size:11px;font-weight:600;color:var(--text-muted);display:block;margin-bottom:4px">PostHog insight URL</label>
+                            <input id="ptPh_${t.id}" type="url" inputmode="url" placeholder="https://…" value="${escHtml(t.posthog_insight_url || '')}" style="width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:8px;font-size:12px" />
+                        </div>
+                        <div>
+                            <label style="font-size:11px;font-weight:600;color:var(--text-muted);display:block;margin-bottom:4px" title="Date the variant first reached real users (e.g. App Store ship date). Used as the cohort floor — only signups on/after this date count, filtering out pre-experiment users who got tagged on app upgrade.">Cohort starts at <span style="color:var(--text-muted);font-weight:400">(YYYY-MM-DD)</span></label>
+                            <input id="ptCohortDate_${t.id}" type="date" value="${t.cohort_started_at ? String(t.cohort_started_at).slice(0,10) : ''}" style="width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:8px;font-size:12px" />
+                        </div>
                     </div>
                     <div id="ptFunnelWrap_${t.id}" style="margin-bottom:12px"></div>
                     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:8px;margin-bottom:10px">
@@ -5755,6 +5761,8 @@ function _numOrNull(v) {
 async function saveProductTest(id) {
     const phEl = document.getElementById(`ptPh_${id}`);
     const phVal = phEl ? phEl.value.trim() : '';
+    const cohortDateEl = document.getElementById(`ptCohortDate_${id}`);
+    const cohortDateVal = cohortDateEl ? cohortDateEl.value.trim() : '';
     const payload = {
         status: document.getElementById(`ptStatus_${id}`).value || undefined,
         winner: document.getElementById(`ptWinner_${id}`).value || null,
@@ -5763,6 +5771,7 @@ async function saveProductTest(id) {
         conversion_control: _numOrNull(document.getElementById(`ptMetricCC_${id}`).value),
         conversion_challenger: _numOrNull(document.getElementById(`ptMetricCV_${id}`).value),
         posthog_insight_url: phVal || null,
+        cohort_started_at: cohortDateVal ? `${cohortDateVal}T00:00:00` : null,
         note: document.getElementById(`ptNote_${id}`).value.trim() || undefined,
     };
     try {

@@ -792,6 +792,12 @@ class ProductTest(Base):
     started_at = Column(DateTime, nullable=True, index=True)
     ended_at = Column(DateTime, nullable=True, index=True)
     promoted_at = Column(DateTime, nullable=True, index=True)
+    # Manually-set "this variant first reached real users at this date".
+    # Distinct from started_at (which is auto-set when status flips to
+    # running, often weeks after the experiment actually shipped). When
+    # set, _funnel_arm_counts uses this as the cohort floor — e.g. only
+    # count users who signed up after the experiment binary was live.
+    cohort_started_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
 
