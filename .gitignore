@@ -28,3 +28,8 @@ Thumbs.db
 website/node_modules
 website/.next
 node_modules/
+
+# Scaffolding starter pack — not part of the Endura app build.
+# Kept on disk for local reference; EAS (which respects .gitignore)
+# will stop including it in upload tarballs once this is in place.
+scaffolding/
