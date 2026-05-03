@@ -213,18 +213,27 @@ function AppNavigator() {
     let alive = true;
     const assignVariant = async () => {
       try {
+        // Existing assignments stick. v1 users from the May 1–3 A/B test keep
+        // their flow on relaunch (they're already past onboarding anyway, so
+        // this is mostly cosmetic — but we never want a user to suddenly see
+        // a different walkthrough mid-journey).
         const stored = await SecureStore.getItemAsync(ONBOARDING_AB_VARIANT_KEY);
         if (stored === 'v1' || stored === 'v2') {
           if (alive) setOnboardingVariant(stored);
           Analytics.onboardingExperimentAssigned(stored, 'stored');
           return;
         }
-        const variant: 'v1' | 'v2' = Math.random() < 0.5 ? 'v1' : 'v2';
+        // v2 won the May 1–3 A/B test decisively (~90% relative lift in 72-h
+        // activation vs the original App Store flow, p<0.005). Hardcoding it
+        // here so every new install gets the winning flow. To run another
+        // experiment in a future build, restore Math.random() and add a v3
+        // branch — or wire a remote-config fetch from the admin product_tests
+        // table (see docs/build-roadmap.md "promote-winner wire-up").
+        const variant: 'v1' | 'v2' = 'v2';
         await SecureStore.setItemAsync(ONBOARDING_AB_VARIANT_KEY, variant);
         if (alive) setOnboardingVariant(variant);
-        Analytics.onboardingExperimentAssigned(variant, 'new');
+        Analytics.onboardingExperimentAssigned(variant, 'promoted_default');
       } catch {
-        // Safe fallback: keep the newest onboarding flow if storage fails.
         if (alive) setOnboardingVariant('v2');
       }
     };

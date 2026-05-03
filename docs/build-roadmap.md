@@ -173,6 +173,16 @@ Quick checks when you have time — does not block roadmap.
 - [x] Removed Apple + Google buttons, hooks, effects, and handlers from `AuthScreen.tsx`. Backend, DB, `oauthLogin.ts`, and `expo-apple-authentication` plugin/config left intact for trivial re-enable later.
 - [x] Skipped 1.0.4 → 1.0.5 (since 1.0.4 was already accepted by App Store Connect for build 27).
 
+**Track D — Onboarding A/B → ship the winner (this cut)**
+
+- [x] **v2 promoted to default in App.tsx.** May 1–3 A/B test data: v2 (walkthrough before auth) hit 31.5% 72-h activation vs old App Store flow's 16.6% (+90% relative, p<0.005) and v1's 20.0%. v1 vs old was not significant (p≈0.40). Hardcoded `variant = 'v2'` in `App.tsx`'s assignment effect; existing v1 users keep their stored variant on relaunch (cosmetic — they're past onboarding). Analytics source now reports `'promoted_default'` so we can distinguish post-promotion users in PostHog.
+- [x] **Telemetry fix shipped alongside.** `app_version` / `app_build` now captured from `X-App-Version` / `X-App-Build` request headers on every authenticated call (previously only on push registration → ~97% of users had NULL `app_version`). Backend hook lives in `auth.get_current_user`. Means the next "drive update" email cohort actually has the right population.
+- [x] **Admin dashboard cohort fix shipped.** `product_tests.cohort_started_at` (Alembic `z3a4b5c67d28`) lets admins set the experiment ship date so the funnel cohort excludes pre-experiment users tagged on app upgrade. Set `cohort_started_at = 2026-05-01` on the existing onboarding A/B test row via the dashboard date picker once Railway is green; numbers will then match the clean SQL waterfall.
+
+**Deferred to a future build (when we run a v3 test):**
+
+- [ ] **Wire `promote-winner` button to actually deploy the variant.** Today it's a decision-log only — the button updates DB fields but doesn't touch the running app (we still need a build to switch defaults). Plan: add `assignment_default_variant` column to `product_tests`, set on promote-winner. Add public `GET /experiments/onboarding-ab/assignment` endpoint (60s server cache). App.tsx fetches at cold-launch, falls back to local default if fetch fails. Net effect: future "v3 wins" → one button click → live within ~2 min, no build. ~45 min of work; not blocking 1.0.5.
+
 **Build commands** (per `.cursor/rules/eas-builds.mdc`, the user runs these — I do not):
 
 ```bash

@@ -60,7 +60,10 @@ export const Analytics = {
     trackEvent('screen_viewed', { screen: screenName }),
 
   // ── Onboarding funnel ──
-  onboardingExperimentAssigned: (variant: 'v1' | 'v2', source: 'new' | 'stored') =>
+  onboardingExperimentAssigned: (
+    variant: 'v1' | 'v2',
+    source: 'new' | 'stored' | 'promoted_default',
+  ) =>
     trackEvent('onboarding_experiment_assigned', { variant, source }),
   onboardingAuthViewed: (variant: string) =>
     trackEvent('onboarding_auth_viewed', { variant }),
