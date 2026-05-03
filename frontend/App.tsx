@@ -213,26 +213,33 @@ function AppNavigator() {
     let alive = true;
     const assignVariant = async () => {
       try {
-        // Existing assignments stick. v1 users from the May 1–3 A/B test keep
-        // their flow on relaunch (they're already past onboarding anyway, so
-        // this is mostly cosmetic — but we never want a user to suddenly see
-        // a different walkthrough mid-journey).
+        // v2 won the May 1–3 A/B test decisively (~90% relative lift in 72-h
+        // activation vs the original App Store flow, p<0.005). Now hardcoded
+        // as the only flow we want anyone to see.
+        //
+        // Migration of stored variants: only stored 'v2' sticks. Stored 'v1'
+        // is a legacy assignment from the live A/B test — we overwrite it to
+        // 'v2' so the device sees the winning flow on next cold launch. (The
+        // old "stick whatever's stored" rule was correct DURING the test
+        // because flicking variants would corrupt the cohort analysis. With
+        // the test over, that rule was just preventing v1-tagged users —
+        // including this developer device — from ever seeing the winner.)
+        // expo-secure-store is iOS-Keychain-backed and survives app deletion,
+        // so the migration also catches reinstalls on previously-tagged
+        // devices, which is what we want.
         const stored = await SecureStore.getItemAsync(ONBOARDING_AB_VARIANT_KEY);
-        if (stored === 'v1' || stored === 'v2') {
+        if (stored === 'v2') {
           if (alive) setOnboardingVariant(stored);
           Analytics.onboardingExperimentAssigned(stored, 'stored');
           return;
         }
-        // v2 won the May 1–3 A/B test decisively (~90% relative lift in 72-h
-        // activation vs the original App Store flow, p<0.005). Hardcoding it
-        // here so every new install gets the winning flow. To run another
-        // experiment in a future build, restore Math.random() and add a v3
-        // branch — or wire a remote-config fetch from the admin product_tests
-        // table (see docs/build-roadmap.md "promote-winner wire-up").
         const variant: 'v1' | 'v2' = 'v2';
         await SecureStore.setItemAsync(ONBOARDING_AB_VARIANT_KEY, variant);
         if (alive) setOnboardingVariant(variant);
-        Analytics.onboardingExperimentAssigned(variant, 'promoted_default');
+        Analytics.onboardingExperimentAssigned(
+          variant,
+          stored === 'v1' ? 'promoted_from_v1' : 'promoted_default',
+        );
       } catch {
         if (alive) setOnboardingVariant('v2');
       }

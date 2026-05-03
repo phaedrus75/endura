@@ -11,7 +11,7 @@
 |--------|---------|----------------|-------|
 | **iOS (TestFlight / App Store pipeline)** | **1.0.3** | **25** (deployed; users still on this) — **1.0.5 / build 28 queued** | Canonical build number lives in **App Store Connect** when using EAS `appVersionSource: "remote"` + `autoIncrement`. **1.0.4 / build 27 was cut and uploaded but never promoted** — TestFlight crashed `AuthScreen` (see top-of-file note). |
 | **Repo `frontend/app.json`** | 1.0.5 | `ios.buildNumber` **26** (placeholder; EAS sets canonical) | Bump before a build if you rely on local display only. |
-| **Android** | 1.0.5 | `versionCode` **12** | Not every release cycle ships Android; Play track may differ. |
+| **Android** | 1.0.5 | `versionCode` **13** | Not every release cycle ships Android; Play track may differ. Bumped from 12 in the v1→v2 migration patch. |
 | **Backend (Railway)** | rolling | post-25 | Auto-deploys from `main`. Several user-invisible improvements landed since the build-25 cut — see *Shipped after build 25* below. |
 | **Admin dashboard / website (Vercel)** | rolling | post-25 | Auto-deploys from `main`. New panels landed without an app build. |
 
@@ -175,7 +175,8 @@ Quick checks when you have time — does not block roadmap.
 
 **Track D — Onboarding A/B → ship the winner (this cut)**
 
-- [x] **v2 promoted to default in App.tsx.** May 1–3 A/B test data: v2 (walkthrough before auth) hit 31.5% 72-h activation vs old App Store flow's 16.6% (+90% relative, p<0.005) and v1's 20.0%. v1 vs old was not significant (p≈0.40). Hardcoded `variant = 'v2'` in `App.tsx`'s assignment effect; existing v1 users keep their stored variant on relaunch (cosmetic — they're past onboarding). Analytics source now reports `'promoted_default'` so we can distinguish post-promotion users in PostHog.
+- [x] **v2 promoted to default in App.tsx.** May 1–3 A/B test data: v2 (walkthrough before auth) hit 31.5% 72-h activation vs old App Store flow's 16.6% (+90% relative, p<0.005) and v1's 20.0%. v1 vs old was not significant (p≈0.40). Hardcoded `variant = 'v2'` in `App.tsx`'s assignment effect.
+- [x] **Stored-variant migration.** First TestFlight install of 1.0.5 surfaced a regression: stored `'v1'` from earlier builds was sticking through `expo-secure-store` (iOS-Keychain-backed → survives app deletion) and skipping the new walkthrough. The original "stick whatever is stored" rule was correct DURING the live A/B test (cohort integrity) but became wrong the moment we picked a winner. Patch: only stored `'v2'` sticks; stored `'v1'` overwrites to `'v2'` and reports `source: 'promoted_from_v1'` in analytics so we can size the migrated cohort. Android `versionCode` bumped 12 → 13 for the rebuild; iOS `buildNumber` auto-increments via EAS.
 - [x] **Telemetry fix shipped alongside.** `app_version` / `app_build` now captured from `X-App-Version` / `X-App-Build` request headers on every authenticated call (previously only on push registration → ~97% of users had NULL `app_version`). Backend hook lives in `auth.get_current_user`. Means the next "drive update" email cohort actually has the right population.
 - [x] **Admin dashboard cohort fix shipped.** `product_tests.cohort_started_at` (Alembic `z3a4b5c67d28`) lets admins set the experiment ship date so the funnel cohort excludes pre-experiment users tagged on app upgrade. Set `cohort_started_at = 2026-05-01` on the existing onboarding A/B test row via the dashboard date picker once Railway is green; numbers will then match the clean SQL waterfall.
 

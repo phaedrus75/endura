@@ -62,7 +62,7 @@ export const Analytics = {
   // ── Onboarding funnel ──
   onboardingExperimentAssigned: (
     variant: 'v1' | 'v2',
-    source: 'new' | 'stored' | 'promoted_default',
+    source: 'new' | 'stored' | 'promoted_default' | 'promoted_from_v1',
   ) =>
     trackEvent('onboarding_experiment_assigned', { variant, source }),
   onboardingAuthViewed: (variant: string) =>

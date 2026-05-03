@@ -35,7 +35,7 @@
         "backgroundColor": "#B5CFB7"
       },
       "package": "com.endura.study",
-      "versionCode": 12
+      "versionCode": 13
     },
     "web": {
       "favicon": "./assets/favicon.png"
