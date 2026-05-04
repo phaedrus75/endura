@@ -56,9 +56,29 @@ class TestBuildUrl:
         url = apple_rss._build_url("US", apple_rss.SUBTYPE_PAID, 25, None)
         assert "toppaidapplications" in url
 
+    def test_ipad_device_uses_ipad_feed(self):
+        url = apple_rss._build_url(
+            "AR", apple_rss.SUBTYPE_FREE, 200, apple_rss.GENRE_PRODUCTIVITY,
+            device=apple_rss.DEVICE_IPAD,
+        )
+        assert "topfreeipadapplications" in url
+        assert "/ar/" in url
+        assert "genre=6007" in url
+
+    def test_default_device_is_iphone(self):
+        url = apple_rss._build_url("US", apple_rss.SUBTYPE_FREE, 50, None)
+        assert "topfreeapplications" in url
+        assert "topfreeipadapplications" not in url
+
     def test_rejects_unknown_subtype(self):
-        with pytest.raises(ValueError, match="subtype"):
+        with pytest.raises(ValueError, match="(?i)subtype|device"):
             apple_rss._build_url("US", "grossing", 10, None)
+
+    def test_rejects_unknown_device(self):
+        with pytest.raises(ValueError, match="(?i)device"):
+            apple_rss._build_url(
+                "US", apple_rss.SUBTYPE_FREE, 10, None, device="watch",
+            )
 
     @pytest.mark.parametrize("bad", [0, -1, 201, 1000])
     def test_rejects_invalid_limit(self, bad):
@@ -169,7 +189,50 @@ class TestFetchChart:
         client.get.return_value = _make_response(404)
         assert apple_rss.fetch_chart("xx", client=client) == []
 
-    def test_5xx_returns_empty_list_and_logs(self):
+    def test_403_retries_then_succeeds(self, monkeypatch):
+        """Apple's CDN sometimes returns 403 (WAF) under bursty load.
+        We retry up to 3x; the second attempt should succeed when the
+        first hits 403."""
+        monkeypatch.setattr("services.apple_rss._time.sleep", lambda *_: None) if False else None
+        # simpler: monkeypatch time.sleep via the module
+        import time as _time
+        monkeypatch.setattr(_time, "sleep", lambda *_: None)
+
+        feed = _make_feed([_entry("6759482612", "Endura")])
+        client = MagicMock(spec=httpx.Client)
+        client.get.side_effect = [
+            _make_response(403, text="Forbidden"),
+            _make_response(200, feed),
+        ]
+        rows = apple_rss.fetch_chart("AR", genre_id=6007, client=client)
+        assert len(rows) == 1
+        assert rows[0].app_id == "6759482612"
+        assert client.get.call_count == 2
+
+    def test_403_exhausts_retries_returns_empty(self, monkeypatch):
+        import time as _time
+        monkeypatch.setattr(_time, "sleep", lambda *_: None)
+        client = MagicMock(spec=httpx.Client)
+        client.get.return_value = _make_response(403, text="Forbidden")
+        assert apple_rss.fetch_chart("US", client=client) == []
+        # All 3 attempts consumed
+        assert client.get.call_count == 3
+
+    def test_ipad_passes_through_to_url(self):
+        feed = _make_feed([_entry("6759482612", "Endura")])
+        client = MagicMock(spec=httpx.Client)
+        client.get.return_value = _make_response(200, feed)
+        apple_rss.fetch_chart(
+            "AR", genre_id=apple_rss.GENRE_PRODUCTIVITY,
+            device=apple_rss.DEVICE_IPAD, client=client,
+        )
+        called_url = client.get.call_args[0][0]
+        assert "topfreeipadapplications" in called_url
+        assert "/ar/" in called_url and "genre=6007" in called_url
+
+    def test_5xx_returns_empty_list_and_logs(self, monkeypatch):
+        import time as _time
+        monkeypatch.setattr(_time, "sleep", lambda *_: None)
         client = MagicMock(spec=httpx.Client)
         client.get.return_value = _make_response(503, text="upstream broken")
         assert apple_rss.fetch_chart("US", client=client) == []

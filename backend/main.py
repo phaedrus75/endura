@@ -5088,15 +5088,16 @@ _RSS_COUNTRIES: list[str] = [
     "AE", "SA", "IL", "QA", "KW", "BH", "OM", "JO", "LB",
     "MN", "KZ", "UZ", "KG", "TJ", "AZ", "GE", "AM",
 ]
-# (genre_id, human-readable category name). Endura primarily charts in
-# Education; Productivity catches the few storefronts where study apps
-# cross-list. Both are top-free only — we're not a paid app.
+# Endura's primary genre is Productivity (6007); Education (6017) is the
+# secondary genre and study apps frequently cross-list there. Track both
+# top-free charts on both devices. iPad charts often have less competition
+# so a study app can crack top-100 there while not appearing on iPhone.
 _RSS_GENRES: list[tuple[int, str]] = [
     (6017, "Education"),
     (6007, "Productivity"),
 ]
+_RSS_DEVICES: list[str] = ["iphone", "ipad"]
 _RSS_SUBTYPE = "free"
-_RSS_DEVICE = "iphone"  # iTunes RSS top charts are iPhone-only.
 _RSS_STORE = "apple"
 _RSS_LIMIT = 200  # Apple's hard cap; covers anything a small app could chart at.
 
@@ -5130,23 +5131,27 @@ def admin_apple_rss_debug(_=Depends(verify_admin)):
         "probes": [],
     }
     target_id = _resolve_apple_app_id()
-    for country in ("US", "GB"):
-        for genre_id, label in _RSS_GENRES:
-            try:
-                entries = apple_rss.fetch_chart(
-                    country, genre_id=genre_id, subtype=_RSS_SUBTYPE, limit=_RSS_LIMIT,
-                )
-                hit = apple_rss.find_app_rank(entries, target_id)
-                out["probes"].append({
-                    "country": country,
-                    "category": label,
-                    "chart_size": len(entries),
-                    "rank": hit.rank if hit else None,
-                })
-            except Exception as e:
-                out["probes"].append({
-                    "country": country, "category": label, "error": str(e),
-                })
+    for country in ("US", "GB", "AR"):
+        for device in _RSS_DEVICES:
+            for genre_id, label in _RSS_GENRES:
+                try:
+                    entries = apple_rss.fetch_chart(
+                        country, genre_id=genre_id, subtype=_RSS_SUBTYPE,
+                        device=device, limit=_RSS_LIMIT,
+                    )
+                    hit = apple_rss.find_app_rank(entries, target_id)
+                    out["probes"].append({
+                        "country": country,
+                        "device": device,
+                        "category": label,
+                        "chart_size": len(entries),
+                        "rank": hit.rank if hit else None,
+                    })
+                except Exception as e:
+                    out["probes"].append({
+                        "country": country, "device": device, "category": label,
+                        "error": str(e),
+                    })
     return out
 
 
@@ -5232,44 +5237,51 @@ def _sync_app_ranks(start_date: date, end_date: date, db: Session) -> dict:
     yesterday_dt = today_dt - timedelta(days=1)
     target_id = _resolve_apple_app_id()
 
-    # Build the work queue: every (country × genre) is one chart fetch.
-    jobs: list[tuple[str, int, str]] = [
-        (country, genre_id, category_name)
+    # Build the work queue: every (country × device × genre) is one chart
+    # fetch. With 80 countries × 2 devices × 2 genres we sweep ~320 charts
+    # per sync. Service-layer retries handle the ~5% transient 403/5xx
+    # responses we used to count as off-chart.
+    jobs: list[tuple[str, str, int, str]] = [
+        (country, device, genre_id, category_name)
         for country in _RSS_COUNTRIES
+        for device in _RSS_DEVICES
         for genre_id, category_name in _RSS_GENRES
     ]
 
-    # Apple is happy to take many concurrent requests — 8 in flight keeps
-    # the full ~160-call sweep under ~6 seconds without being abusive.
-    chart_results: dict[tuple[str, str], Optional[apple_rss.ChartEntry]] = {}
+    # Apple's CDN tolerates ~10 in-flight requests well; pushing higher
+    # triggers more 403 (WAF) responses. Sequential would take ~60s; 10x
+    # parallelism brings the full sweep to ~10s end to end.
+    chart_results: dict[tuple[str, str, str], Optional[apple_rss.ChartEntry]] = {}
     fetch_errors: list[dict] = []
-    chart_sizes: dict[tuple[str, str], int] = {}
 
-    def _one(country: str, genre_id: int, category_name: str):
+    def _one(country: str, device: str, genre_id: int, category_name: str):
         try:
             entries = apple_rss.fetch_chart(
-                country, genre_id=genre_id, subtype=_RSS_SUBTYPE, limit=_RSS_LIMIT,
+                country, genre_id=genre_id, subtype=_RSS_SUBTYPE,
+                device=device, limit=_RSS_LIMIT,
             )
         except Exception as e:
-            return (country, category_name, None, 0, str(e))
+            return (country, device, category_name, None, 0, str(e))
         hit = apple_rss.find_app_rank(entries, target_id)
-        return (country, category_name, hit, len(entries), None)
+        return (country, device, category_name, hit, len(entries), None)
 
-    with ThreadPoolExecutor(max_workers=8) as pool:
-        futures = [pool.submit(_one, c, g, n) for c, g, n in jobs]
+    with ThreadPoolExecutor(max_workers=10) as pool:
+        futures = [pool.submit(_one, c, d, g, n) for c, d, g, n in jobs]
         for fut in as_completed(futures):
-            country, category_name, hit, size, err = fut.result()
-            chart_sizes[(country, category_name)] = size
+            country, device, category_name, hit, size, err = fut.result()
             if err:
-                fetch_errors.append({"country": country, "category": category_name, "error": err})
+                fetch_errors.append({
+                    "country": country, "device": device,
+                    "category": category_name, "error": err,
+                })
                 continue
-            chart_results[(country, category_name)] = hit
+            chart_results[(country, device, category_name)] = hit
 
     inserted = updated = skipped = off_chart = 0
-    for (country, category_name), hit in chart_results.items():
+    for (country, device, category_name), hit in chart_results.items():
         if hit is None:
-            # Off-chart in this country/category for today. We don't write a
-            # row — the absence is the signal. Skip counters track the work.
+            # Off-chart in this slot for today. We don't write a row —
+            # absence is the signal.
             off_chart += 1
             continue
 
@@ -5283,7 +5295,7 @@ def _sync_app_ranks(start_date: date, end_date: date, db: Session) -> dict:
                 models.AppRank.country == country,
                 models.AppRank.category_name == category_name,
                 models.AppRank.subtype == _RSS_SUBTYPE,
-                models.AppRank.device == _RSS_DEVICE,
+                models.AppRank.device == device,
             )
             .first()
         )
@@ -5296,7 +5308,7 @@ def _sync_app_ranks(start_date: date, end_date: date, db: Session) -> dict:
                 models.AppRank.country == country,
                 models.AppRank.category_name == category_name,
                 models.AppRank.subtype == _RSS_SUBTYPE,
-                models.AppRank.device == _RSS_DEVICE,
+                models.AppRank.device == device,
             )
             .first()
         )
@@ -5314,7 +5326,7 @@ def _sync_app_ranks(start_date: date, end_date: date, db: Session) -> dict:
                 country=country,
                 category_name=category_name,
                 subtype=_RSS_SUBTYPE,
-                device=_RSS_DEVICE,
+                device=device,
                 store=_RSS_STORE,
                 position=hit.rank,
                 delta=delta,
@@ -5330,6 +5342,8 @@ def _sync_app_ranks(start_date: date, end_date: date, db: Session) -> dict:
         "fetch_errors": fetch_errors[:20],  # cap the payload — full list logged
         "snapshot_date": today_dt.date().isoformat(),
         "app_id": target_id,
+        "devices_tracked": _RSS_DEVICES,
+        "genres_tracked": [name for _gid, name in _RSS_GENRES],
     }
 
 

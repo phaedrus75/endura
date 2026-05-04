@@ -60,9 +60,18 @@ GENRE_PRODUCTIVITY = 6007
 SUBTYPE_FREE = "free"
 SUBTYPE_PAID = "paid"
 
-_SUBTYPE_TO_FEED = {
-    SUBTYPE_FREE: "topfreeapplications",
-    SUBTYPE_PAID: "toppaidapplications",
+DEVICE_IPHONE = "iphone"
+DEVICE_IPAD = "ipad"
+
+# (subtype, device) → RSS feed path. Apple exposes iPhone and iPad as
+# separate feeds; the iPhone feed is what most people think of as "the
+# App Store top charts", but study apps frequently chart higher on iPad
+# (smaller chart, less competition). Track both.
+_FEED_BY_SUBTYPE_DEVICE = {
+    (SUBTYPE_FREE, DEVICE_IPHONE): "topfreeapplications",
+    (SUBTYPE_FREE, DEVICE_IPAD):   "topfreeipadapplications",
+    (SUBTYPE_PAID, DEVICE_IPHONE): "toppaidapplications",
+    (SUBTYPE_PAID, DEVICE_IPAD):   "toppaidipadapplications",
 }
 
 
@@ -76,10 +85,19 @@ class ChartEntry:
     category_label: Optional[str]
 
 
-def _build_url(country: str, subtype: str, limit: int, genre_id: Optional[int]) -> str:
-    feed = _SUBTYPE_TO_FEED.get(subtype)
+def _build_url(
+    country: str,
+    subtype: str,
+    limit: int,
+    genre_id: Optional[int],
+    device: str = DEVICE_IPHONE,
+) -> str:
+    feed = _FEED_BY_SUBTYPE_DEVICE.get((subtype, device))
     if not feed:
-        raise ValueError(f"Unsupported subtype {subtype!r} (use 'free' or 'paid')")
+        raise ValueError(
+            f"Unsupported chart (subtype={subtype!r}, device={device!r}); "
+            "valid subtypes: 'free' / 'paid'; valid devices: 'iphone' / 'ipad'"
+        )
     if not 1 <= limit <= 200:
         raise ValueError("limit must be between 1 and 200 (Apple caps at 200)")
     parts = [f"limit={limit}"]
@@ -88,48 +106,81 @@ def _build_url(country: str, subtype: str, limit: int, genre_id: Optional[int]) 
     return f"{RSS_BASE}/{country.lower()}/rss/{feed}/" + "/".join(parts) + "/json"
 
 
+# Apple periodically returns 403 (rate-limit / WAF) on bursty parallel
+# requests. Up to 3 attempts with light backoff; ~99% of probes succeed
+# on the first try, the rest on attempt 2. Any 403 surviving 3 attempts
+# is logged and treated as "no data for this slot" — same as 404.
+_RETRY_STATUSES = {403, 429, 500, 502, 503, 504}
+_MAX_ATTEMPTS = 3
+
+
 def fetch_chart(
     country: str,
     *,
     subtype: str = SUBTYPE_FREE,
     genre_id: Optional[int] = None,
     limit: int = 200,
+    device: str = DEVICE_IPHONE,
     client: Optional[httpx.Client] = None,
     timeout: float = DEFAULT_TIMEOUT,
 ) -> list[ChartEntry]:
     """Fetch one App Store chart and return its entries in rank order.
 
     Returns an empty list if Apple replies with 404 (chart not available
-    for this country/genre — common for smaller storefronts) or if the
-    response shape is unexpected. Network errors propagate.
+    for this country/genre — common for smaller storefronts) or if a
+    transient error (403/429/5xx) survives all retries. Network errors
+    propagate.
     """
-    url = _build_url(country, subtype, limit, genre_id)
+    import time as _time
+
+    url = _build_url(country, subtype, limit, genre_id, device)
     owns_client = client is None
     c = client or httpx.Client(timeout=timeout)
     try:
-        try:
-            r = c.get(url)
-        except httpx.HTTPError as e:
-            logger.warning("apple_rss network error %s %s: %s", country, genre_id, e)
-            raise
-        if r.status_code == 404:
-            return []
-        if r.status_code >= 400:
-            logger.warning(
-                "apple_rss HTTP %s for %s/%s: %s",
-                r.status_code, country, genre_id, (r.text or "")[:200],
-            )
-            return []
-        try:
-            data = r.json()
-        except ValueError:
-            logger.warning("apple_rss non-JSON response for %s/%s", country, genre_id)
-            return []
+        last_status = None
+        for attempt in range(_MAX_ATTEMPTS):
+            try:
+                r = c.get(url)
+            except httpx.HTTPError as e:
+                if attempt < _MAX_ATTEMPTS - 1:
+                    _time.sleep(0.4 * (attempt + 1))
+                    continue
+                logger.warning(
+                    "apple_rss network error %s/%s/%s: %s",
+                    country, device, genre_id, e,
+                )
+                raise
+            if r.status_code == 404:
+                return []
+            if r.status_code in _RETRY_STATUSES and attempt < _MAX_ATTEMPTS - 1:
+                last_status = r.status_code
+                _time.sleep(0.4 * (attempt + 1))
+                continue
+            if r.status_code >= 400:
+                logger.warning(
+                    "apple_rss HTTP %s for %s/%s/%s after %d attempts: %s",
+                    r.status_code, country, device, genre_id, attempt + 1,
+                    (r.text or "")[:200],
+                )
+                return []
+            try:
+                data = r.json()
+            except ValueError:
+                logger.warning(
+                    "apple_rss non-JSON response for %s/%s/%s",
+                    country, device, genre_id,
+                )
+                return []
+            return _parse_feed(data)
+        # Exhausted retries with retriable status only
+        logger.warning(
+            "apple_rss exhausted retries for %s/%s/%s (last status %s)",
+            country, device, genre_id, last_status,
+        )
+        return []
     finally:
         if owns_client:
             c.close()
-
-    return _parse_feed(data)
 
 
 def _parse_feed(data: dict) -> list[ChartEntry]:
