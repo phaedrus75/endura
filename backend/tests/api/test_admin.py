@@ -414,6 +414,107 @@ class TestAdminOverview:
         )
         assert bucket["count"] >= 1
 
+    def test_overview_daily_signups_excludes_archived(self, client, db):
+        """daily_signups now matches the 'real_users' KPI: archived users
+        are filtered out so the chart and the headline number agree."""
+        from datetime import datetime, timedelta
+        import models
+
+        now = datetime.utcnow()
+        # Anchor far enough back that we land on the same calendar day even
+        # if the test runs near midnight, but inside the apr1+ window.
+        signup_day = (now - timedelta(days=8)).replace(hour=12, minute=0, second=0, microsecond=0)
+        day_key = signup_day.strftime("%Y-%m-%d")
+
+        active = make_user(db, email="sig_active@example.com", username="sigactive")
+        archived = make_user(db, email="sig_archived@example.com", username="sigarchived")
+        active.created_at = signup_day
+        archived.created_at = signup_day
+        archived.is_archived = True
+        db.commit()
+
+        data = client.get("/admin/overview", headers=admin_headers()).json()
+        bucket = next((d for d in data["daily_signups"] if d["date"] == day_key), None)
+        assert bucket is not None, f"no daily_signups row for {day_key}"
+        # The archived user must not be counted; only `active` is.
+        assert bucket["count"] == 1
+
+    def test_overview_daily_signups_activated_counts_users_with_session(self, client, db):
+        """daily_signups_activated[D] = users who signed up on D AND have
+        ever started a study session. Anchored to signup date, not session
+        date — so the line maps 1:1 onto the bars."""
+        from datetime import datetime, timedelta
+        import models
+
+        now = datetime.utcnow()
+        signup_day = (now - timedelta(days=6)).replace(hour=10, minute=0, second=0, microsecond=0)
+        day_key = signup_day.strftime("%Y-%m-%d")
+
+        # Two users sign up on the same day; only one ever starts a session
+        # (and they start it the *following* day — confirms anchoring).
+        starter = make_user(db, email="act_starter@example.com", username="actstarter")
+        bouncer = make_user(db, email="act_bouncer@example.com", username="actbouncer")
+        starter.created_at = signup_day
+        bouncer.created_at = signup_day
+        db.commit()
+
+        db.add(models.StudySession(
+            user_id=starter.id, duration_minutes=25, coins_earned=10,
+            started_at=signup_day + timedelta(days=1, hours=2),
+            completed_at=signup_day + timedelta(days=1, hours=2, minutes=25),
+        ))
+        db.commit()
+
+        data = client.get("/admin/overview", headers=admin_headers()).json()
+        sign_bucket = next((d for d in data["daily_signups"] if d["date"] == day_key), None)
+        act_bucket = next(
+            (d for d in data["daily_signups_activated"] if d["date"] == day_key),
+            None,
+        )
+        assert sign_bucket is not None and act_bucket is not None
+        assert sign_bucket["count"] == 2
+        # Only `starter` activated. Anchored to signup_day even though the
+        # session itself happened the day after.
+        assert act_bucket["count"] == 1
+
+    def test_overview_monthly_active_dedupes_users_within_month(self, client, db):
+        """monthly_active counts each user once per calendar month, even
+        if they're active across multiple weeks of the month."""
+        from datetime import datetime, timedelta
+        import models
+
+        # Pick a date safely inside the apr1+ window with at least 2 weeks
+        # of history available so we can spread sessions across the month.
+        now = datetime.utcnow()
+        target = (now - timedelta(days=10)).replace(hour=12, minute=0, second=0, microsecond=0)
+        month_start = target.replace(day=1)
+        month_key = month_start.strftime("%Y-%m-%d")
+
+        u1 = make_user(db, email="mau1@example.com", username="mau1")
+        u2 = make_user(db, email="mau2@example.com", username="mau2")
+
+        # u1 active early-month AND late-month (still 1 unique that month)
+        for delta in (timedelta(days=1, hours=3), timedelta(days=8, hours=4)):
+            db.add(models.StudySession(
+                user_id=u1.id, duration_minutes=25, coins_earned=10,
+                started_at=month_start + delta,
+                completed_at=month_start + delta + timedelta(minutes=25),
+            ))
+        # u2 active once that same month
+        db.add(models.StudySession(
+            user_id=u2.id, duration_minutes=25, coins_earned=10,
+            started_at=month_start + timedelta(days=2, hours=5),
+            completed_at=month_start + timedelta(days=2, hours=5, minutes=25),
+        ))
+        db.commit()
+
+        data = client.get("/admin/overview", headers=admin_headers()).json()
+        assert "monthly_active" in data
+        bucket = next((m for m in data["monthly_active"] if m["date"] == month_key), None)
+        assert bucket is not None, f"no monthly_active row for {month_key}"
+        # u1 (active twice) counts once, u2 once → 2 distinct users.
+        assert bucket["count"] == 2
+
 
 class TestAdminUsers:
     def test_users_list_returns_paginated(self, client, alice):

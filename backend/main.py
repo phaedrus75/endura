@@ -3892,7 +3892,42 @@ def admin_overview(db: Session = Depends(get_db), _=Depends(verify_admin)):
         q = _exclude_archived(query, user_col).filter(ts_col >= apr1)
         return [r[0] for r in q.all()]
 
-    daily_signups = []
+    # Daily signups — excludes archived users (KPI box and "real_*" totals
+    # already do; the chart now matches). We also derive a parallel
+    # `daily_signups_activated` series: of the users who signed up on day D,
+    # how many have eventually started ≥1 study session (not necessarily on
+    # the same day). Anchored to signup date so the line maps 1:1 to the
+    # bars and shows activation conversion in calendar-day form.
+    user_q = db.query(models.User.id, models.User.created_at).filter(
+        models.User.created_at >= apr1,
+    )
+    if archived_ids:
+        user_q = user_q.filter(models.User.id.notin_(archived_ids))
+    user_rows = user_q.all()
+
+    if user_rows:
+        active_user_ids: set[int] = {
+            uid for (uid,) in db.query(func.distinct(models.StudySession.user_id))
+            .filter(models.StudySession.user_id.in_([u.id for u in user_rows]))
+            .all()
+        }
+    else:
+        active_user_ids = set()
+
+    sign_counts: dict[str, int] = {k: 0 for k in date_keys}
+    act_counts: dict[str, int] = {k: 0 for k in date_keys}
+    for uid, created_at in user_rows:
+        if not created_at:
+            continue
+        k = created_at.strftime("%Y-%m-%d")
+        if k not in sign_counts:
+            continue
+        sign_counts[k] += 1
+        if uid in active_user_ids:
+            act_counts[k] += 1
+    daily_signups = [{"date": k, "count": sign_counts[k]} for k in date_keys]
+    daily_signups_activated = [{"date": k, "count": act_counts[k]} for k in date_keys]
+
     daily_active = []
     daily_sessions = []
     for i in range(num_days):
@@ -3900,12 +3935,6 @@ def admin_overview(db: Session = Depends(get_db), _=Depends(verify_admin)):
         start = day.replace(hour=0, minute=0, second=0, microsecond=0)
         end = start + timedelta(days=1)
         date_str = start.strftime("%Y-%m-%d")
-
-        signups = db.query(func.count(models.User.id)).filter(
-            models.User.created_at >= start,
-            models.User.created_at < end,
-        ).scalar() or 0
-        daily_signups.append({"date": date_str, "count": signups})
 
         dau = db.query(func.count(func.distinct(models.StudySession.user_id))).filter(
             models.StudySession.started_at >= start,
@@ -3958,23 +3987,32 @@ def admin_overview(db: Session = Depends(get_db), _=Depends(verify_admin)):
         models.FeedReaction.created_at, models.FeedReaction.user_id,
     )))
 
-    # Weekly Active Users (DB) — distinct user_ids per ISO-Monday since apr1.
-    # Computed server-side because the dashboard's old "sum daily uniques into
-    # weekly buckets" approach over-counts users active on multiple days.
-    # Fetch once, bucket in Python (portable across Postgres + SQLite).
+    # Weekly + Monthly Active Users (DB) — distinct user_ids per ISO-Monday
+    # and per calendar-month-start since apr1. Computed server-side because
+    # the dashboard's old "sum daily uniques" aggregator double-counts users
+    # active on multiple days. Fetch once, bucket in Python (portable across
+    # Postgres + SQLite).
     sess_rows = db.query(
         models.StudySession.user_id,
         models.StudySession.started_at,
     ).filter(models.StudySession.started_at >= apr1).all()
     weekly_users: dict = {}
+    monthly_users: dict = {}
     for user_id, started_at in sess_rows:
         if started_at is None or user_id is None:
             continue
-        monday = started_at.date() - timedelta(days=started_at.weekday())
+        d = started_at.date()
+        monday = d - timedelta(days=d.weekday())
+        month_start = d.replace(day=1)
         weekly_users.setdefault(monday, set()).add(user_id)
+        monthly_users.setdefault(month_start, set()).add(user_id)
     weekly_active = [
         {"date": monday.strftime("%Y-%m-%d"), "count": len(users)}
         for monday, users in sorted(weekly_users.items())
+    ]
+    monthly_active = [
+        {"date": month_start.strftime("%Y-%m-%d"), "count": len(users)}
+        for month_start, users in sorted(monthly_users.items())
     ]
 
     return {
@@ -3995,8 +4033,10 @@ def admin_overview(db: Session = Depends(get_db), _=Depends(verify_admin)):
         "real_donated": real_donated,
         "real_donation_count": real_donation_count,
         "daily_signups": daily_signups,
+        "daily_signups_activated": daily_signups_activated,
         "daily_active": daily_active,
         "weekly_active": weekly_active,
+        "monthly_active": monthly_active,
         "daily_sessions": daily_sessions,
         "total_friendships": total_friendships,
         "friendships_7d": friendships_7d,

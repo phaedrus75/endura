@@ -428,6 +428,7 @@
                 <div id="overviewGranularity" role="tablist" aria-label="Granularity" style="display:inline-flex;background:#f1f5f9;border:1px solid var(--border);border-radius:10px;padding:3px;gap:2px">
                     <button type="button" class="gran-btn active" data-gran="daily" onclick="setOverviewGranularity('daily')" style="padding:7px 16px;border:none;background:var(--forest);color:#fff;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;transition:all .15s">Daily</button>
                     <button type="button" class="gran-btn" data-gran="weekly" onclick="setOverviewGranularity('weekly')" style="padding:7px 16px;border:none;background:transparent;color:var(--text-muted);border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;transition:all .15s">Weekly</button>
+                    <button type="button" class="gran-btn" data-gran="monthly" onclick="setOverviewGranularity('monthly')" style="padding:7px 16px;border:none;background:transparent;color:var(--text-muted);border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;transition:all .15s">Monthly</button>
                 </div>
             </div>
             <div class="kpi-grid" id="kpiGrid">
@@ -2014,7 +2015,7 @@ function formatUptime(seconds) {
 
 // ----- Overview -----
 let overviewCache = null;          // { data, phDauData, phTipViewed }
-let overviewGranularity = 'daily'; // 'daily' | 'weekly'
+let overviewGranularity = 'daily'; // 'daily' | 'weekly' | 'monthly'
 
 // Aggregate a [{date:'YYYY-MM-DD', <field>:n, ...}] series into ISO-week buckets
 // keyed by the Monday of that week. Sum the supplied fields.
@@ -2056,8 +2057,38 @@ function aggregateWeeklyMap(dailyMap) {
     return out;
 }
 
+// Aggregate a [{date:'YYYY-MM-DD', <field>:n, ...}] series into calendar-month
+// buckets keyed by the first of that month.
+function aggregateMonthly(series, fields = ['count']) {
+    if (!series) return [];
+    const buckets = new Map();
+    for (const row of series) {
+        if (!row || !row.date) continue;
+        const key = row.date.slice(0, 7) + '-01';
+        let b = buckets.get(key);
+        if (!b) {
+            b = { date: key };
+            for (const f of fields) b[f] = 0;
+            buckets.set(key, b);
+        }
+        for (const f of fields) b[f] += (row[f] || 0);
+    }
+    return Array.from(buckets.values()).sort((a, b) => a.date.localeCompare(b.date));
+}
+
+// Aggregate a { 'YYYY-MM-DD': n } map into calendar-month buckets.
+function aggregateMonthlyMap(dailyMap) {
+    if (!dailyMap) return null;
+    const out = {};
+    for (const [date, val] of Object.entries(dailyMap)) {
+        const key = date.slice(0, 7) + '-01';
+        out[key] = (out[key] || 0) + (val || 0);
+    }
+    return out;
+}
+
 function setOverviewGranularity(gran) {
-    if (gran !== 'daily' && gran !== 'weekly') return;
+    if (gran !== 'daily' && gran !== 'weekly' && gran !== 'monthly') return;
     if (overviewGranularity === gran) return;
     overviewGranularity = gran;
 
@@ -2069,7 +2100,8 @@ function setOverviewGranularity(gran) {
         btn.style.color = active ? '#fff' : 'var(--text-muted)';
     });
     // Chart-title suffix labels
-    const label = gran === 'weekly' ? '(Weekly)' : '(Daily)';
+    const labelByGran = { weekly: '(Weekly)', monthly: '(Monthly)', daily: '(Daily)' };
+    const label = labelByGran[gran] || '(Daily)';
     document.querySelectorAll('.chart-gran-label').forEach(el => { el.textContent = label; });
 
     renderOverviewCharts();
@@ -2078,32 +2110,60 @@ function setOverviewGranularity(gran) {
 function renderOverviewCharts() {
     if (!overviewCache) return;
     const { data: d, phDauData, phWeeklyDauData, phTipViewed } = overviewCache;
-    const weekly = overviewGranularity === 'weekly';
+    const gran = overviewGranularity;
 
-    const signups = weekly ? aggregateWeekly(d.daily_signups) : d.daily_signups;
-    const sessions = weekly ? aggregateWeekly(d.daily_sessions, ['sessions', 'minutes']) : d.daily_sessions;
-    // Active Users: weekly comes from server-side `weekly_active` (true distinct
-    // users per ISO week). Falls back to summed-daily-uniques only if absent
-    // (older deploys, no PostHog access). Daily uses the existing daily series.
-    const dbDau = weekly
-        ? (d.weekly_active && d.weekly_active.length ? d.weekly_active : aggregateWeekly(d.daily_active || []))
-        : (d.daily_active || []);
-    const friendships = weekly ? aggregateWeekly(d.daily_friendships) : d.daily_friendships;
-    const groups = weekly ? aggregateWeekly(d.daily_groups_created) : d.daily_groups_created;
-    const subjects = weekly ? aggregateWeekly(d.daily_user_subjects) : d.daily_user_subjects;
-    const tasks = weekly ? aggregateWeekly(d.daily_tasks_created) : d.daily_tasks_created;
-    const tipViews = weekly ? aggregateWeekly(d.daily_tip_views) : d.daily_tip_views;
-    const tipLikes = weekly ? aggregateWeekly(d.daily_tip_likes) : d.daily_tip_likes;
-    const tipSaves = weekly ? aggregateWeekly(d.daily_tip_saves) : d.daily_tip_saves;
-    const feedReactions = weekly ? aggregateWeekly(d.daily_feed_reactions) : d.daily_feed_reactions;
-    // Same logic for the PH line: prefer server-correct toMonday-grouped
-    // distinct-uniques map; fall back to summed daily uniques if PH didn't return.
-    const dauMap = weekly
-        ? (phWeeklyDauData || aggregateWeeklyMap(phDauData))
-        : phDauData;
-    const tipViewedMap = weekly ? aggregateWeeklyMap(phTipViewed) : phTipViewed;
+    // Pick the right bucket aggregator for series-of-rows and PH daily maps.
+    function bucket(series, fields) {
+        if (gran === 'weekly') return aggregateWeekly(series, fields);
+        if (gran === 'monthly') return aggregateMonthly(series, fields);
+        return series;
+    }
+    function bucketMap(map) {
+        if (gran === 'weekly') return aggregateWeeklyMap(map);
+        if (gran === 'monthly') return aggregateMonthlyMap(map);
+        return map;
+    }
 
-    renderSignupsChart(signups);
+    const signups = bucket(d.daily_signups);
+    const signupsActivated = bucket(d.daily_signups_activated || []);
+    const sessions = bucket(d.daily_sessions, ['sessions', 'minutes']);
+    // Active Users: weekly/monthly come from server-side distinct-user counts
+    // (`weekly_active` / `monthly_active`). Falls back to summed-daily-uniques
+    // only if absent (older deploys). Daily uses the existing daily series.
+    let dbDau;
+    if (gran === 'weekly') {
+        dbDau = (d.weekly_active && d.weekly_active.length)
+            ? d.weekly_active
+            : aggregateWeekly(d.daily_active || []);
+    } else if (gran === 'monthly') {
+        dbDau = (d.monthly_active && d.monthly_active.length)
+            ? d.monthly_active
+            : aggregateMonthly(d.daily_active || []);
+    } else {
+        dbDau = d.daily_active || [];
+    }
+    const friendships = bucket(d.daily_friendships);
+    const groups = bucket(d.daily_groups_created);
+    const subjects = bucket(d.daily_user_subjects);
+    const tasks = bucket(d.daily_tasks_created);
+    const tipViews = bucket(d.daily_tip_views);
+    const tipLikes = bucket(d.daily_tip_likes);
+    const tipSaves = bucket(d.daily_tip_saves);
+    const feedReactions = bucket(d.daily_feed_reactions);
+    // Same logic for the PH line: prefer server-correct distinct-uniques
+    // map when available; fall back to client-side bucketing of dailies.
+    let dauMap;
+    if (gran === 'weekly') {
+        dauMap = phWeeklyDauData || aggregateWeeklyMap(phDauData);
+    } else if (gran === 'monthly') {
+        // Monthly PH map is always client-bucketed — server doesn't ship it.
+        dauMap = aggregateMonthlyMap(phDauData);
+    } else {
+        dauMap = phDauData;
+    }
+    const tipViewedMap = bucketMap(phTipViewed);
+
+    renderSignupsChart(signups, signupsActivated);
     renderTimerSessionsChart(sessions);
     renderStudyChart(sessions);
     renderSocialChart(friendships, groups);
@@ -2579,23 +2639,68 @@ function renderFunnel(f) {
     renderFunnelStepsInto(document.getElementById('funnelChart'), steps);
 }
 
-function renderSignupsChart(data) {
+function renderSignupsChart(data, activated) {
     const ctx = document.getElementById('chartSignups').getContext('2d');
     if (signupsChart) signupsChart.destroy();
+    const labels = data.map(d => d.date.slice(5));
+    // Map activated rows by date so we tolerate missing buckets / order skew.
+    const actByDate = {};
+    if (Array.isArray(activated)) {
+        for (const r of activated) {
+            if (r && r.date) actByDate[r.date] = r.count || 0;
+        }
+    }
+    const activatedSeries = data.map(d => actByDate[d.date] || 0);
     signupsChart = new Chart(ctx, {
         type: 'bar',
         data: {
-            labels: data.map(d => d.date.slice(5)),
-            datasets: [{
-                label: 'Signups',
-                data: data.map(d => d.count),
-                backgroundColor: 'rgba(74,124,89,.6)',
-                borderRadius: 4,
-            }]
+            labels,
+            datasets: [
+                {
+                    label: 'Signups (excl. archived)',
+                    data: data.map(d => d.count),
+                    backgroundColor: 'rgba(74,124,89,.6)',
+                    borderRadius: 4,
+                    order: 2,
+                },
+                {
+                    type: 'line',
+                    label: 'Signups who started 1+ timer',
+                    data: activatedSeries,
+                    borderColor: 'rgba(217,119,6,1)',
+                    backgroundColor: 'rgba(217,119,6,.15)',
+                    borderWidth: 2,
+                    tension: .3,
+                    pointRadius: 2,
+                    pointHoverRadius: 4,
+                    fill: false,
+                    order: 1,
+                },
+            ],
         },
         options: {
             responsive: true, maintainAspectRatio: false,
-            plugins: { legend: { display: false } },
+            plugins: {
+                legend: {
+                    display: true, position: 'bottom',
+                    labels: { boxWidth: 12, font: { size: 11 }, padding: 12 },
+                },
+                tooltip: {
+                    callbacks: {
+                        afterBody(items) {
+                            // Show activation rate (% of signups that started a timer)
+                            // when both datasets are visible at this index.
+                            if (!items || !items.length) return '';
+                            const idx = items[0].dataIndex;
+                            const s = (data[idx] && data[idx].count) || 0;
+                            const a = activatedSeries[idx] || 0;
+                            if (!s) return '';
+                            const pct = (100 * a / s).toFixed(0);
+                            return `Activation rate: ${pct}%`;
+                        },
+                    },
+                },
+            },
             scales: {
                 y: { beginAtZero: true, ticks: { stepSize: 1 } },
                 x: { grid: { display: false }, ticks: { maxTicksLimit: 15, font: { size: 10 } } }
