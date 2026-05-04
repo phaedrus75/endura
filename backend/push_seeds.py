@@ -154,6 +154,24 @@ DEFAULT_PUSH_TEMPLATES = [
         "deep_link": "Timer",
     },
 
+    # ── Session recovered by server-side reaper ──
+    # Sent when a study session was started but never finalised by the client
+    # (app force-killed mid-timer, device offline, user closed before tapping
+    # Complete) and the reaper auto-credited it. Reactivation hook: the user
+    # might have thought their session was lost — this push tells them it was
+    # saved and brings them back to hatch the animal. Category="reminder" so
+    # users who turned off study-reminder pushes are respected. The push
+    # service skips users without a valid token; backend will email-fall-back
+    # in that case via _notify_session_recovered.
+    {
+        "template_key": "push_session_recovered",
+        "name": "Session recovered (server)",
+        "title": "Your study session was saved 🌳",
+        "body": "{minutes} min of {subject} — open Endura to hatch your animal.",
+        "category": "reminder",
+        "deep_link": "Timer",
+    },
+
     # ── Support: admin reply to in-app feedback (deep_link set per-send) ──
     {
         "template_key": "support_reply",

@@ -710,6 +710,40 @@ DEFAULT_EMAIL_TEMPLATES = [
 </div>""",
     },
     {
+        # Sent when the server-side reaper auto-credits a session that the
+        # client never finalised AND the user has no valid Expo push token
+        # (so we can't reach them via push). Mirrors push_session_recovered
+        # in tone — short, celebratory, with a single CTA back into the app.
+        "template_key": "session_recovered",
+        "name": "Session recovered (email fallback)",
+        "subject": "We saved your {minutes}-minute study session, {name} 🌳",
+        "trigger_day": None,
+        "inactive_days": None,
+        "body_html": f"""<div style="font-family:'Segoe UI',sans-serif;max-width:520px;margin:0 auto;padding:40px 32px;background:#E7EFEA;border-radius:20px">
+    <h1 style="color:#4A7C59;margin:0 0 4px;font-size:24px">Your study session was saved</h1>
+    <p style="color:#6B9B7A;margin:0 0 24px;font-size:15px">Hey {{name}}, it looks like Endura closed before you finished your timer — but we kept your progress.</p>
+    {_animal_img("red panda")}
+    <div style="background:#fff;border-radius:16px;padding:24px;margin-bottom:20px">
+        <p style="color:#333;font-size:15px;line-height:1.7;margin:0 0 12px">
+            We finalised your <strong>{{minutes}}-minute {{subject}}</strong> session for you and credited the eco-coins to your sanctuary.
+        </p>
+        <p style="color:#333;font-size:15px;line-height:1.7;margin:0">
+            Open Endura to hatch the animal you were working toward — your egg is ready. 🥚
+        </p>
+    </div>
+    <div style="text-align:center;margin-bottom:20px">
+        <a href="https://apps.apple.com/app/endura-study-timer/id6759482612" style="display:inline-block;background:#4A7C59;color:#fff;text-decoration:none;padding:14px 32px;border-radius:12px;font-size:15px;font-weight:600">Open Endura & Hatch</a>
+    </div>
+    <p style="color:#999;font-size:11px;line-height:1.6;text-align:center;margin:0 0 4px">
+        Tip: enable push notifications in Endura to get this alert instantly next time.
+    </p>
+    <p style="color:#999;font-size:12px;text-align:center;margin:0">
+        Study smarter. Save wildlife. 🌍<br>
+        <a href="https://instagram.com/endura.eco" style="color:#6B9B7A;text-decoration:none">@endura.eco</a>
+    </p>
+</div>""",
+    },
+    {
         "template_key": "android_invite",
         "name": "Android Beta Invite",
         "subject": "You're in! Endura is ready on Android 🎉",

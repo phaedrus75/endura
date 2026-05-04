@@ -274,6 +274,79 @@ def get_user_sessions(db: Session, user_id: int, limit: int = 50) -> List[models
     ).order_by(models.StudySession.completed_at.desc()).limit(limit).all()
 
 
+def _notify_session_recovered(
+    db: Session,
+    user: models.User,
+    session: models.StudySession,
+) -> str:
+    """Send a "we saved your session" notification after the reaper finalises.
+
+    Strategy: try a push (free, instant, in-app deep-link), fall back to email
+    only when the user has no valid Expo push token. We deliberately do NOT
+    fall back to email if the user explicitly opted out of push (master_off
+    or category_off:reminder) — that would route around their preference. The
+    email is operational/transactional ("your work was saved"), not marketing,
+    so it's fine to send without an additional opt-in for users we have no
+    other way to reach.
+
+    Best-effort: any failure is logged and swallowed so it can't roll back the
+    finalised session. Returns a short status code for logging:
+      'push_sent' | 'email_sent' | 'push_failed_email_failed' | 'opted_out' | 'error'
+    """
+    try:
+        from services import push as push_service
+        push_result = push_service.send_template_to_user(
+            db,
+            user,
+            template_key="push_session_recovered",
+            variables={
+                "minutes": session.duration_minutes or 0,
+                "subject": session.subject.name if (session.subject and session.subject.name) else "Study",
+            },
+        )
+        if push_result.get("ok"):
+            return "push_sent"
+
+        # Push didn't go out. Decide whether to fall back to email.
+        reason = push_result.get("reason") or push_result.get("status")
+        if reason != "no_valid_token":
+            # User opted out (master_off / category_off:reminder), is archived,
+            # or the push template is missing / network-failed. Don't email
+            # in any of these cases — we'd either be circumventing an opt-out
+            # or duplicating a transient failure.
+            return "opted_out" if reason in {
+                "master_off", "category_off:reminder", "user_archived"
+            } else "push_failed_no_email"
+
+        # Fall back to email — but only if the user has an email on file and
+        # isn't archived (push service already filters archived; do it again
+        # explicitly here because the email path doesn't go through it).
+        if not user.email or getattr(user, "is_archived", False):
+            return "no_channel"
+
+        # Lazy import to avoid circular import at module load time
+        # (crud is imported by main, main defines _send_template_email).
+        from main import _send_template_email
+        sent = _send_template_email(
+            "session_recovered",
+            user.email,
+            {
+                "name": user.username or "there",
+                "minutes": session.duration_minutes or 0,
+                "subject": session.subject.name if (session.subject and session.subject.name) else "study",
+            },
+            db,
+        )
+        return "email_sent" if sent else "push_failed_email_failed"
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).warning(
+            f"Session-recovered notify failed for user_id={user.id} session_id={session.id}: {e}",
+            exc_info=True,
+        )
+        return "error"
+
+
 def reap_stale_sessions(
     db: Session,
     grace_minutes: int = 30,
@@ -327,6 +400,15 @@ def reap_stale_sessions(
     skipped_other = 0
     coins_awarded = 0
     user_ids_reaped: set[int] = set()
+    notify_counts = {
+        "push_sent": 0,
+        "email_sent": 0,
+        "opted_out": 0,
+        "no_channel": 0,
+        "push_failed_no_email": 0,
+        "push_failed_email_failed": 0,
+        "error": 0,
+    }
 
     for session in candidates:
         # `started_at + duration + grace` must be in the past.
@@ -370,6 +452,12 @@ def reap_stale_sessions(
             reaped += 1
             coins_awarded += finalised.coins_earned or 0
             user_ids_reaped.add(user.id)
+
+            # Bring the user back: tell them their work was saved. Best
+            # effort — never let a notification failure roll back the
+            # finalised session.
+            notify_status = _notify_session_recovered(db, user, finalised)
+            notify_counts[notify_status] = notify_counts.get(notify_status, 0) + 1
         except Exception as e:
             db.rollback()
             import logging
@@ -385,6 +473,7 @@ def reap_stale_sessions(
         "skipped_other": skipped_other,
         "coins_awarded": coins_awarded,
         "users_credited": len(user_ids_reaped),
+        "notifications": notify_counts,
     }
 
 

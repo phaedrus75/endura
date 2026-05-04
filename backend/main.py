@@ -442,11 +442,15 @@ def _cron_reap_stale_sessions():
     try:
         result = crud.reap_stale_sessions(_db)
         if result.get("reaped", 0) > 0:
+            notif = result.get("notifications") or {}
             logger.info(
                 f"Cron reap_stale_sessions: reaped={result['reaped']} "
                 f"users_credited={result['users_credited']} "
                 f"coins_awarded={result['coins_awarded']} "
-                f"considered={result['considered']}"
+                f"considered={result['considered']} "
+                f"push_sent={notif.get('push_sent', 0)} "
+                f"email_sent={notif.get('email_sent', 0)} "
+                f"opted_out={notif.get('opted_out', 0)}"
             )
     except Exception as e:
         logger.error(f"Cron reap_stale_sessions failed: {e}", exc_info=True)
