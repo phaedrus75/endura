@@ -28,7 +28,7 @@ import { sessionsAPI, animalsAPI, subjectsAPI, BadgeInfo, Subject } from '../ser
 import { useAuth } from '../contexts/AuthContext';
 import { getAnimalImage } from '../assets/animals';
 import { Analytics } from '../services/analytics';
-import { Sentry } from '../services/monitoring';
+import { Sentry, isBenignNetworkError } from '../services/monitoring';
 import { scheduleLocalNotification, cancelLocalNotification } from '../services/pushNotifications';
 import { handleAppStateChange } from '../utils/timerAppState';
 
@@ -551,7 +551,7 @@ export default function TimerScreen() {
           // we'll retry the next time the app opens — better one duplicate
           // session than silently losing the user's work.
           if (__DEV__) console.warn('Recovered session save failed:', err);
-          Sentry.captureException(err);
+          if (!isBenignNetworkError(err)) Sentry.captureException(err);
           timerBreadcrumb('recover:save-failed', { sessionId: active.sessionId });
           setSessionSaveError(true);
         }
@@ -851,14 +851,14 @@ export default function TimerScreen() {
       timerBreadcrumb('complete', { sessionId: storedSessionId, minutes: selectedMinutes });
     } catch (error: any) {
       if (__DEV__) console.warn('Session save failed (celebration still showing):', error?.message || error);
-      Sentry.captureException(error);
+      if (!isBenignNetworkError(error)) Sentry.captureException(error);
       try {
         const retry: any = await sessionsAPI.completeSession(selectedMinutes, undefined, localAnimal?.name, undefined);
         saveOk = true;
         applyResult(retry);
         timerBreadcrumb('complete:retry-ok', { sessionId: storedSessionId });
       } catch (retryErr) {
-        Sentry.captureException(retryErr);
+        if (!isBenignNetworkError(retryErr)) Sentry.captureException(retryErr);
         timerBreadcrumb('complete:retry-failed', { sessionId: storedSessionId });
         setSessionSaveError(true);
       }
@@ -1011,7 +1011,7 @@ export default function TimerScreen() {
       sessionId = startResp?.session_id ?? null;
     } catch (err) {
       if (__DEV__) console.warn('startSession failed; falling back to complete-only path:', err);
-      Sentry.captureException(err);
+      if (!isBenignNetworkError(err)) Sentry.captureException(err);
     }
     timerBreadcrumb('start', {
       sessionId,

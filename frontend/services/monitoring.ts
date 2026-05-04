@@ -5,6 +5,42 @@ import * as SecureStore from 'expo-secure-store';
 const SENTRY_DSN = (Constants.expoConfig?.extra?.sentryDsn as string | undefined) || process.env.EXPO_PUBLIC_SENTRY_DSN || '';
 const BOOT_PING_KEY = 'sentryBootPingSent';
 
+/** RN / whatwg-fetch offline and common transport blips — not actionable app bugs. */
+const BENIGN_NETWORK_RE =
+  /network request failed|failed to fetch|load failed|network\s+error|internet connection appears to be offline|timed out|timeout|connection refused|host could not be resolved|could not connect to the server|ssl error|certificate/i;
+
+/**
+ * True for typical fetch/XHR failures when the device is offline or the network
+ * is flaky. Use before sending to Sentry from intentional capture sites.
+ */
+export function isBenignNetworkError(error: unknown): boolean {
+  if (error == null) return false;
+  const e = error as Record<string, unknown>;
+  if (e.name === 'ApiNetworkError' || e.isNetworkError === true) return true;
+  const name = String(e.name ?? '');
+  let msg = '';
+  if (typeof e.message === 'string') msg = e.message;
+  else if (typeof (error as Error).message === 'string') msg = (error as Error).message;
+  else msg = String(error);
+  if (BENIGN_NETWORK_RE.test(msg)) return true;
+  if (name === 'TypeError' && BENIGN_NETWORK_RE.test(msg)) return true;
+  return false;
+}
+
+function eventLooksLikeBenignNetworkFailure(event: Sentry.Event): boolean {
+  const values = event.exception?.values;
+  if (values?.length) {
+    for (const ex of values) {
+      const synthetic = { name: ex.type, message: ex.value };
+      if (isBenignNetworkError(synthetic)) return true;
+      const blob = `${ex.type ?? ''} ${ex.value ?? ''}`;
+      if (BENIGN_NETWORK_RE.test(blob)) return true;
+    }
+  }
+  if (event.message && BENIGN_NETWORK_RE.test(String(event.message))) return true;
+  return false;
+}
+
 /**
  * Initialise Sentry for crash + JS error reporting.
  *
@@ -35,9 +71,15 @@ export function initMonitoring() {
     enableAutoSessionTracking: true,
     attachStacktrace: true,
     enabled: !__DEV__,
+    ignoreErrors: [
+      'Network request failed',
+      'Network unavailable. Please check your connection.',
+      /^Load failed$/i,
+    ],
     beforeSend(event) {
       if (event.request?.cookies) delete event.request.cookies;
       if (event.user?.ip_address) delete event.user.ip_address;
+      if (eventLooksLikeBenignNetworkFailure(event)) return null;
       return event;
     },
   });
@@ -72,6 +114,7 @@ export function captureError(error: unknown, context?: Record<string, any>) {
     if (__DEV__) console.error('[monitoring]', error, context);
     return;
   }
+  if (isBenignNetworkError(error)) return;
   if (context) {
     Sentry.withScope((scope) => {
       Object.entries(context).forEach(([k, v]) => scope.setExtra(k, v));

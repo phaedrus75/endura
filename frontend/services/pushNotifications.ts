@@ -26,7 +26,7 @@ import * as Application from 'expo-application';
 import Constants from 'expo-constants';
 import { Platform } from 'react-native';
 import { pushAPI } from './api';
-import { Sentry } from './monitoring';
+import { Sentry, isBenignNetworkError } from './monitoring';
 import { feedbackNavigation } from './feedbackNavigation';
 
 let _hasConfiguredHandler = false;
@@ -99,7 +99,9 @@ async function fetchExpoPushToken(): Promise<string | null> {
     return tokenResponse.data || null;
   } catch (e: any) {
     if (__DEV__) console.warn('Failed to fetch Expo push token:', e?.message || e);
-    Sentry.captureException(e, { tags: { source: 'push_token_fetch' } });
+    if (!isBenignNetworkError(e)) {
+      Sentry.captureException(e, { tags: { source: 'push_token_fetch' } });
+    }
     return null;
   }
 }
@@ -135,7 +137,9 @@ export async function registerForPushNotifications(): Promise<string | null> {
     return token;
   } catch (e: any) {
     if (__DEV__) console.warn('Backend push registration failed:', e?.message || e);
-    Sentry.captureException(e, { tags: { source: 'push_token_register' } });
+    if (!isBenignNetworkError(e)) {
+      Sentry.captureException(e, { tags: { source: 'push_token_register' } });
+    }
     return token; // we still got a token, just couldn't tell the server
   }
 }

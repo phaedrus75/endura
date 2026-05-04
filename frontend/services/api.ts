@@ -1,6 +1,7 @@
 import * as SecureStore from 'expo-secure-store';
 import * as Application from 'expo-application';
 import Constants from 'expo-constants';
+import { isBenignNetworkError } from './monitoring';
 
 // Use local development server
 export const API_URL = 'https://web-production-34028.up.railway.app';
@@ -361,7 +362,14 @@ async function apiFetch<T>(
     
     return response.json();
   } catch (error: any) {
-    if (__DEV__) console.warn('API error:', endpoint, error.message);
+    if (__DEV__) console.warn('API error:', endpoint, error?.message ?? error);
+    if (isBenignNetworkError(error)) {
+      const wrapped = new Error('Network unavailable. Please check your connection.');
+      (wrapped as any).name = 'ApiNetworkError';
+      (wrapped as any).isNetworkError = true;
+      (wrapped as any).status = 0;
+      throw wrapped;
+    }
     throw error;
   }
 }
