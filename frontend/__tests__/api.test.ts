@@ -145,6 +145,29 @@ describe('sessionsAPI', () => {
     expect(body.subject_id).toBe(3);
   });
 
+  test('getPendingHatches() targets /me/pending-hatches with GET', async () => {
+    mockFetch.mockReturnValue(mockOk({ pending: [] }));
+    const resp = await sessionsAPI.getPendingHatches();
+    const [url, options] = mockFetch.mock.calls[0];
+    expect(url).toContain('/me/pending-hatches');
+    expect(options?.method ?? 'GET').toBe('GET');
+    expect(resp.pending).toEqual([]);
+  });
+
+  test('hatchPendingSession() targets /sessions/{id}/hatch-pending with animal_name', async () => {
+    mockFetch.mockReturnValue(mockOk({
+      session: { id: 99, duration_minutes: 30, coins_earned: 30 },
+      hatched_animal: { id: 1, name: 'Red Panda' },
+      new_badges: [],
+    }));
+    await sessionsAPI.hatchPendingSession(99, 'Red Panda');
+    const [url, options] = mockFetch.mock.calls[0];
+    const body = JSON.parse(options.body);
+    expect(url).toContain('/sessions/99/hatch-pending');
+    expect(options.method).toBe('POST');
+    expect(body.animal_name).toBe('Red Panda');
+  });
+
   test('apiFetch attaches HTTP status to error so callers can branch', async () => {
     mockFetch.mockReturnValue(mockErr({ detail: 'Session not found' }, 404));
 

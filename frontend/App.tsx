@@ -1,9 +1,9 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { StatusBar } from 'expo-status-bar';
 import { NavigationContainer, createNavigationContainerRef } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
-import { View, StyleSheet, ActivityIndicator, Platform, Animated } from 'react-native';
+import { View, StyleSheet, ActivityIndicator, Platform, Animated, AppState, AppStateStatus } from 'react-native';
 import { Text } from './components/StyledText';
 import Constants from 'expo-constants';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -24,7 +24,8 @@ import {
   setNavigationRef,
   clearBadgeCount,
 } from './services/pushNotifications';
-import { authAPI } from './services/api';
+import { authAPI, sessionsAPI, PendingHatchEntry } from './services/api';
+import PendingHatchModal from './components/PendingHatchModal';
 
 initMonitoring();
 
@@ -202,6 +203,16 @@ function AppNavigator() {
   const { isAuthenticated, isLoading, user, refreshUser } = useAuth();
   const [walkthroughSeen, setWalkthroughSeen] = useState<boolean | null>(null);
   const [onboardingVariant, setOnboardingVariant] = useState<'v1' | 'v2' | null>(null);
+  // "Hatch on next launch" recovery — see PendingHatchModal docstring.
+  // Queue (FIFO oldest-first) so users with multiple reaped sessions get to
+  // hatch each in turn rather than only the most recent. We also remember
+  // which session_ids we've already shown this app session to avoid
+  // re-prompting after a foreground transition.
+  const [pendingHatches, setPendingHatches] = useState<PendingHatchEntry[]>([]);
+  const [showPendingHatch, setShowPendingHatch] = useState(false);
+  const shownSessionIdsRef = useRef<Set<number>>(new Set());
+  // Avoid stacking re-fetches when the user backgrounds/foregrounds rapidly.
+  const fetchInFlightRef = useRef(false);
 
   useEffect(() => {
     SecureStore.getItemAsync(WALKTHROUGH_SEEN_KEY)
@@ -284,6 +295,72 @@ function AppNavigator() {
       .catch(() => {});
   }, [user?.id, user?.onboarding_ab_variant, onboardingVariant, refreshUser]);
 
+  const checkPendingHatches = useCallback(async () => {
+    // Only meaningful for fully onboarded users — calling earlier would 401
+    // on the protected endpoint and burn a request on every app open.
+    if (!user?.id || !user?.username || fetchInFlightRef.current) return;
+    fetchInFlightRef.current = true;
+    try {
+      const { pending } = await sessionsAPI.getPendingHatches();
+      // Filter out any entries we've already shown this app session, even if
+      // the user dismissed them (with "Maybe later"). They'll come back on
+      // the next cold launch — until then, don't nag.
+      const fresh = (pending || []).filter(
+        (p) => !shownSessionIdsRef.current.has(p.session_id),
+      );
+      if (fresh.length === 0) return;
+      setPendingHatches(fresh);
+      setShowPendingHatch(true);
+    } catch {
+      // Silent — this is best-effort UX, not a critical path.
+    } finally {
+      fetchInFlightRef.current = false;
+    }
+  }, [user?.id, user?.username]);
+
+  // Cold-launch check: once the user is loaded + onboarded, ask the server
+  // if anything's waiting. Cheap enough (single SELECT, no joins on the hot
+  // path) to call on every app open.
+  useEffect(() => {
+    if (!user?.username) return;
+    checkPendingHatches();
+  }, [user?.id, user?.username, checkPendingHatches]);
+
+  // Foreground refresh: handles the "user got the recovery push, taps it,
+  // app comes from background → we should immediately surface the modal."
+  useEffect(() => {
+    if (!user?.username) return;
+    let lastState: AppStateStatus = AppState.currentState;
+    const sub = AppState.addEventListener('change', (nextState) => {
+      if (lastState !== 'active' && nextState === 'active') {
+        checkPendingHatches();
+      }
+      lastState = nextState;
+    });
+    return () => sub.remove();
+  }, [user?.username, checkPendingHatches]);
+
+  const handleHatchModalClose = useCallback(() => {
+    // Record the current entry as shown regardless of whether the user
+    // hatched it or dismissed it — see comment in checkPendingHatches.
+    const current = pendingHatches[0];
+    if (current) {
+      shownSessionIdsRef.current.add(current.session_id);
+    }
+    const remaining = pendingHatches.slice(1);
+    if (remaining.length > 0) {
+      // Brief delay so the close animation can play before the next opens.
+      setShowPendingHatch(false);
+      setTimeout(() => {
+        setPendingHatches(remaining);
+        setShowPendingHatch(true);
+      }, 350);
+    } else {
+      setShowPendingHatch(false);
+      setPendingHatches([]);
+    }
+  }, [pendingHatches]);
+
   if (isLoading || walkthroughSeen === null || onboardingVariant === null) {
     return (
       <View style={styles.loadingContainer}>
@@ -297,40 +374,49 @@ function AppNavigator() {
   }
   
   return (
-    <Stack.Navigator screenOptions={{ headerShown: false }}>
-      {!isAuthenticated ? (
-        // First-time visitors see the feature walkthrough first, then Auth.
-        // Returning visitors (walkthroughSeen=true) go straight to Auth.
-        onboardingVariant === 'v1' || walkthroughSeen ? (
-          <Stack.Screen
-            name="Auth"
-            component={AuthScreen}
-            initialParams={{ onboardingVariant }}
-          />
-        ) : (
-          <>
-            <Stack.Screen
-              name="Walkthrough"
-              component={WalkthroughScreen}
-              initialParams={{ onboardingVariant }}
-            />
+    <>
+      <Stack.Navigator screenOptions={{ headerShown: false }}>
+        {!isAuthenticated ? (
+          // First-time visitors see the feature walkthrough first, then Auth.
+          // Returning visitors (walkthroughSeen=true) go straight to Auth.
+          onboardingVariant === 'v1' || walkthroughSeen ? (
             <Stack.Screen
               name="Auth"
               component={AuthScreen}
               initialParams={{ onboardingVariant }}
             />
-          </>
-        )
-      ) : !user?.username ? (
-        <Stack.Screen
-          name="Onboarding"
-          component={OnboardingScreen}
-          initialParams={{ onboardingVariant }}
-        />
-      ) : (
-        <Stack.Screen name="Main" component={MainStackNavigator} />
-      )}
-    </Stack.Navigator>
+          ) : (
+            <>
+              <Stack.Screen
+                name="Walkthrough"
+                component={WalkthroughScreen}
+                initialParams={{ onboardingVariant }}
+              />
+              <Stack.Screen
+                name="Auth"
+                component={AuthScreen}
+                initialParams={{ onboardingVariant }}
+              />
+            </>
+          )
+        ) : !user?.username ? (
+          <Stack.Screen
+            name="Onboarding"
+            component={OnboardingScreen}
+            initialParams={{ onboardingVariant }}
+          />
+        ) : (
+          <Stack.Screen name="Main" component={MainStackNavigator} />
+        )}
+      </Stack.Navigator>
+      {/* Recovery flow overlay — only mounted when there's something to show
+          so it never interferes with onboarding / auth. */}
+      <PendingHatchModal
+        visible={showPendingHatch && pendingHatches.length > 0}
+        pending={pendingHatches[0] || null}
+        onClose={handleHatchModalClose}
+      />
+    </>
   );
 }
 

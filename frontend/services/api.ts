@@ -212,6 +212,20 @@ export interface StudySessionWithHatchAndBadges extends StudySessionWithHatch {
   new_badges?: BadgeInfo[];
 }
 
+// "Hatch on next launch" recovery flow.
+// `auto_completed_at` is a server ISO timestamp; subject_name may be null
+// when the user didn't pick a subject for that session.
+export interface PendingHatchEntry {
+  session_id: number;
+  duration_minutes: number;
+  subject_name: string | null;
+  auto_completed_at: string | null;
+}
+
+export interface PendingHatchListResponse {
+  pending: PendingHatchEntry[];
+}
+
 // ============ Social Types ============
 
 export interface StudyGroupMember {
@@ -732,6 +746,22 @@ export const sessionsAPI = {
 
   getSessions: (limit = 50) =>
     apiFetch<StudySession[]>(`/sessions?limit=${limit}`),
+
+  // "Hatch on next launch" recovery flow.
+  //
+  // When the server-side reaper auto-completes a stale session, coins/streak
+  // are credited but no animal hatches (the reaper has no idea what the user
+  // intended to pick). These endpoints let the client surface those sessions
+  // on cold launch / foreground and give the user the celebration moment they
+  // missed. See backend GET /me/pending-hatches + POST /sessions/{id}/hatch-pending.
+  getPendingHatches: () =>
+    apiFetch<PendingHatchListResponse>('/me/pending-hatches'),
+
+  hatchPendingSession: (session_id: number, animal_name: string) =>
+    apiFetch<StudySessionWithHatchAndBadges>(`/sessions/${session_id}/hatch-pending`, {
+      method: 'POST',
+      body: JSON.stringify({ animal_name }),
+    }),
 };
 
 // Egg & Animals API

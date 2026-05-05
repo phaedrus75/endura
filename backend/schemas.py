@@ -227,6 +227,32 @@ class StudySessionWithHatchResponse(BaseModel):
     new_badges: Optional[List[BadgeInfo]] = None
 
 
+class PendingHatchEntry(BaseModel):
+    """An auto-completed session the user hasn't hatched the animal for yet.
+
+    Surfaced via GET /me/pending-hatches so the client can prompt the user to
+    pick the animal they earned. Each entry is a one-shot: hatching it via
+    POST /sessions/{id}/hatch-pending removes it from future responses.
+    """
+    session_id: int
+    duration_minutes: int
+    subject_name: Optional[str] = None
+    auto_completed_at: Optional[str] = None
+
+
+class PendingHatchListResponse(BaseModel):
+    pending: List[PendingHatchEntry]
+
+
+class HatchPendingRequest(BaseModel):
+    """Pick the animal to retroactively hatch for an auto-completed session.
+
+    Mirrors the `animal_name` field of the regular complete request so the
+    same UI animal-selector can be reused on the client.
+    """
+    animal_name: str = Field(..., min_length=1, max_length=100)
+
+
 class UserAnimalResponse(BaseModel):
     id: int
     animal: AnimalResponse

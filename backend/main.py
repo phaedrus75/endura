@@ -2108,6 +2108,82 @@ def complete_study_session_by_id_endpoint(
         raise HTTPException(status_code=500, detail="Failed to complete session")
 
 
+@app.get("/me/pending-hatches", response_model=schemas.PendingHatchListResponse)
+def get_my_pending_hatches(
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Auto-completed sessions the user hasn't yet hatched the animal for.
+
+    Hit by the client on cold launch and on app foreground. If the response
+    contains any entries, the client routes the user into the celebration /
+    animal-picker flow so the work they did doesn't go uncelebrated.
+
+    Returned in oldest-first order so the UI can drain them sequentially.
+    """
+    return {"pending": crud.get_pending_hatches(db, current_user.id)}
+
+
+@app.post("/sessions/{session_id}/hatch-pending", response_model=schemas.StudySessionWithHatchResponse)
+@limiter.limit("30/hour")
+def hatch_pending_session_endpoint(
+    request: Request,
+    session_id: int,
+    payload: schemas.HatchPendingRequest,
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Retroactively hatch the animal for a session the reaper finalised.
+
+    Coins / streak / totals were already credited at reap-time, so this
+    endpoint ONLY creates the UserAnimal row. Validates that the session
+    belongs to the user, that it really was reaper-finalised (not a
+    client-completed session — that path already hatches), and that the
+    user hasn't hatched anything more recently (debounce: avoids the
+    "hatch a 6-day-old session" surprise after the user has moved on).
+    """
+    try:
+        study_session, hatched_animal, error = crud.hatch_pending_session(
+            db,
+            user_id=current_user.id,
+            session_id=session_id,
+            animal_name=payload.animal_name,
+        )
+        if error == "not_found":
+            raise HTTPException(status_code=404, detail="Session not found")
+        if error == "not_pending":
+            # Already hatched (via /complete or via a more recent hatch),
+            # or never reaped at all. Either way, nothing to do.
+            raise HTTPException(status_code=409, detail="No pending hatch for this session")
+        if error or not study_session:
+            raise HTTPException(status_code=400, detail="Could not hatch pending session")
+
+        return {
+            "session": {
+                "id": study_session.id,
+                "task_id": study_session.task_id,
+                "duration_minutes": study_session.duration_minutes,
+                "coins_earned": study_session.coins_earned,
+                "subject": study_session.subject.display_name if study_session.subject else None,
+                "subject_id": study_session.subject_id,
+                "started_at": study_session.started_at,
+                "completed_at": study_session.completed_at,
+            },
+            "hatched_animal": hatched_animal,
+            # No new badges from a retroactive hatch — coins were already
+            # credited at reap-time so any badge thresholds those coins
+            # tripped fired then. Keeping this field empty (not None) so
+            # the frontend's badge modal flow is a no-op.
+            "new_badges": [],
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Hatch-pending failed for user {current_user.id} session {session_id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to hatch pending session")
+
+
 @app.get("/sessions", response_model=List[schemas.StudySessionResponse])
 def get_sessions(
     limit: int = Query(default=50, ge=1, le=200),

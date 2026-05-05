@@ -166,8 +166,8 @@ DEFAULT_PUSH_TEMPLATES = [
     {
         "template_key": "push_session_recovered",
         "name": "Session recovered (server)",
-        "title": "Your study session was saved 🌳",
-        "body": "{minutes} min of {subject} — open Endura to hatch your animal.",
+        "title": "Your egg is ready to hatch 🥚",
+        "body": "We saved your {minutes} min of {subject}. Open Endura to hatch the animal you earned.",
         "category": "reminder",
         "deep_link": "Timer",
     },

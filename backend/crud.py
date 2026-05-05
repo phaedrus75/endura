@@ -274,6 +274,145 @@ def get_user_sessions(db: Session, user_id: int, limit: int = 50) -> List[models
     ).order_by(models.StudySession.completed_at.desc()).limit(limit).all()
 
 
+def get_pending_hatches(
+    db: Session,
+    user_id: int,
+    *,
+    days: int = 7,
+    limit: int = 10,
+) -> List[dict]:
+    """Sessions the reaper auto-completed but the user has not yet hatched.
+
+    Used by the cold-launch / foreground refresh flow to surface a
+    "pick the animal you earned" celebration for sessions the user did
+    the work for but never tapped Complete on (so no UserAnimal row was
+    created at the time).
+
+    Selection rules (intentionally conservative — we only want to surface
+    sessions the user genuinely never got their hatch moment for):
+      * `auto_completed_at IS NOT NULL`              (reaper rescued)
+      * `auto_completed_at >= now() - days`          (recency cap so we
+                                                     don't surprise users
+                                                     with stale eggs)
+      * `auto_completed_at > last UserAnimal.hatched_at`
+                                                     (debounce: if the
+                                                     user has hatched
+                                                     anything since this
+                                                     session was reaped,
+                                                     they're caught up)
+
+    The second rule means once a user hatches even one animal, ALL
+    auto-completed sessions older than that hatch drop off the pending
+    list — preventing the surprise of seeing a 6-day-old session ask to
+    be hatched after the user has long moved on.
+
+    Returns oldest-first list (so the UI can drain them in order if the
+    user has multiple). Each entry has `session_id`, `duration_minutes`,
+    `subject_name` (nullable), `auto_completed_at` ISO string.
+    """
+    # Find the user's most recent hatch — sessions reaped before that
+    # are considered "already celebrated" via that hatch and not surfaced.
+    last_hatched_at = (
+        db.query(func.max(models.UserAnimal.hatched_at))
+        .filter(models.UserAnimal.user_id == user_id)
+        .scalar()
+    )
+    horizon = datetime.utcnow() - timedelta(days=max(1, min(days, 30)))
+    cutoff = max(horizon, last_hatched_at) if last_hatched_at else horizon
+
+    rows = (
+        db.query(models.StudySession, models.Subject.name.label("subject_name"))
+        .outerjoin(models.Subject, models.Subject.id == models.StudySession.subject_id)
+        .filter(
+            models.StudySession.user_id == user_id,
+            models.StudySession.auto_completed_at.isnot(None),
+            models.StudySession.auto_completed_at > cutoff,
+        )
+        .order_by(models.StudySession.auto_completed_at.asc())
+        .limit(max(1, min(limit, 50)))
+        .all()
+    )
+
+    return [
+        {
+            "session_id": ss.id,
+            "duration_minutes": ss.duration_minutes,
+            "subject_name": subject_name,
+            "auto_completed_at": (ss.auto_completed_at.isoformat() if ss.auto_completed_at else None),
+        }
+        for ss, subject_name in rows
+    ]
+
+
+def hatch_pending_session(
+    db: Session,
+    user_id: int,
+    session_id: int,
+    animal_name: str,
+) -> tuple[Optional[models.StudySession], Optional[models.Animal], Optional[str]]:
+    """Hatch the animal the user picks for an auto-completed session.
+
+    Mirrors the hatch path inside `_finalize_session`, but operates on a
+    session that is ALREADY finalised (auto_completed_at + completed_at +
+    coins_earned all set by the reaper). We just need to create the
+    UserAnimal row and link no other side-effects (coins/streak/totals
+    already credited at reap time — DOUBLE-credit is the bug we have to
+    avoid).
+
+    Returns (session, animal, error_code). error_code is one of:
+      None            success
+      'not_found'     no such session for this user
+      'not_pending'   session was not auto-completed by the reaper, or
+                      user has hatched something more recently (so this
+                      session is no longer eligible)
+      'animal_invalid' the supplied animal_name doesn't resolve
+    """
+    session = (
+        db.query(models.StudySession)
+        .filter(
+            models.StudySession.id == session_id,
+            models.StudySession.user_id == user_id,
+        )
+        .first()
+    )
+    if not session:
+        return None, None, "not_found"
+    if session.auto_completed_at is None:
+        # Either still in-flight, or completed by client (which already
+        # hatched at /complete time). Don't double-hatch.
+        return None, None, "not_pending"
+
+    # If user has already hatched anything after this session was reaped,
+    # treat as caught-up — same debounce rule as get_pending_hatches.
+    last_hatched = (
+        db.query(func.max(models.UserAnimal.hatched_at))
+        .filter(models.UserAnimal.user_id == user_id)
+        .scalar()
+    )
+    if last_hatched and last_hatched >= session.auto_completed_at:
+        return None, None, "not_pending"
+
+    animal = db.query(models.Animal).filter(models.Animal.name == animal_name).first()
+    if not animal:
+        # Mirror _finalize_session's "create on demand" so user-typed names
+        # are accepted. The animal_name length is already capped by the
+        # request schema.
+        animal = models.Animal(
+            name=animal_name,
+            species=f"{animal_name} species",
+            rarity="common",
+            conservation_status="Endangered",
+            description=f"A beautiful {animal_name}",
+        )
+        db.add(animal)
+        db.flush()
+
+    db.add(models.UserAnimal(user_id=user_id, animal_id=animal.id))
+    db.commit()
+    db.refresh(session)
+    return session, animal, None
+
+
 def _notify_session_recovered(
     db: Session,
     user: models.User,
