@@ -2,7 +2,7 @@ from fastapi import FastAPI, Depends, HTTPException, status, Request, Header, Up
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
-from sqlalchemy import text, func, or_, and_, select
+from sqlalchemy import text, func, or_, and_, select, inspect
 from datetime import timedelta, datetime, date
 from typing import List, Optional
 from slowapi import Limiter, _rate_limit_exceeded_handler
@@ -1433,15 +1433,20 @@ def delete_account(
         ).delete(synchronize_session=False)
 
         # ── 3. Orphan tables with no Python model (legacy pacts feature) ──
-        db.execute(
-            text("DELETE FROM pact_days WHERE user_id = :uid OR pact_id IN "
-                 "(SELECT id FROM study_pacts WHERE creator_id = :uid OR buddy_id = :uid)"),
-            {"uid": user_id},
-        )
-        db.execute(
-            text("DELETE FROM study_pacts WHERE creator_id = :uid OR buddy_id = :uid"),
-            {"uid": user_id},
-        )
+        # Production Postgres has these; minimal SQLite test DBs may omit them.
+        _bind = db.get_bind()
+        _insp = inspect(_bind)
+        if _insp.has_table("study_pacts"):
+            if _insp.has_table("pact_days"):
+                db.execute(
+                    text("DELETE FROM pact_days WHERE user_id = :uid OR pact_id IN "
+                         "(SELECT id FROM study_pacts WHERE creator_id = :uid OR buddy_id = :uid)"),
+                    {"uid": user_id},
+                )
+            db.execute(
+                text("DELETE FROM study_pacts WHERE creator_id = :uid OR buddy_id = :uid"),
+                {"uid": user_id},
+            )
 
         # ── 4. Owned groups (cascade their messages + members first) ──
         owned_groups = db.query(models.StudyGroup).filter(
@@ -1468,7 +1473,12 @@ def delete_account(
         db.query(models.UserSubject).filter(models.UserSubject.user_id == user_id).delete(synchronize_session=False)
         db.query(models.UserPurchase).filter(models.UserPurchase.user_id == user_id).delete(synchronize_session=False)
         db.query(models.UserItemAssignment).filter(models.UserItemAssignment.user_id == user_id).delete(synchronize_session=False)
-        # feedback_upvotes auto-cascades; user_feedback auto-SET-NULLs (DB-level)
+        # feedback_upvotes: DB ON DELETE CASCADE from users; user_feedback SET NULL
+        # Research: assignments/responses reference users(id) without ON DELETE — must
+        # remove assignments first (responses CASCADE from assignments in Postgres).
+        db.query(models.ResearchSurveyAssignment).filter(
+            models.ResearchSurveyAssignment.user_id == user_id
+        ).delete(synchronize_session=False)
 
         # ── 6. The user themselves ──
         db.query(models.User).filter(models.User.id == user_id).delete(synchronize_session=False)
