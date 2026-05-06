@@ -215,11 +215,16 @@ export interface StudySessionWithHatchAndBadges extends StudySessionWithHatch {
 // "Hatch on next launch" recovery flow.
 // `auto_completed_at` is a server ISO timestamp; subject_name may be null
 // when the user didn't pick a subject for that session.
+// `intended_animal_name` is the animal the user picked when they STARTED
+// the timer (added in build 35). When present, the modal skips the picker
+// and shows a one-tap "Hatch your {animal}" CTA. Null for sessions started
+// before build 35 — those still get the picker.
 export interface PendingHatchEntry {
   session_id: number;
   duration_minutes: number;
   subject_name: string | null;
   auto_completed_at: string | null;
+  intended_animal_name: string | null;
 }
 
 export interface PendingHatchListResponse {

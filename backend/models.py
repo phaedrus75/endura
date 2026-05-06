@@ -325,7 +325,14 @@ class StudySession(Base):
     # and (b) avoid sending duplicate "you finished a session!" pushes if the
     # user's app eventually catches up and posts its own completion.
     auto_completed_at = Column(DateTime, nullable=True, index=True)
-    
+    # The animal the user picked when they STARTED the timer. Stored at
+    # /sessions/start time so the build-34 recovery flow can pre-fill
+    # the right animal when a reaped session needs hatching after the
+    # fact. Nullable: legacy rows don't have this, and it's never set on
+    # the legacy POST /sessions path (that path hatches in one shot, so
+    # there's nothing to "recover" later).
+    intended_animal_name = Column(String(100), nullable=True)
+
     user = relationship("User", back_populates="study_sessions")
     task = relationship("Task")
     subject = relationship("Subject")

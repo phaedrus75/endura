@@ -91,6 +91,36 @@ class TestSessionStartCompleteHandshake:
         db.refresh(alice)
         assert alice.total_coins == before
 
+    def test_start_persists_intended_animal_name(self, client, alice, alice_headers, db):
+        """Build-35 fix: the animal the user picks at start time must be
+        stored on the row so the recovery flow can pre-fill it if the
+        session ends up reaped.
+        """
+        import models
+        # Use a real seeded animal so the endpoint's validation passes.
+        animal = db.query(models.Animal).first()
+        sid = client.post(
+            "/sessions/start",
+            json={"duration_minutes": 25, "animal_name": animal.name},
+            headers=alice_headers,
+        ).json()["session_id"]
+        row = db.query(models.StudySession).filter_by(id=sid).first()
+        assert row.intended_animal_name == animal.name
+
+    def test_start_with_invalid_animal_name_stores_null(self, client, alice, alice_headers, db):
+        """Endpoint already silently drops unknown animal names from the
+        complete-time hatch flow — same tolerance applies here so a stale
+        client-side animal list never creates a row pointing at nothing.
+        """
+        import models
+        sid = client.post(
+            "/sessions/start",
+            json={"duration_minutes": 25, "animal_name": "Definitely Not An Animal"},
+            headers=alice_headers,
+        ).json()["session_id"]
+        row = db.query(models.StudySession).filter_by(id=sid).first()
+        assert row.intended_animal_name is None
+
     def test_complete_finalises_started_session(self, client, alice, alice_headers, db):
         import models
         sid = client.post("/sessions/start", json={"duration_minutes": 25}, headers=alice_headers).json()["session_id"]

@@ -31,6 +31,7 @@ def _make_reaped_session(
     minutes: int = 25,
     auto_completed_at: datetime = None,
     subject_name: str = None,
+    intended_animal_name: str = None,
 ) -> models.StudySession:
     """Insert a session that is already in the post-reaper state:
     completed_at + auto_completed_at both set, coins credited.
@@ -58,6 +59,7 @@ def _make_reaped_session(
         started_at=started_at,
         completed_at=when,
         auto_completed_at=when,
+        intended_animal_name=intended_animal_name,
     )
     db.add(s)
     db.commit()
@@ -88,6 +90,27 @@ class TestGetPendingHatches:
         assert entry["duration_minutes"] == 25
         assert entry["subject_name"] == "biology"
         assert entry["auto_completed_at"]  # ISO string present
+
+    def test_returns_intended_animal_name_when_set(self, client, alice, alice_headers, db):
+        """When the user picked an animal at start time, surface it so the
+        modal can skip the picker and show "Hatch your {animal}". This is
+        the build-35 fix for the "shouldn't it be the animal I picked
+        earlier?" feedback.
+        """
+        _make_reaped_session(db, alice, minutes=25, intended_animal_name="Red Panda")
+        body = client.get("/me/pending-hatches", headers=alice_headers).json()
+        assert body["pending"][0]["intended_animal_name"] == "Red Panda"
+
+    def test_intended_animal_name_is_null_for_legacy_sessions(self, client, alice, alice_headers, db):
+        """Sessions started before build 35 never captured the animal pick.
+        The field must be present but null so the client knows to fall
+        back to the picker.
+        """
+        _make_reaped_session(db, alice, minutes=25)  # no intended_animal_name
+        body = client.get("/me/pending-hatches", headers=alice_headers).json()
+        entry = body["pending"][0]
+        assert "intended_animal_name" in entry
+        assert entry["intended_animal_name"] is None
 
     def test_excludes_client_completed_sessions(self, client, alice, alice_headers, db):
         """A normally-completed session (no auto_completed_at) must NOT show

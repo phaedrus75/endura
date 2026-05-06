@@ -217,7 +217,13 @@ def start_study_session(db: Session, user_id: int, duration_minutes: int, animal
     """Persist the *intent* to study: started_at=now, completed_at=NULL.
 
     A session row that stays completed_at=NULL beyond its duration is
-    treated as abandoned and surfaced in the admin dashboard."""
+    treated as abandoned and surfaced in the admin dashboard.
+
+    `animal_name` (when provided) is stored on `intended_animal_name` so
+    the recovery flow can pre-fill the right animal if the session ends
+    up reaped — see backend/alembic/versions/a4b5c6d78e29_*.py and the
+    GET /me/pending-hatches response.
+    """
     session = models.StudySession(
         user_id=user_id,
         duration_minutes=duration_minutes,
@@ -225,6 +231,7 @@ def start_study_session(db: Session, user_id: int, duration_minutes: int, animal
         subject_id=subject_id,
         started_at=datetime.utcnow(),
         completed_at=None,
+        intended_animal_name=animal_name,
     )
     db.add(session)
     db.commit()
@@ -339,6 +346,11 @@ def get_pending_hatches(
             "duration_minutes": ss.duration_minutes,
             "subject_name": subject_name,
             "auto_completed_at": (ss.auto_completed_at.isoformat() if ss.auto_completed_at else None),
+            # The animal the user picked at start-time. Lets the recovery
+            # modal skip the picker and show "Hatch your {animal}" with one
+            # tap. Nullable because legacy / pre-build-35 sessions never
+            # captured this — those still get the picker.
+            "intended_animal_name": ss.intended_animal_name,
         }
         for ss, subject_name in rows
     ]

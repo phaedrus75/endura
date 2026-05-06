@@ -67,18 +67,28 @@ export default function PendingHatchModal({ visible, pending, onClose }: Props) 
   const [submitting, setSubmitting] = useState(false);
   const [hatched, setHatched] = useState<{ name: string; coins: number } | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Two screens before hatch:
+  //   'confirm' — server told us which animal the user picked at start time;
+  //               show "Hatch your {animal}" with one tap. Skipped entirely
+  //               if intended_animal_name is null.
+  //   'picker'  — fall-back: user picks from the list.
+  const [view, setView] = useState<'confirm' | 'picker'>('picker');
 
   // Reset internal state every time a new pending entry arrives so the
   // modal feels fresh per session (e.g. user has 3 pending and the
-  // parent re-renders us once each pending is hatched).
+  // parent re-renders us once each pending is hatched). When the server
+  // gave us an intended animal, default to the confirm view AND pre-select
+  // it so a single "Hatch" tap finishes the flow.
   useEffect(() => {
     if (pending) {
-      setSelectedName(null);
+      const intended = pending.intended_animal_name || null;
+      setSelectedName(intended);
+      setView(intended ? 'confirm' : 'picker');
       setSubmitting(false);
       setHatched(null);
       setError(null);
     }
-  }, [pending?.session_id]);
+  }, [pending?.session_id, pending?.intended_animal_name]);
 
   const subjectLabel = useMemo(() => {
     if (!pending?.subject_name) return null;
@@ -124,7 +134,73 @@ export default function PendingHatchModal({ visible, pending, onClose }: Props) 
             style={[StyleSheet.absoluteFill, { borderRadius: 24 }]}
           />
           <View style={styles.cardInner}>
-            {!hatched ? (
+            {!hatched && view === 'confirm' && selectedName ? (
+              <>
+                <Text style={styles.eyebrow}>We saved your session 🌳</Text>
+                <Text style={styles.title}>Your egg is ready to hatch</Text>
+                <Text style={styles.body}>
+                  You completed{' '}
+                  <Text style={styles.bodyBold}>{pending.duration_minutes} min</Text>
+                  {subjectLabel ? (
+                    <>
+                      {' '}of <Text style={styles.bodyBold}>{subjectLabel}</Text>
+                    </>
+                  ) : null}
+                  . Tap to hatch the <Text style={styles.bodyBold}>{selectedName}</Text> you started.
+                </Text>
+
+                <View style={styles.intendedAnimalWrap}>
+                  {getAnimalImage(selectedName) ? (
+                    <Image
+                      source={getAnimalImage(selectedName)}
+                      style={styles.intendedAnimalImage}
+                      resizeMode="contain"
+                    />
+                  ) : (
+                    <Text style={styles.intendedAnimalEmoji}>🐾</Text>
+                  )}
+                  <Text style={styles.intendedAnimalName}>{selectedName}</Text>
+                </View>
+
+                {error && <Text style={styles.errorText}>{error}</Text>}
+
+                <TouchableOpacity
+                  style={[styles.primaryBtn, submitting && styles.primaryBtnDisabled]}
+                  onPress={handleHatch}
+                  disabled={submitting}
+                  accessibilityRole="button"
+                >
+                  {submitting ? (
+                    <ActivityIndicator color={colors.primaryDark} />
+                  ) : (
+                    <Text style={styles.primaryBtnText}>{`Hatch ${selectedName}`}</Text>
+                  )}
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={styles.secondaryBtn}
+                  onPress={() => {
+                    // User changed their mind — drop into the picker but
+                    // keep the original pre-select so they can re-confirm
+                    // it with a single tap if they meant to.
+                    setView('picker');
+                  }}
+                  disabled={submitting}
+                  accessibilityRole="button"
+                >
+                  <Text style={styles.secondaryBtnText}>Pick a different animal</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={styles.tertiaryBtn}
+                  onPress={() => onClose(false)}
+                  disabled={submitting}
+                  accessibilityRole="button"
+                >
+                  <Text style={styles.secondaryBtnText}>Maybe later</Text>
+                </TouchableOpacity>
+              </>
+            ) : !hatched ? (
               <>
                 <Text style={styles.eyebrow}>We saved your session 🌳</Text>
                 <Text style={styles.title}>Your egg is ready to hatch</Text>
@@ -181,7 +257,7 @@ export default function PendingHatchModal({ visible, pending, onClose }: Props) 
                   accessibilityRole="button"
                 >
                   {submitting ? (
-                    <ActivityIndicator color={colors.textOnPrimary} />
+                    <ActivityIndicator color={colors.primaryDark} />
                   ) : (
                     <Text style={styles.primaryBtnText}>
                       {selectedName ? `Hatch ${selectedName}` : 'Pick an animal'}
@@ -337,10 +413,36 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     alignItems: 'center',
   },
+  tertiaryBtn: {
+    marginTop: 2,
+    paddingVertical: 8,
+    alignItems: 'center',
+  },
   secondaryBtnText: {
     fontFamily: fonts.medium,
     fontSize: 13,
     color: 'rgba(255,255,255,0.75)',
+  },
+  intendedAnimalWrap: {
+    alignItems: 'center',
+    marginVertical: 10,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 16,
+    backgroundColor: 'rgba(255,255,255,0.12)',
+  },
+  intendedAnimalImage: {
+    width: 130,
+    height: 130,
+  },
+  intendedAnimalEmoji: {
+    fontSize: 80,
+  },
+  intendedAnimalName: {
+    fontFamily: fonts.semiBold,
+    fontSize: 16,
+    color: colors.textOnPrimary,
+    marginTop: 6,
   },
   errorText: {
     fontFamily: fonts.regular,

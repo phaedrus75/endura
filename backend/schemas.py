@@ -233,11 +233,17 @@ class PendingHatchEntry(BaseModel):
     Surfaced via GET /me/pending-hatches so the client can prompt the user to
     pick the animal they earned. Each entry is a one-shot: hatching it via
     POST /sessions/{id}/hatch-pending removes it from future responses.
+
+    `intended_animal_name` is the animal the user picked when they STARTED the
+    timer (added in build 35). When present, the client should skip the
+    picker and show "Hatch your {animal}" so the user doesn't get asked to
+    pick all over again. Nullable for sessions started before build 35.
     """
     session_id: int
     duration_minutes: int
     subject_name: Optional[str] = None
     auto_completed_at: Optional[str] = None
+    intended_animal_name: Optional[str] = None
 
 
 class PendingHatchListResponse(BaseModel):
