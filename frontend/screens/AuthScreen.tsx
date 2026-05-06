@@ -12,7 +12,6 @@ import {
   ScrollView,
   Modal,
   Image,
-  Linking,
   TextInput as RNTextInput,
 } from 'react-native';
 import { Text, TextInput } from '../components/StyledText';
@@ -23,6 +22,7 @@ import { useRoute } from '@react-navigation/native';
 import { useAuth } from '../contexts/AuthContext';
 import { authAPI } from '../services/api';
 import { Analytics } from '../services/analytics';
+import { openExternalUrl } from '../utils/openExternalUrl';
 // Sign in with Apple + Google is intentionally not wired into this screen
 // in 1.0.5. Backend (`/auth/apple`, `/auth/google`), DB (`apple_id_sub`,
 // `google_id_sub`), and the frontend client (`services/oauthLogin.ts`) are
@@ -416,11 +416,11 @@ export default function AuthScreen() {
                 </TouchableOpacity>
                 <Text style={styles.termsText}>
                   I agree to the{' '}
-                  <Text style={styles.termsLink} onPress={() => Linking.openURL('https://endura.eco/terms')}>
+                  <Text style={styles.termsLink} onPress={() => openExternalUrl('https://endura.eco/terms')}>
                     Terms of Use
                   </Text>
                   {' '}and{' '}
-                  <Text style={styles.termsLink} onPress={() => Linking.openURL('https://endura.eco/privacy')}>
+                  <Text style={styles.termsLink} onPress={() => openExternalUrl('https://endura.eco/privacy')}>
                     Privacy Policy
                   </Text>
                 </Text>

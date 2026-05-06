@@ -13,7 +13,6 @@ import {
   Platform,
   KeyboardAvoidingView,
   Switch,
-  Linking,
   ActivityIndicator,
 } from 'react-native';
 import { Text, TextInput } from '../components/StyledText';
@@ -23,6 +22,7 @@ import { LinearGradient as ExpoLinearGradient } from 'expo-linear-gradient';
 import Svg, { Circle, Rect, G, Text as SvgText, Path, Defs, LinearGradient, Stop } from 'react-native-svg';
 import * as ImagePicker from 'expo-image-picker';
 import { ensurePermission } from '../utils/permissions';
+import { openExternalUrl } from '../utils/openExternalUrl';
 import { colors, shadows, spacing, borderRadius } from '../theme/colors';
 import Avatar from '../components/Avatar';
 import SwipeDismiss, { DragHandle } from '../components/SwipeDismiss';
@@ -659,7 +659,7 @@ export default function ProfileScreen() {
 
           <TouchableOpacity
             style={styles.settingsRow}
-            onPress={() => Linking.openURL('https://endura.eco/terms')}
+            onPress={() => openExternalUrl('https://endura.eco/terms')}
           >
             <Text style={styles.settingsRowText}>Terms of Use</Text>
             <Text style={styles.settingsRowArrow}>›</Text>
@@ -667,7 +667,7 @@ export default function ProfileScreen() {
 
           <TouchableOpacity
             style={styles.settingsRow}
-            onPress={() => Linking.openURL('https://endura.eco/privacy')}
+            onPress={() => openExternalUrl('https://endura.eco/privacy')}
           >
             <Text style={styles.settingsRowText}>Privacy Policy</Text>
             <Text style={styles.settingsRowArrow}>›</Text>
@@ -675,7 +675,13 @@ export default function ProfileScreen() {
 
           <TouchableOpacity
             style={[styles.settingsRow, { borderBottomWidth: 0 }]}
-            onPress={() => Linking.openURL('mailto:hello@endura.eco')}
+            onPress={() =>
+              openExternalUrl('mailto:hello@endura.eco', {
+                fallbackTitle: 'Contact Support',
+                fallbackMessage:
+                  "We couldn't open your email app. Reach us at hello@endura.eco — long-press to copy.",
+              })
+            }
           >
             <Text style={styles.settingsRowText}>Contact Support</Text>
             <Text style={styles.settingsRowArrow}>›</Text>
