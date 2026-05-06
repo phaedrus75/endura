@@ -508,9 +508,13 @@
             <div class="table-card" style="margin-bottom:28px">
                 <div style="display:flex;flex-wrap:wrap;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:6px">
                     <div>
-                        <h3 style="margin:0 0 4px">⚠️ Sessions started but not completed</h3>
-                        <p style="font-size:12px;color:var(--text-muted);margin:0;line-height:1.5;max-width:780px">
-                            Rows where <code>POST /sessions/start</code> fired but no matching <code>/sessions/{id}/complete</code> arrived. <strong>Stale</strong> = elapsed time already exceeds the timer duration, so the session is almost certainly abandoned (egg-died) or silently killed by the OS. Fresh ones may still be ticking.
+                        <h3 style="margin:0 0 4px">⚠️ Sessions that didn't earn credit</h3>
+                        <p style="font-size:12px;color:var(--text-muted);margin:0;line-height:1.5;max-width:820px">
+                            Sessions where the user did NOT naturally complete the timer.
+                            <strong style="color:#3730a3">In&nbsp;flight</strong> = still ticking on the user's device.
+                            <strong style="color:#991b1b">Stale</strong> = elapsed already exceeds duration, the OS likely killed it (the reaper rescues these).
+                            <strong style="color:#9a3412">Abandoned</strong> = user explicitly tapped Abandon Egg / Reset (build 36+) — resolved at zero credit, surfaced here so abandon-rate is visible.
+                            Reaper-rescued sessions are excluded (the user got their credit).
                         </p>
                     </div>
                     <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
@@ -770,9 +774,20 @@
             <div class="chart-row">
                 <div class="table-card">
                     <h3>Users by Country</h3>
+                    <p style="font-size:11px;color:var(--text-muted);margin:4px 0 10px;line-height:1.5">
+                        <strong>Activated</strong> = user started at least 1 timer (any state — completed, abandoned, or in-flight all count).
+                        <strong>Avg study hrs</strong> = mean credited study time across activated users only (excludes the not-yet-activated cohort, so dormant signups don't drag the number down).
+                    </p>
                     <div style="overflow-x:auto">
                         <table>
-                            <thead><tr><th>Country</th><th>Users</th><th></th></tr></thead>
+                            <thead><tr>
+                                <th>Country</th>
+                                <th style="text-align:right">Users</th>
+                                <th style="text-align:right" title="Users with at least 1 timer started (any state)">Activated</th>
+                                <th style="text-align:right" title="Activated users / total users in this country — higher = healthier funnel">Activation %</th>
+                                <th style="text-align:right" title="Mean User.total_study_minutes among activated users in this country, expressed in hours">Avg study hrs</th>
+                                <th></th>
+                            </tr></thead>
                             <tbody id="geoCountryBody"></tbody>
                         </table>
                     </div>
@@ -2334,9 +2349,12 @@ FROM (
 }
 
 async function loadIncompleteSessions() {
-    // Sessions that called POST /sessions/start but never POST /sessions/{id}/complete.
-    // Stale rows (elapsed > duration) are highlighted in red — almost always
-    // either an OS-killed timer or an "Abandon Egg" tap.
+    // Sessions that did NOT naturally end with /sessions/{id}/complete.
+    // Three populations: in-flight (still ticking), stale (OS-killed, reaper
+    // will rescue), and abandoned (user explicitly tapped Abandon Egg / Reset
+    // — build 36+, resolved at zero credit). Reaper-rescued rows are excluded
+    // server-side so this view stays focused on action-needing or trend-tracking
+    // rows.
     const summaryEl = document.getElementById('incompleteSessionsSummary');
     const tableEl = document.getElementById('incompleteSessionsTable');
     if (!summaryEl || !tableEl) return;
@@ -2347,12 +2365,16 @@ async function loadIncompleteSessions() {
         const d = await adminFetch(`/admin/sessions/incomplete?hours=${hours}&limit=200`);
         const total = d.total || 0;
         const stale = d.stale_count || 0;
+        const abandoned = d.abandoned_count || 0;
+        const inFlight = Math.max(0, total - stale - abandoned);
         const pill = (label, val, bg, fg) =>
             `<span style="background:${bg};color:${fg};padding:5px 10px;border-radius:999px;font-weight:600;font-size:12px">${esc(label)}: ${val.toLocaleString()}</span>`;
         summaryEl.innerHTML = [
-            pill('Incomplete', total, '#fef3c7', '#92400e'),
+            pill('Total', total, '#fef3c7', '#92400e'),
+            pill('In flight', inFlight, '#e0e7ff', '#3730a3'),
             pill('Stale (timer should have fired)', stale, '#fee2e2', '#991b1b'),
-            pill(`Window`, `last ${hours}h`, '#e0e7ff', '#3730a3'),
+            pill('Abandoned (user-cancelled)', abandoned, '#ffedd5', '#9a3412'),
+            pill(`Window`, `last ${hours}h`, '#f1f5f9', '#475569'),
         ].join('');
         const rows = d.sessions || [];
         if (rows.length === 0) {
@@ -2373,15 +2395,30 @@ async function loadIncompleteSessions() {
             return isNaN(d.getTime()) ? esc(iso) : d.toLocaleString();
         };
         const body = rows.map(r => {
-            const stale = r.is_stale;
-            const overrun = stale ? Math.max(0, r.elapsed_seconds - (r.duration_minutes || 0) * 60) : 0;
-            return `<tr style="${stale ? 'background:#fef2f2' : ''}">
+            // Render status pill + row-tint based on the server-computed status.
+            // Three states are mutually exclusive (a row is at most one of them).
+            // Tint conventions match the summary pills above so the eye can
+            // associate a row's tint with its category at a glance.
+            const status = r.status || (r.is_abandoned ? 'abandoned' : (r.is_stale ? 'stale' : 'in_flight'));
+            let statusCell, rowBg;
+            if (status === 'abandoned') {
+                rowBg = '#fff7ed';
+                statusCell = `<span style="color:#9a3412;font-weight:600">abandoned${r.abandoned_at ? ` · ${fmtAt(r.abandoned_at)}` : ''}</span>`;
+            } else if (status === 'stale') {
+                rowBg = '#fef2f2';
+                const overrun = Math.max(0, r.elapsed_seconds - (r.duration_minutes || 0) * 60);
+                statusCell = `<span style="color:#991b1b;font-weight:600">stale${overrun ? ` +${fmtElapsed(overrun)}` : ''}</span>`;
+            } else {
+                rowBg = '';
+                statusCell = '<span style="color:var(--text-muted)">in flight</span>';
+            }
+            return `<tr style="${rowBg ? `background:${rowBg}` : ''}">
                 <td><a href="#" onclick="event.preventDefault(); showUserDetail(${r.user_id})" style="color:var(--forest);font-weight:600;text-decoration:none">${esc(r.username || '#' + r.user_id)}</a></td>
                 <td>${r.duration_minutes || 0}m</td>
                 <td>${esc(r.subject || '—')}</td>
                 <td>${fmtAt(r.started_at)}</td>
                 <td>${fmtElapsed(r.elapsed_seconds || 0)}</td>
-                <td>${stale ? `<span style="color:#991b1b;font-weight:600">stale${overrun ? ` +${fmtElapsed(overrun)}` : ''}</span>` : '<span style="color:var(--text-muted)">in flight</span>'}</td>
+                <td>${statusCell}</td>
             </tr>`;
         }).join('');
         tableEl.innerHTML = `<table style="width:100%;border-collapse:collapse">
@@ -4235,14 +4272,37 @@ function renderGeoMap(countries) {
 
 function renderCountryTable(countries) {
     const body = document.getElementById('geoCountryBody');
-    if (!countries.length) { body.innerHTML = '<tr><td colspan="3" class="empty">No country data yet</td></tr>'; return; }
+    if (!countries.length) { body.innerHTML = '<tr><td colspan="6" class="empty">No country data yet</td></tr>'; return; }
     const max = countries[0].users;
     body.innerHTML = countries.map(c => {
+        // Bar reflects total users (the original "size" signal). Activation
+        // % is shown as a separate cell so a small country with strong
+        // activation isn't visually drowned by the by-users bar length.
         const pct = (c.users / max * 100).toFixed(0);
+        const activated = c.activated_users || 0;
+        const avgHrs = c.avg_study_hours_per_activated || 0;
+        // Activation rate as a percent. Render dim grey when there are no
+        // users to avoid div-by-zero NaN bleed-through from the API.
+        const actRate = c.users > 0 ? Math.round(activated / c.users * 100) : 0;
+        // Color the activation cell so 0% jumps out as a problem cohort
+        // and >50% gets a quiet positive nod. Thresholds chosen by feel —
+        // tighten once we have a real benchmark for each market.
+        let actColor = 'var(--text-muted)';
+        if (activated > 0) {
+            if (actRate >= 50) actColor = '#15803d';
+            else if (actRate >= 25) actColor = '#92400e';
+            else actColor = '#991b1b';
+        }
+        const avgHrsCell = activated > 0
+            ? `<span style="font-variant-numeric:tabular-nums">${avgHrs.toFixed(1)}</span>`
+            : '<span style="color:var(--text-muted)">—</span>';
         return `<tr>
             <td><strong>${esc(c.country)}</strong></td>
-            <td>${c.users}</td>
-            <td style="width:40%"><div style="background:linear-gradient(90deg,var(--forest-light),var(--forest));height:16px;border-radius:4px;width:${pct}%"></div></td>
+            <td style="text-align:right;font-variant-numeric:tabular-nums">${c.users}</td>
+            <td style="text-align:right;font-variant-numeric:tabular-nums">${activated}</td>
+            <td style="text-align:right;font-weight:600;color:${actColor};font-variant-numeric:tabular-nums">${activated > 0 ? actRate + '%' : '—'}</td>
+            <td style="text-align:right">${avgHrsCell}</td>
+            <td style="width:30%"><div style="background:linear-gradient(90deg,var(--forest-light),var(--forest));height:16px;border-radius:4px;width:${pct}%"></div></td>
         </tr>`;
     }).join('');
 }

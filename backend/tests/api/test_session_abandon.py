@@ -205,3 +205,84 @@ class TestPendingHatchExcludesAbandoned:
         # Same 409 we use for "no pending hatch for this session" — the
         # client-facing semantics are identical.
         assert resp.status_code == 409
+
+
+class TestAdminIncompleteListsAbandoned:
+    """Build 36 surfacing: ops needs to see abandoned sessions in the
+    "started but not completed" admin view alongside in-flight ones, so
+    the abandon-rate trend is visible in the same place the silent-loss
+    trend has always been monitored.
+    """
+
+    def _admin_headers(self):
+        import os
+        return {"X-Admin-Key": os.environ.get("ADMIN_API_KEY", "dev-only-admin-key")}
+
+    def test_abandoned_session_shows_up_with_abandoned_status(self, client, alice, alice_headers):
+        sid = _start_session(client, alice_headers)
+        client.post(f"/sessions/{sid}/abandon", headers=alice_headers)
+
+        resp = client.get(
+            "/admin/sessions/incomplete",
+            headers=self._admin_headers(),
+        )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["abandoned_count"] >= 1
+
+        ours = next((s for s in body["sessions"] if s["id"] == sid), None)
+        assert ours is not None, "abandoned session must appear in the incomplete list"
+        assert ours["status"] == "abandoned"
+        assert ours["is_abandoned"] is True
+        assert ours["is_stale"] is False
+        assert ours["abandoned_at"] is not None
+
+    def test_naturally_completed_session_still_excluded(self, client, alice, alice_headers):
+        """The 'abandoned shows up here too' change must not regress the
+        original semantic: a normal user-completed session never appears
+        on this admin tab. Otherwise the dashboard turns into noise.
+        """
+        sid = _start_session(client, alice_headers)
+        client.post(f"/sessions/{sid}/complete", json={"duration_minutes": 25}, headers=alice_headers)
+
+        resp = client.get(
+            "/admin/sessions/incomplete",
+            headers=self._admin_headers(),
+        )
+        assert resp.status_code == 200
+        assert all(s["id"] != sid for s in resp.json()["sessions"])
+
+    def test_reaper_rescued_session_excluded(self, client, alice, alice_headers, db):
+        """Auto-completed (reaper-rescued) rows shouldn't pollute this
+        view either — the user got their credit, ops doesn't need to
+        chase them. They live on the recovery dashboard, not here.
+        """
+        sid = _start_session(client, alice_headers)
+        row = db.query(models.StudySession).filter_by(id=sid).first()
+        # Hand-mark as auto-completed (skip the reaper invocation; this
+        # test is about the admin filter, not the reaper).
+        when = datetime.utcnow() - timedelta(minutes=5)
+        row.completed_at = when
+        row.auto_completed_at = when
+        row.coins_earned = 25
+        db.commit()
+
+        resp = client.get(
+            "/admin/sessions/incomplete",
+            headers=self._admin_headers(),
+        )
+        assert resp.status_code == 200
+        assert all(s["id"] != sid for s in resp.json()["sessions"])
+
+    def test_in_flight_status_for_fresh_session(self, client, alice, alice_headers):
+        sid = _start_session(client, alice_headers)
+        resp = client.get(
+            "/admin/sessions/incomplete",
+            headers=self._admin_headers(),
+        )
+        ours = next((s for s in resp.json()["sessions"] if s["id"] == sid), None)
+        assert ours is not None
+        # Fresh session, elapsed < duration → in flight, not stale, not abandoned.
+        assert ours["status"] == "in_flight"
+        assert ours["is_abandoned"] is False
+        assert ours["abandoned_at"] is None

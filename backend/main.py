@@ -4536,7 +4536,51 @@ def admin_geography(db: Session = Depends(get_db), _=Depends(verify_admin)):
         .order_by(func.count(models.User.id).desc())
         .all()
     )
-    countries = [{"country": r[0], "users": r[1]} for r in country_rows]
+
+    # Activated = "started at least 1 timer" (regardless of completion).
+    # Use the existence of a StudySession row keyed by user_id, which captures
+    # rows from POST /sessions/start whether or not /complete ever fired. This
+    # is intentionally broader than User.total_sessions (which only counts
+    # naturally-completed rows), so users who started a timer and abandoned
+    # it still count as activated.
+    started_user_ids = db.query(models.StudySession.user_id).distinct().subquery()
+
+    # Per country: count of activated users and the sum of their CREDITED
+    # study minutes (i.e. User.total_study_minutes — the canonical aggregate
+    # that already excludes abandoned and not-yet-completed sessions). Avg
+    # is computed in Python afterwards to avoid floating-point in SQL and
+    # keep the formatting explicit.
+    activation_rows = (
+        db.query(
+            models.User.country,
+            func.count(models.User.id).label("activated"),
+            func.coalesce(func.sum(models.User.total_study_minutes), 0).label("total_minutes"),
+        )
+        .filter(
+            models.User.country.isnot(None),
+            models.User.country != "",
+            models.User.id.in_(select(started_user_ids.c.user_id)),
+        )
+        .group_by(models.User.country)
+        .all()
+    )
+    activation_by_country: dict[str, dict[str, int]] = {
+        r[0]: {"activated": int(r[1] or 0), "total_minutes": int(r[2] or 0)}
+        for r in activation_rows
+    }
+
+    countries = []
+    for country, users in country_rows:
+        a = activation_by_country.get(country, {"activated": 0, "total_minutes": 0})
+        activated = a["activated"]
+        total_minutes = a["total_minutes"]
+        avg_hours = round(total_minutes / activated / 60.0, 2) if activated > 0 else 0.0
+        countries.append({
+            "country": country,
+            "users": users,
+            "activated_users": activated,
+            "avg_study_hours_per_activated": avg_hours,
+        })
 
     school_rows = (
         db.query(
@@ -5099,20 +5143,36 @@ def admin_sessions_incomplete(
     db: Session = Depends(get_db),
     _=Depends(verify_admin),
 ):
-    """List sessions that were started but never completed.
+    """List sessions that did not end with a normal user-completion.
 
-    A row stays here forever (no GC) until the client either calls
-    /sessions/{id}/complete or — explicitly — we add an abandon endpoint.
-    `started_at + duration_minutes < now` is treated as "stale": the timer
-    should already have fired, so this is almost certainly an abandoned or
-    silently-killed session and not a still-running one.
+    Three populations live here:
+      - **in flight** — started, no completion yet, elapsed < duration
+        (timer may still be ticking on the user's device)
+      - **stale** — started, no completion, elapsed > duration (almost
+        certainly an OS-killed session or a forgotten timer; the reaper
+        will rescue these)
+      - **abandoned** — user explicitly tapped "Abandon Egg" / "Reset"
+        from build 36+ (`abandoned_at IS NOT NULL`); these are NOT lost
+        — they're resolved at zero credit. We surface them here so ops
+        can see the abandon-rate trend in the same table as in-flight.
 
-    Use this to chase silent timer-loss bugs. Filters by hours since
-    started_at to keep the response reasonable on long-lived databases.
+    Auto-completed (reaper-rescued) sessions are NOT shown here — the
+    user got their credit, so they don't need ops attention.
+
+    Filters by hours since `started_at` to keep the response reasonable
+    on long-lived databases.
     """
     cutoff = datetime.utcnow() - timedelta(hours=max(1, hours))
     q = db.query(models.StudySession).filter(
-        models.StudySession.completed_at.is_(None),
+        # Either still pending (no completion timestamp at all) or explicitly
+        # abandoned by the user. Excludes naturally-completed and reaper-
+        # rescued rows.
+        or_(
+            models.StudySession.completed_at.is_(None),
+            models.StudySession.abandoned_at.isnot(None),
+        ),
+        # Don't surface reaper-rescued rows; the user got their credit.
+        models.StudySession.auto_completed_at.is_(None),
         models.StudySession.started_at >= cutoff,
     ).order_by(models.StudySession.started_at.desc())
     total = q.count()
@@ -5121,12 +5181,27 @@ def admin_sessions_incomplete(
 
     result = []
     stale_count = 0
+    abandoned_count = 0
     for s in rows:
         u = db.query(models.User).filter(models.User.id == s.user_id).first()
         elapsed_seconds = int((now - s.started_at).total_seconds()) if s.started_at else 0
-        is_stale = elapsed_seconds > (s.duration_minutes or 0) * 60
-        if is_stale:
+        is_abandoned = getattr(s, "abandoned_at", None) is not None
+        # Stale only applies to rows that are still pending (no completion
+        # timestamp at all). An abandoned row already has a completed_at, so
+        # it's not "stale" in the silent-loss sense — it's resolved.
+        is_stale = (
+            not is_abandoned
+            and s.completed_at is None
+            and elapsed_seconds > (s.duration_minutes or 0) * 60
+        )
+        if is_abandoned:
+            abandoned_count += 1
+            status = "abandoned"
+        elif is_stale:
             stale_count += 1
+            status = "stale"
+        else:
+            status = "in_flight"
         result.append({
             "id": s.id,
             "user_id": s.user_id,
@@ -5137,8 +5212,15 @@ def admin_sessions_incomplete(
             "started_at": s.started_at.isoformat() if s.started_at else None,
             "elapsed_seconds": elapsed_seconds,
             "is_stale": is_stale,
-            # auto_completed_at is always None on this endpoint (it filters
-            # for completed_at IS NULL only), but include it for symmetry
+            "is_abandoned": is_abandoned,
+            "status": status,
+            "abandoned_at": (
+                s.abandoned_at.isoformat()
+                if getattr(s, "abandoned_at", None)
+                else None
+            ),
+            # auto_completed_at is always None on this endpoint (the query
+            # filters reaper-rescued rows out), but include it for symmetry
             # with the user-detail / sessions list views the dashboard renders.
             "auto_completed_at": getattr(s, "auto_completed_at", None) and s.auto_completed_at.isoformat(),
         })
@@ -5146,6 +5228,7 @@ def admin_sessions_incomplete(
     return {
         "total": total,
         "stale_count": stale_count,
+        "abandoned_count": abandoned_count,
         "hours": hours,
         "sessions": result,
     }
