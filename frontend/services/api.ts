@@ -767,6 +767,19 @@ export const sessionsAPI = {
       method: 'POST',
       body: JSON.stringify({ animal_name }),
     }),
+
+  // Build-36 fix: tell the backend the user explicitly tapped "Abandon Egg".
+  // Without this, the row sits with completed_at=NULL and the reaper auto-
+  // credits it 30 min later — i.e. explicit kills get full coins. POSTing
+  // here marks abandoned_at + completed_at + coins_earned=0, and the reaper
+  // skips abandoned rows.
+  //
+  // Best-effort like /complete: caller should not block UI on this. The
+  // backend is idempotent so a retry on network failure is safe.
+  abandonSession: (session_id: number) =>
+    apiFetch<{ status: 'ok' | 'already_completed' }>(`/sessions/${session_id}/abandon`, {
+      method: 'POST',
+    }),
 };
 
 // Egg & Animals API

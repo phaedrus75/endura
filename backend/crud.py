@@ -281,6 +281,65 @@ def get_user_sessions(db: Session, user_id: int, limit: int = 50) -> List[models
     ).order_by(models.StudySession.completed_at.desc()).limit(limit).all()
 
 
+def abandon_study_session(
+    db: Session,
+    session_id: int,
+    user_id: int,
+) -> str:
+    """User explicitly tapped "Abandon Egg" — record it with zero credit.
+
+    Sets `completed_at = now()` (so the row stops looking incomplete to
+    the admin dashboard), `abandoned_at = now()` (the durable signal
+    that the reaper + pending-hatch flow check before crediting), and
+    leaves `coins_earned = 0`. Critically, does NOT touch user totals
+    (coins / streak / minutes) — abandonment costs nothing and earns
+    nothing, by design.
+
+    Idempotent: if the row is already marked abandoned, returns 'ok'
+    so the client's best-effort retry-on-network-failure pattern doesn't
+    surface a confusing error. If the row is already completed normally
+    (the user happened to tap Complete and Abandon in a race), returns
+    'already_completed' — caller can ignore.
+
+    Returns one of:
+      'ok'                — row newly marked abandoned (or was already)
+      'not_found'         — no such session for this user
+      'already_completed' — row was finalised normally; do nothing
+    """
+    session = (
+        db.query(models.StudySession)
+        .filter(
+            models.StudySession.id == session_id,
+            models.StudySession.user_id == user_id,
+        )
+        .first()
+    )
+    if not session:
+        return "not_found"
+    # Idempotency: re-tapping abandon (or a retry that succeeded the
+    # first time) is a no-op.
+    if session.abandoned_at is not None:
+        return "ok"
+    # If a real /complete already landed, the row's coins/streak are
+    # legitimate and reversing them would punish a user whose abandon
+    # tap raced their natural completion. Leave it alone.
+    if session.completed_at is not None and session.auto_completed_at is None:
+        return "already_completed"
+    # If the reaper got here first (auto_completed_at set), still mark
+    # as abandoned so the credit can be reversed — but DON'T reverse the
+    # coins/streak/totals on user here. Caller is responsible for that
+    # cleanup if desired (admin backfill endpoint). For going-forward
+    # sessions, the reaper will skip abandoned rows entirely so this
+    # branch is rare in practice.
+    now = datetime.utcnow()
+    session.abandoned_at = now
+    if session.completed_at is None:
+        session.completed_at = now
+    session.coins_earned = 0
+    db.commit()
+    return "ok"
+
+
 def get_pending_hatches(
     db: Session,
     user_id: int,
@@ -334,6 +393,10 @@ def get_pending_hatches(
             models.StudySession.user_id == user_id,
             models.StudySession.auto_completed_at.isnot(None),
             models.StudySession.auto_completed_at > cutoff,
+            # Don't surface sessions the user explicitly abandoned —
+            # asking them to hatch what they told us to throw away is
+            # the opposite of helpful.
+            models.StudySession.abandoned_at.is_(None),
         )
         .order_by(models.StudySession.auto_completed_at.asc())
         .limit(max(1, min(limit, 50)))
@@ -392,6 +455,10 @@ def hatch_pending_session(
     if session.auto_completed_at is None:
         # Either still in-flight, or completed by client (which already
         # hatched at /complete time). Don't double-hatch.
+        return None, None, "not_pending"
+    if session.abandoned_at is not None:
+        # User explicitly told us to throw this one away — don't hatch
+        # it even if a stale client somehow asks.
         return None, None, "not_pending"
 
     # If user has already hatched anything after this session was reaped,
@@ -539,6 +606,13 @@ def reap_stale_sessions(
         .filter(
             models.StudySession.completed_at.is_(None),
             models.StudySession.auto_completed_at.is_(None),
+            # Build 36+: rows the user EXPLICITLY abandoned must never be
+            # auto-credited. Their abandoned_at + completed_at are set by
+            # POST /sessions/{id}/abandon so this filter is the safety net
+            # if anything else races; the completed_at filter above also
+            # already excludes them, but being explicit here makes intent
+            # obvious to future readers.
+            models.StudySession.abandoned_at.is_(None),
             models.StudySession.started_at >= horizon_oldest,
         )
         .order_by(models.StudySession.started_at.asc())

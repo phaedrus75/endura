@@ -689,8 +689,7 @@ export default function TimerScreen() {
             Vibration.vibrate([0, 300, 100, 300]);
             // The egg died — drop persisted state and silence the OS reminder.
             // Capture the persisted session id for the breadcrumb before we
-            // clear it; the row stays in the DB with completed_at=NULL so it
-            // surfaces as "incomplete" on the admin dashboard.
+            // clear it.
             let abandonedSessionId: number | null = null;
             try {
               const activeRaw = await AsyncStorage.getItem(ACTIVE_TIMER_KEY(user?.id));
@@ -706,6 +705,20 @@ export default function TimerScreen() {
               selectedMinutes,
               animal: dying,
             });
+            // Build-36 fix: tell the backend we explicitly abandoned this
+            // session. Without this the row sits as completed_at=NULL and
+            // the reaper auto-credits it 30 min later (the credit-leak
+            // bug). Best-effort: if it fails the reaper will still pick
+            // it up, but in the dominant case the explicit signal lands
+            // and we credit nothing — which is the correct outcome.
+            if (abandonedSessionId != null) {
+              try {
+                await sessionsAPI.abandonSession(abandonedSessionId);
+              } catch (err) {
+                if (__DEV__) console.warn('abandonSession failed:', err);
+                if (!isBenignNetworkError(err)) Sentry.captureException(err);
+              }
+            }
             await clearActiveTimer();
             await clearPendingHatch();
             if (onConfirm) onConfirm();
@@ -1232,9 +1245,31 @@ export default function TimerScreen() {
                     { text: 'Cancel', style: 'cancel' },
                     {
                       text: 'Reset',
-                      onPress: () => {
+                      onPress: async () => {
                         const elapsedMinutes = Math.max(0, (selectedMinutes * TIME_MULTIPLIER - timeLeft) / 60);
                         Analytics.sessionAbandoned(elapsedMinutes);
+                        // Build-36 fix: Reset is also a "kill" — without
+                        // telling the backend, the row sits incomplete
+                        // and the reaper credits it 30 min later. Read
+                        // the active session id from local storage
+                        // (resetTimer doesn't take it as an arg).
+                        try {
+                          const activeRaw = await AsyncStorage.getItem(ACTIVE_TIMER_KEY(user?.id));
+                          if (activeRaw) {
+                            const active: ActiveTimerState = JSON.parse(activeRaw);
+                            if (active.sessionId != null) {
+                              try {
+                                await sessionsAPI.abandonSession(active.sessionId);
+                              } catch (err) {
+                                if (__DEV__) console.warn('abandonSession (reset) failed:', err);
+                                if (!isBenignNetworkError(err)) Sentry.captureException(err);
+                              }
+                            }
+                            await cancelLocalNotification(active.notificationId);
+                          }
+                        } catch {}
+                        await clearActiveTimer();
+                        await clearPendingHatch();
                         resetTimer();
                       },
                       style: 'destructive',

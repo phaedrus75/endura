@@ -332,6 +332,16 @@ class StudySession(Base):
     # the legacy POST /sessions path (that path hatches in one shot, so
     # there's nothing to "recover" later).
     intended_animal_name = Column(String(100), nullable=True)
+    # Set when the user EXPLICITLY tapped "Abandon Egg" inside the app
+    # (build 36+). Distinct from auto_completed_at: that one means "we
+    # rescued a session the user forgot/crashed"; this one means "the
+    # user told us not to credit it." When set, the reaper skips the row
+    # (don't auto-credit), pending-hatches excludes it (don't ask the
+    # user to hatch what they explicitly abandoned), and the admin
+    # incomplete-sessions list excludes it (it's resolved, just at
+    # zero credit). For the row, also expect: completed_at = abandoned_at,
+    # coins_earned = 0.
+    abandoned_at = Column(DateTime, nullable=True, index=True)
 
     user = relationship("User", back_populates="study_sessions")
     task = relationship("Task")

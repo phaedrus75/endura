@@ -2108,6 +2108,45 @@ def complete_study_session_by_id_endpoint(
         raise HTTPException(status_code=500, detail="Failed to complete session")
 
 
+@app.post("/sessions/{session_id}/abandon", response_model=schemas.AbandonSessionResponse)
+@limiter.limit("60/hour")
+def abandon_study_session_endpoint(
+    request: Request,
+    session_id: int,
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """User explicitly tapped "Abandon Egg" — mark the row, credit nothing.
+
+    Build-36 fix for the credit leak surfaced by PostHog: ~10% of every
+    day's session_started events end with the user tapping "Abandon Egg"
+    inside the app, but the client only fired analytics + cleared local
+    state, never told the backend. The reaper then auto-credited those
+    rows 30 min later as if they were forgotten sessions. This endpoint
+    plugs that hole — the client now POSTs here on abandon, the row is
+    marked, and the reaper skips it.
+
+    Idempotent so the client's network-tolerant retry-on-failure pattern
+    (same as /complete) doesn't surface confusing errors. Returns 404
+    for foreign / unknown sessions to avoid leaking session ids.
+    """
+    try:
+        status = crud.abandon_study_session(
+            db,
+            session_id=session_id,
+            user_id=current_user.id,
+        )
+        if status == "not_found":
+            raise HTTPException(status_code=404, detail="Session not found")
+        return {"status": status}
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Abandon failed for user {current_user.id} session {session_id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to abandon session")
+
+
 @app.get("/me/pending-hatches", response_model=schemas.PendingHatchListResponse)
 def get_my_pending_hatches(
     current_user: models.User = Depends(get_current_user),

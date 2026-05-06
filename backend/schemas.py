@@ -259,6 +259,16 @@ class HatchPendingRequest(BaseModel):
     animal_name: str = Field(..., min_length=1, max_length=100)
 
 
+class AbandonSessionResponse(BaseModel):
+    """Result of POST /sessions/{id}/abandon.
+
+    `status` is one of:
+      'ok'                  — row marked abandoned (or already was, idempotent)
+      'already_completed'   — row was finalised normally; abandon was a no-op
+    """
+    status: str
+
+
 class UserAnimalResponse(BaseModel):
     id: int
     animal: AnimalResponse

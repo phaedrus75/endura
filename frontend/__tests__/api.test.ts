@@ -168,6 +168,16 @@ describe('sessionsAPI', () => {
     expect(body.animal_name).toBe('Red Panda');
   });
 
+  test('abandonSession() POSTs /sessions/{id}/abandon with no body', async () => {
+    mockFetch.mockReturnValue(mockOk({ status: 'ok' }));
+    const resp = await sessionsAPI.abandonSession(123);
+    const [url, options] = mockFetch.mock.calls[0];
+    expect(url).toContain('/sessions/123/abandon');
+    expect(options.method).toBe('POST');
+    expect(options.body).toBeUndefined();
+    expect(resp.status).toBe('ok');
+  });
+
   test('apiFetch attaches HTTP status to error so callers can branch', async () => {
     mockFetch.mockReturnValue(mockErr({ detail: 'Session not found' }, 404));
 
