@@ -31,6 +31,7 @@ import { Analytics } from '../services/analytics';
 import { Sentry, isBenignNetworkError } from '../services/monitoring';
 import { scheduleLocalNotification, cancelLocalNotification } from '../services/pushNotifications';
 import { handleAppStateChange } from '../utils/timerAppState';
+import { useDeviceLayout } from '../utils/useDeviceLayout';
 
 // Defensive Sentry breadcrumb helper. Sentry.addBreadcrumb is no-op when the
 // SDK isn't initialised (no DSN in dev), but wrap in try/catch in case the
@@ -224,6 +225,10 @@ const FOCUS_QUOTES = [
 export default function TimerScreen() {
   const { refreshUser, profilePic, user } = useAuth();
   const navigation = useNavigation<any>();
+  // Tablet-aware horizontal gutter — keeps the timer card and animal
+  // grid in a centred reading column on iPad rather than spanning the
+  // whole landscape surface.
+  const { isTablet, horizontalGutter } = useDeviceLayout();
   const TIME_MULTIPLIER = user?.use_test_timer ? 1 : 60;
   const [selectedMinutes, setSelectedMinutes] = useState(25);
   const [timeLeft, setTimeLeft] = useState(25 * 60);
@@ -1100,7 +1105,10 @@ export default function TimerScreen() {
   return (
     <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
       <ScrollView 
-        contentContainerStyle={styles.scrollContent}
+        contentContainerStyle={[
+          styles.scrollContent,
+          isTablet && { paddingHorizontal: horizontalGutter + spacing.lg },
+        ]}
         showsVerticalScrollIndicator={false}
       >
         <View style={styles.header}>

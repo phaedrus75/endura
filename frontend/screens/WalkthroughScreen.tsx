@@ -14,6 +14,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import * as SecureStore from 'expo-secure-store';
 import { shadows } from '../theme/colors';
 import { Analytics } from '../services/analytics';
+import { useDeviceLayout } from '../utils/useDeviceLayout';
 
 const { width: SW } = Dimensions.get('window');
 
@@ -93,6 +94,10 @@ interface Props {
 
 export default function WalkthroughScreen({ navigation, route }: Props) {
   const insets = useSafeAreaInsets();
+  // Cap the bottom card width on iPad so the Next/Back buttons don't
+  // stretch the full landscape surface (~1024pt) and look phone-like.
+  const { isTablet, horizontalGutter } = useDeviceLayout();
+  const tabletCardPad = isTablet ? horizontalGutter + 24 : 24;
   const [step, setStep] = useState(0);
   const slideOpacities = useRef(SLIDES.map((_, i) => new Animated.Value(i === 0 ? 1 : 0))).current;
   const textOpacity = useRef(new Animated.Value(1)).current;
@@ -154,7 +159,7 @@ export default function WalkthroughScreen({ navigation, route }: Props) {
         </SafeAreaView>
       </View>
 
-      <View style={[s.card, { paddingBottom: Math.max(insets.bottom, 16) }]}>
+      <View style={[s.card, { paddingBottom: Math.max(insets.bottom, 16), paddingHorizontal: tabletCardPad }]}>
         <View style={s.cardHandle} />
         <Animated.View style={{ opacity: textOpacity, alignItems: 'center' }}>
           <Text style={s.cardTag}>{sl.tag}</Text>

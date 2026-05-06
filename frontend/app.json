@@ -26,7 +26,13 @@
         "ITSAppUsesNonExemptEncryption": false,
         "NSCameraUsageDescription": "Endura uses your camera so you can take a profile photo or attach a screenshot when sending feedback to the team.",
         "NSPhotoLibraryUsageDescription": "Endura accesses your photo library so you can choose a profile picture and attach screenshots when sending feedback to help us reproduce issues. Selected images are uploaded only when you save the change or submit the form.",
-        "UIBackgroundModes": ["remote-notification"]
+        "UIBackgroundModes": ["remote-notification"],
+        "UISupportedInterfaceOrientations~ipad": [
+          "UIInterfaceOrientationPortrait",
+          "UIInterfaceOrientationPortraitUpsideDown",
+          "UIInterfaceOrientationLandscapeLeft",
+          "UIInterfaceOrientationLandscapeRight"
+        ]
       }
     },
     "android": {

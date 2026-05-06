@@ -23,6 +23,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { authAPI } from '../services/api';
 import { Analytics } from '../services/analytics';
 import { openExternalUrl } from '../utils/openExternalUrl';
+import { useDeviceLayout } from '../utils/useDeviceLayout';
 // Sign in with Apple + Google is intentionally not wired into this screen
 // in 1.0.5. Backend (`/auth/apple`, `/auth/google`), DB (`apple_id_sub`,
 // `google_id_sub`), and the frontend client (`services/oauthLogin.ts`) are
@@ -53,6 +54,13 @@ export default function AuthScreen() {
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const { login, register, checkAuth } = useAuth();
+  // Tablet-aware horizontal padding so the welcome screen and form
+  // don't span the full landscape iPad surface (buttons would otherwise
+  // be ~900pt wide).
+  const { isTablet, horizontalGutter } = useDeviceLayout();
+  const tabletPadStyle = isTablet
+    ? { paddingHorizontal: horizontalGutter + spacing.lg }
+    : null;
 
   // Email verification state
   const [showVerification, setShowVerification] = useState(false);
@@ -243,7 +251,7 @@ export default function AuthScreen() {
   if (!showForm) {
     return (
       <SafeAreaView style={[styles.container, { backgroundColor: '#c8dbc3' }]}>
-        <View style={styles.welcomeContent}>
+        <View style={[styles.welcomeContent, tabletPadStyle]}>
           <View style={styles.brandContainer}>
             <LogoImage />
           </View>
@@ -277,7 +285,7 @@ export default function AuthScreen() {
           style={styles.keyboardView}
         >
           <ScrollView
-            contentContainerStyle={styles.scrollContent}
+            contentContainerStyle={[styles.scrollContent, tabletPadStyle]}
             keyboardShouldPersistTaps="handled"
             showsVerticalScrollIndicator={false}
           >
@@ -356,7 +364,7 @@ export default function AuthScreen() {
         style={styles.keyboardView}
       >
         <ScrollView 
-          contentContainerStyle={styles.scrollContent}
+          contentContainerStyle={[styles.scrollContent, tabletPadStyle]}
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
         >

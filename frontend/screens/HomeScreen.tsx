@@ -26,6 +26,7 @@ import SwipeDismiss, { DragHandle } from '../components/SwipeDismiss';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useAuth } from '../contexts/AuthContext';
 import { Analytics } from '../services/analytics';
+import { useDeviceLayout } from '../utils/useDeviceLayout';
 
 // HomeScreen preserves its original palette independent of the global theme
 const colors = {
@@ -169,6 +170,10 @@ export default function HomeScreen() {
   const { user, refreshUser, profilePic } = useAuth();
   const navigation = useNavigation<any>();
   const route = useRoute<any>();
+  // Device-aware layout: iPad-class screens get a centred, capped-width
+  // content column so cards don't stretch across a 1024pt landscape iPad.
+  // Phones get the unchanged full-width experience.
+  const { width: layoutWidth, isTablet, horizontalGutter } = useDeviceLayout();
   const [egg, setEgg] = useState<Egg | null>(null);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [stats, setStats] = useState<UserStats | null>(null);
@@ -525,7 +530,7 @@ export default function HomeScreen() {
         <ConfettiCannon
           ref={confettiRef}
           count={200}
-          origin={{ x: width / 2, y: -20 }}
+          origin={{ x: layoutWidth / 2, y: -20 }}
           autoStart
           fadeOut
         />
@@ -533,7 +538,14 @@ export default function HomeScreen() {
       
       <ScrollView
         style={styles.scrollView}
-        contentContainerStyle={styles.scrollContent}
+        contentContainerStyle={[
+          styles.scrollContent,
+          // On iPad: side-pad the scroll content so the inner cards land
+          // in a comfortable 720pt centred column rather than spanning
+          // the full 1024-1366pt iPad surface. Existing card-level
+          // marginHorizontal continues to apply WITHIN this column.
+          isTablet && { paddingHorizontal: horizontalGutter },
+        ]}
         refreshControl={
           <RefreshControl 
             refreshing={isRefreshing} 

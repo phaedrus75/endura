@@ -23,6 +23,7 @@ import { API_URL, authAPI, SchoolSearchResult, subjectsAPI, Subject } from '../s
 import { Analytics } from '../services/analytics';
 import COUNTRIES from '../constants/countries';
 import Avatar from '../components/Avatar';
+import { useDeviceLayout } from '../utils/useDeviceLayout';
 
 const C = {
   bg: '#E8F5E9', hero: '#C5DEC9', surface: '#FFFFFF', sage: '#6B9B9B',
@@ -59,6 +60,11 @@ export default function OnboardingScreen() {
   }, [countrySearch]);
   const [isLoading, setIsLoading] = useState(false);
   const { refreshUser, setProfilePic, logout } = useAuth();
+  // Tablet-aware extra horizontal padding for the onboarding form
+  // columns. On phone we keep the existing 32pt padding; on iPad we
+  // add the gutter so the form lands in a ~720pt centred column.
+  const { isTablet, horizontalGutter } = useDeviceLayout();
+  const tabletExtraPad = isTablet ? { paddingHorizontal: horizontalGutter + 32 } : null;
 
   const handleSignOut = () => {
     Alert.alert(
@@ -256,7 +262,7 @@ export default function OnboardingScreen() {
             </TouchableOpacity>
           </View>
           <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
-            <ScrollView contentContainerStyle={ps.content} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+            <ScrollView contentContainerStyle={[ps.content, tabletExtraPad]} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
               <Text style={ps.title}>What do you study?</Text>
               <Text style={ps.sub}>Add your subjects so we can personalise your experience</Text>
 
@@ -337,7 +343,7 @@ export default function OnboardingScreen() {
           </TouchableOpacity>
         </View>
         <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
-          <ScrollView contentContainerStyle={ps.content} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+          <ScrollView contentContainerStyle={[ps.content, tabletExtraPad]} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
             <Text style={ps.title}>Set Up Your Profile</Text>
             <Text style={ps.sub}>Choose a username to get started — you can always update the rest later</Text>
 
