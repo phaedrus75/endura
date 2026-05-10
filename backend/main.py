@@ -1,6 +1,6 @@
 from fastapi import FastAPI, Depends, HTTPException, status, Request, Header, UploadFile, File, Form, Query
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, EmailStr, Field, field_validator
 from sqlalchemy.orm import Session
 from sqlalchemy import text, func, or_, and_, select, inspect
 from datetime import timedelta, datetime, date
@@ -971,6 +971,11 @@ def _email_domain_for_logs(email: str) -> str:
     return e.rsplit("@", 1)[-1]
 
 
+def _normalize_email_for_lookup(email: str) -> str:
+    """Match how UserCreate / EmailStr stores addresses (strip + lower)."""
+    return (email or "").strip().lower()
+
+
 @app.post("/auth/register")
 @limiter.limit("5/minute")
 def register(request: Request, user: schemas.UserCreate, db: Session = Depends(get_db)):
@@ -1020,14 +1025,25 @@ def register(request: Request, user: schemas.UserCreate, db: Session = Depends(g
 
 
 class VerifyEmailRequest(BaseModel):
-    email: str
+    email: EmailStr
     code: str = Field(..., min_length=6, max_length=6)
+
+    @field_validator("code", mode="before")
+    @classmethod
+    def strip_verification_code(cls, v):
+        """Paste-friendly: trim spaces so ' 123 456 ' still validates as 6 digits."""
+        if v is None:
+            return v
+        s = str(v).strip().replace(" ", "")
+        return s
+
 
 @app.post("/auth/verify-email")
 @limiter.limit("10/minute")
 def verify_email(request: Request, body: VerifyEmailRequest, db: Session = Depends(get_db)):
-    _dom = _email_domain_for_logs(body.email)
-    user = db.query(models.User).filter(models.User.email == body.email).first()
+    email_key = _normalize_email_for_lookup(str(body.email))
+    _dom = _email_domain_for_logs(email_key)
+    user = db.query(models.User).filter(func.lower(models.User.email) == email_key).first()
     if not user or not user.verification_code:
         logger.info(
             "[auth] verify_email outcome=no_pending_code email_domain=%s has_user=%s",
@@ -1084,14 +1100,15 @@ def verify_email(request: Request, body: VerifyEmailRequest, db: Session = Depen
 
 
 class ResendVerificationRequest(BaseModel):
-    email: str
+    email: EmailStr
 
 @app.post("/auth/resend-verification")
 @limiter.limit("3/minute")
 def resend_verification(request: Request, body: ResendVerificationRequest, db: Session = Depends(get_db)):
     import secrets
-    _dom = _email_domain_for_logs(body.email)
-    user = db.query(models.User).filter(models.User.email == body.email).first()
+    email_key = _normalize_email_for_lookup(str(body.email))
+    _dom = _email_domain_for_logs(email_key)
+    user = db.query(models.User).filter(func.lower(models.User.email) == email_key).first()
     if not user or user.email_verified:
         logger.info(
             "[auth] verification_email_skipped reason=resend_no_pending_user email_domain=%s "

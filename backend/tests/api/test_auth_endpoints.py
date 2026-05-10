@@ -2,6 +2,8 @@
 API tests for /auth/* endpoints.
 AUTH-01 through AUTH-17 from the test plan.
 """
+from datetime import datetime, timedelta
+
 import pytest
 from unittest.mock import patch
 from tests.conftest import make_user, jwt_headers, admin_headers
@@ -70,6 +72,39 @@ class TestRegistration:
             "password": "12345678"
         })
         assert resp.status_code == 422
+
+
+class TestVerifyEmail:
+    def test_verify_email_matches_case_insensitively(self, client, db):
+        """Register stores normalized email; verify must find the row even if casing differs."""
+        u = make_user(db, "CaseMatch@Example.com", "Pass12345", "casematch")
+        u.email_verified = False
+        u.verification_code = "424242"
+        u.verification_code_expires = datetime.utcnow() + timedelta(hours=1)
+        db.commit()
+
+        resp = client.post(
+            "/auth/verify-email",
+            json={"email": "casematch@EXAMPLE.COM", "code": "424242"},
+        )
+        assert resp.status_code == 200, resp.text
+        assert "access_token" in resp.json()
+        db.refresh(u)
+        assert u.email_verified is True
+
+    def test_verify_email_code_strips_spaces(self, client, db):
+        u = make_user(db, "spacecode@example.com", "Pass12345", "spacecode")
+        u.email_verified = False
+        u.verification_code = "999888"
+        u.verification_code_expires = datetime.utcnow() + timedelta(hours=1)
+        db.commit()
+
+        resp = client.post(
+            "/auth/verify-email",
+            json={"email": "spacecode@example.com", "code": "999 888"},
+        )
+        assert resp.status_code == 200, resp.text
+        assert "access_token" in resp.json()
 
 
 class TestLogin:
