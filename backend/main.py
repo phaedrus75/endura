@@ -963,13 +963,28 @@ def seed_check():
 
 # ============ Auth Endpoints ============
 
+def _email_domain_for_logs(email: str) -> str:
+    """Domain part only — use in shared logs instead of full addresses."""
+    e = (email or "").strip().lower()
+    if "@" not in e:
+        return "invalid"
+    return e.rsplit("@", 1)[-1]
+
+
 @app.post("/auth/register")
 @limiter.limit("5/minute")
 def register(request: Request, user: schemas.UserCreate, db: Session = Depends(get_db)):
     import secrets
+    _dom = _email_domain_for_logs(user.email)
     db_user = crud.get_user_by_email(db, user.email)
     if db_user:
         if db_user.username or db_user.email_verified:
+            logger.info(
+                "[auth] verification_email_skipped reason=register_opaque_user_exists "
+                "email_domain=%s user_id=%s",
+                _dom,
+                db_user.id,
+            )
             return {"message": "Verification code sent", "needs_verification": True}
         # Truly unverified user re-registering: resend code
         code = f"{secrets.randbelow(1000000):06d}"
@@ -977,6 +992,12 @@ def register(request: Request, user: schemas.UserCreate, db: Session = Depends(g
         db_user.verification_code_expires = datetime.utcnow() + timedelta(minutes=15)
         db_user.hashed_password = get_password_hash(user.password)
         db.commit()
+        logger.info(
+            "[auth] verification_email_triggered reason=register_reregister_unverified "
+            "email_domain=%s user_id=%s",
+            _dom,
+            db_user.id,
+        )
         _send_email_bg(_send_verification_email, db_user.email, code)
         return {"message": "Verification code sent", "needs_verification": True}
 
@@ -989,6 +1010,11 @@ def register(request: Request, user: schemas.UserCreate, db: Session = Depends(g
     new_user.email_verified = False
     db.commit()
 
+    logger.info(
+        "[auth] verification_email_triggered reason=register_new_user email_domain=%s user_id=%s",
+        _dom,
+        new_user.id,
+    )
     _send_email_bg(_send_verification_email, new_user.email, code)
     return {"message": "Verification code sent", "needs_verification": True}
 
@@ -1000,22 +1026,42 @@ class VerifyEmailRequest(BaseModel):
 @app.post("/auth/verify-email")
 @limiter.limit("10/minute")
 def verify_email(request: Request, body: VerifyEmailRequest, db: Session = Depends(get_db)):
+    _dom = _email_domain_for_logs(body.email)
     user = db.query(models.User).filter(models.User.email == body.email).first()
     if not user or not user.verification_code:
+        logger.info(
+            "[auth] verify_email outcome=no_pending_code email_domain=%s has_user=%s",
+            _dom,
+            bool(user),
+        )
         raise HTTPException(status_code=400, detail="Invalid or expired verification code")
 
     if (user.verification_attempts or 0) >= 5:
+        logger.info(
+            "[auth] verify_email outcome=locked_too_many_attempts email_domain=%s "
+            "user_id=%s attempts=%s",
+            _dom,
+            user.id,
+            user.verification_attempts or 0,
+        )
         raise HTTPException(status_code=429, detail="Too many attempts. Please request a new code.")
 
     if user.verification_code != body.code:
         user.verification_attempts = (user.verification_attempts or 0) + 1
         db.commit()
+        logger.info(
+            "[auth] verify_email outcome=invalid_code email_domain=%s user_id=%s attempts_after=%s",
+            _dom,
+            user.id,
+            user.verification_attempts,
+        )
         raise HTTPException(status_code=400, detail="Invalid verification code")
 
     if user.verification_code_expires and user.verification_code_expires < datetime.utcnow():
         user.verification_code = None
         user.verification_code_expires = None
         db.commit()
+        logger.info("[auth] verify_email outcome=expired email_domain=%s user_id=%s", _dom, user.id)
         raise HTTPException(status_code=400, detail="Code has expired. Please request a new one.")
 
     user.email_verified = True
@@ -1023,6 +1069,8 @@ def verify_email(request: Request, body: VerifyEmailRequest, db: Session = Depen
     user.verification_code_expires = None
     user.verification_attempts = 0
     db.commit()
+
+    logger.info("[auth] verify_email outcome=success email_domain=%s user_id=%s", _dom, user.id)
 
     import threading
     _email, _uname = user.email, user.username
@@ -1042,8 +1090,16 @@ class ResendVerificationRequest(BaseModel):
 @limiter.limit("3/minute")
 def resend_verification(request: Request, body: ResendVerificationRequest, db: Session = Depends(get_db)):
     import secrets
+    _dom = _email_domain_for_logs(body.email)
     user = db.query(models.User).filter(models.User.email == body.email).first()
     if not user or user.email_verified:
+        logger.info(
+            "[auth] verification_email_skipped reason=resend_no_pending_user email_domain=%s "
+            "has_user=%s already_verified=%s",
+            _dom,
+            bool(user),
+            bool(user and user.email_verified),
+        )
         return {"message": "If that email exists and needs verification, a code has been sent."}
 
     code = f"{secrets.randbelow(1000000):06d}"
@@ -1052,6 +1108,12 @@ def resend_verification(request: Request, body: ResendVerificationRequest, db: S
     user.verification_attempts = 0
     db.commit()
 
+    logger.info(
+        "[auth] verification_email_triggered reason=resend_verification_endpoint "
+        "email_domain=%s user_id=%s",
+        _dom,
+        user.id,
+    )
     _send_email_bg(_send_verification_email, user.email, code)
     return {"message": "Verification code sent"}
 
@@ -1072,7 +1134,12 @@ def _send_email_bg(fn, *args, **kwargs) -> None:
 def _send_verification_email(email: str, code: str) -> bool:
     resend_key = os.getenv("RESEND_API_KEY")
     resend_from = os.getenv("RESEND_FROM", "Endura <onboarding@resend.dev>")
-    logger.info(f"Sending verification to {email}, RESEND_API_KEY set: {bool(resend_key)}, from: {resend_from}")
+    _dom = _email_domain_for_logs(email)
+    logger.info(
+        "[auth] verification_email_dispatch_start email_domain=%s resend_configured=%s",
+        _dom,
+        bool(resend_key),
+    )
 
     if resend_key:
         try:
@@ -1096,13 +1163,25 @@ def _send_verification_email(email: str, code: str) -> bool:
                 </div>
                 """,
             })
-            logger.info(f"Verification email sent to {email} via Resend, result: {result}")
+            logger.info(
+                "[auth] verification_email_dispatch_ok email_domain=%s resend_result=%s",
+                _dom,
+                result,
+            )
             return True
         except Exception as e:
-            logger.error(f"Failed to send verification email to {email}: {e}", exc_info=True)
+            logger.error(
+                "[auth] verification_email_dispatch_failed email_domain=%s error=%s",
+                _dom,
+                e,
+                exc_info=True,
+            )
             return False
     else:
-        logger.warning("RESEND_API_KEY not set — verification email could not be sent")
+        logger.warning(
+            "[auth] verification_email_dispatch_skipped email_domain=%s reason=no_resend_api_key",
+            _dom,
+        )
         return False
 
 
