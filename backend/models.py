@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Float, DateTime, Boolean, ForeignKey, Text, LargeBinary, UniqueConstraint
+from sqlalchemy import Column, Integer, String, Float, DateTime, Boolean, ForeignKey, Text, LargeBinary, UniqueConstraint, JSON
 from sqlalchemy.orm import relationship, synonym
 from datetime import datetime
 from uuid import uuid4
@@ -234,9 +234,15 @@ class User(Base):
 
     # Email verification
     email_verified = Column(Boolean, default=False)
+    # Latest issued code — kept for back-compat with older clients / queries.
     verification_code = Column(String, nullable=True)
     verification_code_expires = Column(DateTime, nullable=True)
     verification_attempts = Column(Integer, default=0)
+    # Rolling history of the last few codes (most recent first):
+    #   [{"code": "123456", "expires": "2026-05-11T12:34:56"}, ...]
+    # Lets us accept a paste of the previous code if the user resent (or if
+    # we resent for them) a few seconds before they hit Verify.
+    verification_codes = Column(JSON, nullable=False, default=list, server_default="[]")
 
     # Password reset brute-force protection
     reset_attempts = Column(Integer, default=0)

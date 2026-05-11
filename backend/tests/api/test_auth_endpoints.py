@@ -106,6 +106,143 @@ class TestVerifyEmail:
         assert resp.status_code == 200, resp.text
         assert "access_token" in resp.json()
 
+    def test_verify_email_accepts_previous_code_after_resend(self, client, db):
+        """A second resend must NOT invalidate the code from the first resend.
+
+        This is the 'stale-code trap' fix: users often paste the code that
+        landed first; if the backend issued a fresh one in the meantime, the
+        old one was being rejected. Both should pass while inside their TTL.
+        """
+        u = make_user(db, "multicode@example.com", "Pass12345", "multicode")
+        u.email_verified = False
+        u.verification_code = None
+        u.verification_code_expires = None
+        # Simulate two recent issuances; oldest first in the user's hand.
+        future = datetime.utcnow() + timedelta(minutes=15)
+        u.verification_codes = [
+            {"code": "222222", "expires": future.isoformat()},
+            {"code": "111111", "expires": future.isoformat()},
+        ]
+        # Latest singular column reflects the newest issuance.
+        u.verification_code = "222222"
+        u.verification_code_expires = future
+        db.commit()
+
+        resp = client.post(
+            "/auth/verify-email",
+            json={"email": "multicode@example.com", "code": "111111"},
+        )
+        assert resp.status_code == 200, resp.text
+        db.refresh(u)
+        assert u.email_verified is True
+        # Successful verification clears the entire history.
+        assert (u.verification_codes or []) == []
+
+    def test_verify_email_rejects_expired_history_entries(self, client, db):
+        u = make_user(db, "expired@example.com", "Pass12345", "expireduser")
+        u.email_verified = False
+        u.verification_code = None
+        u.verification_code_expires = None
+        u.verification_codes = [
+            {"code": "555555", "expires": (datetime.utcnow() - timedelta(minutes=1)).isoformat()},
+        ]
+        db.commit()
+
+        resp = client.post(
+            "/auth/verify-email",
+            json={"email": "expired@example.com", "code": "555555"},
+        )
+        assert resp.status_code == 400
+
+
+class TestResendVerification:
+    def test_resend_throttled_within_cooldown(self, client, db):
+        """Two resends within 60s must reuse the existing code, not mint a new one."""
+        u = make_user(db, "throttle@example.com", "Pass12345", "throttle")
+        u.email_verified = False
+        # Issued ~10s ago: well inside the 60s cooldown.
+        future = datetime.utcnow() + timedelta(minutes=15) - timedelta(seconds=10)
+        u.verification_code = "123123"
+        u.verification_code_expires = future
+        u.verification_codes = [{"code": "123123", "expires": future.isoformat()}]
+        db.commit()
+
+        resp = client.post(
+            "/auth/resend-verification",
+            json={"email": "throttle@example.com"},
+        )
+        assert resp.status_code == 200
+        db.refresh(u)
+        # Code unchanged, history unchanged — throttle silently absorbed the call.
+        assert u.verification_code == "123123"
+        assert len(u.verification_codes or []) == 1
+
+    def test_resend_after_cooldown_issues_new_code_and_keeps_history(self, client, db):
+        u = make_user(db, "fresh@example.com", "Pass12345", "freshuser")
+        u.email_verified = False
+        # Issued >60s ago: outside the cooldown, eligible for a new code.
+        old_future = datetime.utcnow() + timedelta(minutes=15) - timedelta(seconds=120)
+        u.verification_code = "999000"
+        u.verification_code_expires = old_future
+        u.verification_codes = [{"code": "999000", "expires": old_future.isoformat()}]
+        db.commit()
+
+        resp = client.post(
+            "/auth/resend-verification",
+            json={"email": "fresh@example.com"},
+        )
+        assert resp.status_code == 200
+        db.refresh(u)
+        # New code issued AND old one still in history (so user can paste either).
+        history_codes = [e["code"] for e in (u.verification_codes or [])]
+        assert "999000" in history_codes
+        assert u.verification_code in history_codes
+        assert u.verification_code != "999000"
+
+    def test_register_reregister_throttled_within_cooldown(self, client, db):
+        """Hitting /auth/register twice in <60s for an unverified user must NOT mint a new code."""
+        u = make_user(db, "reg2x@example.com", "Pass12345", "reg2x")
+        u.email_verified = False
+        future = datetime.utcnow() + timedelta(minutes=15) - timedelta(seconds=5)
+        u.verification_code = "777777"
+        u.verification_code_expires = future
+        u.verification_codes = [{"code": "777777", "expires": future.isoformat()}]
+        db.commit()
+
+        resp = client.post(
+            REGISTER_URL,
+            json={"email": "reg2x@example.com", "password": "Pass12345"},
+        )
+        assert resp.status_code == 200
+        db.refresh(u)
+        assert u.verification_code == "777777"
+
+
+class TestRegisterCaseInsensitive:
+    def test_register_does_not_create_case_variant_duplicate(self, client, db):
+        """A second signup with different casing must reuse the existing row."""
+        first = make_user(db, "lm.l0v3ly.27@gmail.com", "Pass12345", "lovely")
+        first.email_verified = False
+        db.commit()
+        first_id = first.id
+
+        resp = client.post(
+            REGISTER_URL,
+            json={"email": "lm.L0v3ly.27@Gmail.com", "password": "Pass12345"},
+        )
+        assert resp.status_code == 200
+
+        # No new row should have been created.
+        from sqlalchemy import func as _f
+        import models
+        rows = (
+            db.query(models.User)
+            .filter(_f.lower(models.User.email) == "lm.l0v3ly.27@gmail.com")
+            .all()
+        )
+        assert len(rows) == 1
+        assert rows[0].id == first_id
+
 
 class TestLogin:
     def test_login_valid_credentials(self, client, db):
@@ -148,6 +285,16 @@ class TestLogin:
         })
         assert resp.status_code == 403
 
+    def test_login_email_case_insensitive(self, client, db):
+        """Login finds user by email case-insensitively (matches stored row)."""
+        make_user(db, "loginCi@example.com", "mypassword1", "loginci")
+        resp = client.post(
+            LOGIN_URL,
+            json={"email": "LOGINCI@EXAMPLE.COM", "password": "mypassword1"},
+        )
+        assert resp.status_code == 200, resp.text
+        assert "access_token" in resp.json()
+
 
 class TestProtectedEndpoints:
     def test_me_with_valid_token(self, client, alice, alice_headers):
@@ -155,6 +302,13 @@ class TestProtectedEndpoints:
         resp = client.get(ME_URL, headers=alice_headers)
         assert resp.status_code == 200
         assert resp.json()["email"] == "alice@example.com"
+
+    def test_me_token_sub_case_insensitive(self, client, alice):
+        """JWT sub casing may differ from DB row; resolve user case-insensitively."""
+        headers = jwt_headers("ALICE@EXAMPLE.COM")
+        resp = client.get(ME_URL, headers=headers)
+        assert resp.status_code == 200
+        assert resp.json()["email"] == alice.email
 
     def test_me_without_token_401(self, client):
         """AUTH-11: No token → 401."""

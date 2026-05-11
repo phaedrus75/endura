@@ -20,10 +20,19 @@ def get_effective_streak(user: models.User) -> int:
 # ============ User CRUD ============
 
 def get_user_by_email(db: Session, email: str) -> Optional[models.User]:
-    return db.query(models.User).filter(models.User.email == email).first()
+    """Case-insensitive match — aligns with EmailStr-normalized signups and verify."""
+    key = (email or "").strip().lower()
+    if not key:
+        return None
+    return (
+        db.query(models.User)
+        .filter(func.lower(models.User.email) == key)
+        .first()
+    )
 
 
 def create_user(db: Session, email: str, hashed_password: str) -> models.User:
+    email = (email or "").strip().lower()
     user = models.User(email=email, hashed_password=hashed_password)
     db.add(user)
     db.commit()

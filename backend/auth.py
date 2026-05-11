@@ -7,6 +7,7 @@ import logging
 from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.orm import Session
+from sqlalchemy import func
 from database import get_db
 import models
 import os
@@ -117,8 +118,15 @@ def get_current_user(
     except JWTError:
         logger.warning("Auth: JWT decode failed")
         raise credentials_exception
-    
-    user = db.query(models.User).filter(models.User.email == email).first()
+
+    email_key = (email or "").strip().lower()
+    user = (
+        db.query(models.User)
+        .filter(func.lower(models.User.email) == email_key)
+        .first()
+        if email_key
+        else None
+    )
     if user is None:
         logger.warning("Auth: user not found for token")
         raise HTTPException(
@@ -152,7 +160,14 @@ def get_optional_user(
         email: str = payload.get("sub")
         if email is None:
             return None
-        user = db.query(models.User).filter(models.User.email == email).first()
+        email_key = (email or "").strip().lower()
+        user = (
+            db.query(models.User)
+            .filter(func.lower(models.User.email) == email_key)
+            .first()
+            if email_key
+            else None
+        )
         if user is None:
             return None
         token_ver = payload.get("tv", 0)

@@ -976,6 +976,77 @@ def _normalize_email_for_lookup(email: str) -> str:
     return (email or "").strip().lower()
 
 
+# ── Verification-code history helpers ────────────────────────────────────────
+# We keep a short rolling window of recently issued codes so that a user typing
+# the previous code (still inside its 15-min TTL) is not punished for a resend
+# they didn't ask for. The list lives on User.verification_codes as
+#   [{"code": "123456", "expires": "2026-05-11T12:34:56"}, ...]
+# most-recent first.
+VERIFICATION_TTL_MINUTES = 15
+VERIFICATION_RESEND_COOLDOWN_SECONDS = 60
+VERIFICATION_HISTORY_MAX = 5
+
+
+def _parse_iso(ts) -> Optional[datetime]:
+    """Tolerant ISO-string -> datetime; tolerates trailing Z and naive datetimes."""
+    if not ts:
+        return None
+    if isinstance(ts, datetime):
+        return ts
+    try:
+        s = str(ts).rstrip("Z")
+        return datetime.fromisoformat(s)
+    except Exception:
+        return None
+
+
+def _active_verification_codes(user) -> list:
+    """Return non-expired (code, expires_dt) entries from the user's history."""
+    now = datetime.utcnow()
+    out = []
+    for entry in (user.verification_codes or []):
+        if not isinstance(entry, dict):
+            continue
+        code = (entry.get("code") or "").strip()
+        if not code:
+            continue
+        exp = _parse_iso(entry.get("expires"))
+        if exp and exp >= now:
+            out.append((code, exp))
+    return out
+
+
+def _push_verification_code(user, code: str, expires: datetime) -> None:
+    """Prepend a freshly-issued code to the user's history (cap to N entries).
+
+    Also mirrors the value to user.verification_code / verification_code_expires
+    so any older callers / queries that still read the singular columns keep
+    working unchanged.
+    """
+    history = list(user.verification_codes or [])
+    history.insert(0, {"code": code, "expires": expires.isoformat()})
+    user.verification_codes = history[:VERIFICATION_HISTORY_MAX]
+    user.verification_code = code
+    user.verification_code_expires = expires
+
+
+def _latest_code_age_seconds(user) -> Optional[float]:
+    """How long ago we issued the most recent un-expired code (None if none)."""
+    active = _active_verification_codes(user)
+    if not active:
+        return None
+    # Newest = largest expires (since each entry has the same TTL).
+    _, newest_exp = max(active, key=lambda x: x[1])
+    issued_at = newest_exp - timedelta(minutes=VERIFICATION_TTL_MINUTES)
+    return max(0.0, (datetime.utcnow() - issued_at).total_seconds())
+
+
+def _should_throttle_resend(user) -> bool:
+    """True if we just issued a code less than the cooldown window ago."""
+    age = _latest_code_age_seconds(user)
+    return age is not None and age < VERIFICATION_RESEND_COOLDOWN_SECONDS
+
+
 @app.post("/auth/register")
 @limiter.limit("5/minute")
 def register(request: Request, user: schemas.UserCreate, db: Session = Depends(get_db)):
@@ -991,11 +1062,25 @@ def register(request: Request, user: schemas.UserCreate, db: Session = Depends(g
                 db_user.id,
             )
             return {"message": "Verification code sent", "needs_verification": True}
-        # Truly unverified user re-registering: resend code
-        code = f"{secrets.randbelow(1000000):06d}"
-        db_user.verification_code = code
-        db_user.verification_code_expires = datetime.utcnow() + timedelta(minutes=15)
+        # Truly unverified user re-registering. Allow them to update their
+        # password (they may have forgotten it between attempts), but throttle
+        # the email so a double-tap on "Sign up" doesn't burn a fresh code.
         db_user.hashed_password = get_password_hash(user.password)
+        if _should_throttle_resend(db_user):
+            db.commit()
+            logger.info(
+                "[auth] verification_email_skipped reason=register_reregister_throttled "
+                "email_domain=%s user_id=%s age_s=%.1f",
+                _dom,
+                db_user.id,
+                _latest_code_age_seconds(db_user) or 0.0,
+            )
+            return {"message": "Verification code sent", "needs_verification": True}
+
+        code = f"{secrets.randbelow(1000000):06d}"
+        _push_verification_code(
+            db_user, code, datetime.utcnow() + timedelta(minutes=VERIFICATION_TTL_MINUTES)
+        )
         db.commit()
         logger.info(
             "[auth] verification_email_triggered reason=register_reregister_unverified "
@@ -1010,8 +1095,9 @@ def register(request: Request, user: schemas.UserCreate, db: Session = Depends(g
     new_user = crud.create_user(db, user.email, hashed_password)
 
     code = f"{secrets.randbelow(1000000):06d}"
-    new_user.verification_code = code
-    new_user.verification_code_expires = datetime.utcnow() + timedelta(minutes=15)
+    _push_verification_code(
+        new_user, code, datetime.utcnow() + timedelta(minutes=VERIFICATION_TTL_MINUTES)
+    )
     new_user.email_verified = False
     db.commit()
 
@@ -1043,8 +1129,18 @@ class VerifyEmailRequest(BaseModel):
 def verify_email(request: Request, body: VerifyEmailRequest, db: Session = Depends(get_db)):
     email_key = _normalize_email_for_lookup(str(body.email))
     _dom = _email_domain_for_logs(email_key)
-    user = db.query(models.User).filter(func.lower(models.User.email) == email_key).first()
-    if not user or not user.verification_code:
+    user = crud.get_user_by_email(db, email_key)
+
+    # Pool of every code we'd accept right now: history (modern path) plus the
+    # legacy singular column (covers users issued a code BEFORE this rolled out).
+    active = _active_verification_codes(user) if user else []
+    legacy_code = (user.verification_code or "").strip() if user else ""
+    legacy_exp = user.verification_code_expires if user else None
+    if user and legacy_code and legacy_exp and legacy_exp >= datetime.utcnow():
+        if not any(c == legacy_code for c, _ in active):
+            active.append((legacy_code, legacy_exp))
+
+    if not user or not active:
         logger.info(
             "[auth] verify_email outcome=no_pending_code email_domain=%s has_user=%s",
             _dom,
@@ -1062,27 +1158,25 @@ def verify_email(request: Request, body: VerifyEmailRequest, db: Session = Depen
         )
         raise HTTPException(status_code=429, detail="Too many attempts. Please request a new code.")
 
-    if user.verification_code != body.code:
+    submitted = (body.code or "").strip()
+    matched = any(submitted == c for c, _ in active)
+    if not matched:
         user.verification_attempts = (user.verification_attempts or 0) + 1
         db.commit()
         logger.info(
-            "[auth] verify_email outcome=invalid_code email_domain=%s user_id=%s attempts_after=%s",
+            "[auth] verify_email outcome=invalid_code email_domain=%s user_id=%s "
+            "attempts_after=%s candidates=%d",
             _dom,
             user.id,
             user.verification_attempts,
+            len(active),
         )
         raise HTTPException(status_code=400, detail="Invalid verification code")
-
-    if user.verification_code_expires and user.verification_code_expires < datetime.utcnow():
-        user.verification_code = None
-        user.verification_code_expires = None
-        db.commit()
-        logger.info("[auth] verify_email outcome=expired email_domain=%s user_id=%s", _dom, user.id)
-        raise HTTPException(status_code=400, detail="Code has expired. Please request a new one.")
 
     user.email_verified = True
     user.verification_code = None
     user.verification_code_expires = None
+    user.verification_codes = []
     user.verification_attempts = 0
     db.commit()
 
@@ -1108,7 +1202,7 @@ def resend_verification(request: Request, body: ResendVerificationRequest, db: S
     import secrets
     email_key = _normalize_email_for_lookup(str(body.email))
     _dom = _email_domain_for_logs(email_key)
-    user = db.query(models.User).filter(func.lower(models.User.email) == email_key).first()
+    user = crud.get_user_by_email(db, email_key)
     if not user or user.email_verified:
         logger.info(
             "[auth] verification_email_skipped reason=resend_no_pending_user email_domain=%s "
@@ -1119,9 +1213,24 @@ def resend_verification(request: Request, body: ResendVerificationRequest, db: S
         )
         return {"message": "If that email exists and needs verification, a code has been sent."}
 
+    # Throttle: if we issued a code very recently, do not generate a fresh one.
+    # The user's existing code is still valid (the previous /resend already sent
+    # an email) and burning a new one here would invalidate the address they may
+    # already be holding from the earlier message.
+    if _should_throttle_resend(user):
+        logger.info(
+            "[auth] verification_email_skipped reason=resend_throttled_recent_code "
+            "email_domain=%s user_id=%s age_s=%.1f",
+            _dom,
+            user.id,
+            _latest_code_age_seconds(user) or 0.0,
+        )
+        return {"message": "Verification code sent"}
+
     code = f"{secrets.randbelow(1000000):06d}"
-    user.verification_code = code
-    user.verification_code_expires = datetime.utcnow() + timedelta(minutes=15)
+    _push_verification_code(
+        user, code, datetime.utcnow() + timedelta(minutes=VERIFICATION_TTL_MINUTES)
+    )
     user.verification_attempts = 0
     db.commit()
 
@@ -1592,19 +1701,27 @@ def delete_account(
 # ============ Forgot / Reset Password ============
 
 class ForgotPasswordRequest(BaseModel):
-    email: str
+    email: EmailStr
+
 
 class ResetPasswordRequest(BaseModel):
-    email: str
-    code: str
+    email: EmailStr
+    code: str = Field(..., min_length=6, max_length=6)
     new_password: str
+
+    @field_validator("code", mode="before")
+    @classmethod
+    def strip_reset_code(cls, v):
+        if v is None:
+            return v
+        return str(v).strip().replace(" ", "")
 
 
 @app.post("/auth/forgot-password")
 @limiter.limit("5/minute")
 def forgot_password(request: Request, body: ForgotPasswordRequest, db: Session = Depends(get_db)):
     import secrets
-    user = db.query(models.User).filter(models.User.email == body.email).first()
+    user = crud.get_user_by_email(db, str(body.email))
     if not user:
         return {"message": "If that email exists, a reset code has been sent."}
 
@@ -1614,7 +1731,7 @@ def forgot_password(request: Request, body: ForgotPasswordRequest, db: Session =
     user.reset_attempts = 0
     db.commit()
 
-    _send_email_bg(_send_reset_email, body.email, code)
+    _send_email_bg(_send_reset_email, user.email, code)
     return {"message": "If that email exists, a reset code has been sent."}
 
 
@@ -1656,7 +1773,7 @@ def _send_reset_email(email: str, code: str) -> bool:
 @app.post("/auth/reset-password")
 @limiter.limit("10/minute")
 def reset_password(request: Request, body: ResetPasswordRequest, db: Session = Depends(get_db)):
-    user = db.query(models.User).filter(models.User.email == body.email).first()
+    user = crud.get_user_by_email(db, str(body.email))
     if not user or not user.reset_token:
         raise HTTPException(status_code=400, detail="Invalid or expired reset code")
 
