@@ -435,17 +435,16 @@
             <div class="kpi-grid" id="kpiGrid">
                 <div class="kpi"><div class="kpi-icon">👥</div><div class="kpi-val" id="k-users">—</div><div class="kpi-label">Users</div><div class="kpi-sub" id="k-users-sub"></div></div>
                 <div class="kpi" title="Users who have started at least one timer. Lifetime count, excludes archived."><div class="kpi-icon">⚡</div><div class="kpi-val" id="k-activated">—</div><div class="kpi-label">Activated</div><div class="kpi-sub" id="k-activated-sub"></div></div>
-                <div class="kpi"><div class="kpi-icon">🟢</div><div class="kpi-val" id="k-active">—</div><div class="kpi-label">Active (7d)</div><div class="kpi-sub" id="k-active-sub" style="font-weight:500;color:var(--text-muted)"><span style="display:inline-block;width:8px;height:8px;background:rgba(74,124,89,.9);border-radius:2px;margin-right:4px;vertical-align:middle"></span>Studied (DB)</div></div>
+                <div class="kpi"><div class="kpi-icon">🟢</div><div class="kpi-val" id="k-active">—</div><div class="kpi-label">Monthly Active</div><div class="kpi-sub" id="k-active-sub" style="font-weight:500;color:var(--text-muted)"><span style="display:inline-block;width:8px;height:8px;background:rgba(74,124,89,.9);border-radius:2px;margin-right:4px;vertical-align:middle"></span>Studied (DB)</div></div>
                 <div class="kpi"><div class="kpi-icon">📚</div><div class="kpi-val" id="k-sessions">—</div><div class="kpi-label">Study Sessions</div><div class="kpi-sub" id="k-sessions-sub"></div></div>
                 <div class="kpi"><div class="kpi-icon">⏱️</div><div class="kpi-val" id="k-hours">—</div><div class="kpi-label">Study Hours</div><div class="kpi-sub" id="k-hours-sub"></div></div>
-                <div class="kpi"><div class="kpi-icon">💚</div><div class="kpi-val" id="k-donated">—</div><div class="kpi-label">Total Donated</div><div class="kpi-sub" id="k-donated-sub"></div></div>
                 <div class="kpi"><div class="kpi-icon">🐣</div><div class="kpi-val" id="k-animals">—</div><div class="kpi-label">Animals Hatched</div><div class="kpi-sub" id="k-animals-sub"></div></div>
                 <div class="kpi"><div class="kpi-icon">🤝</div><div class="kpi-val" id="k-friends">—</div><div class="kpi-label">Friendships</div><div class="kpi-sub" id="k-friends-sub"></div></div>
                 <div class="kpi"><div class="kpi-icon">👨‍👩‍👧</div><div class="kpi-val" id="k-groups">—</div><div class="kpi-label">Study Groups</div><div class="kpi-sub" id="k-groups-sub"></div></div>
                 <div class="kpi"><div class="kpi-icon">🎉</div><div class="kpi-val" id="k-reactions">—</div><div class="kpi-label">Feed Reactions</div><div class="kpi-sub" id="k-reactions-sub"></div></div>
                 <div class="kpi"><div class="kpi-icon">📖</div><div class="kpi-val" id="k-subjects">—</div><div class="kpi-label">Subjects Added</div><div class="kpi-sub" id="k-subjects-sub"></div></div>
                 <div class="kpi"><div class="kpi-icon">✅</div><div class="kpi-val" id="k-tasks">—</div><div class="kpi-label">Todos Created</div><div class="kpi-sub" id="k-tasks-sub"></div></div>
-                <div class="kpi"><div class="kpi-icon">💡</div><div class="kpi-val" id="k-tips">—</div><div class="kpi-label">Tips Viewed / Liked / Saved</div><div class="kpi-sub" id="k-tips-sub"></div></div>
+                <div class="kpi"><div class="kpi-icon">💡</div><div class="kpi-val" id="k-tips">—</div><div class="kpi-label">Tips Saved</div><div class="kpi-sub" id="k-tips-sub"></div></div>
             </div>
             <div class="chart-row">
                 <div class="chart-card"><h3><span data-chart-title="signups">Signups</span> <span class="chart-gran-label" style="color:var(--text-muted);font-weight:500">(Daily)</span></h3><canvas id="chartSignups"></canvas></div>
@@ -2575,11 +2574,21 @@ async function loadOverview() {
         funnelCohortMeta = seg;
         document.getElementById('k-users').textContent = d.real_users;
         document.getElementById('k-users-sub').textContent = `+${d.signups_7d} this week` + (d.archived_users ? ` (${d.archived_users} archived)` : '');
-        const activatedCount = d.real_activated_users || 0;
-        const activatedPct = d.real_users ? Math.round((activatedCount / d.real_users) * 100) : 0;
-        document.getElementById('k-activated').textContent = activatedCount.toLocaleString();
-        document.getElementById('k-activated-sub').textContent = `${activatedPct}% started a timer`;
-        document.getElementById('k-active').textContent = d.active_users_7d;
+        // Activated: show em-dash when the backend field is missing (deploy
+        // not yet caught up) so we don't confuse a stale response with a
+        // real zero.
+        if (typeof d.real_activated_users === 'number') {
+            const activatedCount = d.real_activated_users;
+            const activatedPct = d.real_users ? Math.round((activatedCount / d.real_users) * 100) : 0;
+            document.getElementById('k-activated').textContent = activatedCount.toLocaleString();
+            document.getElementById('k-activated-sub').textContent = `${activatedPct}% started a timer`;
+        } else {
+            document.getElementById('k-activated').textContent = '—';
+            document.getElementById('k-activated-sub').textContent = 'awaiting API deploy';
+        }
+        // Monthly Active: 30-day rolling. DB value comes from active_users_30d
+        // (users with last_study_date in last 30 days); PH overlay below.
+        document.getElementById('k-active').textContent = (d.active_users_30d != null ? d.active_users_30d : '—');
         document.getElementById('k-active-sub').innerHTML =
             '<span style="display:inline-block;width:8px;height:8px;background:rgba(74,124,89,.9);border-radius:2px;margin-right:4px;vertical-align:middle"></span>Studied (DB)';
         document.getElementById('k-sessions').textContent = (d.real_sessions || 0).toLocaleString();
@@ -2587,8 +2596,6 @@ async function loadOverview() {
         const realHrs = Math.round((d.real_study_minutes || 0) / 60);
         document.getElementById('k-hours').textContent = realHrs.toLocaleString();
         document.getElementById('k-hours-sub').textContent = d.archived_users ? `${Math.round(d.total_study_minutes / 60).toLocaleString()} incl. archived` : '';
-        document.getElementById('k-donated').textContent = '$' + (d.real_donated || 0).toFixed(2);
-        document.getElementById('k-donated-sub').textContent = `${d.real_donation_count || 0} donations` + (d.archived_users && d.total_donated !== d.real_donated ? ` ($${d.total_donated.toFixed(2)} incl. archived)` : '');
         document.getElementById('k-animals').textContent = d.real_animals_hatched || 0;
         document.getElementById('k-animals-sub').textContent = d.archived_users ? `${d.total_animals_hatched} incl. archived` : '';
 
@@ -2602,14 +2609,8 @@ async function loadOverview() {
         document.getElementById('k-subjects-sub').textContent = `+${d.user_subjects_7d || 0} this week`;
         document.getElementById('k-tasks').textContent = (d.total_tasks_created || 0).toLocaleString();
         document.getElementById('k-tasks-sub').textContent = `+${d.tasks_created_7d || 0} this week`;
-        document.getElementById('k-tips').innerHTML =
-            `${(d.total_tip_views || 0).toLocaleString()} <span style="color:var(--text-muted);font-weight:600">/</span> ${(d.total_tip_likes || 0).toLocaleString()} <span style="color:var(--text-muted);font-weight:600">/</span> ${(d.total_tip_saves || 0).toLocaleString()}`;
-        document.getElementById('k-tips-sub').innerHTML =
-            `+${d.tip_views_7d || 0} viewed` +
-            `<span style="margin:0 5px;color:var(--text-muted)">·</span>` +
-            `+${d.tip_likes_7d || 0} liked` +
-            `<span style="margin:0 5px;color:var(--text-muted)">·</span>` +
-            `+${d.tip_saves_7d || 0} saved`;
+        document.getElementById('k-tips').textContent = (d.total_tip_saves || 0).toLocaleString();
+        document.getElementById('k-tips-sub').textContent = `+${d.tip_saves_7d || 0} this week`;
 
         if (funnelUI.kind === 'all' && d.funnel) renderFunnel(d.funnel);
 
@@ -2622,13 +2623,13 @@ async function loadOverview() {
             if (phAvailable) {
                 if (dbDau.length > 0) {
                     const startDate = dbDau[0].date;
-                    const [dauResult, weeklyDauResult, tipViewedResult, active7dResult] = await Promise.all([
+                    const [dauResult, weeklyDauResult, tipViewedResult, active30dResult] = await Promise.all([
                         phQuery(`SELECT toDate(timestamp) as day, count(DISTINCT distinct_id) as users FROM events WHERE event = 'app_opened' AND timestamp >= '${startDate}' GROUP BY day ORDER BY day`),
                         // True Weekly Active Users: dedupe per user across each ISO week (toMonday → Mon-anchored).
                         // Without this we'd sum the daily-uniques line above, which double-counts users active on multiple days.
                         phQuery(`SELECT toMonday(timestamp) as week, count(DISTINCT distinct_id) as users FROM events WHERE event = 'app_opened' AND timestamp >= '${startDate}' GROUP BY week ORDER BY week`),
                         phQuery(`SELECT toDate(timestamp) as day, count() as cnt FROM events WHERE event = 'tip_viewed' AND timestamp >= '${startDate}' GROUP BY day ORDER BY day`),
-                        phQuery(`SELECT count(DISTINCT distinct_id) FROM events WHERE event = 'app_opened' AND timestamp >= now() - INTERVAL 7 DAY`),
+                        phQuery(`SELECT count(DISTINCT distinct_id) FROM events WHERE event = 'app_opened' AND timestamp >= now() - INTERVAL 30 DAY`),
                     ]);
                     if (dauResult.results) {
                         phDauData = {};
@@ -2642,10 +2643,11 @@ async function loadOverview() {
                         phTipViewed = {};
                         for (const row of tipViewedResult.results) phTipViewed[row[0]] = row[1];
                     }
-                    if (active7dResult.results && active7dResult.results.length > 0) {
-                        const phActive7d = active7dResult.results[0][0] || 0;
+                    if (active30dResult.results && active30dResult.results.length > 0) {
+                        const phActive30d = active30dResult.results[0][0] || 0;
+                        const dbActive30d = d.active_users_30d != null ? d.active_users_30d : 0;
                         document.getElementById('k-active').innerHTML =
-                            `${phActive7d.toLocaleString()} <span style="color:var(--text-muted);font-weight:600">/</span> ${(d.active_users_7d || 0).toLocaleString()}`;
+                            `${phActive30d.toLocaleString()} <span style="color:var(--text-muted);font-weight:600">/</span> ${dbActive30d.toLocaleString()}`;
                         document.getElementById('k-active-sub').innerHTML =
                             '<span style="display:inline-block;width:8px;height:8px;background:rgba(59,130,246,.9);border-radius:2px;margin-right:4px;vertical-align:middle"></span>app_opened (PH) ' +
                             '<span style="margin:0 6px;color:var(--text-muted)">·</span>' +
