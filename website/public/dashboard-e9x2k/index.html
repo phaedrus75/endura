@@ -2587,10 +2587,19 @@ async function loadOverview() {
             document.getElementById('k-activated-sub').textContent = 'awaiting API deploy';
         }
         // Monthly Active: 30-day rolling. DB value comes from active_users_30d
-        // (users with last_study_date in last 30 days); PH overlay below.
-        document.getElementById('k-active').textContent = (d.active_users_30d != null ? d.active_users_30d : '—');
-        document.getElementById('k-active-sub').innerHTML =
-            '<span style="display:inline-block;width:8px;height:8px;background:rgba(74,124,89,.9);border-radius:2px;margin-right:4px;vertical-align:middle"></span>Studied (DB)';
+        // (users with last_study_date in last 30 days). The PH overlay below
+        // widens this to app_opened distinct users and renders a PH / DB
+        // split, but only when both halves are populated — if either side
+        // is missing (deploy lag, PostHog unavailable) we show the single
+        // live number instead of a confusing "X / 0".
+        if (d.active_users_30d != null) {
+            document.getElementById('k-active').textContent = d.active_users_30d.toLocaleString();
+            document.getElementById('k-active-sub').innerHTML =
+                '<span style="display:inline-block;width:8px;height:8px;background:rgba(74,124,89,.9);border-radius:2px;margin-right:4px;vertical-align:middle"></span>Studied (DB)';
+        } else {
+            document.getElementById('k-active').textContent = '—';
+            document.getElementById('k-active-sub').textContent = 'awaiting API deploy';
+        }
         document.getElementById('k-sessions').textContent = (d.real_sessions || 0).toLocaleString();
         document.getElementById('k-sessions-sub').textContent = d.archived_users ? `${d.total_sessions.toLocaleString()} incl. archived` : '';
         const realHrs = Math.round((d.real_study_minutes || 0) / 60);
@@ -2645,13 +2654,23 @@ async function loadOverview() {
                     }
                     if (active30dResult.results && active30dResult.results.length > 0) {
                         const phActive30d = active30dResult.results[0][0] || 0;
-                        const dbActive30d = d.active_users_30d != null ? d.active_users_30d : 0;
-                        document.getElementById('k-active').innerHTML =
-                            `${phActive30d.toLocaleString()} <span style="color:var(--text-muted);font-weight:600">/</span> ${dbActive30d.toLocaleString()}`;
-                        document.getElementById('k-active-sub').innerHTML =
-                            '<span style="display:inline-block;width:8px;height:8px;background:rgba(59,130,246,.9);border-radius:2px;margin-right:4px;vertical-align:middle"></span>app_opened (PH) ' +
-                            '<span style="margin:0 6px;color:var(--text-muted)">·</span>' +
-                            '<span style="display:inline-block;width:8px;height:8px;background:rgba(74,124,89,.9);border-radius:2px;margin-right:4px;vertical-align:middle"></span>Studied (DB)';
+                        const dbActive30d = d.active_users_30d != null ? d.active_users_30d : null;
+                        // Only render the PH / DB split when both sides are
+                        // non-zero. Otherwise fall back to the single number
+                        // so the tile does not read "1,932 / 0" during a
+                        // deploy window or when PH is unreachable.
+                        if (dbActive30d && dbActive30d > 0) {
+                            document.getElementById('k-active').innerHTML =
+                                `${phActive30d.toLocaleString()} <span style="color:var(--text-muted);font-weight:600">/</span> ${dbActive30d.toLocaleString()}`;
+                            document.getElementById('k-active-sub').innerHTML =
+                                '<span style="display:inline-block;width:8px;height:8px;background:rgba(59,130,246,.9);border-radius:2px;margin-right:4px;vertical-align:middle"></span>app_opened (PH) ' +
+                                '<span style="margin:0 6px;color:var(--text-muted)">·</span>' +
+                                '<span style="display:inline-block;width:8px;height:8px;background:rgba(74,124,89,.9);border-radius:2px;margin-right:4px;vertical-align:middle"></span>Studied (DB)';
+                        } else if (phActive30d > 0) {
+                            document.getElementById('k-active').textContent = phActive30d.toLocaleString();
+                            document.getElementById('k-active-sub').innerHTML =
+                                '<span style="display:inline-block;width:8px;height:8px;background:rgba(59,130,246,.9);border-radius:2px;margin-right:4px;vertical-align:middle"></span>app_opened (PH)';
+                        }
                     }
                 }
             }
