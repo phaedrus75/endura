@@ -5,6 +5,11 @@ import { useEffect, useRef, useState } from "react";
 
 const API_URL = "https://web-production-34028.up.railway.app";
 
+// CARTO basemap API key. Free from https://carto.com/basemaps/apikey/ — up to
+// 1M tile requests/month for commercial use. Without a key, CARTO stamps
+// "API KEY REQUIRED" across every tile.
+const CARTO_KEY = process.env.NEXT_PUBLIC_CARTO_KEY ?? "";
+
 interface CountryData {
   country: string;
   users: number;
@@ -82,7 +87,7 @@ function LeafletMap({ countries }: { countries: CountryData[] }) {
       L.control.zoom({ position: "bottomright" }).addTo(map);
 
       L.tileLayer(
-        "https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png",
+        `https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png?key=${CARTO_KEY}`,
         { maxZoom: 18 }
       ).addTo(map);
 

@@ -1717,6 +1717,9 @@
 </div>
 
 <script>
+// CARTO basemap key. Free from https://carto.com/basemaps/apikey/.
+// Without a key, every tile is stamped with "API KEY REQUIRED".
+const CARTO_KEY = '';
 let API_URL = '';
 let API_KEY = '';
 let signupsChart = null;
@@ -4243,7 +4246,7 @@ async function loadSimilarSchools() {
 function renderGeoMap(countries) {
     if (geoMap) { geoMap.remove(); geoMap = null; }
     geoMap = L.map('geoMap', { scrollWheelZoom: true, zoomControl: true }).setView([25, 10], 2);
-    L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+    L.tileLayer(`https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png?key=${CARTO_KEY}`, {
         attribution: '&copy; OpenStreetMap &copy; CARTO',
         maxZoom: 18,
     }).addTo(geoMap);
