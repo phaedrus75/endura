@@ -515,6 +515,37 @@ class TestAdminOverview:
         # u1 (active twice) counts once, u2 once → 2 distinct users.
         assert bucket["count"] == 2
 
+    def test_overview_real_activated_users_counts_lifetime_distinct(self, client, db):
+        """real_activated_users is the lifetime count of non-archived users
+        with ≥1 study session row. Backs the "Activated" KPI tile."""
+        from datetime import datetime, timedelta
+        import models
+
+        now = datetime.utcnow()
+        baseline = client.get("/admin/overview", headers=admin_headers()).json()
+        before = baseline.get("real_activated_users", 0)
+
+        starter = make_user(db, email="act_lt_starter@example.com", username="actltstarter")
+        bouncer = make_user(db, email="act_lt_bouncer@example.com", username="actltbouncer")
+        archived_starter = make_user(db, email="act_lt_arch@example.com", username="actltarch")
+        archived_starter.is_archived = True
+        db.commit()
+
+        # starter and archived_starter both have sessions; only starter counts.
+        for user in (starter, archived_starter):
+            db.add(models.StudySession(
+                user_id=user.id, duration_minutes=25, coins_earned=10,
+                started_at=now - timedelta(days=1),
+                completed_at=now - timedelta(days=1) + timedelta(minutes=25),
+            ))
+        db.commit()
+
+        data = client.get("/admin/overview", headers=admin_headers()).json()
+        assert "real_activated_users" in data
+        # Exactly one new activated user (`starter`); `bouncer` has no session
+        # and `archived_starter` is excluded by the archived filter.
+        assert data["real_activated_users"] == before + 1
+
 
 class TestAdminUsers:
     def test_users_list_returns_paginated(self, client, alice):

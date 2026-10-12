@@ -4124,6 +4124,15 @@ def admin_overview(db: Session = Depends(get_db), _=Depends(verify_admin)):
         real_donated = total_donated
         real_donation_count = total_donation_count
 
+    # Lifetime "Activated" count: non-archived users with ≥1 study session row
+    # (session row is written when the user starts a timer). Distinct from
+    # `active_users_7d` (recent) and from `daily_signups_activated` (per-signup
+    # cohort, Apr-1 onwards). Used by the Lifetime KPI tile on Overview.
+    activated_q = db.query(func.count(func.distinct(models.StudySession.user_id)))
+    if archived_ids:
+        activated_q = activated_q.filter(models.StudySession.user_id.notin_(archived_ids))
+    real_activated_users = activated_q.scalar() or 0
+
     # User funnel (excluding archived users) — shared with GET /admin/funnel
     real_users = total_users - archived_users
     cohort_all = db.query(models.User.id).filter(models.User.is_archived == False).subquery()
@@ -4372,6 +4381,7 @@ def admin_overview(db: Session = Depends(get_db), _=Depends(verify_admin)):
         "real_sessions": real_sessions,
         "real_study_minutes": int(real_minutes),
         "real_animals_hatched": real_animals,
+        "real_activated_users": real_activated_users,
         "real_donated": real_donated,
         "real_donation_count": real_donation_count,
         "daily_signups": daily_signups,

@@ -429,10 +429,12 @@
                     <button type="button" class="gran-btn active" data-gran="daily" onclick="setOverviewGranularity('daily')" style="padding:7px 16px;border:none;background:var(--forest);color:#fff;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;transition:all .15s">Daily</button>
                     <button type="button" class="gran-btn" data-gran="weekly" onclick="setOverviewGranularity('weekly')" style="padding:7px 16px;border:none;background:transparent;color:var(--text-muted);border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;transition:all .15s">Weekly</button>
                     <button type="button" class="gran-btn" data-gran="monthly" onclick="setOverviewGranularity('monthly')" style="padding:7px 16px;border:none;background:transparent;color:var(--text-muted);border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;transition:all .15s">Monthly</button>
+                    <button type="button" class="gran-btn" data-gran="lifetime" onclick="setOverviewGranularity('lifetime')" style="padding:7px 16px;border:none;background:transparent;color:var(--text-muted);border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;transition:all .15s">Lifetime</button>
                 </div>
             </div>
             <div class="kpi-grid" id="kpiGrid">
                 <div class="kpi"><div class="kpi-icon">👥</div><div class="kpi-val" id="k-users">—</div><div class="kpi-label">Users</div><div class="kpi-sub" id="k-users-sub"></div></div>
+                <div class="kpi" title="Users who have started at least one timer. Lifetime count, excludes archived."><div class="kpi-icon">⚡</div><div class="kpi-val" id="k-activated">—</div><div class="kpi-label">Activated</div><div class="kpi-sub" id="k-activated-sub"></div></div>
                 <div class="kpi"><div class="kpi-icon">🟢</div><div class="kpi-val" id="k-active">—</div><div class="kpi-label">Active (7d)</div><div class="kpi-sub" id="k-active-sub" style="font-weight:500;color:var(--text-muted)"><span style="display:inline-block;width:8px;height:8px;background:rgba(74,124,89,.9);border-radius:2px;margin-right:4px;vertical-align:middle"></span>Studied (DB)</div></div>
                 <div class="kpi"><div class="kpi-icon">📚</div><div class="kpi-val" id="k-sessions">—</div><div class="kpi-label">Study Sessions</div><div class="kpi-sub" id="k-sessions-sub"></div></div>
                 <div class="kpi"><div class="kpi-icon">⏱️</div><div class="kpi-val" id="k-hours">—</div><div class="kpi-label">Study Hours</div><div class="kpi-sub" id="k-hours-sub"></div></div>
@@ -2106,7 +2108,7 @@ function aggregateMonthlyMap(dailyMap) {
 }
 
 function setOverviewGranularity(gran) {
-    if (gran !== 'daily' && gran !== 'weekly' && gran !== 'monthly') return;
+    if (gran !== 'daily' && gran !== 'weekly' && gran !== 'monthly' && gran !== 'lifetime') return;
     if (overviewGranularity === gran) return;
     overviewGranularity = gran;
 
@@ -2117,8 +2119,9 @@ function setOverviewGranularity(gran) {
         btn.style.background = active ? 'var(--forest)' : 'transparent';
         btn.style.color = active ? '#fff' : 'var(--text-muted)';
     });
-    // Chart-title suffix labels
-    const labelByGran = { weekly: '(Weekly)', monthly: '(Monthly)', daily: '(Daily)' };
+    // Chart-title suffix labels. Lifetime buckets charts monthly across all
+    // available data; the label makes the all-time framing explicit.
+    const labelByGran = { weekly: '(Weekly)', monthly: '(Monthly)', daily: '(Daily)', lifetime: '(Lifetime)' };
     const label = labelByGran[gran] || '(Daily)';
     document.querySelectorAll('.chart-gran-label').forEach(el => { el.textContent = label; });
 
@@ -2131,14 +2134,15 @@ function renderOverviewCharts() {
     const gran = overviewGranularity;
 
     // Pick the right bucket aggregator for series-of-rows and PH daily maps.
+    // Lifetime shares monthly bucketing — same resolution, different framing.
     function bucket(series, fields) {
         if (gran === 'weekly') return aggregateWeekly(series, fields);
-        if (gran === 'monthly') return aggregateMonthly(series, fields);
+        if (gran === 'monthly' || gran === 'lifetime') return aggregateMonthly(series, fields);
         return series;
     }
     function bucketMap(map) {
         if (gran === 'weekly') return aggregateWeeklyMap(map);
-        if (gran === 'monthly') return aggregateMonthlyMap(map);
+        if (gran === 'monthly' || gran === 'lifetime') return aggregateMonthlyMap(map);
         return map;
     }
 
@@ -2153,7 +2157,7 @@ function renderOverviewCharts() {
         dbDau = (d.weekly_active && d.weekly_active.length)
             ? d.weekly_active
             : aggregateWeekly(d.daily_active || []);
-    } else if (gran === 'monthly') {
+    } else if (gran === 'monthly' || gran === 'lifetime') {
         dbDau = (d.monthly_active && d.monthly_active.length)
             ? d.monthly_active
             : aggregateMonthly(d.daily_active || []);
@@ -2173,7 +2177,7 @@ function renderOverviewCharts() {
     let dauMap;
     if (gran === 'weekly') {
         dauMap = phWeeklyDauData || aggregateWeeklyMap(phDauData);
-    } else if (gran === 'monthly') {
+    } else if (gran === 'monthly' || gran === 'lifetime') {
         // Monthly PH map is always client-bucketed — server doesn't ship it.
         dauMap = aggregateMonthlyMap(phDauData);
     } else {
@@ -2571,6 +2575,10 @@ async function loadOverview() {
         funnelCohortMeta = seg;
         document.getElementById('k-users').textContent = d.real_users;
         document.getElementById('k-users-sub').textContent = `+${d.signups_7d} this week` + (d.archived_users ? ` (${d.archived_users} archived)` : '');
+        const activatedCount = d.real_activated_users || 0;
+        const activatedPct = d.real_users ? Math.round((activatedCount / d.real_users) * 100) : 0;
+        document.getElementById('k-activated').textContent = activatedCount.toLocaleString();
+        document.getElementById('k-activated-sub').textContent = `${activatedPct}% started a timer`;
         document.getElementById('k-active').textContent = d.active_users_7d;
         document.getElementById('k-active-sub').innerHTML =
             '<span style="display:inline-block;width:8px;height:8px;background:rgba(74,124,89,.9);border-radius:2px;margin-right:4px;vertical-align:middle"></span>Studied (DB)';
